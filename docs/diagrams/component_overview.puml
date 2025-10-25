@@ -1,0 +1,57 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Component Diagram - TemporalAdapter & AjRunnerActivity Internals
+
+Container_Boundary(adapter_boundary, "TemporalAdapter") {
+  Component(enqueue_handler, "EnqueueHandler", "Ruby Method", "Handles immediate job enqueue")
+  Component(enqueue_at_handler, "EnqueueAtHandler", "Ruby Method", "Handles scheduled job enqueue")
+  Component(workflow_id_builder, "WorkflowIdBuilder", "Ruby Module", "Builds 'ajwf:<class>:<job_id>'")
+  Component(task_queue_resolver, "TaskQueueResolver", "Ruby Module", "Resolves task queue from job.queue_name")
+}
+
+Container_Boundary(activity_boundary, "AjRunnerActivity") {
+  Component(job_instantiator, "JobInstantiator", "Ruby Method", "Deserializes payload, creates job instance")
+  Component(error_mapper, "ErrorMapper", "Ruby Module", "Maps discard_on → ApplicationError(non_retryable)")
+  Component(idempotency_key, "IdempotencyKeyProvider", "Ruby Module", "Sets Thread.current[:aj_temporal_idempotency_key]")
+}
+
+Component_Ext(payload_module, "Payload Serializer", "Ruby Module", "from_job, deserialize_args")
+Component_Ext(retry_mapper_module, "Retry Mapper", "Ruby Module", "for(job_class), discard_exception?")
+Component_Ext(search_attrs_module, "Search Attributes Builder", "Ruby Module", "for(job)")
+Component_Ext(client_module, "Temporal Client", "Ruby Singleton", ".client → Temporalio::Client")
+Component_Ext(config_module, "Configuration", "Ruby Module", ".config → settings")
+
+System_Ext(temporal_cluster, "Temporal Cluster", "gRPC API")
+Container_Ext(job_class, "Job Class", "Rails ActiveJob", "User-defined job with perform method")
+
+' Adapter flow
+Rel(enqueue_handler, workflow_id_builder, "Calls", "Ruby")
+Rel(enqueue_handler, task_queue_resolver, "Calls", "Ruby")
+Rel(enqueue_handler, payload_module, "Calls from_job", "Ruby")
+Rel(enqueue_handler, retry_mapper_module, "Calls for(job_class)", "Ruby")
+Rel(enqueue_handler, search_attrs_module, "Calls for(job)", "Ruby")
+Rel(enqueue_handler, client_module, "Calls .client.start_workflow", "Ruby")
+
+Rel(enqueue_at_handler, workflow_id_builder, "Calls", "Ruby")
+Rel(enqueue_at_handler, task_queue_resolver, "Calls", "Ruby")
+Rel(enqueue_at_handler, payload_module, "Calls from_job(at: timestamp)", "Ruby")
+Rel(enqueue_at_handler, client_module, "Calls .client.start_workflow", "Ruby")
+
+Rel(client_module, temporal_cluster, "start_workflow", "gRPC")
+
+' Activity flow
+Rel(job_instantiator, payload_module, "Calls deserialize_args", "Ruby")
+Rel(job_instantiator, job_class, "Instantiates & calls .perform", "Ruby")
+
+Rel(job_instantiator, idempotency_key, "Sets Thread.current key", "Ruby")
+Rel(job_instantiator, error_mapper, "Wraps exceptions", "Ruby")
+
+Rel(error_mapper, retry_mapper_module, "Calls discard_exception?", "Ruby")
+
+Rel(task_queue_resolver, config_module, "Reads .task_queue_prefix", "Ruby")
+Rel(retry_mapper_module, config_module, "Reads retry defaults", "Ruby")
+
+@enduml

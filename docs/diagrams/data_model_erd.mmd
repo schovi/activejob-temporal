@@ -1,0 +1,45 @@
+erDiagram
+    Workflow {
+        string workflow_id PK
+        string workflow_type
+        string run_id
+        string task_queue
+        string execution_status
+        timestamp start_time
+        timestamp close_time
+        jsonb search_attributes
+    }
+
+    WorkflowInput {
+        string workflow_id FK
+        string job_class
+        string job_id
+        string queue_name
+        jsonb arguments
+        timestamp scheduled_at optional
+    }
+
+    ActivityExecution {
+        string activity_id PK
+        string workflow_id FK
+        string activity_type
+        integer attempt_number
+        timestamp start_time
+        timestamp close_time
+        string status
+        jsonb result optional
+        string failure_message optional
+    }
+
+    SearchAttributes {
+        string workflow_id FK
+        string ajClass
+        string ajQueue
+        string ajJobId
+        timestamp ajEnqueuedAt
+        string ajTenantId optional
+    }
+
+    Workflow ||--|| WorkflowInput : "has input"
+    Workflow ||--|{ ActivityExecution : "executes"
+    Workflow ||--|| SearchAttributes : "has metadata"

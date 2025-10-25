@@ -1,0 +1,70 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title Container Diagram - activejob-temporal Gem Internal Structure
+
+Person(developer, "Rails Developer", "Writes ActiveJob jobs")
+
+System_Boundary(rails, "Rails Application") {
+  Container(rails_app, "Rails App", "Ruby/Rails", "Business logic, controllers, models")
+  Container(activejob, "ActiveJob Framework", "Rails Gem", "Job queue abstraction")
+}
+
+System_Boundary(gem_boundary, "activejob-temporal Gem") {
+  Container(adapter, "TemporalAdapter", "Ruby Class", "Implements ActiveJob::QueueAdapters::AbstractAdapter")
+  Container(client, "Temporal Client", "Ruby Singleton", "Memoized connection to Temporal cluster")
+  Container(config, "Configuration Module", "Ruby Module", "Stores target, namespace, timeouts, retry defaults")
+  Container(payload, "Payload Serializer", "Ruby Module", "Serializes/deserializes ActiveJob::Arguments")
+  Container(retry_mapper, "Retry Mapper", "Ruby Module", "Maps retry_on/discard_on → RetryPolicy")
+  Container(search_attrs, "Search Attributes Builder", "Ruby Module", "Builds ajClass, ajQueue, ajJobId, etc.")
+  Container(cancel_api, "Cancellation API", "Ruby Module", "Exposes .cancel(job_id)")
+
+  Container(workflow, "AjWorkflow", "Temporal Workflow", "Orchestrates sleep + activity execution")
+  Container(activity, "AjRunnerActivity", "Temporal Activity", "Executes job.perform(*args)")
+}
+
+System_Ext(temporal, "Temporal Cluster", "gRPC API", "Workflow orchestration, history storage, task queues")
+
+System_Boundary(worker_boundary, "Temporal Worker Process") {
+  Container(worker, "Worker", "Ruby Process", "Polls task queue, executes workflows & activities")
+}
+
+System_Ext(external, "External Systems", "APIs/Services", "Email, payments, webhooks")
+
+' Rails → Gem
+Rel(developer, rails_app, "Writes jobs", "Ruby")
+Rel(rails_app, activejob, "Calls perform_later", "Ruby")
+Rel(activejob, adapter, "Calls enqueue/enqueue_at", "Ruby")
+
+' Adapter → Gem Components
+Rel(adapter, payload, "Serializes job args", "Ruby")
+Rel(adapter, retry_mapper, "Maps retry policies", "Ruby")
+Rel(adapter, search_attrs, "Builds metadata", "Ruby")
+Rel(adapter, config, "Reads settings", "Ruby")
+Rel(adapter, client, "Starts workflow", "Ruby")
+
+' Client → Temporal
+Rel(client, temporal, "start_workflow API call", "gRPC")
+
+' Worker → Temporal
+Rel(worker, temporal, "Poll for tasks", "gRPC long-poll")
+
+' Worker → Workflow/Activity
+Rel(worker, workflow, "Executes workflow code", "Ruby")
+Rel(worker, activity, "Executes activity code", "Ruby")
+
+' Activity → Job
+Rel(activity, payload, "Deserializes args", "Ruby")
+Rel(activity, rails_app, "Instantiates & calls job.perform", "Ruby")
+
+' Job → External
+Rel(rails_app, external, "Makes API calls", "HTTPS")
+
+' Cancellation
+Rel(rails_app, cancel_api, "Calls .cancel(job_id)", "Ruby")
+Rel(cancel_api, client, "Gets workflow handle", "Ruby")
+Rel(cancel_api, temporal, "Calls handle.cancel", "gRPC")
+
+@enduml
