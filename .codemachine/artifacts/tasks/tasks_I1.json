@@ -27,7 +27,7 @@
     "acceptance_criteria": "`bundle install` completes successfully without errors; `rake rubocop` runs without errors (even if no Ruby files to check yet); `rake spec` runs without errors (no specs yet, but RSpec loads); All files listed in \"Target Files\" exist with valid content; `.gitignore` includes standard patterns (`*.gem`, `Gemfile.lock`, `.bundle/`, `coverage/`, `.yardoc/`); Gemspec declares dependencies: `temporalio-sdk`, `activejob` (>= 6.1), `globalid`; Gemspec declares development dependencies: `rspec`, `rubocop`, `simplecov`, `yard`",
     "dependencies": [],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I1.T2",

@@ -1,0 +1,42 @@
+# frozen_string_literal: true
+
+require_relative "lib/activejob/temporal/version"
+
+Gem::Specification.new do |spec|
+  spec.name = "activejob-temporal"
+  spec.version = ActiveJob::Temporal::VERSION
+  spec.authors = ["Temporal Technologies", "Ruby Community"]
+  spec.email = ["ruby@temporal.io"]
+
+  spec.summary = "Rails ActiveJob adapter backed by Temporal Workflows"
+  spec.description = <<~DESC
+    activejob-temporal bridges Rails ActiveJob with Temporal's durable execution engine.
+    It provides a drop-in ActiveJob adapter, Temporal workflows, and supporting tooling
+    so Rails apps gain fault-tolerant scheduling, retries, and observability with minimal changes.
+  DESC
+  spec.homepage = "https://github.com/temporalio/activejob-temporal"
+  spec.license = "MIT"
+  spec.required_ruby_version = ">= 3.2"
+
+  spec.metadata["homepage_uri"] = spec.homepage
+  spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/main/CHANGELOG.md"
+  spec.metadata["rubygems_mfa_required"] = "true"
+
+  spec.files = Dir.chdir(__dir__) do
+    `git ls-files -z`.split("\x0").reject do |f|
+      f.start_with?("spec/", "docs/", "examples/", "tmp/")
+    end
+  end
+  spec.require_paths = ["lib"]
+
+  spec.add_dependency "activejob", ">= 6.1"
+  spec.add_dependency "globalid", ">= 0.3"
+  spec.add_dependency "temporalio-sdk", "~> 1.0"
+
+  spec.add_development_dependency "rake", "~> 13.2"
+  spec.add_development_dependency "rspec", "~> 3.12"
+  spec.add_development_dependency "rubocop", "~> 1.50"
+  spec.add_development_dependency "simplecov", "~> 0.22"
+  spec.add_development_dependency "yard", "~> 0.9"
+end

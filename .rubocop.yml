@@ -1,0 +1,38 @@
+inherit_mode:
+  merge:
+    - Exclude
+
+AllCops:
+  TargetRubyVersion: 3.2
+  NewCops: enable
+  Exclude:
+    - "tmp/**/*"
+    - "vendor/**/*"
+    - "pkg/**/*"
+
+Layout/LineLength:
+  Max: 120
+
+Metrics/BlockLength:
+  Max: 25
+  Exclude:
+    - "spec/**/*"
+
+Metrics/MethodLength:
+  Max: 20
+
+Metrics/ModuleLength:
+  Max: 200
+
+Style/Documentation:
+  Enabled: false
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Naming/FileName:
+  Exclude:
+    - "lib/activejob-temporal.rb"
+
+Gemspec/DevelopmentDependencies:
+  Enabled: false
