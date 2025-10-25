@@ -1,0 +1,178 @@
+[
+  {
+    "task_id": "I3.T1",
+    "iteration_id": "I3",
+    "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
+    "description": "Create `lib/activejob/temporal/adapter.rb` with the `ActiveJob::QueueAdapters::TemporalAdapter` class. This adapter must implement the ActiveJob adapter interface. Implement the `enqueue(job)` method with the following logic: (1) Serialize job payload using `Payload.from_job(job)`. (2) Validate payload size (<= 250KB); raise `ActiveJob::SerializationError` if exceeded. (3) Build workflow_id using `build_workflow_id(job)` (from I2.T4). (4) Resolve task_queue using `resolve_task_queue(job)` (from I2.T5). (5) Get retry policy using `RetryMapper.for(job.class)`. (6) Build search attributes using `SearchAttributes.for(job)`. (7) Get Temporal client using `ActiveJob::Temporal.client`. (8) Call `client.start_workflow(AjWorkflow, payload, id: workflow_id, task_queue: task_queue, id_conflict_policy: :reject, search_attributes: search_attrs)`. (9) Log enqueue event using `Logger.log_event(\"workflow_enqueued\", {workflow_id: ..., job_class: ..., ...})`. (10) Handle errors: if `start_workflow` fails (e.g., Temporal unreachable), raise `ActiveJob::EnqueueError`. Return the workflow run handle (or nil, depending on ActiveJob adapter contract). Write unit tests in `spec/unit/adapter_spec.rb` covering: successful enqueue, payload serialization, workflow ID and task queue resolution, retry policy mapping, search attributes, error handling (Temporal unreachable, payload too large). Mock `client.start_workflow` to avoid real Temporal calls.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Section 3.7 (Key Interaction Flow: Enqueue), ActiveJob adapter interface documentation, all foundation modules (Payload, RetryMapper, SearchAttributes, Client, Logger), workflow ID/task queue helpers from I2.T4/I2.T5",
+    "target_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "spec/unit/adapter_spec.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "lib/activejob/temporal/payload.rb",
+      "lib/activejob/temporal/retry_mapper.rb",
+      "lib/activejob/temporal/search_attributes.rb",
+      "lib/activejob/temporal/client.rb",
+      "lib/activejob/temporal/logger.rb",
+      "lib/activejob/temporal/workflows/aj_workflow.rb"
+    ],
+    "deliverables": "Working `enqueue(job)` method in TemporalAdapter, passing unit tests covering all enqueue logic and error handling",
+    "acceptance_criteria": "`TemporalAdapter` class exists in `ActiveJob::QueueAdapters` namespace; `enqueue(job)` method is defined; Payload is serialized using `Payload.from_job(job)`; Payload size is validated; `SerializationError` raised if > 250KB; Workflow ID is built using `build_workflow_id(job)`; Task queue is resolved using `resolve_task_queue(job)`; Retry policy is retrieved using `RetryMapper.for(job.class)`; Search attributes are built using `SearchAttributes.for(job)`; `client.start_workflow` is called with correct parameters: `(AjWorkflow, payload, id:, task_queue:, id_conflict_policy: :reject, search_attributes:)`; Log event \"workflow_enqueued\" is written with workflow_id, job_class, queue, etc.; If `start_workflow` raises exception (mocked Temporal connection error), `ActiveJob::EnqueueError` is raised; Unit tests mock `client.start_workflow` and verify all parameters; Unit tests mock all dependencies (Payload, RetryMapper, SearchAttributes, Logger) to isolate adapter logic; `rake spec` passes for adapter_spec.rb (enqueue tests); Code passes `rake rubocop`",
+    "dependencies": ["I1.T4", "I1.T5", "I1.T6", "I1.T7", "I1.T8", "I2.T2", "I2.T4", "I2.T5"],
+    "parallelizable": false,
+    "done": false
+  },
+  {
+    "task_id": "I3.T2",
+    "iteration_id": "I3",
+    "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
+    "description": "Extend `lib/activejob/temporal/adapter.rb` to implement the `enqueue_at(job, timestamp)` method for scheduled job execution. The logic is similar to `enqueue(job)`, but: (1) Convert `timestamp` (Unix timestamp integer) to `Time` object. (2) Pass `scheduled_at: timestamp` to `Payload.from_job(job, scheduled_at: timestamp)`. The rest of the flow is identical to `enqueue(job)`: serialize payload, validate size, build workflow_id, resolve task_queue, get retry policy, build search attributes, start workflow. The workflow itself (AjWorkflow) will handle the sleep logic. Write unit tests in `spec/unit/adapter_spec.rb` covering: enqueue_at with future timestamp, payload includes scheduled_at, workflow started immediately (not delayed on Temporal side), log event includes scheduled_at. Mock `client.start_workflow` as before.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Section 3.7 (Key Interaction Flow: Scheduled Enqueue), ActiveJob adapter interface, Payload module from I1.T5, enqueue logic from I3.T1",
+    "target_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "spec/unit/adapter_spec.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "lib/activejob/temporal/payload.rb"
+    ],
+    "deliverables": "Working `enqueue_at(job, timestamp)` method, passing unit tests",
+    "acceptance_criteria": "`enqueue_at(job, timestamp)` method is defined in TemporalAdapter; Timestamp (integer) is converted to Time object; `Payload.from_job(job, scheduled_at: time_object)` is called; Payload includes `scheduled_at` field in ISO8601 format; Workflow is started immediately (no delay on Temporal side; `start_workflow` called right away); Log event includes `scheduled_at` attribute; Unit tests verify: `enqueue_at` with future timestamp, payload structure, workflow start parameters; Unit tests mock `client.start_workflow` and `Payload.from_job`; `rake spec` passes for adapter_spec.rb (enqueue_at tests); Code passes `rake rubocop`",
+    "dependencies": ["I3.T1"],
+    "parallelizable": false,
+    "done": false
+  },
+  {
+    "task_id": "I3.T3",
+    "iteration_id": "I3",
+    "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
+    "description": "Add `enqueue_after_transaction_commit?` method to `TemporalAdapter` class. This method should return `true` to tell ActiveJob to defer enqueue until after database transaction commits (Rails 6.1+ feature). This prevents jobs from being enqueued for rolled-back transactions. Implementation is trivial: `def enqueue_after_transaction_commit?; true; end`. Write unit test in `spec/unit/adapter_spec.rb` verifying this method returns `true`.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "ActiveJob adapter interface documentation (enqueue_after_transaction_commit? feature)",
+    "target_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "spec/unit/adapter_spec.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal/adapter.rb"
+    ],
+    "deliverables": "Method implementation, passing unit test",
+    "acceptance_criteria": "`enqueue_after_transaction_commit?` method is defined in TemporalAdapter; Method returns `true`; Unit test verifies return value; `rake spec` passes for adapter_spec.rb; Code passes `rake rubocop`",
+    "dependencies": ["I3.T1"],
+    "parallelizable": true,
+    "done": false
+  },
+  {
+    "task_id": "I3.T4",
+    "iteration_id": "I3",
+    "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
+    "description": "Ensure the `TemporalAdapter` is properly registered with ActiveJob so it can be selected via `config.active_job.queue_adapter = :temporal` in Rails configuration. This typically requires the adapter to be defined in the `ActiveJob::QueueAdapters` namespace (already done in I3.T1) and to be auto-loadable by Rails. Create a test Rails initializer example in `examples/basic_rails_app/config/initializers/active_job.rb` (if examples directory exists) or document in README placeholder. Write an integration-style test (can be unit-level with mocking) in `spec/unit/adapter_spec.rb` that verifies Rails can load the adapter via `ActiveJob::QueueAdapters.lookup(:temporal)` and returns `TemporalAdapter` class. This ensures proper naming and namespace conventions are followed.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "ActiveJob adapter registration conventions, Rails auto-loading patterns",
+    "target_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "spec/unit/adapter_spec.rb",
+      "examples/basic_rails_app/config/initializers/active_job.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal/adapter.rb"
+    ],
+    "deliverables": "Verified adapter registration, passing test for adapter lookup",
+    "acceptance_criteria": "`ActiveJob::QueueAdapters::TemporalAdapter` class exists; `ActiveJob::QueueAdapters.lookup(:temporal)` returns `TemporalAdapter` class; Unit test verifies adapter lookup; Example initializer created (optional, or documented in README); `rake spec` passes for adapter_spec.rb (lookup test); Code passes `rake rubocop`",
+    "dependencies": ["I3.T1"],
+    "parallelizable": true,
+    "done": false
+  },
+  {
+    "task_id": "I3.T5",
+    "iteration_id": "I3",
+    "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
+    "description": "Create `lib/activejob/temporal/cancel.rb` with the cancellation API module. Implement `ActiveJob::Temporal.cancel(job_class, job_id)` class method with the following logic: (1) Build workflow_id from job_id. This requires knowing the job class name, but job_id alone is not sufficient (workflow_id format is `ajwf:<ClassName>:<job_id>`). Use `cancel(job_class, job_id)` signature for v0.1 to maintain deterministic workflow_id format. (1) Builds workflow_id = `\"ajwf:#{job_class.name}:#{job_id}\"`. (2) Gets Temporal client using `ActiveJob::Temporal.client`. (3) Gets workflow handle: `handle = client.get_workflow_handle(workflow_id)`. (4) Calls `handle.cancel`. (5) Logs cancellation event. (6) Handles errors: if workflow not found or already completed, log warning but don't raise exception (best-effort cancellation). Write unit tests in `spec/unit/cancel_spec.rb` covering: successful cancellation, workflow not found error handling, logging. Mock `client.get_workflow_handle` and `handle.cancel`.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Section 3.7 (Key Interaction Flow: Cancellation), Client module from I1.T4, Logger from I1.T8, workflow_id format from I2.T4",
+    "target_files": [
+      "lib/activejob/temporal/cancel.rb",
+      "spec/unit/cancel_spec.rb",
+      "lib/activejob/temporal.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal/client.rb",
+      "lib/activejob/temporal/logger.rb"
+    ],
+    "deliverables": "Working cancellation API, passing unit tests, documented API method",
+    "acceptance_criteria": "`ActiveJob::Temporal.cancel(job_class, job_id)` method is defined; Workflow ID is built correctly: `\"ajwf:#{job_class.name}:#{job_id}\"`; `client.get_workflow_handle(workflow_id)` is called; `handle.cancel` is called; Log event \"cancellation_requested\" is written with workflow_id, job_class, job_id; If workflow not found (handle raises exception), error is caught, warning logged, method returns gracefully (doesn't raise); Unit tests mock `client.get_workflow_handle` and `handle.cancel`; Unit tests verify: successful cancel, workflow not found handling, logging; `rake spec` passes for cancel_spec.rb; Code passes `rake rubocop`; API is documented in code comments (YARD format: `@param job_class [Class]`, `@param job_id [String]`, `@return [void]`)",
+    "dependencies": ["I1.T4", "I1.T8", "I2.T4"],
+    "parallelizable": true,
+    "done": false
+  },
+  {
+    "task_id": "I3.T6",
+    "iteration_id": "I3",
+    "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
+    "description": "Review and update the cancellation sequence diagram created in I2.T1 (`docs/diagrams/cancellation_sequence.puml`) to reflect the actual implementation from I3.T5. Ensure the diagram shows the correct method signature (`cancel(job_class, job_id)`) and flow. Update any notes to clarify best-effort cancellation behavior (requires heartbeating for prompt abort). Verify diagram renders correctly.",
+    "agent_type_hint": "DocumentationAgent",
+    "inputs": "Cancellation API implementation from I3.T5, original sequence diagram from I2.T1",
+    "target_files": [
+      "docs/diagrams/cancellation_sequence.puml"
+    ],
+    "input_files": [
+      "docs/diagrams/cancellation_sequence.puml",
+      "lib/activejob/temporal/cancel.rb"
+    ],
+    "deliverables": "Updated and accurate cancellation sequence diagram",
+    "acceptance_criteria": "Diagram reflects `cancel(job_class, job_id)` method signature; Diagram shows workflow_id construction, handle retrieval, cancel call; Diagram includes notes about best-effort cancellation and heartbeating requirement; Diagram renders without syntax errors in PlantUML",
+    "dependencies": ["I3.T5"],
+    "parallelizable": false,
+    "done": false
+  },
+  {
+    "task_id": "I3.T7",
+    "iteration_id": "I3",
+    "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
+    "description": "Run `rake rubocop` on all code written in Iteration 3 (adapter, cancellation). Fix any Rubocop offenses. Update `.rubocop.yml` if needed. Acceptance: `rake rubocop` passes with zero offenses.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Rubocop configuration, code from I3.T1-I3.T5",
+    "target_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "lib/activejob/temporal/cancel.rb",
+      "spec/unit/adapter_spec.rb",
+      "spec/unit/cancel_spec.rb",
+      ".rubocop.yml"
+    ],
+    "input_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "lib/activejob/temporal/cancel.rb",
+      "spec/unit/adapter_spec.rb",
+      "spec/unit/cancel_spec.rb",
+      ".rubocop.yml"
+    ],
+    "deliverables": "Clean code passing Rubocop checks",
+    "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses); All auto-correctable offenses are fixed; Any manual fixes are applied; If `.rubocop.yml` is updated, changes are documented",
+    "dependencies": ["I3.T1", "I3.T2", "I3.T3", "I3.T5"],
+    "parallelizable": false,
+    "done": false
+  },
+  {
+    "task_id": "I3.T8",
+    "iteration_id": "I3",
+    "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
+    "description": "Run `rake spec` to execute all unit tests for Iteration 3 (adapter, cancellation). Verify SimpleCov reports >= 90% code coverage for adapter and cancel modules. If coverage is below 90%, write additional tests. Generate coverage report. Acceptance: All tests pass, coverage >= 90%.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "RSpec configuration, SimpleCov, unit tests from I3.T1-I3.T5",
+    "target_files": [],
+    "input_files": [
+      "spec/spec_helper.rb",
+      "spec/unit/adapter_spec.rb",
+      "spec/unit/cancel_spec.rb"
+    ],
+    "deliverables": "Passing test suite, coverage report >= 90%",
+    "acceptance_criteria": "`rake spec` exits with status 0 (all tests pass); SimpleCov report shows >= 90% coverage for `lib/activejob/temporal/adapter.rb` and `lib/activejob/temporal/cancel.rb`; Coverage report is generated in `coverage/index.html`; No skipped or pending tests",
+    "dependencies": ["I3.T1", "I3.T2", "I3.T3", "I3.T5"],
+    "parallelizable": false,
+    "done": false
+  }
+]

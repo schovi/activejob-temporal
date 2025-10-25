@@ -1,0 +1,658 @@
+{
+  "metadata": {
+    "title": "activejob-temporal System Architecture Blueprint",
+    "version": "1.0",
+    "generated_date": "2025-10-25",
+    "description": "Comprehensive architecture blueprint for the activejob-temporal Ruby gem, including context, drivers, structure, behavior, operations, and future evolution."
+  },
+  "locations": [
+    {
+      "key": "introduction-and-goals",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: introduction-and-goals -->",
+      "description": "Overview of project vision, objectives, scope, and assumptions for activejob-temporal gem"
+    },
+    {
+      "key": "project-vision",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: project-vision -->",
+      "description": "High-level vision for bridging ActiveJob and Temporal with minimal code changes"
+    },
+    {
+      "key": "key-objectives",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: key-objectives -->",
+      "description": "Functional and non-functional objectives including reliability, observability, and maintainability"
+    },
+    {
+      "key": "scope",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: scope -->",
+      "description": "What's included in v0.1 (workflows, activities, adapter) and explicitly out of scope"
+    },
+    {
+      "key": "key-assumptions",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: key-assumptions -->",
+      "description": "Assumptions about Temporal server, Ruby/Rails versions, job idempotency, and deployment"
+    },
+    {
+      "key": "architectural-drivers",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: architectural-drivers -->",
+      "description": "Requirements and constraints that shape the architecture design"
+    },
+    {
+      "key": "functional-requirements-summary",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: functional-requirements-summary -->",
+      "description": "Core functional requirements for job execution, scheduling, retries, and visibility"
+    },
+    {
+      "key": "non-functional-requirements",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: non-functional-requirements -->",
+      "description": "Quality attributes including reliability, scalability, observability, and security"
+    },
+    {
+      "key": "nfr-reliability",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-reliability -->",
+      "description": "Reliability requirements for at-least-once execution and durable state"
+    },
+    {
+      "key": "nfr-scalability",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-scalability -->",
+      "description": "Scalability requirements for horizontal worker scaling and task queue partitioning"
+    },
+    {
+      "key": "nfr-observability",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-observability -->",
+      "description": "Observability requirements for logging, search attributes, and tracing"
+    },
+    {
+      "key": "nfr-maintainability",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-maintainability -->",
+      "description": "Maintainability requirements for clean architecture and testability"
+    },
+    {
+      "key": "nfr-security",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-security -->",
+      "description": "Security requirements for payload size limits and safe serialization"
+    },
+    {
+      "key": "nfr-performance",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-performance -->",
+      "description": "Performance requirements for non-blocking scheduling and efficient serialization"
+    },
+    {
+      "key": "nfr-compatibility",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-compatibility -->",
+      "description": "Compatibility requirements for Ruby, Rails, and Temporal SDK versions"
+    },
+    {
+      "key": "constraints-and-preferences",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: constraints-and-preferences -->",
+      "description": "Technical, organizational, and operational constraints affecting design"
+    },
+    {
+      "key": "constraints-technological",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: constraints-technological -->",
+      "description": "Technology constraints including Temporal SDK, ActiveJob API, and determinism"
+    },
+    {
+      "key": "constraints-organizational",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: constraints-organizational -->",
+      "description": "Organizational constraints for Rails conventions and gem distribution"
+    },
+    {
+      "key": "constraints-operational",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: constraints-operational -->",
+      "description": "Operational constraints for worker deployment and resource limits"
+    },
+    {
+      "key": "preferences-design",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: preferences-design -->",
+      "description": "Design preferences favoring simplicity, convention over configuration, and explicit APIs"
+    },
+    {
+      "key": "proposed-architecture",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: proposed-architecture -->",
+      "description": "High-level architectural decisions and technology stack overview"
+    },
+    {
+      "key": "architectural-style",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: architectural-style -->",
+      "description": "Adapter + Orchestration pattern rationale and comparison to traditional queues"
+    },
+    {
+      "key": "technology-stack-summary",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: technology-stack-summary -->",
+      "description": "Complete technology stack including Ruby, Rails, Temporal, and dependencies"
+    },
+    {
+      "key": "tech-stack-core",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: tech-stack-core -->",
+      "description": "Core technologies with version requirements and rationale"
+    },
+    {
+      "key": "tech-stack-dependencies",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: tech-stack-dependencies -->",
+      "description": "Required and optional gem dependencies"
+    },
+    {
+      "key": "tech-stack-no-external-services",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: tech-stack-no-external-services -->",
+      "description": "Services NOT required compared to traditional Sidekiq/Resque stacks"
+    },
+    {
+      "key": "tech-stack-serialization",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: tech-stack-serialization -->",
+      "description": "Serialization formats for job arguments and workflow data"
+    },
+    {
+      "key": "tech-stack-deployment",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: tech-stack-deployment -->",
+      "description": "Deployment stack including Docker, Kubernetes, and process managers"
+    },
+    {
+      "key": "tech-stack-observability",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: tech-stack-observability -->",
+      "description": "Observability stack for logging, tracing, metrics, and visibility"
+    },
+    {
+      "key": "tech-stack-rationale",
+      "file": "02_Architecture_Overview.md",
+      "start_anchor": "<!-- anchor: tech-stack-rationale -->",
+      "description": "Detailed rationale for choosing Temporal over traditional queues and Ruby SDK"
+    },
+    {
+      "key": "system-structure-and-data",
+      "file": "03_System_Structure_and_Data.md",
+      "start_anchor": "<!-- anchor: system-structure-and-data -->",
+      "description": "System structure including C4 diagrams, components, and data model"
+    },
+    {
+      "key": "system-context-diagram",
+      "file": "03_System_Structure_and_Data.md",
+      "start_anchor": "<!-- anchor: system-context-diagram -->",
+      "description": "C4 Level 1 diagram showing system boundary and external interactions"
+    },
+    {
+      "key": "container-diagram",
+      "file": "03_System_Structure_and_Data.md",
+      "start_anchor": "<!-- anchor: container-diagram -->",
+      "description": "C4 Level 2 diagram showing major components and their interactions"
+    },
+    {
+      "key": "component-diagram",
+      "file": "03_System_Structure_and_Data.md",
+      "start_anchor": "<!-- anchor: component-diagram -->",
+      "description": "C4 Level 3 diagram detailing adapter and activity internal components"
+    },
+    {
+      "key": "data-model-overview",
+      "file": "03_System_Structure_and_Data.md",
+      "start_anchor": "<!-- anchor: data-model-overview -->",
+      "description": "Logical data model for job payloads, workflow metadata, and configuration"
+    },
+    {
+      "key": "data-entities",
+      "file": "03_System_Structure_and_Data.md",
+      "start_anchor": "<!-- anchor: data-entities -->",
+      "description": "Key data entities including job payload, search attributes, and retry policy"
+    },
+    {
+      "key": "data-model-erd",
+      "file": "03_System_Structure_and_Data.md",
+      "start_anchor": "<!-- anchor: data-model-erd -->",
+      "description": "Entity-relationship diagram for Temporal workflow state"
+    },
+    {
+      "key": "data-persistence",
+      "file": "03_System_Structure_and_Data.md",
+      "start_anchor": "<!-- anchor: data-persistence -->",
+      "description": "Data persistence strategy and payload size constraints"
+    },
+    {
+      "key": "behavior-and-communication",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: behavior-and-communication -->",
+      "description": "API design, communication patterns, and interaction flows"
+    },
+    {
+      "key": "api-design-and-communication",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: api-design-and-communication -->",
+      "description": "API style and communication protocols overview"
+    },
+    {
+      "key": "api-style",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: api-style -->",
+      "description": "Ruby method calls and gRPC API description with rationale"
+    },
+    {
+      "key": "communication-patterns",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: communication-patterns -->",
+      "description": "Synchronous, asynchronous, and long-polling communication patterns"
+    },
+    {
+      "key": "interaction-flow-enqueue",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: interaction-flow-enqueue -->",
+      "description": "Sequence diagram for immediate job enqueue via perform_later"
+    },
+    {
+      "key": "interaction-flow-enqueue-scheduled",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: interaction-flow-enqueue-scheduled -->",
+      "description": "Sequence diagram for scheduled job execution using set(wait:)"
+    },
+    {
+      "key": "interaction-flow-execution",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: interaction-flow-execution -->",
+      "description": "Sequence diagram for workflow and activity execution by workers"
+    },
+    {
+      "key": "interaction-flow-cancellation",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: interaction-flow-cancellation -->",
+      "description": "Sequence diagram for job cancellation via cancel API"
+    },
+    {
+      "key": "communication-error-handling",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: communication-error-handling -->",
+      "description": "Error handling strategies for enqueue-time and execution-time failures"
+    },
+    {
+      "key": "api-versioning",
+      "file": "04_Behavior_and_Communication.md",
+      "start_anchor": "<!-- anchor: api-versioning -->",
+      "description": "Versioning strategy and backward compatibility promises"
+    },
+    {
+      "key": "operational-architecture",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: operational-architecture -->",
+      "description": "Cross-cutting concerns and deployment architecture"
+    },
+    {
+      "key": "cross-cutting-concerns",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: cross-cutting-concerns -->",
+      "description": "Authentication, logging, monitoring, security, scalability, and reliability"
+    },
+    {
+      "key": "authentication-authorization",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: authentication-authorization -->",
+      "description": "Authentication and authorization strategy for job execution and Temporal access"
+    },
+    {
+      "key": "logging-monitoring",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: logging-monitoring -->",
+      "description": "Logging and monitoring strategy overview"
+    },
+    {
+      "key": "logging-strategy",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: logging-strategy -->",
+      "description": "Structured JSON logging with event types and attributes"
+    },
+    {
+      "key": "monitoring-strategy",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: monitoring-strategy -->",
+      "description": "Temporal built-in metrics and future application-level metrics"
+    },
+    {
+      "key": "observability-tools",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: observability-tools -->",
+      "description": "Temporal Web UI and OpenTelemetry tracing integration"
+    },
+    {
+      "key": "security-considerations",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: security-considerations -->",
+      "description": "Security strategy overview for payload, network, and code"
+    },
+    {
+      "key": "security-payload",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: security-payload -->",
+      "description": "Payload security including serialization safety and size limits"
+    },
+    {
+      "key": "security-network",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: security-network -->",
+      "description": "Network security with TLS encryption and namespace isolation"
+    },
+    {
+      "key": "security-code",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: security-code -->",
+      "description": "Code security including dependency scanning and secrets management"
+    },
+    {
+      "key": "scalability-performance",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: scalability-performance -->",
+      "description": "Scalability and performance considerations"
+    },
+    {
+      "key": "scalability-horizontal",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: scalability-horizontal -->",
+      "description": "Horizontal worker scaling strategy with Kubernetes example"
+    },
+    {
+      "key": "scalability-partitioning",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: scalability-partitioning -->",
+      "description": "Task queue partitioning for isolation and priority"
+    },
+    {
+      "key": "performance-optimization",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: performance-optimization -->",
+      "description": "Performance optimization techniques including connection pooling and batching"
+    },
+    {
+      "key": "reliability-availability",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: reliability-availability -->",
+      "description": "Reliability and availability strategies"
+    },
+    {
+      "key": "reliability-fault-tolerance",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: reliability-fault-tolerance -->",
+      "description": "Fault tolerance through workflow durability and activity retries"
+    },
+    {
+      "key": "reliability-failure-modes",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: reliability-failure-modes -->",
+      "description": "Failure modes and recovery strategies table"
+    },
+    {
+      "key": "reliability-high-availability",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: reliability-high-availability -->",
+      "description": "High availability setup for Temporal cluster, workers, and Rails app"
+    },
+    {
+      "key": "deployment-view",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: deployment-view -->",
+      "description": "Deployment view including target environment and strategy"
+    },
+    {
+      "key": "deployment-target-environment",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: deployment-target-environment -->",
+      "description": "Supported platforms and Temporal cluster options"
+    },
+    {
+      "key": "deployment-strategy",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: deployment-strategy -->",
+      "description": "Deployment strategy overview"
+    },
+    {
+      "key": "deployment-components",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: deployment-components -->",
+      "description": "Deployment components including Rails app, workers, and Temporal cluster"
+    },
+    {
+      "key": "deployment-docker",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: deployment-docker -->",
+      "description": "Docker and Kubernetes deployment architecture diagram"
+    },
+    {
+      "key": "deployment-configuration",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: deployment-configuration -->",
+      "description": "Environment variables and Kubernetes manifest examples"
+    },
+    {
+      "key": "deployment-health-checks",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: deployment-health-checks -->",
+      "description": "Health checks and graceful shutdown configuration"
+    },
+    {
+      "key": "deployment-zero-downtime",
+      "file": "05_Operational_Architecture.md",
+      "start_anchor": "<!-- anchor: deployment-zero-downtime -->",
+      "description": "Zero-downtime deployment strategy and workflow versioning"
+    },
+    {
+      "key": "design-rationale-and-tradeoffs",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: design-rationale-and-tradeoffs -->",
+      "description": "Critical architectural decisions and their trade-offs"
+    },
+    {
+      "key": "key-decisions-summary",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: key-decisions-summary -->",
+      "description": "Summary of most critical architectural decisions"
+    },
+    {
+      "key": "decision-single-workflow-activity",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: decision-single-workflow-activity -->",
+      "description": "Decision to use single workflow and activity pattern with rationale"
+    },
+    {
+      "key": "decision-workflow-id-deduplication",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: decision-workflow-id-deduplication -->",
+      "description": "Decision to use deterministic workflow IDs for deduplication"
+    },
+    {
+      "key": "decision-workflow-sleep",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: decision-workflow-sleep -->",
+      "description": "Decision to use Workflow.sleep for scheduled jobs instead of start delay"
+    },
+    {
+      "key": "decision-retry-mapping",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: decision-retry-mapping -->",
+      "description": "Decision to map ActiveJob retry_on/discard_on to Temporal RetryPolicy"
+    },
+    {
+      "key": "decision-search-attributes",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: decision-search-attributes -->",
+      "description": "Decision to use Search Attributes for visibility with configuration requirements"
+    },
+    {
+      "key": "decision-no-activerecord-callbacks",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: decision-no-activerecord-callbacks -->",
+      "description": "Decision not to intercept ActiveJob callbacks in v0.1"
+    },
+    {
+      "key": "alternatives-considered",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: alternatives-considered -->",
+      "description": "Alternative approaches evaluated but not selected"
+    },
+    {
+      "key": "alternative-queue-based-adapter",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: alternative-queue-based-adapter -->",
+      "description": "Rejected hybrid approach using both queue and Temporal"
+    },
+    {
+      "key": "alternative-multi-activity-workflow",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: alternative-multi-activity-workflow -->",
+      "description": "Rejected multi-activity workflow for job chains (deferred to v0.3)"
+    },
+    {
+      "key": "alternative-signals-for-cancellation",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: alternative-signals-for-cancellation -->",
+      "description": "Rejected Temporal Signals for cancellation in favor of handle.cancel"
+    },
+    {
+      "key": "alternative-temporal-schedules",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: alternative-temporal-schedules -->",
+      "description": "Rejected Temporal Schedules API for set(wait:) in favor of Workflow.sleep"
+    },
+    {
+      "key": "known-risks-and-mitigation",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: known-risks-and-mitigation -->",
+      "description": "Known risks with likelihood, impact, and mitigation strategies"
+    },
+    {
+      "key": "risk-temporal-sdk-maturity",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: risk-temporal-sdk-maturity -->",
+      "description": "Risk of bugs in new Ruby SDK with mitigation strategy"
+    },
+    {
+      "key": "risk-payload-size-bloat",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: risk-payload-size-bloat -->",
+      "description": "Risk of large payload serialization with 250KB limit enforcement"
+    },
+    {
+      "key": "risk-non-deterministic-workflows",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: risk-non-deterministic-workflows -->",
+      "description": "Risk of workflow non-determinism with code review and versioning mitigation"
+    },
+    {
+      "key": "risk-temporal-cluster-downtime",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: risk-temporal-cluster-downtime -->",
+      "description": "Risk of Temporal cluster unavailability with HA and monitoring mitigation"
+    },
+    {
+      "key": "risk-worker-resource-exhaustion",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: risk-worker-resource-exhaustion -->",
+      "description": "Risk of worker crashes or slowdown with scaling and monitoring mitigation"
+    },
+    {
+      "key": "risk-migration-from-existing-queue",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: risk-migration-from-existing-queue -->",
+      "description": "Risk of job loss during migration with dual-write and testing mitigation"
+    },
+    {
+      "key": "future-considerations",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: future-considerations -->",
+      "description": "Potential evolution paths and areas for deeper design"
+    },
+    {
+      "key": "potential-evolution",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: potential-evolution -->",
+      "description": "Evolution roadmap for v0.2, v0.3, v1.0, and scaling strategies"
+    },
+    {
+      "key": "evolution-v02",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: evolution-v02 -->",
+      "description": "v0.2 features including Schedules API, enhanced tracing, and rate limiting"
+    },
+    {
+      "key": "evolution-v03",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: evolution-v03 -->",
+      "description": "v0.3 features including Signals, Queries, Updates, and child workflows"
+    },
+    {
+      "key": "evolution-v10",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: evolution-v10 -->",
+      "description": "v1.0 stable release with migration tooling and Rails generators"
+    },
+    {
+      "key": "evolution-scale",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: evolution-scale -->",
+      "description": "Scaling strategies for millions of jobs with future multi-tenant architecture"
+    },
+    {
+      "key": "areas-for-deeper-dive",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: areas-for-deeper-dive -->",
+      "description": "Areas requiring detailed design before implementation"
+    },
+    {
+      "key": "deeper-dive-workflow-versioning",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: deeper-dive-workflow-versioning -->",
+      "description": "Workflow versioning strategy for safe deployments with in-flight workflows"
+    },
+    {
+      "key": "deeper-dive-multi-activity-orchestration",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: deeper-dive-multi-activity-orchestration -->",
+      "description": "Design for job chain orchestration with proposed DSL"
+    },
+    {
+      "key": "deeper-dive-custom-retry-policies",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: deeper-dive-custom-retry-policies -->",
+      "description": "Per-job retry policy customization with proposed API"
+    },
+    {
+      "key": "deeper-dive-dead-letter-queue",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: deeper-dive-dead-letter-queue -->",
+      "description": "Dead letter queue design for permanently failed jobs"
+    },
+    {
+      "key": "deeper-dive-testing-framework",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: deeper-dive-testing-framework -->",
+      "description": "Testing framework design for Temporal-backed jobs with mocking helpers"
+    },
+    {
+      "key": "glossary",
+      "file": "06_Rationale_and_Future.md",
+      "start_anchor": "<!-- anchor: glossary -->",
+      "description": "Definitions of key terms and concepts used throughout the blueprint"
+    }
+  ]
+}

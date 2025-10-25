@@ -1,0 +1,430 @@
+{
+  "locations": [
+    {
+      "key": "project-overview",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: project-overview -->",
+      "description": "High-level project overview with goals, requirements summary, and key assumptions for activejob-temporal gem v0.1."
+    },
+    {
+      "key": "goal",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: goal -->",
+      "description": "Concise statement of the project's primary goal: build a production-ready ActiveJob-Temporal integration gem."
+    },
+    {
+      "key": "high-level-requirements",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: high-level-requirements -->",
+      "description": "Summary of core functionality and quality requirements for v0.1 release."
+    },
+    {
+      "key": "key-assumptions",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: key-assumptions -->",
+      "description": "Platform, operational, and scope assumptions for the project (Ruby >= 3.2, Rails >= 6.1, Temporal SDK GA, etc.)."
+    },
+    {
+      "key": "core-architecture",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: core-architecture -->",
+      "description": "Overview of the architectural style, technology stack, key components, and data model."
+    },
+    {
+      "key": "architectural-style",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: architectural-style -->",
+      "description": "Explanation of the Adapter + Orchestration Pattern used to bridge ActiveJob and Temporal."
+    },
+    {
+      "key": "technology-stack",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: technology-stack -->",
+      "description": "Detailed technology stack including Ruby, Rails, Temporal SDK, dependencies, and serialization formats."
+    },
+    {
+      "key": "key-components",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: key-components -->",
+      "description": "List and description of primary and supporting gem components (Adapter, Workflow, Activity, Client, etc.)."
+    },
+    {
+      "key": "data-model-overview",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: data-model-overview -->",
+      "description": "Logical data model describing job payloads, workflow metadata, retry policies, and configuration."
+    },
+    {
+      "key": "api-contract-style",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: api-contract-style -->",
+      "description": "Description of API surfaces (ActiveJob adapter, Temporal client, worker execution) and communication patterns."
+    },
+    {
+      "key": "communication-patterns",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: communication-patterns -->",
+      "description": "Communication patterns between components: synchronous, long polling, async activity execution, cancellation."
+    },
+    {
+      "key": "key-architectural-artifacts",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: key-architectural-artifacts -->",
+      "description": "List of planned diagrams, specifications, and documentation artifacts (PlantUML, JSON Schema, Markdown docs)."
+    },
+    {
+      "key": "directory-structure",
+      "file": "01_Plan_Overview_and_Setup.md",
+      "start_anchor": "<!-- anchor: directory-structure -->",
+      "description": "Complete directory structure for the gem with justifications for key layout decisions."
+    },
+    {
+      "key": "iteration-1-plan",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: iteration-1-plan -->",
+      "description": "Iteration 1 plan: Project setup, gem structure, foundation modules (Configuration, Client, Payload, RetryMapper, SearchAttributes, Logger)."
+    },
+    {
+      "key": "task-i1-t1",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t1 -->",
+      "description": "Task I1.T1: Initialize gem structure (gemspec, Gemfile, Rakefile, basic files)."
+    },
+    {
+      "key": "task-i1-t2",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t2 -->",
+      "description": "Task I1.T2: Generate architecture diagrams (Component, Container, ERD)."
+    },
+    {
+      "key": "task-i1-t3",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t3 -->",
+      "description": "Task I1.T3: Implement Configuration module with DSL and configuration reference docs."
+    },
+    {
+      "key": "task-i1-t4",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t4 -->",
+      "description": "Task I1.T4: Implement Temporal Client wrapper with memoization."
+    },
+    {
+      "key": "task-i1-t5",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t5 -->",
+      "description": "Task I1.T5: Implement Payload Serializer with size limits and JSON Schema."
+    },
+    {
+      "key": "task-i1-t6",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t6 -->",
+      "description": "Task I1.T6: Implement Retry Mapper (retry_on/discard_on to RetryPolicy translation)."
+    },
+    {
+      "key": "task-i1-t7",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t7 -->",
+      "description": "Task I1.T7: Implement Search Attributes Builder and update configuration docs."
+    },
+    {
+      "key": "task-i1-t8",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t8 -->",
+      "description": "Task I1.T8: Implement Logger helper for structured JSON logging."
+    },
+    {
+      "key": "task-i1-t9",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t9 -->",
+      "description": "Task I1.T9: Run Rubocop and fix style issues."
+    },
+    {
+      "key": "task-i1-t10",
+      "file": "02_Iteration_I1.md",
+      "start_anchor": "<!-- anchor: task-i1-t10 -->",
+      "description": "Task I1.T10: Run unit tests and verify >= 90% coverage."
+    },
+    {
+      "key": "iteration-2-plan",
+      "file": "02_Iteration_I2.md",
+      "start_anchor": "<!-- anchor: iteration-2-plan -->",
+      "description": "Iteration 2 plan: Temporal Workflow and Activity implementation, sequence diagrams."
+    },
+    {
+      "key": "task-i2-t1",
+      "file": "02_Iteration_I2.md",
+      "start_anchor": "<!-- anchor: task-i2-t1 -->",
+      "description": "Task I2.T1: Generate sequence diagrams (Enqueue, Execution, Cancellation flows)."
+    },
+    {
+      "key": "task-i2-t2",
+      "file": "02_Iteration_I2.md",
+      "start_anchor": "<!-- anchor: task-i2-t2 -->",
+      "description": "Task I2.T2: Implement AjWorkflow (Temporal workflow with sleep and activity execution)."
+    },
+    {
+      "key": "task-i2-t3",
+      "file": "02_Iteration_I2.md",
+      "start_anchor": "<!-- anchor: task-i2-t3 -->",
+      "description": "Task I2.T3: Implement AjRunnerActivity (executes job logic, error mapping)."
+    },
+    {
+      "key": "task-i2-t4",
+      "file": "02_Iteration_I2.md",
+      "start_anchor": "<!-- anchor: task-i2-t4 -->",
+      "description": "Task I2.T4: Implement Workflow ID builder helper (deterministic ID generation)."
+    },
+    {
+      "key": "task-i2-t5",
+      "file": "02_Iteration_I2.md",
+      "start_anchor": "<!-- anchor: task-i2-t5 -->",
+      "description": "Task I2.T5: Implement Task Queue resolver helper (queue name to task queue)."
+    },
+    {
+      "key": "task-i2-t6",
+      "file": "02_Iteration_I2.md",
+      "start_anchor": "<!-- anchor: task-i2-t6 -->",
+      "description": "Task I2.T6: Run Rubocop and fix style issues."
+    },
+    {
+      "key": "task-i2-t7",
+      "file": "02_Iteration_I2.md",
+      "start_anchor": "<!-- anchor: task-i2-t7 -->",
+      "description": "Task I2.T7: Run unit tests and verify >= 90% coverage."
+    },
+    {
+      "key": "iteration-3-plan",
+      "file": "02_Iteration_I3.md",
+      "start_anchor": "<!-- anchor: iteration-3-plan -->",
+      "description": "Iteration 3 plan: ActiveJob adapter implementation and cancellation API."
+    },
+    {
+      "key": "task-i3-t1",
+      "file": "02_Iteration_I3.md",
+      "start_anchor": "<!-- anchor: task-i3-t1 -->",
+      "description": "Task I3.T1: Implement TemporalAdapter enqueue method (immediate job execution)."
+    },
+    {
+      "key": "task-i3-t2",
+      "file": "02_Iteration_I3.md",
+      "start_anchor": "<!-- anchor: task-i3-t2 -->",
+      "description": "Task I3.T2: Implement TemporalAdapter enqueue_at method (scheduled jobs)."
+    },
+    {
+      "key": "task-i3-t3",
+      "file": "02_Iteration_I3.md",
+      "start_anchor": "<!-- anchor: task-i3-t3 -->",
+      "description": "Task I3.T3: Implement enqueue_after_transaction_commit? method."
+    },
+    {
+      "key": "task-i3-t4",
+      "file": "02_Iteration_I3.md",
+      "start_anchor": "<!-- anchor: task-i3-t4 -->",
+      "description": "Task I3.T4: Register TemporalAdapter with ActiveJob (adapter lookup)."
+    },
+    {
+      "key": "task-i3-t5",
+      "file": "02_Iteration_I3.md",
+      "start_anchor": "<!-- anchor: task-i3-t5 -->",
+      "description": "Task I3.T5: Implement Cancellation API (cancel(job_class, job_id) method)."
+    },
+    {
+      "key": "task-i3-t6",
+      "file": "02_Iteration_I3.md",
+      "start_anchor": "<!-- anchor: task-i3-t6 -->",
+      "description": "Task I3.T6: Update cancellation sequence diagram with actual implementation."
+    },
+    {
+      "key": "task-i3-t7",
+      "file": "02_Iteration_I3.md",
+      "start_anchor": "<!-- anchor: task-i3-t7 -->",
+      "description": "Task I3.T7: Run Rubocop and fix style issues."
+    },
+    {
+      "key": "task-i3-t8",
+      "file": "02_Iteration_I3.md",
+      "start_anchor": "<!-- anchor: task-i3-t8 -->",
+      "description": "Task I3.T8: Run unit tests and verify >= 90% coverage."
+    },
+    {
+      "key": "iteration-4-plan",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: iteration-4-plan -->",
+      "description": "Iteration 4 plan: Worker bootstrap script, integration tests with Temporal test server."
+    },
+    {
+      "key": "task-i4-t1",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t1 -->",
+      "description": "Task I4.T1: Implement worker bootstrap script (bin/temporal-worker) with graceful shutdown."
+    },
+    {
+      "key": "task-i4-t2",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t2 -->",
+      "description": "Task I4.T2: Set up Temporal test server helper for integration tests."
+    },
+    {
+      "key": "task-i4-t3",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t3 -->",
+      "description": "Task I4.T3: Write integration test for immediate job execution (end-to-end)."
+    },
+    {
+      "key": "task-i4-t4",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t4 -->",
+      "description": "Task I4.T4: Write integration test for scheduled job execution (set(wait:))."
+    },
+    {
+      "key": "task-i4-t5",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t5 -->",
+      "description": "Task I4.T5: Write integration test for retry behavior (retry_on with transient errors)."
+    },
+    {
+      "key": "task-i4-t6",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t6 -->",
+      "description": "Task I4.T6: Write integration test for discard behavior (discard_on non-retryable errors)."
+    },
+    {
+      "key": "task-i4-t7",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t7 -->",
+      "description": "Task I4.T7: Write integration test for job cancellation with heartbeating."
+    },
+    {
+      "key": "task-i4-t8",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t8 -->",
+      "description": "Task I4.T8: Write integration test for Search Attributes visibility."
+    },
+    {
+      "key": "task-i4-t9",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t9 -->",
+      "description": "Task I4.T9: Run all integration tests and verify >= 90% overall coverage."
+    },
+    {
+      "key": "task-i4-t10",
+      "file": "02_Iteration_I4.md",
+      "start_anchor": "<!-- anchor: task-i4-t10 -->",
+      "description": "Task I4.T10: Run Rubocop on all code (lib, spec, bin)."
+    },
+    {
+      "key": "iteration-5-plan",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: iteration-5-plan -->",
+      "description": "Iteration 5 plan: Comprehensive documentation, example Rails app, gem release preparation."
+    },
+    {
+      "key": "task-i5-t1",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t1 -->",
+      "description": "Task I5.T1: Write comprehensive README (installation, quickstart, configuration, usage, limitations)."
+    },
+    {
+      "key": "task-i5-t2",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t2 -->",
+      "description": "Task I5.T2: Generate YARD API documentation for all public classes and methods."
+    },
+    {
+      "key": "task-i5-t3",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t3 -->",
+      "description": "Task I5.T3: Write migration guide (Sidekiq/Resque to activejob-temporal)."
+    },
+    {
+      "key": "task-i5-t4",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t4 -->",
+      "description": "Task I5.T4: Create example Rails app demonstrating all key features."
+    },
+    {
+      "key": "task-i5-t5",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t5 -->",
+      "description": "Task I5.T5: Finalize gemspec with accurate metadata and dependencies."
+    },
+    {
+      "key": "task-i5-t6",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t6 -->",
+      "description": "Task I5.T6: Write CHANGELOG for v0.1.0 release (Keep a Changelog format)."
+    },
+    {
+      "key": "task-i5-t7",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t7 -->",
+      "description": "Task I5.T7: Run final quality checks (rubocop, tests, coverage, build, manual tests, docs review)."
+    },
+    {
+      "key": "task-i5-t8",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t8 -->",
+      "description": "Task I5.T8: Create GitHub Actions CI workflow (optional but recommended)."
+    },
+    {
+      "key": "task-i5-t9",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t9 -->",
+      "description": "Task I5.T9: Tag v0.1.0 release in git and create GitHub release."
+    },
+    {
+      "key": "task-i5-t10",
+      "file": "02_Iteration_I5.md",
+      "start_anchor": "<!-- anchor: task-i5-t10 -->",
+      "description": "Task I5.T10: Publish gem to RubyGems.org (optional for v0.1)."
+    },
+    {
+      "key": "verification-and-integration-strategy",
+      "file": "03_Verification_and_Glossary.md",
+      "start_anchor": "<!-- anchor: verification-and-integration-strategy -->",
+      "description": "Complete verification and integration strategy including testing levels, CI/CD, quality gates, and release criteria."
+    },
+    {
+      "key": "testing-levels",
+      "file": "03_Verification_and_Glossary.md",
+      "start_anchor": "<!-- anchor: testing-levels -->",
+      "description": "Testing strategy: unit tests, integration tests, manual testing, smoke testing."
+    },
+    {
+      "key": "ci-cd-strategy",
+      "file": "03_Verification_and_Glossary.md",
+      "start_anchor": "<!-- anchor: ci-cd-strategy -->",
+      "description": "CI/CD approach using GitHub Actions for linting, testing, coverage, and gem building."
+    },
+    {
+      "key": "code-quality-gates",
+      "file": "03_Verification_and_Glossary.md",
+      "start_anchor": "<!-- anchor: code-quality-gates -->",
+      "description": "Quality gates: Rubocop, SimpleCov coverage (>= 90%), YARD docs, dependency scanning, payload size validation."
+    },
+    {
+      "key": "artifact-validation",
+      "file": "03_Verification_and_Glossary.md",
+      "start_anchor": "<!-- anchor: artifact-validation -->",
+      "description": "Validation criteria for diagrams, JSON schemas, Markdown docs, and gemspec."
+    },
+    {
+      "key": "integration-strategy",
+      "file": "03_Verification_and_Glossary.md",
+      "start_anchor": "<!-- anchor: integration-strategy -->",
+      "description": "Component integration order across iterations and external system integration (Temporal, Rails)."
+    },
+    {
+      "key": "release-criteria",
+      "file": "03_Verification_and_Glossary.md",
+      "start_anchor": "<!-- anchor: release-criteria -->",
+      "description": "Go/No-Go release criteria for v0.1.0: functional, quality, documentation, security requirements."
+    },
+    {
+      "key": "glossary",
+      "file": "03_Verification_and_Glossary.md",
+      "start_anchor": "<!-- anchor: glossary -->",
+      "description": "Comprehensive glossary of terms (Activity, Workflow, Temporal, ActiveJob, etc.)."
+    }
+  ]
+}
