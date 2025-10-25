@@ -16,10 +16,12 @@ erDiagram
         string job_id
         string queue_name
         jsonb arguments
-        timestamp scheduled_at optional
+        timestamp scheduled_at
     }
+    %% scheduled_at present only for delayed jobs
 
-    ActivityExecution {
+    %% ActivityExecution in docs → Activity entity here
+    Activity {
         string activity_id PK
         string workflow_id FK
         string activity_type
@@ -27,9 +29,10 @@ erDiagram
         timestamp start_time
         timestamp close_time
         string status
-        jsonb result optional
-        string failure_message optional
+        jsonb result
+        string failure_message
     }
+    %% result/failure_message populated only when activity completes/fails
 
     SearchAttributes {
         string workflow_id FK
@@ -37,9 +40,10 @@ erDiagram
         string ajQueue
         string ajJobId
         timestamp ajEnqueuedAt
-        string ajTenantId optional
+        string ajTenantId
     }
+    %% ajTenantId is optional and set when multi-tenant metadata exists
 
     Workflow ||--|| WorkflowInput : "has input"
-    Workflow ||--|{ ActivityExecution : "executes"
+    Workflow ||--|{ Activity : "executes"
     Workflow ||--|| SearchAttributes : "has metadata"

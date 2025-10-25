@@ -46,7 +46,7 @@
     "acceptance_criteria": "All three diagram files exist in `docs/diagrams/`; PlantUML files (`component_overview.puml`, `container_diagram.puml`) include `!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml` or equivalent C4 import; PlantUML files render without syntax errors when processed by PlantUML CLI/server; Mermaid file (`data_model_erd.mmd`) uses valid Mermaid ER diagram syntax; Mermaid file renders correctly in Mermaid live editor (https://mermaid.live); Component diagram shows at minimum: TemporalAdapter, AjWorkflow, AjRunnerActivity, Client, Payload, RetryMapper, SearchAttributes modules; Container diagram shows at minimum: Rails App, Gem (with internal containers), Temporal Cluster, Worker Process; ERD shows entities: Workflow, WorkflowInput, Activity, SearchAttributes with relationships",
     "dependencies": ["I1.T1"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I1.T3",
