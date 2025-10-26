@@ -50,3 +50,23 @@ class MultiRetryJob < ActiveJob::Base
   retry_on StandardError, wait: 40.seconds, attempts: 2
   retry_on SecondarySampleError, wait: 10.seconds, attempts: 6
 end
+
+class UnlimitedRetryJob < ActiveJob::Base
+  retry_on SampleJobError, attempts: :unlimited
+end
+
+class ProcWaitRetryJob < ActiveJob::Base
+  retry_on SampleJobError, wait: ->(_executions) { 15.seconds }
+end
+
+class SymbolWaitRetryJob < ActiveJob::Base
+  retry_on SampleJobError, wait: :custom_wait
+end
+
+class InvalidAttemptsJob < ActiveJob::Base
+  retry_on SampleJobError, attempts: "five"
+end
+
+class ExternalConstantRetryJob < ActiveJob::Base
+  retry_on "NetworkTimeoutError", wait: 15.seconds, attempts: 2
+end

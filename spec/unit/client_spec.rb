@@ -75,6 +75,44 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     expect(described_class.client).to be(client_instance)
   end
 
+  it "compacts TLS options when only some environment variables are set" do
+    ENV["TEMPORAL_TLS_CERT"] = "cert-data"
+
+    client_instance = instance_double("Temporalio::Client")
+    expect(Temporalio::Client).to receive(:connect) do |kwargs|
+      expect(kwargs[:tls]).to eq(certificate: "cert-data")
+      client_instance
+    end
+
+    expect(described_class.client).to be(client_instance)
+  end
+
+  it "prefers TLS configuration defined on the config object" do
+    described_class.configure do |config|
+      config.target = "localhost:7233"
+      config.namespace = "custom"
+    end
+    configuration = ActiveJob::Temporal.config
+    configuration.singleton_class.class_eval { attr_accessor :tls } unless configuration.respond_to?(:tls)
+    configuration.tls = {
+      certificate: "config-cert",
+      private_key: "config-key"
+    }
+
+    client_instance = instance_double("Temporalio::Client")
+    expect(Temporalio::Client).to receive(:connect) do |kwargs|
+      expect(kwargs[:tls]).to eq(
+        certificate: "config-cert",
+        private_key: "config-key"
+      )
+      client_instance
+    end
+
+    expect(described_class.client).to be(client_instance)
+  ensure
+    configuration&.tls = nil
+  end
+
   it "wraps connection errors in ActiveJob::Temporal::Error" do
     described_class.configure do |config|
       config.target = "1.2.3.4:7233"

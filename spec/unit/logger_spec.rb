@@ -40,6 +40,17 @@ RSpec.describe ActiveJob::Temporal::Logger do
       expect(payload["duration_ms"]).to eq(1234)
       expect(payload["job_class"]).to eq("ExampleJob")
     end
+
+    it "handles nil attributes by sending an empty payload" do
+      logger_helper.log_event("workflow_enqueued", nil)
+
+      payload = parsed_lines.first
+      expect(payload["event"]).to eq("workflow_enqueued")
+      expect(payload).to eq(
+        "event" => "workflow_enqueued",
+        "timestamp" => "2025-10-25T12:00:00Z"
+      )
+    end
   end
 
   describe "log levels" do
@@ -65,6 +76,36 @@ RSpec.describe ActiveJob::Temporal::Logger do
       expect do
         logger_helper.log_event("invalid_attributes", %w[a b])
       end.to raise_error(ArgumentError, /attributes/)
+    end
+
+    it "raises when event_name is not a String or Symbol" do
+      expect do
+        logger_helper.log_event(123, {})
+      end.to raise_error(ArgumentError, /event_name/)
+    end
+  end
+
+  describe "logger backends" do
+    it "skips logging when the configured logger does not implement the level" do
+      null_logger = double("NullLogger")
+      ActiveJob::Temporal.config.logger = null_logger
+      allow(null_logger).to receive(:respond_to?).with(:info).and_return(false)
+
+      expect { logger_helper.info("noop") }.not_to raise_error
+      expect(log_io.string).to eq("")
+    end
+
+    it "emits structured payloads when SemanticLogger is available" do
+      stub_const("SemanticLogger", Module.new)
+      semantic_logger = instance_double("SemanticLoggerLogger")
+      ActiveJob::Temporal.config.logger = semantic_logger
+
+      expect(semantic_logger).to receive(:info) do |payload|
+        expect(payload[:event]).to eq(:structured_event)
+        expect(payload[:workflow_id]).to eq("abc123")
+      end
+
+      logger_helper.info(:structured_event, workflow_id: "abc123")
     end
   end
 

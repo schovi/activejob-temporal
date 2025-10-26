@@ -220,6 +220,6 @@
     "acceptance_criteria": "`rake spec` exits with status 0 (all tests pass); SimpleCov report shows >= 90% coverage for `lib/activejob/temporal/*.rb` files; Coverage report is generated in `coverage/index.html`; No skipped or pending tests (all tests must be implemented)",
     "dependencies": ["I1.T3", "I1.T4", "I1.T5", "I1.T6", "I1.T7", "I1.T8"],
     "parallelizable": false,
-    "done": false
+    "done": true
   }
 ]

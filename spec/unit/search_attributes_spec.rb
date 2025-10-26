@@ -80,5 +80,19 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
         expect(attributes).not_to have_key(:ajTenantId)
       end
     end
+
+    context "when arguments are nil" do
+      let(:job) { SimpleJob.new(nil) }
+
+      before do
+        job.job_id = "job-555"
+        job.queue_name = "ops"
+      end
+
+      it "handles nil arguments without raising and omits ajTenantId" do
+        expect { attributes }.not_to raise_error
+        expect(attributes).not_to have_key(:ajTenantId)
+      end
+    end
   end
 end

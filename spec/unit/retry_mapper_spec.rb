@@ -69,6 +69,37 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
         non_retryable_error_types: ["FatalJobError"]
       )
     end
+
+    it "maps :unlimited attempts to zero maximum_attempts" do
+      policy = described_class.for(UnlimitedRetryJob)
+
+      expect(policy[:maximum_attempts]).to eq(0)
+    end
+
+    it "falls back to default interval for Proc wait values" do
+      policy = described_class.for(ProcWaitRetryJob)
+
+      expect(policy[:initial_interval]).to eq(30)
+    end
+
+    it "falls back to default interval for Symbol wait values" do
+      policy = described_class.for(SymbolWaitRetryJob)
+
+      expect(policy[:initial_interval]).to eq(30)
+    end
+
+    it "uses default attempts when the job declares a non-numeric value" do
+      policy = described_class.for(InvalidAttemptsJob)
+
+      expect(policy[:maximum_attempts]).to eq(1)
+    end
+
+    it "constantizes handler names when defined outside the job class" do
+      policy = described_class.for(ExternalConstantRetryJob, NetworkTimeoutError.new("boom"))
+
+      expect(policy[:initial_interval]).to eq(15)
+      expect(policy[:maximum_attempts]).to eq(2)
+    end
   end
 
   describe ".discard_exception?" do
@@ -94,6 +125,10 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
 
     it "returns false when job_class is nil" do
       expect(described_class.discard_exception?(nil, FatalJobError.new("fatal"))).to be(false)
+    end
+
+    it "returns false when exception is nil" do
+      expect(described_class.discard_exception?(DiscardableJob, nil)).to be(false)
     end
   end
 end
