@@ -10,23 +10,43 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I1.T8",
+  "task_id": "I1.T9",
   "iteration_id": "I1",
   "iteration_goal": "Establish project structure, dependencies, and foundational modules (configuration, client, payload handling). Generate core architecture diagrams.",
-  "description": "Create `lib/activejob/temporal/logger.rb` with a structured logging helper. Implement `Logger.log_event(event_name, attributes = {})` method that writes JSON-formatted logs to `ActiveJob::Temporal.config.logger`. Include standard attributes in every log: `event` (event_name), `timestamp` (ISO8601), plus any custom attributes passed. Support log levels: `info`, `warn`, `error`. If `semantic_logger` gem is available, use it; otherwise fall back to standard Ruby Logger with manual JSON formatting. Write unit tests in `spec/unit/logger_spec.rb` covering: log output format (JSON), standard attributes presence, custom attributes, different log levels. This is a helper module used by other components, so extensive testing is not required (basic coverage is sufficient).",
+  "description": "Run `rake rubocop` on all code written in Iteration 1. Fix any Rubocop offenses (style violations, complexity warnings, etc.) in all lib/ and spec/ files. Ensure code adheres to Ruby style guide. If necessary, update `.rubocop.yml` with reasonable exceptions (e.g., increase max line length to 120 if needed, disable specific cops with justification in comments). Commit fixes. Acceptance: `rake rubocop` passes with zero offenses.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "Section 3.8.2 (Logging Strategy), semantic_logger gem documentation (optional), Ruby Logger documentation",
+  "inputs": "Rubocop configuration (`.rubocop.yml`), Ruby style guide, code from I1.T3-I1.T8",
   "target_files": [
+    "lib/activejob/temporal.rb",
+    "lib/activejob/temporal/client.rb",
+    "lib/activejob/temporal/payload.rb",
+    "lib/activejob/temporal/retry_mapper.rb",
+    "lib/activejob/temporal/search_attributes.rb",
     "lib/activejob/temporal/logger.rb",
-    "spec/unit/logger_spec.rb"
+    "spec/unit/*.rb",
+    ".rubocop.yml"
   ],
   "input_files": [
-    "lib/activejob/temporal.rb"
+    "lib/activejob/temporal.rb",
+    "lib/activejob/temporal/client.rb",
+    "lib/activejob/temporal/payload.rb",
+    "lib/activejob/temporal/retry_mapper.rb",
+    "lib/activejob/temporal/search_attributes.rb",
+    "lib/activejob/temporal/logger.rb",
+    "spec/unit/*.rb",
+    ".rubocop.yml"
   ],
-  "deliverables": "Working logger helper, passing unit tests (basic coverage), support for JSON-formatted logs",
-  "acceptance_criteria": "`Logger.log_event(\"workflow_enqueued\", {workflow_id: \"abc123\"})` writes a JSON log line to configured logger; Log includes: `{\"event\": \"workflow_enqueued\", \"timestamp\": \"2025-10-25T12:00:00Z\", \"workflow_id\": \"abc123\"}`; Supports log levels: `Logger.info(event, attrs)`, `Logger.warn(event, attrs)`, `Logger.error(event, attrs)`; If `semantic_logger` is available (detected via `defined?(SemanticLogger)`), use it; otherwise use stdlib Logger; Unit tests verify JSON structure and attribute presence (use StringIO or similar to capture log output); `rake spec` passes for logger_spec.rb; Code passes `rake rubocop`",
-  "dependencies": ["I1.T3"],
-  "parallelizable": true,
+  "deliverables": "Clean code passing Rubocop checks",
+  "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses); All auto-correctable offenses are fixed; Any manual fixes are applied (e.g., method complexity reduced, long lines broken); If `.rubocop.yml` is updated, changes are documented with comments explaining exceptions",
+  "dependencies": [
+    "I1.T3",
+    "I1.T4",
+    "I1.T5",
+    "I1.T6",
+    "I1.T7",
+    "I1.T8"
+  ],
+  "parallelizable": false,
   "done": false
 }
 ```
@@ -37,69 +57,27 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: Logging Strategy (from 05_Operational_Architecture.md)
+### Context: Non-Functional Requirements - Maintainability (Architecture)
 
-```markdown
-##### **Logging Strategy**
+The project has strict quality requirements for code maintainability:
 
-**Structured Logging (JSON Format)**
+- **Clean Code:** Follow Ruby style guide conventions (enforced via Rubocop)
+- **Testability:** >= 90% code coverage requirement
+- **Linting:** All code must pass Rubocop with zero offenses
 
-The gem emits structured logs to `Rails.logger` (configurable via `ActiveJob::Temporal.config.logger`).
+### Context: Quality Gates (Plan)
 
-**Log Events & Attributes:**
+From the verification strategy:
 
-| Event | Level | Attributes | Example |
-|-------|-------|------------|---------|
-| **Workflow Enqueued** | `info` | `workflow_id`, `run_id`, `job_class`, `job_id`, `queue`, `scheduled_at` (optional) | `{"event": "workflow_enqueued", "workflow_id": "ajwf:SendInvoiceJob:abc123", ...}` |
-| **Activity Started** | `info` | `workflow_id`, `run_id`, `activity_id`, `job_class`, `attempt` | `{"event": "activity_started", "attempt": 1, ...}` |
-| **Activity Completed** | `info` | `workflow_id`, `duration_ms`, `job_class` | `{"event": "activity_completed", "duration_ms": 1234, ...}` |
-| **Activity Failed** | `error` | `workflow_id`, `attempt`, `exception_class`, `exception_message`, `backtrace` (first 5 lines) | `{"event": "activity_failed", "exception_class": "PSP::TransientError", ...}` |
-| **Activity Retry** | `warn` | `workflow_id`, `attempt`, `next_retry_interval`, `exception_class` | `{"event": "activity_retry", "attempt": 2, "next_retry_interval": 60, ...}` |
-| **Cancellation Requested** | `warn` | `workflow_id`, `job_id`, `reason` (optional) | `{"event": "cancellation_requested", ...}` |
-| **Cancellation Acknowledged** | `info` | `workflow_id`, `activity_id` | `{"event": "cancellation_acknowledged", ...}` |
-| **Payload Size Warning** | `warn` | `job_class`, `payload_size_kb`, `limit_kb` | `{"event": "payload_size_warning", "payload_size_kb": 200, ...}` |
-| **Serialization Error** | `error` | `job_class`, `job_id`, `exception_class`, `exception_message` | `{"event": "serialization_error", ...}` |
+**Code Quality Gates:**
+- **Rubocop:** Style checking with Ruby style guide compliance
+- Configured in `.rubocop.yml` with sensible defaults
+- Target Ruby version: >= 3.2
+- Max line length: 120 characters
+- Documentation requirement: Disabled for v0.1
 
-**Logger Configuration:**
-
-```ruby
-# config/initializers/activejob_temporal.rb
-ActiveJob::Temporal.configure do |c|
-  c.logger = SemanticLogger['ActiveJobTemporal'] # or Rails.logger
-end
-```
-
-**Best Practices:**
-
-- **Include Correlation IDs**: Always log `workflow_id` and `run_id` for traceability
-- **Redact Sensitive Data**: Do not log job arguments directly (may contain PII); log argument count or types only
-- **Use Semantic Logger**: Recommended for JSON output + tagging support
-```
-
-### Context: Task I1.T8 Details (from 02_Iteration_I1.md)
-
-```markdown
-*   **Task 1.8: Implement Logger Helper**
-    *   **Task ID:** `I1.T8`
-    *   **Description:** Create `lib/activejob/temporal/logger.rb` with a structured logging helper. Implement `Logger.log_event(event_name, attributes = {})` method that writes JSON-formatted logs to `ActiveJob::Temporal.config.logger`. Include standard attributes in every log: `event` (event_name), `timestamp` (ISO8601), plus any custom attributes passed. Support log levels: `info`, `warn`, `error`. If `semantic_logger` gem is available, use it; otherwise fall back to standard Ruby Logger with manual JSON formatting. Write unit tests in `spec/unit/logger_spec.rb` covering: log output format (JSON), standard attributes presence, custom attributes, different log levels. This is a helper module used by other components, so extensive testing is not required (basic coverage is sufficient).
-    *   **Agent Type Hint:** `BackendAgent`
-    *   **Inputs:** Section 3.8.2 (Logging Strategy), semantic_logger gem documentation (optional), Ruby Logger documentation
-    *   **Input Files:**
-        - `lib/activejob/temporal.rb`
-    *   **Target Files:**
-        - `lib/activejob/temporal/logger.rb`
-        - `spec/unit/logger_spec.rb`
-    *   **Deliverables:** Working logger helper, passing unit tests (basic coverage), support for JSON-formatted logs
-    *   **Acceptance Criteria:**
-        - `Logger.log_event("workflow_enqueued", {workflow_id: "abc123"})` writes a JSON log line to configured logger
-        - Log includes: `{"event": "workflow_enqueued", "timestamp": "2025-10-25T12:00:00Z", "workflow_id": "abc123"}`
-        - Supports log levels: `Logger.info(event, attrs)`, `Logger.warn(event, attrs)`, `Logger.error(event, attrs)`
-        - If `semantic_logger` is available (detected via `defined?(SemanticLogger)`), use it; otherwise use stdlib Logger
-        - Unit tests verify JSON structure and attribute presence (use StringIO or similar to capture log output)
-        - `rake spec` passes for logger_spec.rb
-        - Code passes `rake rubocop`
-    *   **Dependencies:** I1.T3 (configuration module must exist for logger reference)
-```
+**Iteration 1 Quality Check (I1.T9):**
+This task specifically ensures that all foundational modules created in Iteration 1 pass Rubocop checks before moving to Iteration 2 (workflow/activity implementation).
 
 ---
 
@@ -109,167 +87,138 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
+*   **File:** `.rubocop.yml`
+    *   **Summary:** This file contains the project's RuboCop configuration with sensible defaults already in place.
+    *   **Current Settings:**
+        - Target Ruby version: 3.2
+        - Max line length: 120 characters
+        - Block length: Max 25 (with spec exclusion)
+        - Method length: Max 20
+        - Module length: Max 200
+        - Documentation: Disabled
+        - String literals: Double quotes enforced
+        - Excludes: tmp/**, vendor/**, pkg/**
+    *   **Recommendation:** You SHOULD review this configuration first. The settings are already quite reasonable for this project.
+
 *   **File:** `lib/activejob/temporal.rb`
-    *   **Summary:** This is the main entry point module defining the `ActiveJob::Temporal` namespace. It contains the `Configuration` class with logging configuration already set up (`config.logger` defaults to `Rails.logger` if available, otherwise `Logger.new($stdout)`).
-    *   **Recommendation:** Your logger module MUST use `ActiveJob::Temporal.config.logger` to write logs. This is already available and configured.
-    *   **Key Detail:** The configuration module uses `attr_accessor :logger` and initializes it via the `default_logger` private method at lines 60-66.
+    *   **Summary:** Main entrypoint module with Configuration class and module-level methods (config, client, configure).
+    *   **Current State:** Contains ~90 lines including Configuration class with validation logic.
+    *   **Potential Issues:**
+        - The Configuration class is relatively complex with custom setters
+        - Ensure no method length violations in `ensure_positive_duration!` or `default_logger`
+    *   **Recommendation:** This is a core file - any changes here should maintain backward compatibility.
+
+*   **File:** `lib/activejob/temporal/client.rb`
+    *   **Summary:** Temporal client connection wrapper with TLS support and error handling.
+    *   **Current State:** Module with `build`, `connection_options`, and `tls_options` methods.
+    *   **Potential Issues:**
+        - Uses `module_function` pattern
+        - Has private class methods
+        - Error message formatting with heredoc/interpolation
+    *   **Recommendation:** Pay attention to complexity in `connection_options` and `tls_options` - they build nested hashes.
 
 *   **File:** `lib/activejob/temporal/payload.rb`
-    *   **Summary:** This file implements the `Payload` module using `extend self` pattern (module-level methods). It follows the pattern: freeze string literals, require dependencies at top, module body with public methods first, then private methods.
-    *   **Recommendation:** You SHOULD follow the same module structure pattern for consistency:
-        - Start with `# frozen_string_literal: true`
-        - Require necessary dependencies (`json`, `time`)
-        - Use `module Payload; extend self` pattern for module-level methods
-        - Place public methods first, private methods last
+    *   **Summary:** Payload serialization/deserialization for ActiveJob arguments with size limits.
+    *   **Current State:** Module using `extend self` pattern with public and private methods.
+    *   **Potential Issues:**
+        - Complex conditional logic in `iso8601_timestamp`
+        - String formatting in `enforce_payload_size!`
+    *   **Recommendation:** This file has complex logic - watch for cyclomatic complexity and method length violations.
 
-*   **File:** `spec/unit/configuration_spec.rb`
-    *   **Summary:** This test demonstrates the project's RSpec testing patterns and conventions.
-    *   **Recommendation:** Follow these testing patterns:
-        - Use `# frozen_string_literal: true` at the top
-        - Use `require "spec_helper"`
-        - Use `RSpec.describe` with the module/class name
-        - Use `before` blocks to reset state (e.g., clearing instance variables)
-        - Use clear descriptive test names with `it "does something specific"`
-        - Use `expect(...).to` syntax (not `should`)
-        - Use `double(:logger)` or `instance_double` for mocking
+*   **File:** `lib/activejob/temporal/retry_mapper.rb`
+    *   **Summary:** Maps ActiveJob retry_on/discard_on to Temporal RetryPolicy.
+    *   **Current State:** Large module (~162 lines) with many private helper methods.
+    *   **Potential Issues:**
+        - Module is approaching the 200-line limit
+        - Complex logic with metaprogramming (binding inspection)
+        - Many private helper methods
+    *   **Recommendation:** This is the most complex module. It may trigger:
+        - Module length warnings (currently 162 lines, limit is 200)
+        - Method complexity warnings due to binding inspection logic
+        - You MAY need to suppress specific cops here with inline comments if complexity is inherent to the algorithm.
 
-*   **File:** `spec/spec_helper.rb`
-    *   **Summary:** Configures RSpec with SimpleCov for coverage tracking. Coverage must be enabled with branch coverage.
-    *   **Recommendation:** No changes needed. Your tests will automatically be included in coverage reporting.
+*   **File:** `lib/activejob/temporal/search_attributes.rb`
+    *   **Summary:** Builds Temporal Search Attributes from ActiveJob metadata.
+    *   **Current State:** Simple module (~33 lines) with one public method.
+    *   **Potential Issues:** None expected - this is a straightforward builder.
+    *   **Recommendation:** This file should pass cleanly.
 
-*   **File:** `activejob-temporal.gemspec`
-    *   **Summary:** Lists all dependencies. `semantic_logger` is NOT included as a dependency (neither runtime nor development).
-    *   **Recommendation:** Since `semantic_logger` is not a dependency, your implementation MUST gracefully detect its absence and fall back to standard Ruby Logger. Use `defined?(SemanticLogger)` to check availability.
+*   **File:** `lib/activejob/temporal/logger.rb`
+    *   **Summary:** Structured JSON logging helper with semantic logger support.
+    *   **Current State:** Module (~73 lines) with public and private methods.
+    *   **Potential Issues:**
+        - Method count (info, warn, error, log, build_payload, etc.)
+        - Conditional logic in `log` method
+    *   **Recommendation:** Should be clean, but verify no method length issues in `log`.
+
+*   **File:** `spec/unit/*.rb`
+    *   **Summary:** Unit tests for all modules created in Iteration 1.
+    *   **Current State:** Six spec files (configuration, client, logger, payload, retry_mapper, search_attributes).
+    *   **Potential Issues:**
+        - Specs are excluded from BlockLength metric
+        - Should have no violations due to exclusion
+    *   **Recommendation:** These should be clean due to spec exclusions in .rubocop.yml.
 
 ### Implementation Tips & Notes
 
-*   **Tip 1: Module Pattern**
-    - All existing modules in this project use the `module X; extend self` pattern for module-level methods.
-    - This allows calling methods like `Payload.from_job(...)` instead of instance methods.
-    - You SHOULD follow this pattern for `Logger` module.
+*   **Tip #1 - Running RuboCop:** There appears to be a bundler/gem compatibility issue in the environment. You SHOULD try these approaches in order:
+    1. `vendor/bundle/ruby/3.3.0/bin/rubocop` (direct execution from vendored gems)
+    2. Use the vendored RuboCop to avoid bundler issues
+    3. If that fails, try `tools/lint.sh` script if it exists
 
-*   **Tip 2: JSON Formatting**
-    - When using standard Ruby Logger (fallback case), you need to manually format logs as JSON.
-    - Use `require "json"` and `JSON.generate(hash)` to create JSON strings.
-    - The logger's formatter should be set to output the JSON directly without adding extra formatting.
+*   **Tip #2 - Auto-Correction:** RuboCop supports auto-correction for many offenses. You SHOULD run:
+    - `rubocop --auto-correct-all` or `rubocop -A` to automatically fix simple style issues
+    - Then manually review and fix remaining offenses
 
-*   **Tip 3: Timestamp Format**
-    - Use ISO8601 format for timestamps: `Time.now.utc.iso8601`
-    - This is consistent with the `Payload.iso8601_timestamp` method already implemented.
+*   **Tip #3 - Expected Violations:** Based on code review, the most likely violations are:
+    - **RetryMapper module:** May have method complexity issues due to metaprogramming logic
+    - **Payload module:** May have method length issues in `iso8601_timestamp` or `enforce_payload_size!`
+    - **Configuration class:** May have method length issues in initialization
 
-*   **Tip 4: Logger Access**
-    - The configured logger is available via `ActiveJob::Temporal.config.logger`
-    - This returns either `Rails.logger` (if Rails is present) or a standard `Logger.new($stdout)`
-    - Your module should delegate to this configured logger instance.
+*   **Tip #4 - Acceptable Exceptions:** If you need to add RuboCop exceptions:
+    - **DO** use inline comments for specific violations: `# rubocop:disable Style/GuardClause`
+    - **DO** add comments explaining why the exception is needed
+    - **DO NOT** globally disable cops unless absolutely necessary
+    - **DO** keep exceptions minimal and well-justified
 
-*   **Tip 5: Testing with StringIO**
-    - To test log output without polluting STDOUT, use `StringIO`:
-      ```ruby
-      string_io = StringIO.new
-      logger = Logger.new(string_io)
-      # ... configure and use logger ...
-      output = string_io.string
-      ```
-    - Parse the JSON output and verify attributes are present.
+*   **Tip #5 - Documentation:** The current `.rubocop.yml` already disables `Style/Documentation`, so you do NOT need to add YARD comments to pass RuboCop. However, the next iteration (I1.T10) will verify coverage, so keep that in mind.
 
-*   **Tip 6: Log Levels**
-    - Standard Ruby Logger supports: `debug`, `info`, `warn`, `error`, `fatal`
-    - The task requires supporting: `info`, `warn`, `error`
-    - You can implement methods like `Logger.info(event, attrs)`, `Logger.warn(event, attrs)`, `Logger.error(event, attrs)`
-    - Or use a single `log_event(event, attrs, level: :info)` method with level parameter.
+*   **Warning #1:** The `retry_mapper.rb` file uses Ruby metaprogramming with `binding.local_variable_get`. This is inherently complex. If RuboCop complains about cyclomatic complexity or method length:
+    - First, try to refactor if possible
+    - If refactoring breaks functionality, add inline disable comments with clear justification
+    - Document that this complexity is essential for introspecting ActiveJob's retry DSL
 
-*   **Note 1: semantic_logger Detection**
-    - `semantic_logger` is NOT a declared dependency, so it will typically NOT be available in tests.
-    - Your implementation should have two code paths:
-      1. If `defined?(SemanticLogger)` returns truthy: use semantic_logger
-      2. Otherwise: use standard Logger with manual JSON formatting
-    - Your tests should primarily test the fallback path (standard Logger) since that's what will be loaded.
+*   **Warning #2:** Do NOT modify the functional logic of any files to satisfy RuboCop. Style fixes are acceptable, but breaking working code to reduce complexity is NOT. If a method is legitimately complex, use inline disable comments.
 
-*   **Note 2: Required Files in lib/activejob/temporal.rb**
-    - After creating `logger.rb`, you MUST add `require_relative "temporal/logger"` to `lib/activejob/temporal.rb`
-    - Current file requires: version, client, payload, search_attributes, retry_mapper
-    - Add logger to this list (probably after line 10, before or after retry_mapper)
+### Files Requiring Attention (Prioritized)
 
-*   **Warning: Don't Modify Configuration**
-    - The `Configuration` class already has the `logger` attribute properly configured.
-    - You should NOT modify the configuration class.
-    - Only create the new `Logger` module that uses the configured logger.
+1. **HIGH PRIORITY:** `lib/activejob/temporal/retry_mapper.rb` - Most complex, most likely to have violations
+2. **MEDIUM PRIORITY:** `lib/activejob/temporal/payload.rb` - Complex conditional logic
+3. **MEDIUM PRIORITY:** `lib/activejob/temporal.rb` - Configuration class has custom setters
+4. **LOW PRIORITY:** Other lib files - Likely clean
+5. **LOW PRIORITY:** Spec files - Already excluded from most metrics
 
-*   **Note 3: Frozen String Literals**
-    - ALL Ruby files in this project start with `# frozen_string_literal: true`
-    - This is enforced by Rubocop and improves performance.
-    - You MUST include this at the top of both implementation and test files.
+### Execution Strategy
 
-### Implementation Strategy
+1. **Run RuboCop:** First, get the complete list of offenses by running rubocop
+2. **Auto-Correct:** Run auto-correction for trivial fixes
+3. **Manual Review:** Review remaining offenses and decide:
+   - Can the code be refactored? → Refactor
+   - Is the complexity inherent? → Add inline disable with justification
+4. **Verify:** Run rubocop again to confirm zero offenses
+5. **Document:** If you added any exceptions to `.rubocop.yml`, add comments explaining why
 
-Based on the codebase patterns, here's the recommended implementation approach:
+### Success Criteria Checklist
 
-1. **Create `lib/activejob/temporal/logger.rb`:**
-   - Start with frozen string literal pragma
-   - Require `json` and `time`
-   - Define module `ActiveJob::Temporal::Logger` with `extend self`
-   - Implement public methods: `info(event, attrs)`, `warn(event, attrs)`, `error(event, attrs)`
-   - These should call a private `log_event(event, attrs, level)` method
-   - The private method should:
-     - Build a hash with `event`, `timestamp` (ISO8601), and merge custom attrs
-     - Check if SemanticLogger is available
-     - If yes: use semantic logger (you may need to research the API)
-     - If no: use `ActiveJob::Temporal.config.logger` with manual JSON formatting
+- [ ] RuboCop runs successfully (no bundler errors)
+- [ ] All auto-correctable offenses are fixed
+- [ ] All remaining offenses are either fixed or suppressed with inline comments
+- [ ] Any suppressed offenses have clear justification comments
+- [ ] `.rubocop.yml` is updated if needed (with documented reasons)
+- [ ] `rake rubocop` or equivalent exits with status 0
+- [ ] No functional logic is changed (only style fixes)
+- [ ] Code still passes existing tests (verify with `rake spec` if possible)
 
-2. **Update `lib/activejob/temporal.rb`:**
-   - Add `require_relative "temporal/logger"` after existing requires
+---
 
-3. **Create `spec/unit/logger_spec.rb`:**
-   - Follow the RSpec patterns from existing specs
-   - Test with StringIO to capture log output
-   - Verify JSON structure and attributes
-   - Test all three log levels
-   - Test with and without custom attributes
-   - Consider testing both semantic_logger (if you mock it) and fallback Logger paths
-
-4. **Run Quality Checks:**
-   - Run `rake rubocop` and fix any style issues
-   - Run `rake spec` to ensure tests pass
-   - Verify coverage is adequate (SimpleCov will report)
-
-### Code Structure Template
-
-Based on existing patterns, your logger module should look something like this structure:
-
-```ruby
-# frozen_string_literal: true
-
-require "json"
-require "time"
-
-module ActiveJob
-  module Temporal
-    module Logger
-      extend self
-
-      def info(event, attributes = {})
-        log_event(event, attributes, :info)
-      end
-
-      def warn(event, attributes = {})
-        log_event(event, attributes, :warn)
-      end
-
-      def error(event, attributes = {})
-        log_event(event, attributes, :error)
-      end
-
-      private
-
-      def log_event(event, attributes, level)
-        # Build log payload with standard attributes
-        # Check for SemanticLogger
-        # If available: use it
-        # Otherwise: use ActiveJob::Temporal.config.logger with JSON
-      end
-    end
-  end
-end
-```
-
-This structure matches the existing module patterns in the codebase and will integrate seamlessly with the rest of the system.
+**END OF BRIEFING PACKAGE**

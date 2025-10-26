@@ -202,7 +202,7 @@
     "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses); All auto-correctable offenses are fixed; Any manual fixes are applied (e.g., method complexity reduced, long lines broken); If `.rubocop.yml` is updated, changes are documented with comments explaining exceptions",
     "dependencies": ["I1.T3", "I1.T4", "I1.T5", "I1.T6", "I1.T7", "I1.T8"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I1.T10",
