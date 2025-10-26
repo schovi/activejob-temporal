@@ -221,7 +221,7 @@ The gem is built in iterative layers, with each iteration integrating new compon
 
 **Dependency Management**
 
-- **temporalio-sdk**: Core dependency, tightly coupled
+- **temporalio**: Core dependency, tightly coupled
   - **Version Pinning**: Lock to `~> 1.0` (or appropriate GA version)
   - **Testing**: Integration tests verify SDK usage (workflow, activity, client APIs)
 - **activejob**: Interface dependency, loosely coupled
@@ -244,7 +244,7 @@ The gem is built in iterative layers, with each iteration integrating new compon
 - ✅ Duplicate enqueue (same job_id) is rejected (no duplicate workflows)
 - ✅ `ActiveJob::Temporal.cancel(job_class, job_id)` cancels a running workflow
 - ✅ Search attributes (`ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`) are persisted
-- ✅ Works on Ruby 3.2+ and Rails 6.1+ with temporalio/sdk-ruby GA
+- ✅ Works on Ruby 3.2+ and Rails 6.1+ with temporalio GA
 
 **Quality Requirements (MUST PASS)**
 
@@ -356,7 +356,7 @@ All items in release checklist (I5.T7) must be marked complete before release.
 
 **Temporal Cloud**: Managed Temporal service (SaaS) with SLA guarantees, eliminating the need to self-host Temporal clusters.
 
-**Temporal SDK**: Client library for interacting with Temporal. This gem uses `temporalio/sdk-ruby` (official Ruby SDK, GA October 2025+) for workflows, activities, and client operations.
+**Temporal SDK**: Client library for interacting with Temporal. This gem uses `temporalio` (official Ruby SDK, GA October 2025+) for workflows, activities, and client operations.
 
 **Temporal Test Server**: In-memory or Docker-based Temporal server for testing. Provides full Temporal functionality without requiring a production cluster. Used in integration tests.
 

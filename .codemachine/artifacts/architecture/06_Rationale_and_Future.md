@@ -287,7 +287,7 @@ This section explores significant alternative approaches that were evaluated but
 <!-- anchor: risk-temporal-sdk-maturity -->
 #### **Risk 1: Temporal SDK Ruby Maturity**
 
-**Risk:** The `temporalio/sdk-ruby` is relatively new (GA in October 2025); may have bugs or missing features.
+**Risk:** The `temporalio` is relatively new (GA in October 2025); may have bugs or missing features.
 
 **Likelihood:** Medium (new SDK, less battle-tested than Go/Java SDKs)
 

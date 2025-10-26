@@ -69,7 +69,7 @@ This gem replaces traditional queue-based job processors (Sidekiq, Resque, Delay
 
 1. **Temporal Server Availability**: A running Temporal server (local dev or cloud) is accessible to the gem
 2. **Ruby & Rails Versions**: Target applications run Ruby >= 3.2 and Rails >= 6.1
-3. **Temporal SDK Maturity**: The `temporalio/sdk-ruby` GA release (October 2025) is stable and feature-complete
+3. **Temporal SDK Maturity**: The `temporalio` GA release (October 2025) is stable and feature-complete
 4. **Job Idempotency**: Application-level job logic is idempotent (the gem provides idempotency keys but does not enforce idempotency)
 5. **Serialization**: All job arguments are serializable via `ActiveJob::Arguments` (GlobalID support for ActiveRecord models)
 6. **Worker Deployment**: Operators will deploy and manage Temporal workers as separate processes (not auto-started by Rails)
@@ -164,14 +164,14 @@ This gem replaces traditional queue-based job processors (Sidekiq, Resque, Delay
 #### **Compatibility**
 - **Ruby 3.2+**: Required for modern Fiber scheduler and performance
 - **Rails 6.1+**: ActiveJob API compatibility
-- **Temporal SDK GA**: Requires stable `temporalio/sdk-ruby` (October 2025+)
+- **Temporal SDK GA**: Requires stable `temporalio` (October 2025+)
 
 <!-- anchor: constraints-and-preferences -->
 ### 2.3. Constraints & Preferences
 
 <!-- anchor: constraints-technological -->
 #### **Technological Constraints**
-- **Temporal SDK Ruby**: Must use official `temporalio/sdk-ruby` gem (GA release)
+- **Temporal SDK Ruby**: Must use official `temporalio` gem (GA release)
 - **ActiveJob API**: Must conform to `AbstractAdapter` interface
 - **Workflow Determinism**: No non-deterministic operations (I/O, time, random) in `AjWorkflow.execute`
 - **Activity Idempotency**: Activity code must be idempotent (retries may re-execute)

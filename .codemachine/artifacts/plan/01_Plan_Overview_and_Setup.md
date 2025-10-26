@@ -47,7 +47,7 @@ Build a production-ready Ruby gem that seamlessly integrates Rails ActiveJob wit
 **Platform & Dependencies:**
 - Ruby >= 3.2 (3.3+ recommended for Fiber scheduler performance)
 - Rails >= 6.1 (ActiveJob API compatibility)
-- Temporal SDK Ruby (`temporalio/sdk-ruby`) GA release (October 2025+) is stable
+- Temporal SDK Ruby (`temporalio`) GA release (October 2025+) is stable
 - Temporal server is accessible (local dev, Temporal Cloud, or self-hosted)
 
 **Operational Assumptions:**
@@ -101,10 +101,10 @@ The activejob-temporal gem employs a **layered adapter architecture** that bridg
 - **Language**: Ruby >= 3.2 (3.3+ preferred)
 - **Framework**: Rails >= 6.1 (ActiveJob)
 - **Orchestration Engine**: Temporal Server 1.22+
-- **Temporal SDK**: `temporalio/sdk-ruby` GA (October 2025+)
+- **Temporal SDK**: `temporalio` GA (October 2025+)
 
 **Key Dependencies:**
-- `temporalio-sdk` (required) - Temporal client, workflow, activity runtime
+- `temporalio` (required) - Temporal client, workflow, activity runtime
 - `activejob` via Rails (required) - Job abstraction, serialization, DSL
 - `globalid` via Rails (required) - Serialize ActiveRecord models as job arguments
 - `opentelemetry-sdk` (optional) - Distributed tracing spans

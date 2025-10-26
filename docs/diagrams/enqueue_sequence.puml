@@ -1,0 +1,49 @@
+@startuml
+title ActiveJob Temporal Enqueue Flow
+
+participant "Developer" as Dev
+participant "Rails App" as Rails
+participant "ActiveJob" as AJ
+participant "TemporalAdapter" as Adapter
+participant "Payload Serializer" as Payload
+participant "RetryMapper" as Retry
+participant "SearchAttributes" as Search
+participant "Temporal Client" as Client
+participant "Temporal Cluster" as Temporal
+
+alt Immediate enqueue
+  Dev -> Rails: SendInvoiceJob.perform_later(42)
+  note right of Rails: Adapter called after transaction commit
+  Rails -> AJ: enqueue(job instance)
+  AJ -> Adapter: enqueue(job)
+  Adapter -> Payload: from_job(job)
+  note right of Payload: Serializes job_class/job_id/queue/args with scheduled_at = nil
+else Scheduled enqueue via set(wait:)
+  Dev -> Rails: SendInvoiceJob.set(wait: 5.minutes).perform_later(42)
+  note right of Rails: scheduled_at stored on job payload
+  Rails -> AJ: enqueue(job scheduled)
+  AJ -> Adapter: enqueue(job)
+  Adapter -> Payload: from_job(job, scheduled_at: timestamp)
+  note right of Payload: scheduled_at recorded so workflow sleeps later
+end
+Adapter -> Retry: for(job.class)
+note right of Retry: Maps retry_on/discard_on DSL to Temporal RetryPolicy
+Adapter -> Search: for(job)
+note right of Search: Adds ajClass/ajQueue/ajJobId/ajEnqueuedAt/(optional) ajTenantId
+Adapter -> Adapter: workflow_id = "ajwf:#{job.class}:#{job.job_id}"
+Adapter -> Adapter: task_queue = ActiveJob::Temporal.config.queue_prefix + (job.queue_name || "default")
+note right of Adapter: Deterministic workflow_id + prefixed task_queue prevent duplicates and route to the correct workers
+Adapter -> Client: ActiveJob::Temporal.client.start_workflow(AjWorkflow, payload, workflow_id, task_queue, search_attributes, retry_policy, id_conflict_policy: :reject)
+activate Client
+Client -> Temporal: start_workflow(workflow_id, task_queue, payload)
+activate Temporal
+note right of Temporal: Persists AjWorkflow state and schedules first task
+Temporal --> Client: WorkflowHandle(run_id)
+deactivate Temporal
+Client --> Adapter: workflow handle
+deactivate Client
+Adapter --> AJ: job enqueued
+AJ --> Rails: enqueue success
+Rails --> Dev: job_id returned for visibility
+note over Adapter, Client: Deterministic workflow_id prevents duplicate starts
+@enduml

@@ -125,7 +125,7 @@
 <!-- anchor: task-i5-t5 -->
 *   **Task 5.5: Finalize Gemspec**
     *   **Task ID:** `I5.T5`
-    *   **Description:** Review and finalize `activejob-temporal.gemspec` with accurate metadata and dependencies. Ensure the gemspec includes: (1) **Metadata**: name ("activejob-temporal"), version (from `lib/activejob/temporal/version.rb`, should be "0.1.0"), authors, email, homepage (GitHub repo URL if public, or placeholder), summary (one-line description), description (paragraph description), license ("MIT" or "Apache-2.0"). (2) **Dependencies**: Runtime dependencies (`temporalio-sdk ~> 1.0` or appropriate version, `activejob >= 6.1`, `globalid`). Development dependencies (`rspec ~> 3.0`, `rubocop ~> 1.0`, `simplecov ~> 0.21`, `yard ~> 0.9`). (3) **Files**: Specify files to include in gem package (`lib/**/*`, `bin/temporal-worker`, `README.md`, `LICENSE`, `CHANGELOG.md`). Exclude test files and development artifacts (`spec/**/*`, `examples/**/*`, `.git*`, `coverage/`, `doc/`). (4) **Executables**: List `bin/temporal-worker` in executables. (5) **Required Ruby Version**: `>= 3.2`. Validate gemspec by running `gem build activejob-temporal.gemspec` (should succeed without errors). Install built gem locally (`gem install activejob-temporal-0.1.0.gem`) and verify it works (smoke test: `require 'activejob-temporal'` in irb).
+    *   **Description:** Review and finalize `activejob-temporal.gemspec` with accurate metadata and dependencies. Ensure the gemspec includes: (1) **Metadata**: name ("activejob-temporal"), version (from `lib/activejob/temporal/version.rb`, should be "0.1.0"), authors, email, homepage (GitHub repo URL if public, or placeholder), summary (one-line description), description (paragraph description), license ("MIT" or "Apache-2.0"). (2) **Dependencies**: Runtime dependencies (`temporalio ~> 1.0` or appropriate version, `activejob >= 6.1`, `globalid`). Development dependencies (`rspec ~> 3.0`, `rubocop ~> 1.0`, `simplecov ~> 0.21`, `yard ~> 0.9`). (3) **Files**: Specify files to include in gem package (`lib/**/*`, `bin/temporal-worker`, `README.md`, `LICENSE`, `CHANGELOG.md`). Exclude test files and development artifacts (`spec/**/*`, `examples/**/*`, `.git*`, `coverage/`, `doc/`). (4) **Executables**: List `bin/temporal-worker` in executables. (5) **Required Ruby Version**: `>= 3.2`. Validate gemspec by running `gem build activejob-temporal.gemspec` (should succeed without errors). Install built gem locally (`gem install activejob-temporal-0.1.0.gem`) and verify it works (smoke test: `require 'activejob-temporal'` in irb).
     *   **Agent Type Hint:** `SetupAgent`
     *   **Inputs:** Gemspec best practices, project metadata, dependency versions, file lists
     *   **Input Files:**
@@ -139,7 +139,7 @@
     *   **Deliverables:** Complete, valid gemspec ready for gem packaging
     *   **Acceptance Criteria:**
         - Gemspec includes all required metadata (name, version, authors, summary, description, license, homepage)
-        - Runtime dependencies are declared: `temporalio-sdk`, `activejob >= 6.1`, `globalid`
+        - Runtime dependencies are declared: `temporalio`, `activejob >= 6.1`, `globalid`
         - Development dependencies are declared: `rspec`, `rubocop`, `simplecov`, `yard`
         - Files list includes all necessary runtime files, excludes tests and dev artifacts
         - Executables includes `temporal-worker`

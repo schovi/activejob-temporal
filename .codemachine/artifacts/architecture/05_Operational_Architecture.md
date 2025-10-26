@@ -203,7 +203,7 @@ Trace ID: abc123
 **1. Dependency Scanning**
 
 - **Automated Scans**: Use `bundler-audit` or `dependabot` to detect vulnerable gems
-- **Temporal SDK**: Monitor `temporalio/sdk-ruby` security advisories
+- **Temporal SDK**: Monitor `temporalio` security advisories
 
 **2. Secrets Management**
 

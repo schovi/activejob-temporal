@@ -448,7 +448,7 @@ end
 
 **Communication Timeouts:**
 
-- **gRPC call timeout**: 10s default (configurable via `temporalio-sdk`)
+- **gRPC call timeout**: 10s default (configurable via `temporalio`)
 - **Activity start-to-close timeout**: 15 minutes default (configurable)
 - **Workflow execution timeout**: None (workflows can run indefinitely if sleeping)
 

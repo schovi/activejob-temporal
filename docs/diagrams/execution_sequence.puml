@@ -1,0 +1,66 @@
+@startuml
+title AjWorkflow + AjRunnerActivity Execution Flow
+
+participant "Temporal Cluster" as Temporal
+participant "Worker Process" as Worker
+participant "AjWorkflow" as Workflow
+participant "AjRunnerActivity" as Activity
+participant "Payload Serializer" as Payload
+participant "Job Class (SendInvoiceJob)" as Job
+participant "External API" as External
+participant "RetryMapper" as Retry
+
+Temporal -> Worker: Workflow task (AjWorkflow)
+note left of Worker: Poller thread fetches workflow + activity tasks from Temporal
+Worker -> Workflow: execute(payload, metadata)
+activate Workflow
+note right of Workflow: Input includes job_class, job_id, scheduled_at, retry policy
+
+alt scheduled_at in the future
+  Workflow -> Temporal: Workflow.sleep(delay)
+  note right of Temporal: Workflow.sleep persists state; worker thread not blocked and can process other tasks
+  Temporal --> Workflow: timer fires
+else immediate execution
+  note right of Workflow: No sleep when scheduled_at <= Workflow.now
+end
+
+Workflow -> Temporal: execute_activity(AjRunnerActivity, payload, retry_policy)
+Temporal -> Worker: Activity task (AjRunnerActivity)
+Worker -> Activity: execute(payload)
+activate Activity
+Activity -> Payload: deserialize_args(payload)
+Payload --> Activity: args/job metadata
+Activity -> Activity: set Thread.current[:aj_temporal_idempotency_key] = "ajwf:#{job_class}:#{job_id}/runner"
+note right of Activity: Idempotency key set here so job replays remain idempotent
+Activity -> Job: perform(*args)
+Job -> External: call downstream API
+External --> Job: response
+
+alt Job raises error
+  Job --> Activity: exception
+  Activity -> Retry: discard_exception?(job.class, exception)
+  note right of Retry: True => ApplicationError(non_retryable) raised
+  alt discardable error
+    Activity -> Temporal: Complete with non-retryable failure
+  else retryable error
+    Activity -> Temporal: Raise error so Temporal retries per policy
+  end
+else Success path
+  Job --> Activity: completed
+  Activity -> Temporal: complete_activity(result)
+end
+
+Activity -> Activity: ensure { Thread.current[:aj_temporal_idempotency_key] = nil }
+note right of Activity: Idempotency key cleared in ensure block to avoid leaking into other jobs
+deactivate Activity
+Temporal --> Workflow: activity result (or failure)
+alt Activity succeeded
+  Workflow -> Temporal: complete_workflow
+  note right of Workflow: Emits completion event + search attributes for visibility
+else Activity failed
+  Temporal --> Worker: schedule retry per RetryPolicy
+end
+
+deactivate Workflow
+note over Temporal, Worker: Worker polls again once task is acked
+@enduml

@@ -10,28 +10,22 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I1.T10",
-  "iteration_id": "I1",
-  "iteration_goal": "Establish project structure, dependencies, and foundational modules (configuration, client, payload handling). Generate core architecture diagrams.",
-  "description": "Run `rake spec` to execute all unit tests written in Iteration 1. Verify that SimpleCov reports >= 90% code coverage for all modules created in this iteration (Configuration, Client, Payload, RetryMapper, SearchAttributes, Logger). If coverage is below 90%, write additional tests to cover edge cases and error paths. Generate coverage report in `coverage/index.html`. Acceptance: All tests pass, coverage >= 90%.",
-  "agent_type_hint": "BackendAgent",
-  "inputs": "RSpec configuration, SimpleCov configuration, unit tests from I1.T3-I1.T8",
-  "target_files": [],
-  "input_files": [
-    "spec/spec_helper.rb",
-    "spec/unit/*.rb"
+  "task_id": "I2.T1",
+  "iteration_id": "I2",
+  "iteration_goal": "Implement the core Temporal workflow (AjWorkflow) and activity (AjRunnerActivity) that orchestrate and execute ActiveJob jobs. Generate sequence diagrams for execution flows.",
+  "description": "Create PlantUML sequence diagrams illustrating the detailed execution flows described in Section 3.7 (API Design & Communication). Generate three sequence diagrams: (1) Job Enqueue Flow (`docs/diagrams/enqueue_sequence.puml`) - showing the flow from Rails `perform_later` call → ActiveJob → TemporalAdapter → Payload serialization → Retry mapping → Search attributes → Temporal Client → Temporal Cluster workflow start. Include both immediate enqueue and scheduled enqueue (`set(wait:)`) variations. (2) Workflow & Activity Execution Flow (`docs/diagrams/execution_sequence.puml`) - showing Worker polling → AjWorkflow.execute → Workflow.sleep (if scheduled) → execute_activity → AjRunnerActivity.execute → Payload deserialization → Job instantiation → job.perform → External API call → Activity completion → Workflow completion. (3) Cancellation Flow (`docs/diagrams/cancellation_sequence.puml`) - showing Rails `cancel(job_id)` → Cancellation API → Workflow handle retrieval → handle.cancel → Temporal signal → Worker receives cancellation → Activity heartbeat → Cancellation acknowledged. Use standard PlantUML sequence diagram syntax with participants for each component. Diagrams must render without errors and accurately reflect the flows described in the plan.",
+  "agent_type_hint": "DocumentationAgent",
+  "inputs": "Section 3.7 (Key Interaction Flows: Enqueue, Execution, Cancellation), PlantUML sequence diagram syntax",
+  "target_files": [
+    "docs/diagrams/enqueue_sequence.puml",
+    "docs/diagrams/execution_sequence.puml",
+    "docs/diagrams/cancellation_sequence.puml"
   ],
-  "deliverables": "Passing test suite, coverage report >= 90%",
-  "acceptance_criteria": "`rake spec` exits with status 0 (all tests pass); SimpleCov report shows >= 90% coverage for `lib/activejob/temporal/*.rb` files; Coverage report is generated in `coverage/index.html`; No skipped or pending tests (all tests must be implemented)",
-  "dependencies": [
-    "I1.T3",
-    "I1.T4",
-    "I1.T5",
-    "I1.T6",
-    "I1.T7",
-    "I1.T8"
-  ],
-  "parallelizable": false,
+  "input_files": [],
+  "deliverables": "Three PlantUML sequence diagram files accurately depicting execution flows",
+  "acceptance_criteria": "All three diagram files exist in `docs/diagrams/`; Diagrams use PlantUML sequence diagram syntax (`participant`, `->`, `-->`, `activate`, `deactivate`, `alt`, `note`); Diagrams render without syntax errors in PlantUML processor; Enqueue sequence diagram shows: Developer → Rails App → ActiveJob → TemporalAdapter → Payload → RetryMapper → SearchAttributes → Client → Temporal Cluster, with workflow_id and task_queue resolution steps; Execution sequence diagram shows: Temporal → Worker → AjWorkflow → Temporal (sleep if scheduled) → execute_activity → Worker → AjRunnerActivity → Payload deserialization → Job class → External API → Activity complete → Workflow complete; Cancellation sequence diagram shows: Developer → Rails → CancelAPI → Client → Temporal → Worker → Activity (heartbeat) → Cancellation error → Activity cancelled; Diagrams include notes explaining key concepts (e.g., \"Worker thread not blocked during sleep\", \"Idempotency key set here\")",
+  "dependencies": [],
+  "parallelizable": true,
   "done": false
 }
 ```
@@ -42,50 +36,37 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: testing-levels (from 03_Verification_and_Glossary.md)
+### Context: Enqueue Flow Documentation (from architecture Section 3.7)
 
-```markdown
-<!-- anchor: testing-levels -->
-### 5.1. Testing Levels
+The architecture document provides complete PlantUML diagram code for the job enqueue flow. This diagram shows the interaction between Developer, Rails App, ActiveJob, TemporalAdapter, Payload Serializer, Retry Mapper, Search Attrs, Temporal Client, and Temporal Cluster. Key steps include:
+1. Developer calls `perform_later`
+2. ActiveJob creates job instance with UUID job_id
+3. Adapter serializes payload, maps retry policy, builds search attributes
+4. Workflow ID is generated as `"ajwf:#{job_class}:#{job_id}"`
+5. Task queue is resolved from job.queue_name
+6. Client calls `start_workflow` with all parameters
+7. Temporal persists workflow and returns handle
 
-The activejob-temporal gem employs a comprehensive, multi-layered testing strategy to ensure correctness, reliability, and production readiness.
+The scheduled enqueue variation shows how `scheduled_at` is passed in the payload and how the workflow starts immediately but sleeps internally.
 
-**Unit Testing (RSpec)**
+### Context: Execution Flow Documentation (from architecture Section 3.7)
 
-- **Scope**: Individual classes and modules in isolation
-- **Location**: `spec/unit/`
-- **Coverage Target**: >= 90% code coverage for each module
-- **Mocking Strategy**: Mock external dependencies (Temporal client, workflow/activity execution, job classes) to isolate logic
-- **Key Areas**:
-  - Configuration module: default values, configuration block, validation
-  - Payload serializer: round-trip serialization, GlobalID support, size limits, error handling
-  - Retry mapper: retry_on/discard_on translation, exception hierarchy handling
-  - Search attributes builder: metadata extraction, tenant handling
-  - Temporal client: memoization, connection error handling
-  - Adapter: enqueue/enqueue_at logic, workflow ID generation, task queue resolution
-  - Workflow: sleep logic (mocked), activity invocation (mocked)
-  - Activity: job instantiation, error mapping, idempotency key lifecycle
-  - Cancellation API: workflow handle retrieval, cancel call, error handling
-- **Tools**: RSpec 3.x, SimpleCov for coverage
-```
+The execution flow diagram shows Worker polling for tasks, AjWorkflow executing with optional sleep for scheduled jobs, activity execution with AjRunnerActivity, payload deserialization, job instantiation, and job.perform call. Critical details include:
+- Worker thread is NOT blocked during Workflow.sleep
+- State is persisted in Temporal during sleep
+- Idempotency key is set: `Thread.current[:aj_temporal_idempotency_key] = "ajwf:#{job_class}:#{job_id}/runner"`
+- Activity completes and reports back to Temporal
+- Workflow marks as Completed
 
-### Context: code-quality-gates (from 03_Verification_and_Glossary.md)
+Error handling sub-flows show retryable vs non-retryable exceptions using RetryMapper.discard_exception?.
 
-```markdown
-<!-- anchor: code-quality-gates -->
-### 5.3. Code Quality Gates
+### Context: Cancellation Flow Documentation (from architecture Section 3.7)
 
-Every iteration and release must pass these quality gates:
+The cancellation diagram shows the flow from `ActiveJob::Temporal.cancel(job_id)` through building the workflow_id, getting workflow handle, calling `handle.cancel`, and Temporal propagating the cancellation signal. Two scenarios are shown:
+1. Activity heartbeating: Receives CancelledError and can abort early
+2. Activity NOT heartbeating: Completes normally, workflow marked as cancelled afterward
 
-**SimpleCov (Code Coverage)**
-
-- **Trigger**: On every `rake spec` run
-- **Target**: >= 90% line coverage, >= 80% branch coverage
-- **Report**: `coverage/index.html` (HTML report with per-file breakdown)
-- **Pass Criteria**: Coverage threshold met for all `lib/` files
-- **Command**: Integrated into RSpec (configured in `spec_helper.rb`)
-- **Exclusions**: `spec/` directory, vendored dependencies
-```
+Best practice noted: Jobs should call `Temporalio::Activity.heartbeat` periodically for prompt cancellation.
 
 ---
 
@@ -93,222 +74,52 @@ Every iteration and release must pass these quality gates:
 
 The following analysis is based on my direct review of the current codebase. Use these notes and tips to guide your implementation.
 
-### Current Coverage Status
-
-Based on the latest coverage report analysis:
-- **Overall Line Coverage**: 96.75% (238/246 lines) ✅
-- **Overall Branch Coverage**: 76.4% (68/89 branches)
-- **8 lines missed**, **21 branches missed**
-
-**Per-File Coverage Breakdown:**
-
-| File | Line Coverage | Branch Coverage |
-|------|---------------|-----------------|
-| `lib/activejob/temporal.rb` | 100.00% | 100.00% |
-| `lib/activejob/temporal/client.rb` | 100.00% | 83.33% |
-| `lib/activejob/temporal/logger.rb` | 89.47% | 55.56% |
-| `lib/activejob/temporal/payload.rb` | 100.00% | 100.00% |
-| `lib/activejob/temporal/retry_mapper.rb` | 95.24% | 70.00% |
-| `lib/activejob/temporal/search_attributes.rb` | 100.00% | 83.33% |
-
 ### Relevant Existing Code
 
-*   **File:** `spec/spec_helper.rb`
-    *   **Summary:** RSpec configuration with SimpleCov integration, enabling both line and branch coverage tracking.
-    *   **Implementation:** SimpleCov is already configured and working correctly. The configuration filters out `/spec/` directory and enables branch coverage.
-    *   **Recommendation:** Do NOT modify this file. The SimpleCov setup is correct.
+*   **File:** `docs/diagrams/component_overview.puml`
+    *   **Summary:** This is an existing C4 component diagram that uses PlantUML syntax with the C4-PlantUML library. It demonstrates the project's preferred PlantUML style and provides examples of how components are named.
+    *   **Recommendation:** You SHOULD use similar PlantUML syntax for your sequence diagrams. Study the participant naming conventions (e.g., `enqueue_handler`, `workflow_orchestrator`, `payload_module`) to maintain consistency.
 
-*   **File:** `Rakefile`
-    *   **Summary:** Rake task definitions for running specs, rubocop, and yard documentation.
-    *   **Implementation:** Contains `RSpec::Core::RakeTask.new(:spec)` which is the standard way to run tests.
-    *   **Recommendation:** Use `rake spec` or the test script `./tools/test.sh` to run tests.
+*   **File:** `lib/activejob/temporal/payload.rb`
+    *   **Summary:** This module provides `from_job(job, scheduled_at: nil)` which serializes ActiveJob arguments and `deserialize_args(payload)` which converts them back. The payload structure includes `job_class`, `job_id`, `queue_name`, `arguments`, `executions`, `exception_executions`, and optionally `scheduled_at` (as ISO8601 string).
+    *   **Recommendation:** Your **enqueue sequence diagram** MUST show the adapter calling `Payload.from_job(job)`. Your **execution sequence diagram** MUST show `AjRunnerActivity` calling `Payload.deserialize_args(payload)`. These are critical integration points.
 
-*   **File:** `spec/unit/*.rb` (6 files)
-    *   **Summary:** Unit test files for Configuration, Client, Payload, RetryMapper, SearchAttributes, and Logger modules.
-    *   **Current Status:** All test files exist and are passing.
-    *   **Recommendation:** These tests need to be enhanced to achieve >= 90% branch coverage.
+*   **File:** `lib/activejob/temporal/retry_mapper.rb`
+    *   **Summary:** This module provides `for(job_class, exception = nil)` which returns a Temporal RetryPolicy hash with keys `initial_interval`, `backoff_coefficient`, `maximum_attempts`, and `non_retryable_error_types`. It also provides `discard_exception?(job_class, exception)` to check if an exception should be non-retryable.
+    *   **Recommendation:** Your **enqueue sequence diagram** MUST show the adapter calling `RetryMapper.for(job_class)`. Your **execution sequence diagram** error flow MUST show the activity calling `RetryMapper.discard_exception?(job_class, exception)` when handling errors.
+
+*   **File:** `lib/activejob/temporal/search_attributes.rb`
+    *   **Summary:** This module provides `for(job)` which builds a hash of Temporal search attributes including `ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`, and optionally `ajTenantId`.
+    *   **Recommendation:** Your **enqueue sequence diagram** MUST show the adapter calling `SearchAttributes.for(job)` before starting the workflow.
+
+*   **File:** `lib/activejob/temporal.rb`
+    *   **Summary:** This is the main entrypoint that defines the `Configuration` class and provides `ActiveJob::Temporal.config` (configuration singleton) and `ActiveJob::Temporal.client` (Temporal client singleton).
+    *   **Recommendation:** Your **enqueue sequence diagram** should show the adapter accessing `ActiveJob::Temporal.client` to call `start_workflow`.
 
 ### Implementation Tips & Notes
 
-**Coverage Gaps Identified:**
+*   **Tip:** The architecture documentation shows THREE distinct sequence diagrams. You MUST create three separate `.puml` files as specified in the task:
+    1. `docs/diagrams/enqueue_sequence.puml` - Job Enqueue Flow
+    2. `docs/diagrams/execution_sequence.puml` - Workflow & Activity Execution Flow
+    3. `docs/diagrams/cancellation_sequence.puml` - Cancellation Flow
 
-1.  **`lib/activejob/temporal/logger.rb` (89.47% line, 55.56% branch)**
-    *   **Missing Coverage:** The logger has the lowest line coverage at 89.47%.
-    *   **Branch Coverage Issue:** Only 55.56% branch coverage indicates missing test cases for conditional logic.
-    *   **Likely Gaps:**
-        - The `semantic_logger_available?` method likely has an uncovered branch (when SemanticLogger is defined)
-        - The `validate_event!` method may have uncovered edge cases (non-String/Symbol event names)
-        - The `normalize_attributes` method likely has uncovered branches (nil vs Hash vs other types)
-    *   **Action Required:** Write additional tests in `spec/unit/logger_spec.rb` to cover:
-        - Invalid event name types (Integer, Array, etc.)
-        - nil attributes handling
-        - Logger that doesn't respond to a log level
-        - SemanticLogger path (if feasible to mock)
+*   **Note:** The existing architecture documentation (Section 3.7) includes complete PlantUML diagram code blocks embedded in markdown. You MUST extract these diagrams and convert them to standalone `.puml` files. Pay close attention to:
+    - Using `@startuml` / `@enduml` delimiters
+    - Defining participants with `participant "Name" as Alias`
+    - Using activation/deactivation (`activate`, `deactivate`)
+    - Using alt blocks for conditional flows
+    - Adding explanatory notes with `note right of`, `note left of`
 
-2.  **`lib/activejob/temporal/retry_mapper.rb` (95.24% line, 70.00% branch)**
-    *   **Missing Coverage:** Needs 5% more line coverage to reach 100%.
-    *   **Branch Coverage Issue:** 70% branch coverage indicates several conditional branches are untested.
-    *   **Likely Gaps:**
-        - The `constantize_handler_class` method has exception handling that may not be tested
-        - The `:unlimited` attempts case in `attempts_from` may not be covered
-        - Edge cases in `handles_exception?` for Module vs instance comparisons
-        - The `interval_from` method's fallback for Proc/Symbol wait values
-    *   **Action Required:** Write additional tests in `spec/unit/retry_mapper_spec.rb` to cover:
-        - Jobs with `:unlimited` attempts
-        - Non-numeric/non-Duration wait values (Proc, Symbol)
-        - Invalid attempts values that trigger rescue clause
-        - NameError handling in `constantize_handler_class`
-        - Edge cases where exception is nil or job_class is nil
+*   **Tip:** The **enqueue sequence diagram** must show BOTH immediate enqueue AND scheduled enqueue variations. Use an `alt` block to distinguish between these two flows. The architecture doc shows them in separate diagrams, but the task acceptance criteria says to include both variations in one diagram for the enqueue flow.
 
-3.  **`lib/activejob/temporal/client.rb` (100% line, 83.33% branch)**
-    *   **Branch Coverage Issue:** Although line coverage is 100%, branch coverage at 83.33% indicates uncovered conditional paths.
-    *   **Likely Gaps:** TLS configuration branches or connection error branches.
-    *   **Action Required:** Review `spec/unit/client_spec.rb` to ensure all conditional branches are tested.
+*   **Warning:** The cancellation sequence diagram MUST show the workflow_id being constructed in the format `"ajwf:SendInvoiceJob:job-uuid-123"`. This is mentioned in the architecture docs and is critical for the cancellation API to work correctly. Make sure this detail is visible in your diagram.
 
-4.  **`lib/activejob/temporal/search_attributes.rb` (100% line, 83.33% branch)**
-    *   **Branch Coverage Issue:** One or more conditional branches are not covered.
-    *   **Likely Gaps:** Tenant ID extraction logic may have uncovered branches.
-    *   **Action Required:** Review `spec/unit/search_attributes_spec.rb` to cover all tenant_id extraction scenarios.
+*   **Note:** The execution sequence diagram must clearly show that `Workflow.sleep` does NOT block the worker thread. Include a note stating "Worker can process other tasks" and "State persisted in Temporal" to emphasize this critical architectural point.
 
-**Test Execution Note:**
+*   **Tip:** For the idempotency key in the execution diagram, show it being set to `Thread.current[:aj_temporal_idempotency_key] = "ajwf:SendInvoiceJob:#{job_id}/runner"` and then cleared in an ensure block. This is explicitly mentioned in the architecture docs.
 
-*   **Warning:** There is a Ruby version mismatch issue in the environment. The system default Ruby is 2.6.10, but the project requires Ruby >= 3.2.
-*   **Solution:** Use the project's bundled gems by running tests via the provided script: `./tools/test.sh` or directly with the vendored RSpec binary.
-*   **Alternative:** If `bundle exec rake spec` fails due to bundler issues, check for RVM or rbenv Ruby version management.
+*   **Note:** The cancellation diagram must show the distinction between activities that heartbeat (can be cancelled promptly) vs activities that don't heartbeat (complete normally, then workflow is marked as cancelled). Use an `alt` block to show both scenarios.
 
-**Coverage Calculation:**
+*   **Important:** The diagrams are embedded in the architecture docs as markdown code blocks starting with ~~~plantuml. You need to extract the diagram code (everything between @startuml and @enduml) and save it as standalone .puml files. Review the architecture document Section 3.7 carefully to get the complete diagram source code.
 
-To achieve the target >= 90% coverage across ALL modules:
-- **Current Overall:** 96.75% line coverage ✅ (Already exceeds 90%)
-- **Branch Coverage:** 76.4% (Below ideal 80%, but task focuses on line coverage)
-- **Action:** The task primarily requires >= 90% **line coverage**, which is already achieved at 96.75%.
-- **Improvement Goal:** Increase branch coverage from 76.4% to >= 80% by adding tests for the identified gaps.
-
-**Specific Test Additions Needed:**
-
-1.  **`spec/unit/logger_spec.rb`:**
-    ```ruby
-    # Add test for invalid event name type
-    it "raises when event_name is not a String or Symbol" do
-      expect { logger_helper.log_event(123, {}) }.to raise_error(ArgumentError, /event_name/)
-    end
-
-    # Add test for nil attributes
-    it "handles nil attributes gracefully" do
-      logger_helper.log_event("test_event", nil)
-      payload = parsed_lines.first
-      expect(payload["event"]).to eq("test_event")
-    end
-
-    # Add test for logger without log level support
-    it "returns early if logger doesn't respond to log level" do
-      allow(ruby_logger).to receive(:respond_to?).with(:info).and_return(false)
-      expect { logger_helper.info("test_event") }.not_to raise_error
-    end
-    ```
-
-2.  **`spec/unit/retry_mapper_spec.rb`:**
-    ```ruby
-    # Add test for unlimited attempts
-    it "handles :unlimited attempts" do
-      # Define job with retry_on SomeError, attempts: :unlimited
-      # Verify policy has maximum_attempts: 0
-    end
-
-    # Add test for non-numeric wait value
-    it "falls back to default for Proc wait values" do
-      # Define job with retry_on SomeError, wait: ->(executions) { executions * 30 }
-      # Verify policy uses default_retry_initial_interval
-    end
-
-    # Add test for invalid attempts value
-    it "falls back to default for invalid attempts" do
-      # Define job with retry_on SomeError, attempts: "not_a_number"
-      # Verify policy uses default_retry_max_attempts
-    end
-    ```
-
-3.  **`spec/unit/client_spec.rb`:**
-    - Review existing tests and ensure all conditional branches are covered
-    - Add tests for any TLS-related configuration branches
-
-4.  **`spec/unit/search_attributes_spec.rb`:**
-    - Review existing tests and ensure all tenant_id extraction branches are covered
-    - Add tests for jobs without tenant_id, jobs with nil tenant, etc.
-
-### Quality Gates to Pass
-
-1.  **All Tests Pass:** `rake spec` must exit with status 0
-2.  **Line Coverage >= 90%:** Already achieved at 96.75%
-3.  **Target Branch Coverage >= 80%:** Currently at 76.4%, needs improvement
-4.  **No Skipped Tests:** All tests must be implemented (no pending examples)
-5.  **Coverage Report Generated:** `coverage/index.html` must exist and be up-to-date
-
-### Recommended Execution Steps
-
-1.  **Run Current Tests:**
-    ```bash
-    ./tools/test.sh
-    ```
-    Or if that fails due to bundler issues:
-    ```bash
-    cd /Users/schovi/work/activejob-temporal
-    rspec spec/unit
-    ```
-
-2.  **Review Coverage Report:**
-    - Open `coverage/index.html` in a browser
-    - Identify exactly which lines and branches are uncovered
-    - Click on each file with < 90% coverage to see highlighted uncovered code
-
-3.  **Write Missing Tests:**
-    - Focus first on `logger_spec.rb` (89.47% → 100%)
-    - Then `retry_mapper_spec.rb` (95.24% → 100%)
-    - Then improve branch coverage in `client_spec.rb` and `search_attributes_spec.rb`
-
-4.  **Verify Coverage:**
-    - Run tests again after adding new test cases
-    - Confirm >= 90% line coverage for ALL modules
-    - Confirm >= 80% branch coverage (stretch goal)
-
-5.  **Generate Final Report:**
-    - Ensure `coverage/index.html` is regenerated with latest results
-    - Take note of final coverage percentages for acceptance verification
-
-### Success Criteria Summary
-
-✅ **Already Achieved:**
-- Overall line coverage of 96.75% exceeds the 90% target
-- All 6 core modules have tests in place
-- SimpleCov is configured and working correctly
-- All tests are currently passing (based on the existence of the coverage report)
-
-⚠️ **Needs Improvement:**
-- `logger.rb`: Increase from 89.47% to >= 90% (at least 1 more line)
-- `retry_mapper.rb`: Increase from 95.24% to >= 100% (at least 2 more lines)
-- Branch coverage: Increase from 76.4% to >= 80% (at least 4 more branches)
-
-🎯 **Final Goal:**
-- Every module in `lib/activejob/temporal/*.rb` at >= 90% line coverage
-- Overall coverage >= 90% (already achieved)
-- All tests passing
-- Coverage report generated and saved
-
----
-
-**IMPORTANT FINAL NOTE:**
-
-The task asks you to verify >= 90% coverage and write additional tests **if coverage is below 90%**. The current overall coverage of **96.75%** already exceeds this threshold. However, individual modules `logger.rb` (89.47%) and potentially others need improvement.
-
-Your task is to:
-1. Confirm tests pass by running `rake spec` or `./tools/test.sh`
-2. Identify which specific modules are below 90%
-3. Write targeted tests to bring those modules to >= 90%
-4. Verify the final coverage report shows >= 90% for all modules
-5. Ensure the coverage report is properly generated in `coverage/index.html`
-
-Focus on quality over quantity - write meaningful tests that cover real edge cases and error paths, not just dummy tests to inflate numbers.
-
----
-
-**END OF BRIEFING PACKAGE**
+*   **Style Note:** Follow the naming conventions used in the existing component diagram. Use descriptive aliases like `Dev`, `Rails`, `AJ`, `Adapter`, `Payload`, `Retry`, `Search`, `Client`, `Temporal`, `Worker`, `Workflow`, `Activity`, `Job`, `External`.

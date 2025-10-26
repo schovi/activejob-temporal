@@ -13,7 +13,7 @@
 <!-- anchor: task-i1-t1 -->
 *   **Task 1.1: Initialize Gem Structure**
     *   **Task ID:** `I1.T1`
-    *   **Description:** Create the Ruby gem skeleton with standard files and directory structure as defined in Section 3 (Directory Structure). Initialize git repository, create gemspec file with metadata (name, version, authors, dependencies), create basic Gemfile for development dependencies (rspec, rubocop, simplecov, yard, temporalio-sdk, rails). Generate initial files: `lib/activejob/temporal.rb` (entrypoint), `lib/activejob/temporal/version.rb` (version constant "0.1.0"), `lib/activejob-temporal.rb` (require entrypoint), `Rakefile` (with spec, rubocop, yard tasks), `README.md` (placeholder), `CHANGELOG.md` (placeholder), `LICENSE` (MIT), `.gitignore` (standard Ruby patterns), `.rspec` (RSpec config), `.rubocop.yml` (Rubocop config with sensible defaults).
+    *   **Description:** Create the Ruby gem skeleton with standard files and directory structure as defined in Section 3 (Directory Structure). Initialize git repository, create gemspec file with metadata (name, version, authors, dependencies), create basic Gemfile for development dependencies (rspec, rubocop, simplecov, yard, temporalio, rails). Generate initial files: `lib/activejob/temporal.rb` (entrypoint), `lib/activejob/temporal/version.rb` (version constant "0.1.0"), `lib/activejob-temporal.rb` (require entrypoint), `Rakefile` (with spec, rubocop, yard tasks), `README.md` (placeholder), `CHANGELOG.md` (placeholder), `LICENSE` (MIT), `.gitignore` (standard Ruby patterns), `.rspec` (RSpec config), `.rubocop.yml` (Rubocop config with sensible defaults).
     *   **Agent Type Hint:** `SetupAgent`
     *   **Inputs:** Section 3 (Directory Structure), Ruby gem best practices, project requirements
     *   **Input Files:** []
@@ -39,7 +39,7 @@
         - `rake spec` runs without errors (no specs yet, but RSpec loads)
         - All files listed in "Target Files" exist with valid content
         - `.gitignore` includes standard patterns (`*.gem`, `Gemfile.lock`, `.bundle/`, `coverage/`, `.yardoc/`)
-        - Gemspec declares dependencies: `temporalio-sdk`, `activejob` (>= 6.1), `globalid`
+        - Gemspec declares dependencies: `temporalio`, `activejob` (>= 6.1), `globalid`
         - Gemspec declares development dependencies: `rspec`, `rubocop`, `simplecov`, `yard`
     *   **Dependencies:** None
     *   **Parallelizable:** No (first task, establishes foundation)
@@ -98,7 +98,7 @@
     *   **Task ID:** `I1.T4`
     *   **Description:** Create `lib/activejob/temporal/client.rb` with a memoized Temporal client singleton. Implement `ActiveJob::Temporal.client` method that creates a `Temporalio::Client` connection using configuration settings (`target`, `namespace`). Support optional TLS configuration (read from env vars or config if present, but not required for v0.1 - document as optional). Ensure client is created once per process (memoized in class variable). Handle connection errors gracefully (raise descriptive error if Temporal unreachable). Write unit tests in `spec/unit/client_spec.rb` covering: client creation, memoization (second call returns same instance), configuration usage, error handling (mock unreachable Temporal server). Note: Unit tests should mock `Temporalio::Client.connect` to avoid requiring real Temporal server.
     *   **Agent Type Hint:** `BackendAgent`
-    *   **Inputs:** Section 2 (Core Architecture), temporalio-sdk Ruby documentation (Client.connect API), configuration from I1.T3
+    *   **Inputs:** Section 2 (Core Architecture), temporalio Ruby documentation (Client.connect API), configuration from I1.T3
     *   **Input Files:**
         - `lib/activejob/temporal.rb`
     *   **Target Files:**

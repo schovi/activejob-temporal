@@ -67,14 +67,14 @@ This is **not** a microservices architecture (no network-based service boundarie
 | **Language** | Ruby | >= 3.2 (3.3+ preferred) | Modern Fiber scheduler, performance improvements, Rails compatibility |
 | **Framework** | Rails (ActiveJob) | >= 6.1 | ActiveJob API stability, broad adoption, transactional callback support |
 | **Orchestration Engine** | Temporal | Server 1.22+ | Production-proven durable execution, rich observability, strong consistency |
-| **Temporal SDK** | `temporalio/sdk-ruby` | GA (Oct 2025+) | Official Ruby SDK with workflow/activity primitives, native code performance |
+| **Temporal SDK** | `temporalio` | GA (Oct 2025+) | Official Ruby SDK with workflow/activity primitives, native code performance |
 
 <!-- anchor: tech-stack-dependencies -->
 #### **Key Dependencies**
 
 | Dependency | Purpose | Required? |
 |------------|---------|-----------|
-| `temporalio-sdk` | Temporal client, workflow, activity runtime | **Yes** |
+| `temporalio` | Temporal client, workflow, activity runtime | **Yes** |
 | `activejob` (via Rails) | Job abstraction, serialization, DSL | **Yes** |
 | `globalid` (via Rails) | Serialize ActiveRecord models as job arguments | **Yes** |
 | `opentelemetry-sdk` | Distributed tracing spans | Optional |
@@ -97,8 +97,8 @@ Unlike Sidekiq/Resque/Delayed Job stacks, this gem does **NOT** require:
 | Data | Format | Library |
 |------|--------|---------|
 | **Job Arguments** | JSON (via `ActiveJob::Arguments`) | Rails built-in |
-| **Workflow Input/Output** | JSON (Temporal default) | `temporalio-sdk` |
-| **Activity Input/Output** | JSON | `temporalio-sdk` |
+| **Workflow Input/Output** | JSON (Temporal default) | `temporalio` |
+| **Activity Input/Output** | JSON | `temporalio` |
 | **Logs** | JSON (structured) | `semantic_logger` or `Logger` |
 
 **Constraint**: All job arguments must be JSON-serializable or GlobalID-compatible. Complex Ruby objects (Procs, Threads, etc.) are rejected at enqueue time.
@@ -119,7 +119,7 @@ Unlike Sidekiq/Resque/Delayed Job stacks, this gem does **NOT** require:
 | Layer | Technology | Integration Point |
 |-------|-----------|-------------------|
 | **Logging** | Rails.logger, `semantic_logger` | Gem writes structured logs to Rails logger |
-| **Tracing** | OpenTelemetry | Optional interceptor in `temporalio-sdk` |
+| **Tracing** | OpenTelemetry | Optional interceptor in `temporalio` |
 | **Metrics** | Temporal built-in metrics | Exposed via Temporal UI (v0.1); Prometheus in v0.2+ |
 | **Workflow Visibility** | Temporal Web UI | Search Attributes query interface |
 

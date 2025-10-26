@@ -1,0 +1,41 @@
+@startuml
+title ActiveJob Temporal Cancellation Flow
+
+participant "Developer" as Dev
+participant "Rails App" as Rails
+participant "Cancel API" as Cancel
+participant "Temporal Client" as Client
+participant "Temporal Cluster" as Temporal
+participant "Worker Process" as Worker
+participant "AjRunnerActivity" as Activity
+
+Dev -> Rails: ActiveJob::Temporal.cancel(job_id)
+Rails -> Cancel: cancel(job_id)
+activate Cancel
+Cancel -> Cancel: workflow_id = "ajwf:SendInvoiceJob:job-uuid-123"
+note right of Cancel: Deterministic workflow_id = "ajwf:#{job_class}:#{job_id}" ensures handle lookup
+Cancel -> Client: ActiveJob::Temporal.client.workflow_handle(AjWorkflow, workflow_id)
+note right of Client: Retrieves handle scoped to AjWorkflow + job_id
+Client -> Temporal: handle.cancel()
+note right of Client: Best-effort cancel request sent via Temporal API with reason = "user_request"
+Cancel --> Rails: request acknowledged
+Rails --> Dev: cancellation requested
+deactivate Cancel
+Temporal -> Worker: deliver cancellation signal to workflow run
+
+alt Activity heartbeating
+  Worker -> Activity: cancellation requested (signal)
+  Activity -> Temporal: Temporalio::Activity.heartbeat(details)
+  Temporal --> Activity: raises CancelledError
+  Activity -> Worker: abort job.perform and cleanup
+  Worker -> Temporal: report ActivityCancelled
+  Temporal --> Client: cancellation acknowledged
+else Activity not heartbeating
+  note right of Activity: Without heartbeat the activity may finish even after cancel signal
+  Activity --> Worker: completes work as normal
+  Worker -> Temporal: ActivityCompleted
+  Temporal -> Worker: workflow marked Cancelled after completion
+end
+
+note over Activity, Temporal: Jobs should heartbeat periodically for prompt cancellation handling
+@enduml

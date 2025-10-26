@@ -21,7 +21,7 @@ activejob-temporal — v0.1 SPEC
 1. Supported Platforms & Dependencies
 	•	Ruby >= 3.2 (3.3+ recommended for Fiber scheduler)
 	•	Rails >= 6.1 (ActiveJob)
-	•	temporalio/sdk-ruby >= GA (October 2025)
+	•	temporalio >= GA (October 2025) [gem 'temporalio']
 	•	Optional: opentelemetry-sdk for tracing; semantic_logger or logger
 
 ⸻
@@ -382,7 +382,7 @@ Integration (with test Temporal server)
 	•	✅ Duplicate enqueue (same job_id) is rejected (no duplicate workflows).
 	•	✅ ActiveJob::Temporal.cancel(job_id) cancels a running workflow.
 	•	✅ Search attributes (ajClass, ajQueue, ajJobId, ajEnqueuedAt) are persisted.
-	•	✅ Works on Ruby 3.2+ and Rails 6.1+ with temporalio/sdk-ruby GA.
+	•	✅ Works on Ruby 3.2+ and Rails 6.1+ with temporalio gem GA.
 
 ⸻
 
