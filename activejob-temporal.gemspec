@@ -32,7 +32,7 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "activejob", ">= 6.1"
   spec.add_dependency "globalid", ">= 0.3"
-  spec.add_dependency "temporalio-sdk", "~> 1.0"
+  spec.add_dependency "temporalio", ">= 1.0"
 
   spec.add_development_dependency "rake", "~> 13.2"
   spec.add_development_dependency "rspec", "~> 3.12"

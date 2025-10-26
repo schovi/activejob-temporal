@@ -3,7 +3,7 @@
     "task_id": "I2.T1",
     "iteration_id": "I2",
     "iteration_goal": "Implement the core Temporal workflow (AjWorkflow) and activity (AjRunnerActivity) that orchestrate and execute ActiveJob jobs. Generate sequence diagrams for execution flows.",
-    "description": "Create PlantUML sequence diagrams illustrating the detailed execution flows described in Section 3.7 (API Design & Communication). Generate three sequence diagrams: (1) Job Enqueue Flow (`docs/diagrams/enqueue_sequence.puml`) - showing the flow from Rails `perform_later` call → ActiveJob → TemporalAdapter → Payload serialization → Retry mapping → Search attributes → Temporal Client → Temporal Cluster workflow start. Include both immediate enqueue and scheduled enqueue (`set(wait:)`) variations. (2) Workflow & Activity Execution Flow (`docs/diagrams/execution_sequence.puml`) - showing Worker polling → AjWorkflow.execute → Workflow.sleep (if scheduled) → execute_activity → AjRunnerActivity.execute → Payload deserialization → Job instantiation → job.perform → External API call → Activity completion → Workflow completion. (3) Cancellation Flow (`docs/diagrams/cancellation_sequence.puml`) - showing Rails `cancel(job_id)` → Cancellation API → Workflow handle retrieval → handle.cancel → Temporal signal → Worker receives cancellation → Activity heartbeat → Cancellation acknowledged. Use standard PlantUML sequence diagram syntax with participants for each component. Diagrams must render without errors and accurately reflect the flows described in the plan.",
+    "description": "Create PlantUML sequence diagrams illustrating the detailed execution flows described in Section 3.7 (API Design & Communication). Generate three sequence diagrams: (1) Job Enqueue Flow (`docs/diagrams/enqueue_sequence.puml`) - showing the flow from Rails `perform_later` call \u2192 ActiveJob \u2192 TemporalAdapter \u2192 Payload serialization \u2192 Retry mapping \u2192 Search attributes \u2192 Temporal Client \u2192 Temporal Cluster workflow start. Include both immediate enqueue and scheduled enqueue (`set(wait:)`) variations. (2) Workflow & Activity Execution Flow (`docs/diagrams/execution_sequence.puml`) - showing Worker polling \u2192 AjWorkflow.execute \u2192 Workflow.sleep (if scheduled) \u2192 execute_activity \u2192 AjRunnerActivity.execute \u2192 Payload deserialization \u2192 Job instantiation \u2192 job.perform \u2192 External API call \u2192 Activity completion \u2192 Workflow completion. (3) Cancellation Flow (`docs/diagrams/cancellation_sequence.puml`) - showing Rails `cancel(job_id)` \u2192 Cancellation API \u2192 Workflow handle retrieval \u2192 handle.cancel \u2192 Temporal signal \u2192 Worker receives cancellation \u2192 Activity heartbeat \u2192 Cancellation acknowledged. Use standard PlantUML sequence diagram syntax with participants for each component. Diagrams must render without errors and accurately reflect the flows described in the plan.",
     "agent_type_hint": "DocumentationAgent",
     "inputs": "Section 3.7 (Key Interaction Flows: Enqueue, Execution, Cancellation), PlantUML sequence diagram syntax",
     "target_files": [
@@ -13,7 +13,7 @@
     ],
     "input_files": [],
     "deliverables": "Three PlantUML sequence diagram files accurately depicting execution flows",
-    "acceptance_criteria": "All three diagram files exist in `docs/diagrams/`; Diagrams use PlantUML sequence diagram syntax (`participant`, `->`, `-->`, `activate`, `deactivate`, `alt`, `note`); Diagrams render without syntax errors in PlantUML processor; Enqueue sequence diagram shows: Developer → Rails App → ActiveJob → TemporalAdapter → Payload → RetryMapper → SearchAttributes → Client → Temporal Cluster, with workflow_id and task_queue resolution steps; Execution sequence diagram shows: Temporal → Worker → AjWorkflow → Temporal (sleep if scheduled) → execute_activity → Worker → AjRunnerActivity → Payload deserialization → Job class → External API → Activity complete → Workflow complete; Cancellation sequence diagram shows: Developer → Rails → CancelAPI → Client → Temporal → Worker → Activity (heartbeat) → Cancellation error → Activity cancelled; Diagrams include notes explaining key concepts (e.g., \"Worker thread not blocked during sleep\", \"Idempotency key set here\")",
+    "acceptance_criteria": "All three diagram files exist in `docs/diagrams/`; Diagrams use PlantUML sequence diagram syntax (`participant`, `->`, `-->`, `activate`, `deactivate`, `alt`, `note`); Diagrams render without syntax errors in PlantUML processor; Enqueue sequence diagram shows: Developer \u2192 Rails App \u2192 ActiveJob \u2192 TemporalAdapter \u2192 Payload \u2192 RetryMapper \u2192 SearchAttributes \u2192 Client \u2192 Temporal Cluster, with workflow_id and task_queue resolution steps; Execution sequence diagram shows: Temporal \u2192 Worker \u2192 AjWorkflow \u2192 Temporal (sleep if scheduled) \u2192 execute_activity \u2192 Worker \u2192 AjRunnerActivity \u2192 Payload deserialization \u2192 Job class \u2192 External API \u2192 Activity complete \u2192 Workflow complete; Cancellation sequence diagram shows: Developer \u2192 Rails \u2192 CancelAPI \u2192 Client \u2192 Temporal \u2192 Worker \u2192 Activity (heartbeat) \u2192 Cancellation error \u2192 Activity cancelled; Diagrams include notes explaining key concepts (e.g., \"Worker thread not blocked during sleep\", \"Idempotency key set here\")",
     "dependencies": [],
     "parallelizable": true,
     "done": true
@@ -35,9 +35,12 @@
     ],
     "deliverables": "Working `AjWorkflow` class, passing unit tests covering workflow logic",
     "acceptance_criteria": "`AjWorkflow` class exists and inherits from `Temporalio::Workflow::Definition` (or equivalent); `execute(payload)` method is defined; If `payload['scheduled_at']` is present and future, `Workflow.sleep` is called with correct duration (scheduled_at - Workflow.now); If `payload['scheduled_at']` is nil or past, no sleep is called; After sleep (or immediately), `Workflow.execute_activity(AjRunnerActivity, payload, ...)` is called; Activity timeout is set to `config.default_activity_timeout`; Workflow code contains no I/O, randomness, or direct system time calls (only `Workflow.now`, `Workflow.sleep`, `Workflow.execute_activity`); Unit tests verify sleep behavior (mock `Workflow.sleep` and assert it's called with expected duration); Unit tests verify activity execution (mock `Workflow.execute_activity` and assert correct parameters); `rake spec` passes for aj_workflow_spec.rb; Code passes `rake rubocop`",
-    "dependencies": ["I1.T3", "I1.T5"],
+    "dependencies": [
+      "I1.T3",
+      "I1.T5"
+    ],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I2.T3",
@@ -56,15 +59,18 @@
     ],
     "deliverables": "Working `AjRunnerActivity` class, passing unit tests covering activity logic and error handling",
     "acceptance_criteria": "`AjRunnerActivity` class exists and inherits from `Temporalio::Activity::Definition` (or equivalent); `execute(payload)` method is defined; `Payload.deserialize_args(payload)` is called to extract job arguments; Job class is constantized from `payload['job_class']`; Idempotency key is set before job execution: `Thread.current[:aj_temporal_idempotency_key]` contains workflow_id + \"/runner\"; Job is instantiated and `perform(*args)` is called; Idempotency key is cleared in ensure block (even if exception raised); If job raises exception matching `discard_on`, it's re-raised as `ApplicationError(non_retryable: true)`; If job raises other exception, it's re-raised as-is (retryable); Unit tests verify: successful execution, idempotency key set/cleared, retryable exception handling, non-retryable exception handling; Unit tests mock job classes and `RetryMapper.discard_exception?` to avoid dependencies; `rake spec` passes for aj_runner_activity_spec.rb; Code passes `rake rubocop`",
-    "dependencies": ["I1.T5", "I1.T6"],
+    "dependencies": [
+      "I1.T5",
+      "I1.T6"
+    ],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I2.T4",
     "iteration_id": "I2",
     "iteration_goal": "Implement the core Temporal workflow (AjWorkflow) and activity (AjRunnerActivity) that orchestrate and execute ActiveJob jobs. Generate sequence diagrams for execution flows.",
-    "description": "Create a helper method in `lib/activejob/temporal/adapter.rb` (or a separate helper module) for building deterministic workflow IDs. Implement `build_workflow_id(job)` method that returns a string in format `\"ajwf:#{job.class.name}:#{job.job_id}\"`. This ensures idempotent enqueue (same job_id → same workflow_id → Temporal rejects duplicate via `:reject` conflict policy). Write unit tests in `spec/unit/adapter_spec.rb` (this spec will be expanded in I3) covering: workflow ID format, determinism (same job → same ID), uniqueness across job classes. This is a small helper but critical for deduplication.",
+    "description": "Create a helper method in `lib/activejob/temporal/adapter.rb` (or a separate helper module) for building deterministic workflow IDs. Implement `build_workflow_id(job)` method that returns a string in format `\"ajwf:#{job.class.name}:#{job.job_id}\"`. This ensures idempotent enqueue (same job_id \u2192 same workflow_id \u2192 Temporal rejects duplicate via `:reject` conflict policy). Write unit tests in `spec/unit/adapter_spec.rb` (this spec will be expanded in I3) covering: workflow ID format, determinism (same job \u2192 same ID), uniqueness across job classes. This is a small helper but critical for deduplication.",
     "agent_type_hint": "BackendAgent",
     "inputs": "Section 3.7 (Interaction Flow - Workflow ID Generation), ActiveJob job structure",
     "target_files": [
@@ -94,7 +100,9 @@
     ],
     "deliverables": "Working task queue resolver, passing unit tests",
     "acceptance_criteria": "`resolve_task_queue(job)` returns task queue string; If `job.queue_name` is \"billing\" and `config.task_queue_prefix` is nil, returns \"billing\"; If `job.queue_name` is \"billing\" and `config.task_queue_prefix` is \"prod-\", returns \"prod-billing\"; If `job.queue_name` is nil, returns \"default\" (or \"prod-default\" with prefix); Unit tests cover all scenarios: with prefix, without prefix, nil queue_name, explicit queue_name; `rake spec` passes for adapter_spec.rb; Code passes `rake rubocop`",
-    "dependencies": ["I1.T3"],
+    "dependencies": [
+      "I1.T3"
+    ],
     "parallelizable": true,
     "done": false
   },
@@ -125,7 +133,12 @@
     ],
     "deliverables": "Clean code passing Rubocop checks",
     "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses); All auto-correctable offenses are fixed; Any manual fixes are applied; If `.rubocop.yml` is updated, changes are documented",
-    "dependencies": ["I2.T2", "I2.T3", "I2.T4", "I2.T5"],
+    "dependencies": [
+      "I2.T2",
+      "I2.T3",
+      "I2.T4",
+      "I2.T5"
+    ],
     "parallelizable": false,
     "done": false
   },
@@ -145,7 +158,12 @@
     ],
     "deliverables": "Passing test suite, coverage report >= 90%",
     "acceptance_criteria": "`rake spec` exits with status 0 (all tests pass); SimpleCov report shows >= 90% coverage for `lib/activejob/temporal/workflows/*.rb`, `lib/activejob/temporal/activities/*.rb`, and adapter helpers; Coverage report is generated in `coverage/index.html`; No skipped or pending tests",
-    "dependencies": ["I2.T2", "I2.T3", "I2.T4", "I2.T5"],
+    "dependencies": [
+      "I2.T2",
+      "I2.T3",
+      "I2.T4",
+      "I2.T5"
+    ],
     "parallelizable": false,
     "done": false
   }
