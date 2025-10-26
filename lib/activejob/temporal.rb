@@ -6,6 +6,7 @@ require "active_support/core_ext/numeric/time"
 require_relative "temporal/version"
 require_relative "temporal/client"
 require_relative "temporal/payload"
+require_relative "temporal/search_attributes"
 require_relative "temporal/retry_mapper"
 
 module ActiveJob
