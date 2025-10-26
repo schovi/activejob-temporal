@@ -9,6 +9,7 @@ require_relative "temporal/logger"
 require_relative "temporal/payload"
 require_relative "temporal/search_attributes"
 require_relative "temporal/retry_mapper"
+require_relative "temporal/workflows/aj_workflow"
 
 module ActiveJob
   module Temporal
