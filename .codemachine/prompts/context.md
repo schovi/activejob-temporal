@@ -10,25 +10,22 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I1.T6",
+  "task_id": "I1.T8",
   "iteration_id": "I1",
   "iteration_goal": "Establish project structure, dependencies, and foundational modules (configuration, client, payload handling). Generate core architecture diagrams.",
-  "description": "Create `lib/activejob/temporal/retry_mapper.rb` with logic to translate ActiveJob's `retry_on` and `discard_on` declarations to Temporal's `RetryPolicy` hash. Implement `RetryMapper.for(job_class)` method that inspects the job class's metadata (ActiveJob stores retry_on/discard_on in class-level instance variables or similar - research ActiveJob internals), extracts retry parameters (wait, attempts, exceptions), and returns a hash with keys: `initial_interval` (from `retry_on wait:` or config default), `backoff_coefficient` (config default 2.0), `maximum_attempts` (from `retry_on attempts:` or config default 1), `non_retryable_error_types` (array of exception class names from `discard_on`). Implement `RetryMapper.discard_exception?(job_class, exception)` method that returns true if the exception or its ancestors match any `discard_on` declarations. Handle multiple `retry_on` declarations: use the first matching exception by ancestry order. Write unit tests in `spec/unit/retry_mapper_spec.rb` covering: default retry policy (no retry_on/discard_on), single retry_on with wait and attempts, multiple retry_on declarations (precedence), discard_on mapping to non_retryable_error_types, discard_exception? method with exception hierarchies. Create sample jobs with various retry configurations in `spec/fixtures/sample_jobs.rb`.",
+  "description": "Create `lib/activejob/temporal/logger.rb` with a structured logging helper. Implement `Logger.log_event(event_name, attributes = {})` method that writes JSON-formatted logs to `ActiveJob::Temporal.config.logger`. Include standard attributes in every log: `event` (event_name), `timestamp` (ISO8601), plus any custom attributes passed. Support log levels: `info`, `warn`, `error`. If `semantic_logger` gem is available, use it; otherwise fall back to standard Ruby Logger with manual JSON formatting. Write unit tests in `spec/unit/logger_spec.rb` covering: log output format (JSON), standard attributes presence, custom attributes, different log levels. This is a helper module used by other components, so extensive testing is not required (basic coverage is sufficient).",
   "agent_type_hint": "BackendAgent",
-  "inputs": "Section 2 (Core Architecture - Retry Policy), Section 3.6 (Retry Policy structure), ActiveJob retry DSL documentation (retry_on/discard_on internals), configuration from I1.T3",
+  "inputs": "Section 3.8.2 (Logging Strategy), semantic_logger gem documentation (optional), Ruby Logger documentation",
   "target_files": [
-    "lib/activejob/temporal/retry_mapper.rb",
-    "spec/unit/retry_mapper_spec.rb",
-    "spec/fixtures/sample_jobs.rb"
+    "lib/activejob/temporal/logger.rb",
+    "spec/unit/logger_spec.rb"
   ],
   "input_files": [
     "lib/activejob/temporal.rb"
   ],
-  "deliverables": "Working retry mapper, passing unit tests (100% coverage for retry mapper module), sample jobs with diverse retry configurations",
-  "acceptance_criteria": "`RetryMapper.for(SimpleJob)` returns default retry policy if no retry_on/discard_on declared; Default retry policy hash: `{initial_interval: 30, backoff_coefficient: 2.0, maximum_attempts: 1, non_retryable_error_types: []}`; `RetryMapper.for(RetryableJob)` with `retry_on SomeError, wait: 60, attempts: 5` returns `{initial_interval: 60, ..., maximum_attempts: 5, ...}`; `RetryMapper.for(DiscardableJob)` with `discard_on FatalError` returns `{..., non_retryable_error_types: [\"FatalError\"]}`; `RetryMapper.discard_exception?(DiscardableJob, FatalError.new)` returns true; `RetryMapper.discard_exception?(DiscardableJob, StandardError.new)` returns false (if FatalError not ancestor of StandardError); Multiple retry_on: First matching exception by ancestry determines policy; Unit tests cover edge cases: exception inheritance, no retry_on but has discard_on, etc.; `rake spec` passes for retry_mapper_spec.rb; Code passes `rake rubocop`",
-  "dependencies": [
-    "I1.T3"
-  ],
+  "deliverables": "Working logger helper, passing unit tests (basic coverage), support for JSON-formatted logs",
+  "acceptance_criteria": "`Logger.log_event(\"workflow_enqueued\", {workflow_id: \"abc123\"})` writes a JSON log line to configured logger; Log includes: `{\"event\": \"workflow_enqueued\", \"timestamp\": \"2025-10-25T12:00:00Z\", \"workflow_id\": \"abc123\"}`; Supports log levels: `Logger.info(event, attrs)`, `Logger.warn(event, attrs)`, `Logger.error(event, attrs)`; If `semantic_logger` is available (detected via `defined?(SemanticLogger)`), use it; otherwise use stdlib Logger; Unit tests verify JSON structure and attribute presence (use StringIO or similar to capture log output); `rake spec` passes for logger_spec.rb; Code passes `rake rubocop`",
+  "dependencies": ["I1.T3"],
   "parallelizable": true,
   "done": false
 }
@@ -40,55 +37,69 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: Retry Policy Structure (from 03_System_Structure_and_Data.md)
+### Context: Logging Strategy (from 05_Operational_Architecture.md)
 
-**3. Retry Policy (Activity Configuration)**
+```markdown
+##### **Logging Strategy**
 
-Derived from ActiveJob's `retry_on`/`discard_on` DSL and passed to `execute_activity`.
+**Structured Logging (JSON Format)**
 
-| Field | Type | Source | Example |
-|-------|------|--------|---------|
-| `initial_interval` | Duration | `retry_on wait:` or config default | `30.seconds` |
-| `backoff_coefficient` | Float | Config default (2.0) | `2.0` |
-| `maximum_attempts` | Integer | `retry_on attempts:` or config default | `5` |
-| `non_retryable_error_types` | Array<String> | `discard_on` exception classes | `["PSP::FatalError"]` |
+The gem emits structured logs to `Rails.logger` (configurable via `ActiveJob::Temporal.config.logger`).
 
-**4. Configuration (Gem Settings)**
+**Log Events & Attributes:**
 
-Stored in `ActiveJob::Temporal.config` singleton.
+| Event | Level | Attributes | Example |
+|-------|-------|------------|---------|
+| **Workflow Enqueued** | `info` | `workflow_id`, `run_id`, `job_class`, `job_id`, `queue`, `scheduled_at` (optional) | `{"event": "workflow_enqueued", "workflow_id": "ajwf:SendInvoiceJob:abc123", ...}` |
+| **Activity Started** | `info` | `workflow_id`, `run_id`, `activity_id`, `job_class`, `attempt` | `{"event": "activity_started", "attempt": 1, ...}` |
+| **Activity Completed** | `info` | `workflow_id`, `duration_ms`, `job_class` | `{"event": "activity_completed", "duration_ms": 1234, ...}` |
+| **Activity Failed** | `error` | `workflow_id`, `attempt`, `exception_class`, `exception_message`, `backtrace` (first 5 lines) | `{"event": "activity_failed", "exception_class": "PSP::TransientError", ...}` |
+| **Activity Retry** | `warn` | `workflow_id`, `attempt`, `next_retry_interval`, `exception_class` | `{"event": "activity_retry", "attempt": 2, "next_retry_interval": 60, ...}` |
+| **Cancellation Requested** | `warn` | `workflow_id`, `job_id`, `reason` (optional) | `{"event": "cancellation_requested", ...}` |
+| **Cancellation Acknowledged** | `info` | `workflow_id`, `activity_id` | `{"event": "cancellation_acknowledged", ...}` |
+| **Payload Size Warning** | `warn` | `job_class`, `payload_size_kb`, `limit_kb` | `{"event": "payload_size_warning", "payload_size_kb": 200, ...}` |
+| **Serialization Error** | `error` | `job_class`, `job_id`, `exception_class`, `exception_message` | `{"event": "serialization_error", ...}` |
 
-| Setting | Type | Default | Purpose |
-|---------|------|---------|---------|
-| `default_retry_initial_interval` | Duration | `30.seconds` | Retry initial delay |
-| `default_retry_backoff` | Float | `2.0` | Exponential backoff factor |
-| `default_retry_max_attempts` | Integer | `1` | Max retry attempts if no `retry_on` |
+**Logger Configuration:**
 
-### Context: ActiveJob retry_on/discard_on DSL Internals
+```ruby
+# config/initializers/activejob_temporal.rb
+ActiveJob::Temporal.configure do |c|
+  c.logger = SemanticLogger['ActiveJobTemporal'] # or Rails.logger
+end
+```
 
-From analyzing ActiveJob source code (`vendor/bundle/ruby/3.3.0/gems/activejob-8.1.0/lib/active_job/exceptions.rb`):
+**Best Practices:**
 
-**The `retry_on` method:**
-- Signature: `retry_on(*exceptions, wait: 3.seconds, attempts: 5, queue: nil, priority: nil, jitter: 0.15, report: false)`
-- Internally calls `rescue_from(*exceptions) { ... }` to register handlers
-- Handler logic is embedded in a block/closure that's not easily inspectable
-- Default values: `wait: 3.seconds`, `attempts: 5`
-- Supports `:unlimited` attempts
-- Supports proc for dynamic wait calculation: `wait: ->(executions) { ... }`
+- **Include Correlation IDs**: Always log `workflow_id` and `run_id` for traceability
+- **Redact Sensitive Data**: Do not log job arguments directly (may contain PII); log argument count or types only
+- **Use Semantic Logger**: Recommended for JSON output + tagging support
+```
 
-**The `discard_on` method:**
-- Signature: `discard_on(*exceptions, report: false)`
-- Also uses `rescue_from(*exceptions) { ... }` internally
-- Silently discards the job (no re-raise)
-- Can have optional block for custom handling
+### Context: Task I1.T8 Details (from 02_Iteration_I1.md)
 
-**Storage mechanism:**
-- Both methods use `rescue_from` from `ActiveSupport::Rescuable`
-- Handlers stored in `rescue_handlers` class attribute (inherited array)
-- Format: `[[exception_class_name_string, handler_proc], ...]`
-- Search order: "from bottom to top, and up the class hierarchy"
-- First matching handler where `exception.is_a?(klass)` is invoked
-
-**CRITICAL CHALLENGE:** The `wait:` and `attempts:` parameters are captured in the handler proc's closure and **cannot be easily extracted** via introspection. The task description says "research ActiveJob internals" - after research, this is **not feasibly extractable** without fragile Ruby metaprogramming.
+```markdown
+*   **Task 1.8: Implement Logger Helper**
+    *   **Task ID:** `I1.T8`
+    *   **Description:** Create `lib/activejob/temporal/logger.rb` with a structured logging helper. Implement `Logger.log_event(event_name, attributes = {})` method that writes JSON-formatted logs to `ActiveJob::Temporal.config.logger`. Include standard attributes in every log: `event` (event_name), `timestamp` (ISO8601), plus any custom attributes passed. Support log levels: `info`, `warn`, `error`. If `semantic_logger` gem is available, use it; otherwise fall back to standard Ruby Logger with manual JSON formatting. Write unit tests in `spec/unit/logger_spec.rb` covering: log output format (JSON), standard attributes presence, custom attributes, different log levels. This is a helper module used by other components, so extensive testing is not required (basic coverage is sufficient).
+    *   **Agent Type Hint:** `BackendAgent`
+    *   **Inputs:** Section 3.8.2 (Logging Strategy), semantic_logger gem documentation (optional), Ruby Logger documentation
+    *   **Input Files:**
+        - `lib/activejob/temporal.rb`
+    *   **Target Files:**
+        - `lib/activejob/temporal/logger.rb`
+        - `spec/unit/logger_spec.rb`
+    *   **Deliverables:** Working logger helper, passing unit tests (basic coverage), support for JSON-formatted logs
+    *   **Acceptance Criteria:**
+        - `Logger.log_event("workflow_enqueued", {workflow_id: "abc123"})` writes a JSON log line to configured logger
+        - Log includes: `{"event": "workflow_enqueued", "timestamp": "2025-10-25T12:00:00Z", "workflow_id": "abc123"}`
+        - Supports log levels: `Logger.info(event, attrs)`, `Logger.warn(event, attrs)`, `Logger.error(event, attrs)`
+        - If `semantic_logger` is available (detected via `defined?(SemanticLogger)`), use it; otherwise use stdlib Logger
+        - Unit tests verify JSON structure and attribute presence (use StringIO or similar to capture log output)
+        - `rake spec` passes for logger_spec.rb
+        - Code passes `rake rubocop`
+    *   **Dependencies:** I1.T3 (configuration module must exist for logger reference)
+```
 
 ---
 
@@ -99,175 +110,166 @@ The following analysis is based on my direct review of the current codebase. Use
 ### Relevant Existing Code
 
 *   **File:** `lib/activejob/temporal.rb`
-    *   **Summary:** Main module containing the Configuration class with retry-related settings already implemented.
-    *   **Recommendation:** You MUST access configuration defaults via `ActiveJob::Temporal.config`:
-        - `config.default_retry_initial_interval` → Duration object (responds to `.to_f` for seconds)
-        - `config.default_retry_backoff` → `2.0` (Float)
-        - `config.default_retry_max_attempts` → `1` (Integer)
-    *   **Note:** The `default_retry_initial_interval` is validated to be positive and is a duration (e.g., `30.seconds`). You'll need to convert to seconds using `.to_f`.
+    *   **Summary:** This is the main entry point module defining the `ActiveJob::Temporal` namespace. It contains the `Configuration` class with logging configuration already set up (`config.logger` defaults to `Rails.logger` if available, otherwise `Logger.new($stdout)`).
+    *   **Recommendation:** Your logger module MUST use `ActiveJob::Temporal.config.logger` to write logs. This is already available and configured.
+    *   **Key Detail:** The configuration module uses `attr_accessor :logger` and initializes it via the `default_logger` private method at lines 60-66.
 
-*   **File:** `spec/fixtures/sample_jobs.rb`
-    *   **Summary:** Contains a mock `ApplicationJob` base class and basic job fixtures (`SimpleJob`, `ScheduledJob`).
-    *   **Recommendation:** You MUST extend this file with new job classes demonstrating retry/discard patterns:
-        - `RetryableJob` (with `retry_on`)
-        - `DiscardableJob` (with `discard_on`)
-        - `MultiRetryJob` (with multiple `retry_on` declarations)
-        - Jobs inheriting from real `ActiveJob::Base` OR simulating `rescue_handlers`
-    *   **Warning:** The mock `ApplicationJob` doesn't include ActiveJob::Base behavior. For testing `rescue_handlers`, you'll need to either use real ActiveJob::Base or manually simulate the `rescue_handlers` class attribute.
+*   **File:** `lib/activejob/temporal/payload.rb`
+    *   **Summary:** This file implements the `Payload` module using `extend self` pattern (module-level methods). It follows the pattern: freeze string literals, require dependencies at top, module body with public methods first, then private methods.
+    *   **Recommendation:** You SHOULD follow the same module structure pattern for consistency:
+        - Start with `# frozen_string_literal: true`
+        - Require necessary dependencies (`json`, `time`)
+        - Use `module Payload; extend self` pattern for module-level methods
+        - Place public methods first, private methods last
 
-*   **File:** `vendor/bundle/ruby/3.3.0/gems/activejob-8.1.0/lib/active_job/exceptions.rb`
-    *   **Summary:** ActiveJob source implementing `retry_on` and `discard_on` via `rescue_from`.
-    *   **Recommendation:** You CANNOT easily extract `wait:` and `attempts:` parameters from the handler procs stored in `rescue_handlers`. The handlers are closures containing retry logic but no metadata.
-    *   **Alternative Approach:** Access `rescue_handlers` to identify WHICH exceptions are registered, but accept that you cannot determine the specific retry parameters from them.
+*   **File:** `spec/unit/configuration_spec.rb`
+    *   **Summary:** This test demonstrates the project's RSpec testing patterns and conventions.
+    *   **Recommendation:** Follow these testing patterns:
+        - Use `# frozen_string_literal: true` at the top
+        - Use `require "spec_helper"`
+        - Use `RSpec.describe` with the module/class name
+        - Use `before` blocks to reset state (e.g., clearing instance variables)
+        - Use clear descriptive test names with `it "does something specific"`
+        - Use `expect(...).to` syntax (not `should`)
+        - Use `double(:logger)` or `instance_double` for mocking
 
-*   **File:** `vendor/bundle/ruby/3.3.0/gems/activesupport-8.1.0/lib/active_support/rescuable.rb`
-    *   **Summary:** Defines `rescue_from` and the `rescue_handlers` class attribute.
-    *   **Recommendation:** The `rescue_handlers` array format is `[[exception_class_name, handler], ...]`. Exception class name is a String (e.g., `"StandardError"`). The array is ordered oldest-to-newest, but ActiveJob searches in reverse ("bottom to top").
+*   **File:** `spec/spec_helper.rb`
+    *   **Summary:** Configures RSpec with SimpleCov for coverage tracking. Coverage must be enabled with branch coverage.
+    *   **Recommendation:** No changes needed. Your tests will automatically be included in coverage reporting.
 
-### Implementation Strategy - RECOMMENDED APPROACH
-
-Given the architectural constraints discovered during codebase analysis, I recommend a **pragmatic v0.1 implementation**:
-
-**For `RetryMapper.for(job_class)`:**
-1. **Return DEFAULT retry policy** for all jobs
-2. Rationale: The task requires extracting `wait:` and `attempts:` from `retry_on`, but ActiveJob stores these in closures that cannot be introspected reliably
-3. Default return value:
-   ```ruby
-   {
-     initial_interval: config.default_retry_initial_interval.to_f,  # 30.0 seconds
-     backoff_coefficient: config.default_retry_backoff,  # 2.0
-     maximum_attempts: config.default_retry_max_attempts,  # 1
-     non_retryable_error_types: extract_discard_on_exceptions(job_class)
-   }
-   ```
-4. Future enhancement (v0.2): Support custom DSL or metadata attribute for per-job retry config
-
-**For `RetryMapper.discard_exception?(job_class, exception)`:**
-1. **Access `rescue_handlers`** to find registered exception classes
-2. Check if exception or any ancestor matches a discard_on handler
-3. This is feasible because we can inspect which exceptions are registered, even if we can't see the handler parameters
-
-**Helper method to extract discard_on exceptions:**
-```ruby
-def extract_discard_on_exceptions(job_class)
-  return [] unless job_class.respond_to?(:rescue_handlers)
-
-  # Get all registered exception class names from rescue_handlers
-  # Note: We cannot distinguish retry_on from discard_on handlers programmatically
-  # For v0.1, we'll need a different approach or accept this limitation
-  []
-end
-```
+*   **File:** `activejob-temporal.gemspec`
+    *   **Summary:** Lists all dependencies. `semantic_logger` is NOT included as a dependency (neither runtime nor development).
+    *   **Recommendation:** Since `semantic_logger` is not a dependency, your implementation MUST gracefully detect its absence and fall back to standard Ruby Logger. Use `defined?(SemanticLogger)` to check availability.
 
 ### Implementation Tips & Notes
 
-*   **Module Pattern:** Use the same pattern as existing modules:
-    ```ruby
-    module ActiveJob
-      module Temporal
-        module RetryMapper
-          extend self
+*   **Tip 1: Module Pattern**
+    - All existing modules in this project use the `module X; extend self` pattern for module-level methods.
+    - This allows calling methods like `Payload.from_job(...)` instead of instance methods.
+    - You SHOULD follow this pattern for `Logger` module.
 
-          def for(job_class)
-            # implementation
-          end
+*   **Tip 2: JSON Formatting**
+    - When using standard Ruby Logger (fallback case), you need to manually format logs as JSON.
+    - Use `require "json"` and `JSON.generate(hash)` to create JSON strings.
+    - The logger's formatter should be set to output the JSON directly without adding extra formatting.
 
-          def discard_exception?(job_class, exception)
-            # implementation
-          end
-        end
-      end
-    end
-    ```
+*   **Tip 3: Timestamp Format**
+    - Use ISO8601 format for timestamps: `Time.now.utc.iso8601`
+    - This is consistent with the `Payload.iso8601_timestamp` method already implemented.
 
-*   **Configuration Access:** Always use `ActiveJob::Temporal.config` to get defaults:
-    ```ruby
-    config = ActiveJob::Temporal.config
-    initial_interval: config.default_retry_initial_interval.to_f
-    ```
+*   **Tip 4: Logger Access**
+    - The configured logger is available via `ActiveJob::Temporal.config.logger`
+    - This returns either `Rails.logger` (if Rails is present) or a standard `Logger.new($stdout)`
+    - Your module should delegate to this configured logger instance.
 
-*   **Duration Conversion:** The config returns ActiveSupport::Duration objects. Convert to seconds (Float):
-    ```ruby
-    30.seconds.to_f  # => 30.0
-    15.minutes.to_f  # => 900.0
-    ```
+*   **Tip 5: Testing with StringIO**
+    - To test log output without polluting STDOUT, use `StringIO`:
+      ```ruby
+      string_io = StringIO.new
+      logger = Logger.new(string_io)
+      # ... configure and use logger ...
+      output = string_io.string
+      ```
+    - Parse the JSON output and verify attributes are present.
 
-*   **Testing with Mock Jobs:** In `spec/fixtures/sample_jobs.rb`, you can simulate `rescue_handlers`:
-    ```ruby
-    class RetryableJob < ApplicationJob
-      class << self
-        def rescue_handlers
-          [["CustomError", proc { }]]
-        end
-      end
-    end
-    ```
+*   **Tip 6: Log Levels**
+    - Standard Ruby Logger supports: `debug`, `info`, `warn`, `error`, `fatal`
+    - The task requires supporting: `info`, `warn`, `error`
+    - You can implement methods like `Logger.info(event, attrs)`, `Logger.warn(event, attrs)`, `Logger.error(event, attrs)`
+    - Or use a single `log_event(event, attrs, level: :info)` method with level parameter.
 
-*   **Testing with Real ActiveJob:** Alternatively, test with real ActiveJob::Base jobs if dependencies allow:
-    ```ruby
-    require 'active_job'
-    class RealRetryJob < ActiveJob::Base
-      retry_on CustomError, wait: 60, attempts: 5
-    end
-    ```
+*   **Note 1: semantic_logger Detection**
+    - `semantic_logger` is NOT a declared dependency, so it will typically NOT be available in tests.
+    - Your implementation should have two code paths:
+      1. If `defined?(SemanticLogger)` returns truthy: use semantic_logger
+      2. Otherwise: use standard Logger with manual JSON formatting
+    - Your tests should primarily test the fallback path (standard Logger) since that's what will be loaded.
 
-*   **Edge Cases to Handle:**
-    - Job class is `nil`
-    - Job class doesn't respond to `rescue_handlers`
-    - Empty `rescue_handlers` array
-    - Exception inheritance chains (e.g., `CustomError < StandardError`)
-    - Parent class has `retry_on`, child inherits it
+*   **Note 2: Required Files in lib/activejob/temporal.rb**
+    - After creating `logger.rb`, you MUST add `require_relative "temporal/logger"` to `lib/activejob/temporal.rb`
+    - Current file requires: version, client, payload, search_attributes, retry_mapper
+    - Add logger to this list (probably after line 10, before or after retry_mapper)
 
-*   **Return Value Format:** Based on architecture docs, return seconds as Float/Integer, not Duration objects:
-    ```ruby
-    {
-      initial_interval: 30,  # NOT 30.seconds
-      backoff_coefficient: 2.0,
-      maximum_attempts: 1,
-      non_retryable_error_types: ["FatalError", "CustomError"]
-    }
-    ```
+*   **Warning: Don't Modify Configuration**
+    - The `Configuration` class already has the `logger` attribute properly configured.
+    - You should NOT modify the configuration class.
+    - Only create the new `Logger` module that uses the configured logger.
 
-### Known Limitations & Future Enhancements
+*   **Note 3: Frozen String Literals**
+    - ALL Ruby files in this project start with `# frozen_string_literal: true`
+    - This is enforced by Rubocop and improves performance.
+    - You MUST include this at the top of both implementation and test files.
 
-**v0.1 Limitations:**
-- Cannot extract custom retry parameters (`wait:`, `attempts:`) from `retry_on` declarations
-- Returns default retry policy for all jobs
-- Cannot distinguish `retry_on` from `discard_on` handlers programmatically
+### Implementation Strategy
 
-**Recommended Documentation:**
-Add code comments explaining:
+Based on the codebase patterns, here's the recommended implementation approach:
+
+1. **Create `lib/activejob/temporal/logger.rb`:**
+   - Start with frozen string literal pragma
+   - Require `json` and `time`
+   - Define module `ActiveJob::Temporal::Logger` with `extend self`
+   - Implement public methods: `info(event, attrs)`, `warn(event, attrs)`, `error(event, attrs)`
+   - These should call a private `log_event(event, attrs, level)` method
+   - The private method should:
+     - Build a hash with `event`, `timestamp` (ISO8601), and merge custom attrs
+     - Check if SemanticLogger is available
+     - If yes: use semantic logger (you may need to research the API)
+     - If no: use `ActiveJob::Temporal.config.logger` with manual JSON formatting
+
+2. **Update `lib/activejob/temporal.rb`:**
+   - Add `require_relative "temporal/logger"` after existing requires
+
+3. **Create `spec/unit/logger_spec.rb`:**
+   - Follow the RSpec patterns from existing specs
+   - Test with StringIO to capture log output
+   - Verify JSON structure and attributes
+   - Test all three log levels
+   - Test with and without custom attributes
+   - Consider testing both semantic_logger (if you mock it) and fallback Logger paths
+
+4. **Run Quality Checks:**
+   - Run `rake rubocop` and fix any style issues
+   - Run `rake spec` to ensure tests pass
+   - Verify coverage is adequate (SimpleCov will report)
+
+### Code Structure Template
+
+Based on existing patterns, your logger module should look something like this structure:
+
 ```ruby
-# NOTE: v0.1 returns default retry policy for all jobs.
-# Custom per-job retry configuration (wait:, attempts:) will be
-# supported in v0.2 via a dedicated metadata attribute.
-# See: https://github.com/org/activejob-temporal/issues/X
+# frozen_string_literal: true
+
+require "json"
+require "time"
+
+module ActiveJob
+  module Temporal
+    module Logger
+      extend self
+
+      def info(event, attributes = {})
+        log_event(event, attributes, :info)
+      end
+
+      def warn(event, attributes = {})
+        log_event(event, attributes, :warn)
+      end
+
+      def error(event, attributes = {})
+        log_event(event, attributes, :error)
+      end
+
+      private
+
+      def log_event(event, attributes, level)
+        # Build log payload with standard attributes
+        # Check for SemanticLogger
+        # If available: use it
+        # Otherwise: use ActiveJob::Temporal.config.logger with JSON
+      end
+    end
+  end
+end
 ```
 
-**Future v0.2 Approach:**
-- Introduce custom class attribute for retry metadata:
-  ```ruby
-  class MyJob < ActiveJob::Base
-    temporal_retry wait: 60, attempts: 5
-    temporal_discard_on FatalError
-  end
-  ```
-- Store metadata in accessible class attribute instead of closures
-
-### Testing Strategy
-
-1. **Default Policy Test:** Job with no `retry_on`/`discard_on` → returns default hash
-2. **Discard Exception Test:** Job with `discard_on FatalError` → `discard_exception?(job, FatalError.new)` returns `true`
-3. **Exception Hierarchy Test:** Job discards `StandardError` → `discard_exception?(job, RuntimeError.new)` returns `true` (RuntimeError < StandardError)
-4. **Nil Job Class:** Handles gracefully without raising exception
-5. **Mock vs Real Jobs:** Test both simulated `rescue_handlers` and real ActiveJob::Base if possible
-
-### Required Action Items
-
-1. Create `lib/activejob/temporal/retry_mapper.rb` with module implementation
-2. Create `spec/unit/retry_mapper_spec.rb` with comprehensive tests
-3. Extend `spec/fixtures/sample_jobs.rb` with retry/discard job examples
-4. Add `require_relative "temporal/retry_mapper"` to `lib/activejob/temporal.rb`
-5. Document v0.1 limitations in code comments
-6. Ensure test coverage >= 90% (SimpleCov)
-7. Pass Rubocop style checks
+This structure matches the existing module patterns in the codebase and will integrate seamlessly with the rest of the system.

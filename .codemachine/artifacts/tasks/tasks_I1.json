@@ -149,7 +149,7 @@
     "acceptance_criteria": "`SearchAttributes.for(job)` returns a hash with at minimum: `{ajClass: \"SendInvoiceJob\", ajQueue: \"billing\", ajJobId: \"uuid-123\", ajEnqueuedAt: Time.now}`; `ajEnqueuedAt` is a Time object (Temporal Datetime type); If job has a tenant context (e.g., first argument responds to :tenant_id), `ajTenantId` is included: `{..., ajTenantId: \"tenant-456\"}`; If no tenant context, `ajTenantId` is either omitted or nil (check Temporal SDK behavior); Unit tests cover all scenarios: basic job, job with tenant, job without tenant; `docs/configuration_reference.md` includes a new section \"Search Attributes\" explaining: purpose, list of attributes (ajClass, ajQueue, ajJobId, ajEnqueuedAt, ajTenantId), how to query in Temporal UI, and requirement to pre-register attributes in Temporal cluster (`tctl admin cluster add-search-attributes` command example); `rake spec` passes for search_attributes_spec.rb; Code passes `rake rubocop`",
     "dependencies": ["I1.T1"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I1.T8",
@@ -169,7 +169,7 @@
     "acceptance_criteria": "`Logger.log_event(\"workflow_enqueued\", {workflow_id: \"abc123\"})` writes a JSON log line to configured logger; Log includes: `{\"event\": \"workflow_enqueued\", \"timestamp\": \"2025-10-25T12:00:00Z\", \"workflow_id\": \"abc123\"}`; Supports log levels: `Logger.info(event, attrs)`, `Logger.warn(event, attrs)`, `Logger.error(event, attrs)`; If `semantic_logger` is available (detected via `defined?(SemanticLogger)`), use it; otherwise use stdlib Logger; Unit tests verify JSON structure and attribute presence (use StringIO or similar to capture log output); `rake spec` passes for logger_spec.rb; Code passes `rake rubocop`",
     "dependencies": ["I1.T3"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I1.T9",

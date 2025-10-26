@@ -5,6 +5,7 @@ require "active_support/core_ext/numeric/time"
 
 require_relative "temporal/version"
 require_relative "temporal/client"
+require_relative "temporal/logger"
 require_relative "temporal/payload"
 require_relative "temporal/search_attributes"
 require_relative "temporal/retry_mapper"
@@ -61,7 +62,7 @@ module ActiveJob
         if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
           Rails.logger
         else
-          Logger.new($stdout)
+          ::Logger.new($stdout)
         end
       end
     end
