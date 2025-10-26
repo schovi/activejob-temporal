@@ -67,7 +67,7 @@
     "acceptance_criteria": "`ActiveJob::Temporal.configure { |c| c.target = \"localhost:7233\" }` sets configuration; `ActiveJob::Temporal.config.target` returns configured value; Default values are applied when configuration block not called; All configuration attributes are readable and writable; Unit tests cover all configuration attributes and edge cases (nil values, invalid types); `rake spec` passes for configuration_spec.rb; `docs/configuration_reference.md` lists all 9 configuration options with descriptions, types, defaults, and usage examples; Documentation is in Markdown format and passes `markdownlint` (if linter configured)",
     "dependencies": ["I1.T1"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I1.T4",
@@ -87,7 +87,7 @@
     "acceptance_criteria": "`ActiveJob::Temporal.client` returns a `Temporalio::Client` instance (or mock in tests); Calling `ActiveJob::Temporal.client` twice returns the same instance (memoization works); Client uses `config.target` and `config.namespace` from configuration module; If `Temporalio::Client.connect` fails (mocked connection error), a descriptive error is raised; Unit tests use mocking/stubbing to avoid real Temporal connections; `rake spec` passes for client_spec.rb; Code passes `rake rubocop` without offenses",
     "dependencies": ["I1.T3"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I1.T5",

@@ -17,6 +17,5 @@ _yardoc/
 doc/
 .rspec_status
 .DS_Store
-.codemachine/
 .codemachine/memory/
 node_modules/

@@ -4,6 +4,7 @@ require "logger"
 require "active_support/core_ext/numeric/time"
 
 require_relative "temporal/version"
+require_relative "temporal/client"
 
 module ActiveJob
   module Temporal
@@ -65,6 +66,12 @@ module ActiveJob
         @config ||= Configuration.new
       end
       alias configuration config
+
+      # Returns the memoized Temporal client connection for the process.
+      # TLS options can be provided via configuration or ENV variables (see Client module).
+      def client
+        @client ||= Client.build(config)
+      end
 
       def configure
         return config unless block_given?

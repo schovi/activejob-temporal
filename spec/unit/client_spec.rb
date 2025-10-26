@@ -1,0 +1,90 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+
+RSpec.describe ActiveJob::Temporal, ".client" do
+  let(:tls_env_keys) do
+    %w[TEMPORAL_TLS_CERT TEMPORAL_TLS_KEY TEMPORAL_TLS_SERVER_NAME]
+  end
+
+  before do
+    described_class.instance_variable_set(:@client, nil)
+    described_class.instance_variable_set(:@config, nil)
+    stub_const("Temporalio::Client", class_double("Temporalio::Client"))
+  end
+
+  around do |example|
+    original_env = {}
+    tls_env_keys.each do |key|
+      original_env[key] = ENV.fetch(key, nil)
+      ENV.delete(key)
+    end
+
+    example.run
+  ensure
+    original_env.each do |key, value|
+      if value.nil?
+        ENV.delete(key)
+      else
+        ENV[key] = value
+      end
+    end
+  end
+
+  it "creates a Temporal client using configuration values" do
+    described_class.configure do |config|
+      config.target = "localhost:7233"
+      config.namespace = "custom"
+    end
+
+    client_instance = instance_double("Temporalio::Client")
+    expect(Temporalio::Client).to receive(:connect).with(
+      target: "localhost:7233",
+      namespace: "custom"
+    ).and_return(client_instance)
+
+    expect(described_class.client).to be(client_instance)
+  end
+
+  it "memoizes the client instance" do
+    configured_client = instance_double("Temporalio::Client")
+    allow(Temporalio::Client).to receive(:connect).and_return(configured_client)
+
+    first_call = described_class.client
+    second_call = described_class.client
+
+    expect(first_call).to be(second_call)
+    expect(Temporalio::Client).to have_received(:connect).once
+  end
+
+  it "passes optional TLS options when provided via environment variables" do
+    ENV["TEMPORAL_TLS_CERT"] = "cert-data"
+    ENV["TEMPORAL_TLS_KEY"] = "key-data"
+    ENV["TEMPORAL_TLS_SERVER_NAME"] = "temporal.example.dev"
+
+    client_instance = instance_double("Temporalio::Client")
+    expect(Temporalio::Client).to receive(:connect) do |kwargs|
+      expect(kwargs[:tls]).to eq(
+        certificate: "cert-data",
+        private_key: "key-data",
+        server_name: "temporal.example.dev"
+      )
+      client_instance
+    end
+
+    expect(described_class.client).to be(client_instance)
+  end
+
+  it "wraps connection errors in ActiveJob::Temporal::Error" do
+    described_class.configure do |config|
+      config.target = "1.2.3.4:7233"
+      config.namespace = "production"
+    end
+
+    allow(Temporalio::Client).to receive(:connect).and_raise(StandardError, "unreachable")
+
+    expect do
+      described_class.client
+    end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal at 1\.2\.3\.4:7233/)
+  end
+end
