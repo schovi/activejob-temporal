@@ -128,7 +128,7 @@
     "acceptance_criteria": "`RetryMapper.for(SimpleJob)` returns default retry policy if no retry_on/discard_on declared; Default retry policy hash: `{initial_interval: 30, backoff_coefficient: 2.0, maximum_attempts: 1, non_retryable_error_types: []}`; `RetryMapper.for(RetryableJob)` with `retry_on SomeError, wait: 60, attempts: 5` returns `{initial_interval: 60, ..., maximum_attempts: 5, ...}`; `RetryMapper.for(DiscardableJob)` with `discard_on FatalError` returns `{..., non_retryable_error_types: [\"FatalError\"]}`; `RetryMapper.discard_exception?(DiscardableJob, FatalError.new)` returns true; `RetryMapper.discard_exception?(DiscardableJob, StandardError.new)` returns false (if FatalError not ancestor of StandardError); Multiple retry_on: First matching exception by ancestry determines policy; Unit tests cover edge cases: exception inheritance, no retry_on but has discard_on, etc.; `rake spec` passes for retry_mapper_spec.rb; Code passes `rake rubocop`",
     "dependencies": ["I1.T3"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I1.T7",
