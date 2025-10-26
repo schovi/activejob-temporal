@@ -52,6 +52,30 @@ RSpec.describe ActiveJob::Temporal::Payload do
       expect(payload[:scheduled_at]).to eq(iso_string)
     end
 
+    it "coerces scheduled_at values that respond to to_time" do
+      base_time = Time.utc(2024, 11, 10, 9, 30, 0)
+      to_time_only = Class.new do
+        def initialize(time)
+          @time = time
+        end
+
+        def to_time
+          @time
+        end
+      end
+
+      payload = described_class.from_job(job, scheduled_at: to_time_only.new(base_time))
+
+      expect(payload[:scheduled_at]).to eq(base_time.iso8601)
+    end
+
+    it "raises when scheduled_at string is not ISO8601" do
+      invalid_timestamp = "20/10/2024 12:00"
+
+      expect { described_class.from_job(job, scheduled_at: invalid_timestamp) }
+        .to raise_error(ArgumentError, /convertible to Time/)
+    end
+
     it "raises when serialized payload exceeds configured size limit" do
       large_argument = "x" * 2048
       big_job = SimpleJob.new([large_argument])

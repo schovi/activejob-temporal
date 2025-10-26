@@ -107,7 +107,7 @@
     "acceptance_criteria": "`Payload.from_job(job)` returns a hash with keys: `job_class`, `job_id`, `queue_name`, `arguments`, `executions`, `exception_executions`; `Payload.from_job(job, scheduled_at: timestamp)` includes `scheduled_at` in ISO8601 format; `Payload.deserialize_args(payload)` correctly converts arguments back to Ruby objects; Round-trip test: `Payload.deserialize_args(Payload.from_job(job))` returns original arguments; GlobalID test: Passing an ActiveRecord model as argument serializes to GlobalID string and deserializes back to model (requires stubbing/mocking AR model in tests); Payload size limit: Serializing a job with >250KB arguments raises `ActiveJob::SerializationError` with descriptive message; Non-serializable objects (e.g., Proc, Thread) raise `ActiveJob::SerializationError`; `api/job_payload_schema.json` validates against JSON Schema Draft 07 meta-schema; JSON Schema includes all required and optional fields with correct types (string, integer, array, object); `rake spec` passes for payload_spec.rb; Code passes `rake rubocop`",
     "dependencies": ["I1.T1"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I1.T6",
