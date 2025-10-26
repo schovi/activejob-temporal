@@ -1,0 +1,19 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ActiveJob Temporal Payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["job_class", "job_id", "queue_name", "arguments"],
+  "properties": {
+    "job_class": { "type": "string" },
+    "job_id": { "type": "string" },
+    "queue_name": { "type": "string" },
+    "arguments": { "type": "array" },
+    "executions": { "type": "integer", "minimum": 0 },
+    "exception_executions": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "scheduled_at": { "type": "string", "format": "date-time" }
+  }
+}

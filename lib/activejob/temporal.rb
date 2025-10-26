@@ -5,6 +5,7 @@ require "active_support/core_ext/numeric/time"
 
 require_relative "temporal/version"
 require_relative "temporal/client"
+require_relative "temporal/payload"
 
 module ActiveJob
   module Temporal
@@ -17,7 +18,8 @@ module ActiveJob
                     :default_retry_backoff,
                     :default_retry_max_attempts,
                     :logger,
-                    :enable_tracing
+                    :enable_tracing,
+                    :max_payload_size_kb
 
       attr_reader :default_activity_timeout, :default_retry_initial_interval
 
@@ -31,6 +33,7 @@ module ActiveJob
         @default_retry_max_attempts = 1
         @logger = default_logger
         @enable_tracing = true
+        @max_payload_size_kb = 250
       end
 
       def default_activity_timeout=(value)

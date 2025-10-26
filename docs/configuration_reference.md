@@ -15,6 +15,7 @@
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
 | `logger` | `Logger` | `Rails.logger` (if available) or `Logger.new($stdout)` | Destination for adapter log output. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
+| `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 
 ## Usage Examples
 
@@ -29,6 +30,7 @@ ActiveJob::Temporal.configure do |config|
   config.default_retry_backoff = 1.5
   config.default_retry_max_attempts = 5
   config.enable_tracing = false
+  config.max_payload_size_kb = 512
 end
 ```
 
