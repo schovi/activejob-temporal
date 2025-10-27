@@ -2,7 +2,7 @@
   "metadata": {
     "title": "activejob-temporal System Architecture Blueprint",
     "version": "1.0",
-    "generated_date": "2025-10-25",
+    "generated_date": "2025-10-27",
     "description": "Comprehensive architecture blueprint for the activejob-temporal Ruby gem, including context, drivers, structure, behavior, operations, and future evolution."
   },
   "locations": [
@@ -58,43 +58,43 @@
       "key": "nfr-reliability",
       "file": "01_Context_and_Drivers.md",
       "start_anchor": "<!-- anchor: nfr-reliability -->",
-      "description": "Reliability requirements for at-least-once execution and durable state"
-    },
-    {
-      "key": "nfr-scalability",
-      "file": "01_Context_and_Drivers.md",
-      "start_anchor": "<!-- anchor: nfr-scalability -->",
-      "description": "Scalability requirements for horizontal worker scaling and task queue partitioning"
-    },
-    {
-      "key": "nfr-observability",
-      "file": "01_Context_and_Drivers.md",
-      "start_anchor": "<!-- anchor: nfr-observability -->",
-      "description": "Observability requirements for logging, search attributes, and tracing"
-    },
-    {
-      "key": "nfr-maintainability",
-      "file": "01_Context_and_Drivers.md",
-      "start_anchor": "<!-- anchor: nfr-maintainability -->",
-      "description": "Maintainability requirements for clean architecture and testability"
-    },
-    {
-      "key": "nfr-security",
-      "file": "01_Context_and_Drivers.md",
-      "start_anchor": "<!-- anchor: nfr-security -->",
-      "description": "Security requirements for payload size limits and safe serialization"
+      "description": "Reliability requirements for fault tolerance and durable execution"
     },
     {
       "key": "nfr-performance",
       "file": "01_Context_and_Drivers.md",
       "start_anchor": "<!-- anchor: nfr-performance -->",
-      "description": "Performance requirements for non-blocking scheduling and efficient serialization"
+      "description": "Performance targets for minimal adapter overhead and efficient execution"
     },
     {
-      "key": "nfr-compatibility",
+      "key": "nfr-scalability",
       "file": "01_Context_and_Drivers.md",
-      "start_anchor": "<!-- anchor: nfr-compatibility -->",
-      "description": "Compatibility requirements for Ruby, Rails, and Temporal SDK versions"
+      "start_anchor": "<!-- anchor: nfr-scalability -->",
+      "description": "Scalability requirements for horizontal worker scaling and high-throughput workloads"
+    },
+    {
+      "key": "nfr-observability",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-observability -->",
+      "description": "Observability requirements for logging, metrics, tracing, and search capabilities"
+    },
+    {
+      "key": "nfr-maintainability",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-maintainability -->",
+      "description": "Maintainability goals for clean architecture, testability, and documentation"
+    },
+    {
+      "key": "nfr-security",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-security -->",
+      "description": "Security requirements for payload safety, encryption, and access control"
+    },
+    {
+      "key": "nfr-usability",
+      "file": "01_Context_and_Drivers.md",
+      "start_anchor": "<!-- anchor: nfr-usability -->",
+      "description": "Developer experience goals for minimal learning curve and clear error messages"
     },
     {
       "key": "constraints-and-preferences",
@@ -103,28 +103,28 @@
       "description": "Technical, organizational, and operational constraints affecting design"
     },
     {
-      "key": "constraints-technological",
+      "key": "technological-constraints",
       "file": "01_Context_and_Drivers.md",
-      "start_anchor": "<!-- anchor: constraints-technological -->",
-      "description": "Technology constraints including Temporal SDK, ActiveJob API, and determinism"
+      "start_anchor": "<!-- anchor: technological-constraints -->",
+      "description": "Technology constraints for Ruby/Rails versions, Temporal SDK, and serialization"
     },
     {
-      "key": "constraints-organizational",
+      "key": "deployment-constraints",
       "file": "01_Context_and_Drivers.md",
-      "start_anchor": "<!-- anchor: constraints-organizational -->",
-      "description": "Organizational constraints for Rails conventions and gem distribution"
+      "start_anchor": "<!-- anchor: deployment-constraints -->",
+      "description": "Deployment constraints for worker processes, Temporal access, and database transactions"
     },
     {
-      "key": "constraints-operational",
+      "key": "organizational-constraints",
       "file": "01_Context_and_Drivers.md",
-      "start_anchor": "<!-- anchor: constraints-operational -->",
-      "description": "Operational constraints for worker deployment and resource limits"
+      "start_anchor": "<!-- anchor: organizational-constraints -->",
+      "description": "Organizational constraints for open source distribution and versioning"
     },
     {
-      "key": "preferences-design",
+      "key": "design-preferences",
       "file": "01_Context_and_Drivers.md",
-      "start_anchor": "<!-- anchor: preferences-design -->",
-      "description": "Design preferences favoring simplicity, convention over configuration, and explicit APIs"
+      "start_anchor": "<!-- anchor: design-preferences -->",
+      "description": "Design preferences favoring explicitness, fail-fast, and Rails conventions"
     },
     {
       "key": "proposed-architecture",
