@@ -10,32 +10,21 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I2.T6",
+  "task_id": "I2.T7",
   "iteration_id": "I2",
   "iteration_goal": "Implement the core Temporal workflow (AjWorkflow) and activity (AjRunnerActivity) that orchestrate and execute ActiveJob jobs. Generate sequence diagrams for execution flows.",
-  "description": "Run `rake rubocop` on all code written in Iteration 2 (workflows, activities, adapter helpers). Fix any Rubocop offenses. Ensure code adheres to Ruby style guide. Update `.rubocop.yml` if needed with justified exceptions. Acceptance: `rake rubocop` passes with zero offenses.",
+  "description": "Run `rake spec` to execute all unit tests for Iteration 2 (workflows, activities, adapter helpers). Verify SimpleCov reports >= 90% code coverage for all new modules. If coverage is below 90%, write additional tests. Generate coverage report. Acceptance: All tests pass, coverage >= 90%.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "Rubocop configuration, code from I2.T2-I2.T5",
-  "target_files": [
-    "lib/activejob/temporal/workflows/aj_workflow.rb",
-    "lib/activejob/temporal/activities/aj_runner_activity.rb",
-    "lib/activejob/temporal/adapter.rb",
-    "spec/unit/workflows/*.rb",
-    "spec/unit/activities/*.rb",
-    "spec/unit/adapter_spec.rb",
-    ".rubocop.yml"
-  ],
+  "inputs": "RSpec configuration, SimpleCov, unit tests from I2.T2-I2.T5",
+  "target_files": [],
   "input_files": [
-    "lib/activejob/temporal/workflows/aj_workflow.rb",
-    "lib/activejob/temporal/activities/aj_runner_activity.rb",
-    "lib/activejob/temporal/adapter.rb",
+    "spec/spec_helper.rb",
     "spec/unit/workflows/*.rb",
     "spec/unit/activities/*.rb",
-    "spec/unit/adapter_spec.rb",
-    ".rubocop.yml"
+    "spec/unit/adapter_spec.rb"
   ],
-  "deliverables": "Clean code passing Rubocop checks",
-  "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses); All auto-correctable offenses are fixed; Any manual fixes are applied; If `.rubocop.yml` is updated, changes are documented",
+  "deliverables": "Passing test suite, coverage report >= 90%",
+  "acceptance_criteria": "`rake spec` exits with status 0 (all tests pass); SimpleCov report shows >= 90% coverage for `lib/activejob/temporal/workflows/*.rb`, `lib/activejob/temporal/activities/*.rb`, and adapter helpers; Coverage report is generated in `coverage/index.html`; No skipped or pending tests",
   "dependencies": [
     "I2.T2",
     "I2.T3",
@@ -52,50 +41,6 @@ This is the full specification of the task you must complete.
 ## 2. Architectural & Planning Context
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
-
-### Context: code-quality-gates (from 03_Verification_and_Glossary.md)
-
-```markdown
-### 5.3. Code Quality Gates
-
-**Rubocop (Linting & Style)**
-
-- **Configuration**: `.rubocop.yml` with project-specific rules
-- **Enforcement**: CI fails on any offenses (zero-tolerance policy)
-- **Auto-Correction**: Run `rubocop -A` to auto-fix safe offenses
-- **Custom Rules**:
-  - Max line length: 120 characters (configurable)
-  - Max method complexity: 10 (cyclomatic complexity)
-  - Enforce Ruby 3.2+ syntax features
-- **Exclusions**: `spec/fixtures/` (sample jobs may intentionally violate style for testing)
-```
-
-### Context: task-i2-t6 (from 02_Iteration_I2.md)
-
-```markdown
-*   **Task 2.6: Run Rubocop and Fix Style Issues**
-    *   **Task ID:** `I2.T6`
-    *   **Description:** Run `rake rubocop` on all code written in Iteration 2 (workflows, activities, adapter helpers). Fix any Rubocop offenses. Ensure code adheres to Ruby style guide. Update `.rubocop.yml` if needed with justified exceptions. Acceptance: `rake rubocop` passes with zero offenses.
-    *   **Agent Type Hint:** `BackendAgent`
-    *   **Inputs:** Rubocop configuration, code from I2.T2-I2.T5
-    *   **Input Files:**
-        - `lib/activejob/temporal/workflows/aj_workflow.rb`
-        - `lib/activejob/temporal/activities/aj_runner_activity.rb`
-        - `lib/activejob/temporal/adapter.rb`
-        - `spec/unit/workflows/*.rb`
-        - `spec/unit/activities/*.rb`
-        - `spec/unit/adapter_spec.rb`
-        - `.rubocop.yml`
-    *   **Target Files:** All Ruby files in `lib/activejob/temporal/workflows/`, `lib/activejob/temporal/activities/`, `lib/activejob/temporal/adapter.rb`, and corresponding specs (updated with style fixes)
-    *   **Deliverables:** Clean code passing Rubocop checks
-    *   **Acceptance Criteria:**
-        - `rake rubocop` exits with status 0 (zero offenses)
-        - All auto-correctable offenses are fixed
-        - Any manual fixes are applied
-        - If `.rubocop.yml` is updated, changes are documented
-    *   **Dependencies:** I2.T2, I2.T3, I2.T4, I2.T5 (all code must be written)
-    *   **Parallelizable:** No (must run after all code is written)
-```
 
 ### Context: testing-levels (from 03_Verification_and_Glossary.md)
 
@@ -123,6 +68,43 @@ The activejob-temporal gem employs a comprehensive, multi-layered testing strate
 - **Tools**: RSpec 3.x, SimpleCov for coverage
 ```
 
+### Context: code-quality-gates (from 03_Verification_and_Glossary.md)
+
+```markdown
+### 5.3. Code Quality Gates
+
+**SimpleCov (Code Coverage)**
+
+- **Threshold**: >= 90% coverage (combined unit + integration)
+- **Enforcement**: CI fails if coverage drops below threshold
+- **Exclusions**: `spec/` directory (test code not counted in coverage)
+- **Reports**: HTML report in `coverage/index.html`, uploaded to Codecov (optional)
+```
+
+### Context: task-i2-t7 (from 02_Iteration_I2.md)
+
+```markdown
+*   **Task 2.7: Run Unit Tests and Verify Coverage**
+    *   **Task ID:** `I2.T7`
+    *   **Description:** Run `rake spec` to execute all unit tests for Iteration 2 (workflows, activities, adapter helpers). Verify SimpleCov reports >= 90% code coverage for all new modules. If coverage is below 90%, write additional tests. Generate coverage report. Acceptance: All tests pass, coverage >= 90%.
+    *   **Agent Type Hint:** `BackendAgent`
+    *   **Inputs:** RSpec configuration, SimpleCov, unit tests from I2.T2-I2.T5
+    *   **Input Files:**
+        - `spec/spec_helper.rb`
+        - `spec/unit/workflows/*.rb`
+        - `spec/unit/activities/*.rb`
+        - `spec/unit/adapter_spec.rb`
+    *   **Target Files:** None (verification task, generates coverage report)
+    *   **Deliverables:** Passing test suite, coverage report >= 90%
+    *   **Acceptance Criteria:**
+        - `rake spec` exits with status 0 (all tests pass)
+        - SimpleCov report shows >= 90% coverage for `lib/activejob/temporal/workflows/*.rb`, `lib/activejob/temporal/activities/*.rb`, and adapter helpers
+        - Coverage report is generated in `coverage/index.html`
+        - No skipped or pending tests
+    *   **Dependencies:** I2.T2, I2.T3, I2.T4, I2.T5 (all unit tests must be written)
+    *   **Parallelizable:** No (must run after all tests are written)
+```
+
 ---
 
 ## 3. Codebase Analysis & Strategic Guidance
@@ -131,138 +113,103 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
-*   **File:** `.rubocop.yml`
-    *   **Summary:** The project's Rubocop configuration file with project-specific rules. Key settings include Ruby 3.2 target, 120 char line length, spec exclusions for block length, and double quotes as the string literal style.
-    *   **Recommendation:** You SHOULD review this file to understand the current rules. The configuration is well-structured with exclusions for `vendor/`, `tmp/`, and `pkg/` directories.
-    *   **Current Configuration:**
-        - Target Ruby Version: 3.2
-        - Line Length: Max 120 characters
-        - Block Length: Max 25 (excluded for specs)
-        - Method Length: Max 20
-        - Module Length: Max 200
-        - Documentation: Disabled
-        - String Literals: Enforced double quotes
-        - Filename check: Disabled for `lib/activejob-temporal.rb`
-        - Development Dependencies check: Disabled
+*   **File:** `spec/spec_helper.rb`
+    *   **Summary:** This file configures RSpec and SimpleCov for the test suite. SimpleCov is configured to start coverage tracking with branch coverage enabled, excluding the `/spec/` directory from coverage calculations. RSpec is configured with standard best practices (expect syntax, mock verification, random test order).
+    *   **Recommendation:** This file is correctly configured. You do NOT need to modify it. SimpleCov will automatically generate the coverage report when tests run.
 
 *   **File:** `Rakefile`
-    *   **Summary:** Defines rake tasks including `rubocop`, `spec`, and `yard`. The default task runs both rubocop and spec.
-    *   **Recommendation:** You MUST use `rake rubocop` or `bundle exec rubocop` to run the linter. The rake task is already configured via RuboCop::RakeTask.
-
-*   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
-    *   **Summary:** Implements the Temporal workflow orchestration logic with scheduled execution support (sleep, activity invocation).
-    *   **Current Status:** The code is well-structured with clear separation of concerns (extract_scheduled_time, sleep_until, activity_options private methods).
-    *   **Potential Issues:** The code looks clean and follows Ruby best practices. The use of stub classes for Temporalio when not loaded is appropriate for testing.
-    *   **Code Quality:** 59 lines total, includes frozen_string_literal, proper module nesting, private methods for internal logic.
-
-*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
-    *   **Summary:** Implements the Temporal activity that executes ActiveJob jobs with idempotency key management and exception handling.
-    *   **Current Status:** Code includes comprehensive Temporalio stubs for testing, proper error handling, and idempotency key lifecycle management.
-    *   **Potential Issues:** The file has substantial stub code (lines 8-54) to support testing without real Temporal SDK. This is acceptable and documented with comments.
-    *   **Code Quality:** 107 lines total, well-organized with clear separation between stub definitions and actual implementation.
-
-*   **File:** `lib/activejob/temporal/adapter.rb`
-    *   **Summary:** Provides helper methods for workflow ID generation and task queue resolution.
-    *   **Current Status:** Simple module with two well-documented methods using YARD format. Code is clean and follows functional programming style with `module_function`.
-    *   **Potential Issues:** No obvious style issues. The code is concise and clear (30 lines total).
+    *   **Summary:** This file defines the primary Rake tasks for the project. The `:spec` task runs RSpec tests, `:rubocop` runs linting, and `:yard` generates documentation. The default task runs both rubocop and spec.
+    *   **Recommendation:** You SHOULD use `rake spec` to run all tests as specified in the task description. This is the correct command to execute.
 
 *   **File:** `spec/unit/workflows/aj_workflow_spec.rb`
-    *   **Summary:** Comprehensive RSpec tests for AjWorkflow covering immediate execution, scheduled execution, past scheduled times, and retry policy handling.
-    *   **Current Status:** Well-structured tests with proper mocking, clear context blocks, and descriptive test names.
-    *   **Code Quality:** 106 lines, uses RSpec best practices with let blocks, before blocks, and clear expectations.
+    *   **Summary:** This file contains comprehensive unit tests for the AjWorkflow class. It tests immediate execution (no sleep), scheduled execution (with sleep), handling of past scheduled_at times, and retry policy passthrough. All tests use mocking to isolate workflow logic from external dependencies.
+    *   **Recommendation:** This test file is COMPLETE and well-written. The workflow tests are comprehensive and should pass successfully. You do NOT need to add more tests here unless you find gaps during coverage analysis.
 
 *   **File:** `spec/unit/activities/aj_runner_activity_spec.rb`
-    *   **Summary:** RSpec tests for AjRunnerActivity covering job execution, idempotency key lifecycle, retryable exceptions, and discard_on behavior.
-    *   **Current Status:** Thorough test coverage with proper use of doubles and stubs.
-    *   **Code Quality:** 76 lines, well-organized with clear test cases and proper mocking.
+    *   **Summary:** This file contains comprehensive unit tests for the AjRunnerActivity class. It tests successful job execution with idempotency key lifecycle, retryable exception handling, and non-retryable (discard_on) exception wrapping. All tests use mocking to avoid requiring real job classes.
+    *   **Recommendation:** This test file is COMPLETE and well-written. The activity tests are comprehensive and should pass successfully. You do NOT need to add more tests here unless you find gaps during coverage analysis.
 
 *   **File:** `spec/unit/adapter_spec.rb`
-    *   **Summary:** RSpec tests for adapter helper methods (workflow ID building and task queue resolution).
-    *   **Current Status:** Comprehensive test coverage with multiple contexts and edge cases.
-    *   **Code Quality:** 134 lines, excellent use of RSpec contexts to organize test scenarios.
+    *   **Summary:** This file contains comprehensive unit tests for the Adapter module (workflow ID builder and task queue resolver). It tests deterministic workflow ID generation, uniqueness across job classes, task queue resolution with/without prefix, and default queue name handling.
+    *   **Recommendation:** This test file is COMPLETE and well-written. The adapter helper tests are comprehensive and should pass successfully. You do NOT need to add more tests here unless you find gaps during coverage analysis.
+
+*   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
+    *   **Summary:** This file implements the AjWorkflow class, which orchestrates job execution. It extracts scheduled_at from payload, sleeps until the scheduled time if needed, and then executes the AjRunnerActivity with appropriate timeout and retry configuration.
+    *   **Recommendation:** This implementation is COMPLETE. The workflow correctly uses deterministic operations only (Workflow.now, Workflow.sleep, Workflow.execute_activity).
+
+*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
+    *   **Summary:** This file implements the AjRunnerActivity class, which executes the actual job. It deserializes arguments, constantizes the job class, sets an idempotency key in thread-local storage, executes the job, and handles exceptions (wrapping discard_on exceptions as non-retryable ApplicationErrors).
+    *   **Recommendation:** This implementation is COMPLETE. The activity correctly manages the idempotency key lifecycle and exception handling.
+
+*   **File:** `lib/activejob/temporal/adapter.rb`
+    *   **Summary:** This file implements the Adapter module with two helper methods: build_workflow_id (creates deterministic workflow IDs) and resolve_task_queue (resolves task queue names with optional prefix).
+    *   **Recommendation:** This implementation is COMPLETE. Both helper methods are correctly implemented and tested.
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The project enforces zero-tolerance for Rubocop offenses. Run `rake rubocop` or `bundle exec rubocop` first to see all violations.
-*   **Tip:** Use `rubocop -A` or `bundle exec rubocop -A` to automatically fix all safe violations. This will handle most style issues automatically.
-*   **Tip:** If you encounter offenses that cannot be auto-fixed, you should:
-    1. First try to fix them manually following Ruby style guide best practices
-    2. Only add exclusions to `.rubocop.yml` if there's a strong justification
-    3. Document any exclusions with clear comments explaining why
-*   **Note:** The existing `.rubocop.yml` already has reasonable exclusions:
-    - `spec/**/*` is excluded from BlockLength check (common for RSpec tests)
-    - `Style/Documentation` is disabled (project doesn't require class-level docs for everything)
-    - Development dependencies check is disabled for the gemspec
-*   **Note:** All files in scope already use `# frozen_string_literal: true` magic comment, which is good.
-*   **Note:** The project uses double quotes for string literals (enforced by `.rubocop.yml`), so ensure all string literals use `"` not `'`.
-*   **Warning:** Do NOT add blanket disables or too many exclusions to `.rubocop.yml`. The plan emphasizes maintaining high code quality standards. Only update `.rubocop.yml` if absolutely necessary with proper justification.
-*   **Process:** Follow this workflow:
-    1. Run `bundle exec rubocop` to see all current violations
-    2. Run `bundle exec rubocop -A` to auto-correct safe offenses
-    3. Review remaining offenses and fix manually
-    4. Run `bundle exec rubocop` again to verify zero offenses
-    5. If any offenses cannot be reasonably fixed, document the justification and consider whether to update `.rubocop.yml`
+*   **Current Coverage Status:** I checked the current coverage report and found that the project has **51.92% coverage overall**. This is SIGNIFICANTLY BELOW the 90% target. You MUST analyze which files are causing low coverage and add tests to reach >= 90%.
 
-### Expected Outcome
+*   **Expected Test Outcomes:** All existing unit tests for Iteration 2 (workflows, activities, adapter) appear to be complete and well-written. When you run `rake spec`, these tests should PASS. If any tests fail, investigate the failure and fix the underlying implementation.
 
-Based on my review, the code quality is already high. I expect:
-- Most or all offenses will be auto-correctable
-- You may need to make minor manual adjustments (whitespace, line breaks)
-- You SHOULD NOT need to update `.rubocop.yml` unless unexpected issues arise
-- All files should pass with zero offenses after running auto-correct
+*   **Coverage Analysis Strategy:** After running `rake spec`, open `coverage/index.html` in a browser to see a detailed breakdown of which files/lines are NOT covered. Focus on:
+    1. **Workflows directory:** Check if `lib/activejob/temporal/workflows/aj_workflow.rb` has >= 90% coverage
+    2. **Activities directory:** Check if `lib/activejob/temporal/activities/aj_runner_activity.rb` has >= 90% coverage
+    3. **Adapter module:** Check if `lib/activejob/temporal/adapter.rb` has >= 90% coverage
+    4. **Foundation modules:** Modules from Iteration 1 (Configuration, Client, Payload, RetryMapper, SearchAttributes, Logger) may be dragging down overall coverage if they weren't fully tested
 
-### Files in Scope for This Task
+*   **Adding Missing Tests:** If you find specific lines or branches that are NOT covered, you will need to:
+    1. Identify which edge case or error path is missing
+    2. Write a new RSpec test (or add a context/it block to existing specs) that exercises that code path
+    3. Re-run `rake spec` and verify coverage improved
 
-Target files that MUST be checked and fixed:
-1. `lib/activejob/temporal/workflows/aj_workflow.rb` (59 lines)
-2. `lib/activejob/temporal/activities/aj_runner_activity.rb` (107 lines)
-3. `lib/activejob/temporal/adapter.rb` (30 lines)
-4. `spec/unit/workflows/aj_workflow_spec.rb` (106 lines)
-5. `spec/unit/activities/aj_runner_activity_spec.rb` (76 lines)
-6. `spec/unit/adapter_spec.rb` (134 lines)
+*   **Common Coverage Gaps:** Based on my analysis, potential coverage gaps might be in:
+    - **Error handling paths:** Exception handling in activity (though this appears well-tested)
+    - **Edge cases:** nil/empty/invalid inputs to helper methods (these appear well-tested in adapter_spec.rb)
+    - **Foundation modules from I1:** Configuration, Client, Payload, RetryMapper, SearchAttributes, Logger may not have 90% coverage individually
 
-Total: 6 files, approximately 512 lines of code
+*   **Acceptance Criteria Checklist:** Before marking this task complete, ensure:
+    - [ ] `rake spec` exits with status 0 (no test failures)
+    - [ ] SimpleCov report shows >= 90% for `lib/activejob/temporal/workflows/*.rb`
+    - [ ] SimpleCov report shows >= 90% for `lib/activejob/temporal/activities/*.rb`
+    - [ ] SimpleCov report shows >= 90% for `lib/activejob/temporal/adapter.rb`
+    - [ ] Overall project coverage is >= 90% (or very close, considering I1 modules)
+    - [ ] Coverage report exists in `coverage/index.html`
+    - [ ] No skipped or pending tests (search for `pending` or `skip` in test output)
+
+*   **Warning:** DO NOT modify implementation files in this task unless you find an actual bug. This task is ONLY about running tests and ensuring coverage. If coverage is below 90%, add MORE TESTS, do not change implementation code.
 
 ---
 
-## 4. Additional Context
+## 4. Execution Instructions
 
-### Iteration 2 Goals
+1. **Run the test suite:**
+   ```bash
+   rake spec
+   ```
+   This will execute all RSpec tests and generate a SimpleCov coverage report in `coverage/index.html`.
 
-This task is part of Iteration 2, which focuses on implementing the core Temporal workflow and activity components. All dependencies (I2.T2-I2.T5) are complete, meaning:
-- ✅ I2.T2: AjWorkflow is implemented
-- ✅ I2.T3: AjRunnerActivity is implemented
-- ✅ I2.T4: Workflow ID builder helper is implemented
-- ✅ I2.T5: Task queue resolver helper is implemented
-- ✅ All unit tests are written
+2. **Check for test failures:**
+   - If all tests pass, proceed to step 3
+   - If any tests fail, investigate the failure, fix the bug in the implementation or test, and re-run
 
-Your task is purely code quality enforcement - ensuring all code adheres to the Ruby style guide as enforced by Rubocop.
+3. **Analyze coverage report:**
+   - Open `coverage/index.html` in a browser
+   - Check the coverage percentage for each file in Iteration 2:
+     - `lib/activejob/temporal/workflows/aj_workflow.rb`
+     - `lib/activejob/temporal/activities/aj_runner_activity.rb`
+     - `lib/activejob/temporal/adapter.rb`
+   - If any file is below 90%, identify uncovered lines/branches
 
-### Success Criteria
+4. **Add missing tests (if needed):**
+   - For each uncovered line/branch, write a new test that exercises that code
+   - Add tests to the appropriate spec file (`spec/unit/workflows/aj_workflow_spec.rb`, `spec/unit/activities/aj_runner_activity_spec.rb`, or `spec/unit/adapter_spec.rb`)
+   - Re-run `rake spec` and verify coverage improved
 
-✅ `rake rubocop` exits with status 0 (zero offenses)
-✅ All auto-correctable offenses are fixed
-✅ Any manual fixes are applied correctly
-✅ If `.rubocop.yml` is updated, changes are documented with comments
-✅ Code maintains its functionality (no breaking changes)
-✅ Code readability is maintained or improved
+5. **Verify acceptance criteria:**
+   - Ensure all tests pass (status 0)
+   - Ensure >= 90% coverage for Iteration 2 modules
+   - Ensure no pending/skipped tests
 
-### Rubocop Command Reference
-
-- `bundle exec rubocop` - Run all checks
-- `bundle exec rubocop -A` - Auto-fix all safe offenses
-- `bundle exec rubocop --list-target-files` - List files that will be checked
-- `bundle exec rubocop lib/activejob/temporal/workflows/` - Check specific directory
-- `bundle exec rubocop --format progress` - Show progress during check
-- `rake rubocop` - Run via rake task (recommended)
-
-### Known Exclusions in .rubocop.yml
-
-Already excluded/disabled (no action needed):
-- `vendor/**/*` - Bundled gems
-- `tmp/**/*` - Temporary files
-- `pkg/**/*` - Built gem files
-- `spec/**/*` - Specs excluded from BlockLength check
-- `Style/Documentation` - Class documentation not required
-- `Naming/FileName` - Filename check disabled for `lib/activejob-temporal.rb`
-- `Gemspec/DevelopmentDependencies` - Dev dependency check disabled
+6. **Report results:**
+   - Confirm task completion with coverage percentage
+   - Note any issues or gaps discovered during testing
