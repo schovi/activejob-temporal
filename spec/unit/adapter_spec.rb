@@ -321,3 +321,13 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
     end
   end
 end
+
+RSpec.describe "ActiveJob adapter registration" do
+  describe ".lookup" do
+    it "returns the Temporal adapter when requested by symbol" do
+      adapter_class = ActiveJob::QueueAdapters.lookup(:temporal)
+
+      expect(adapter_class).to eq(ActiveJob::QueueAdapters::TemporalAdapter)
+    end
+  end
+end

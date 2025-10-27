@@ -20,7 +20,25 @@ bundle install
 
 ## Usage
 
-Full usage documentation is coming soon. The initial releases will cover configuration, worker bootstrapping, and workflow orchestration examples.
+Configure ActiveJob to use the Temporal adapter in your Rails application:
+
+```ruby
+# config/application.rb
+config.active_job.queue_adapter = :temporal
+```
+
+Configure the Temporal client during application boot:
+
+```ruby
+# config/initializers/active_job_temporal.rb
+ActiveJob::Temporal.configure do |config|
+  config.target = ENV.fetch("TEMPORAL_TARGET", "127.0.0.1:7233")
+  config.namespace = ENV.fetch("TEMPORAL_NAMESPACE", "default")
+  config.task_queue_prefix = ENV.fetch("TEMPORAL_TASK_QUEUE_PREFIX", nil)
+end
+```
+
+More usage documentation, including workflow orchestration examples, is coming soon.
 
 ## Development
 
