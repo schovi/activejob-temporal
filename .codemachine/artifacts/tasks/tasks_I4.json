@@ -42,7 +42,7 @@
     "acceptance_criteria": "Integration test defines a simple ActiveJob job (TestJob); Test configures ActiveJob adapter to TemporalAdapter; Test enqueues job: `TestJob.perform_later(42)`; Test starts a worker in background (thread or subprocess) polling task queue; Test waits for job execution (max 10 seconds timeout); Test asserts job executed with correct argument (`$test_result == 42` or similar); Test queries Temporal for workflow completion (using test client); Test cleans up: stops worker, resets state; `rake spec:integration` (or `rake spec`) passes for enqueue_spec.rb (immediate execution test); Test is isolated (can run multiple times without interference)",
     "dependencies": ["I3.T1", "I2.T2", "I2.T3", "I4.T2"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I4.T4",
