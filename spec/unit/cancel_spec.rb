@@ -111,5 +111,71 @@ RSpec.describe ActiveJob::Temporal::Cancel do
         expect { described_class.cancel(job_class, job_id) }.to raise_error(error)
       end
     end
+
+    context "when the Temporal RPC error class is unavailable" do
+      before do
+        hide_const("Temporalio::Error::RPCError")
+        allow(handle).to receive(:cancel).and_raise(StandardError.new("generic failure"))
+      end
+
+      it "re-raises the error" do
+        expect { described_class.cancel(job_class, job_id) }.to raise_error(StandardError, "generic failure")
+      end
+    end
+
+    context "when the RPC error omits the NOT_FOUND constant" do
+      let(:error) { Temporalio::Error::RPCError.new("workflow missing", code: 5, raw_grpc_status: nil) }
+
+      before do
+        hide_const("Temporalio::Error::RPCError::Code::NOT_FOUND")
+        allow(handle).to receive(:cancel).and_raise(error)
+      end
+
+      it "falls back to the numeric code and suppresses the error" do
+        expect { described_class.cancel(job_class, job_id) }.not_to raise_error
+
+        expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+          "cancellation_workflow_not_found",
+          workflow_id: workflow_id,
+          job_class: job_class.name,
+          job_id: job_id,
+          error: error.message
+        )
+      end
+    end
+
+    context "when the RPC error lacks a code accessor" do
+      let(:rpc_error_class) do
+        Class.new(StandardError) do
+          def self.name
+            "Temporalio::Error::RPCError"
+          end
+
+          def initialize(message = "rpc error", code: nil, _raw_grpc_status: nil)
+            super(message)
+            @code = code
+          end
+        end
+      end
+
+      before do
+        stub_const("Temporalio::Error::RPCError", rpc_error_class)
+        allow(handle).to receive(:cancel).and_raise(rpc_error_class.new("missing code"))
+      end
+
+      it "re-raises the error" do
+        expect { described_class.cancel(job_class, job_id) }.to raise_error(rpc_error_class, "missing code")
+      end
+    end
+
+    context "when a non-RPC error bubbles up" do
+      before do
+        allow(handle).to receive(:cancel).and_raise(StandardError.new("other error"))
+      end
+
+      it "re-raises the error" do
+        expect { described_class.cancel(job_class, job_id) }.to raise_error(StandardError, "other error")
+      end
+    end
   end
 end
