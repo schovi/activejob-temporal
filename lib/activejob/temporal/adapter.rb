@@ -40,6 +40,25 @@ module ActiveJob
       # @return [Object, nil] workflow run handle (if provided by Temporal SDK)
       def enqueue(job)
         payload = build_payload(job)
+        enqueue_with_payload(job, payload)
+      end
+
+      # Enqueues a job for execution at a specific time by starting the AjWorkflow immediately.
+      # @param job [ActiveJob::Base] the job instance provided by ActiveJob
+      # @param timestamp [Integer] UNIX timestamp when the job should be executed
+      # @raise [ActiveJob::SerializationError] when payload serialization fails
+      # @raise [ActiveJob::EnqueueError] when the Temporal client cannot start the workflow
+      # @return [Object, nil] workflow run handle (if provided by Temporal SDK)
+      def enqueue_at(job, timestamp)
+        scheduled_time = Time.at(timestamp)
+        payload = build_payload(job, scheduled_at: scheduled_time)
+
+        enqueue_with_payload(job, payload)
+      end
+
+      private
+
+      def enqueue_with_payload(job, payload)
         workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
         task_queue = ActiveJob::Temporal::Adapter.resolve_task_queue(job)
         search_attributes = ActiveJob::Temporal::SearchAttributes.for(job)
@@ -55,38 +74,26 @@ module ActiveJob
         start_workflow(client, payload, options, job)
       end
 
-      private
-
-      def build_payload(job)
-        payload = ActiveJob::Temporal::Payload.from_job(job)
+      def build_payload(job, scheduled_at: nil)
+        payload = ActiveJob::Temporal::Payload.from_job(job, scheduled_at: scheduled_at)
         payload[:retry_policy] = ActiveJob::Temporal::RetryMapper.for(job.class)
         payload
       end
 
       def start_workflow(client, payload, options, job)
         workflow_class = ActiveJob::Temporal::Workflows::AjWorkflow
-        workflow_id = options[:id]
-        task_queue = options[:task_queue]
-
         handle = client.start_workflow(workflow_class, payload, **options)
 
-        log_enqueued(job, workflow_id, task_queue, duplicate: false)
+        log_enqueued_with_options(job, options, payload, duplicate: false)
 
         handle
       rescue StandardError => e
         if workflow_already_started?(e)
-          log_enqueued(job, workflow_id, task_queue, duplicate: true)
+          log_enqueued_with_options(job, options, payload, duplicate: true)
           return nil
         end
 
-        message = format(
-          "Failed to enqueue job %<job_class>s (%<job_id>s): %<error>s",
-          job_class: job.class.name,
-          job_id: job.job_id,
-          error: e.message
-        )
-
-        raise ActiveJob::EnqueueError, message
+        raise ActiveJob::EnqueueError, build_enqueue_error_message(job, e)
       end
 
       def workflow_already_started?(error)
@@ -95,15 +102,36 @@ module ActiveJob
         error.is_a?(Temporalio::Client::WorkflowAlreadyStartedError)
       end
 
-      def log_enqueued(job, workflow_id, task_queue, duplicate:)
-        ActiveJob::Temporal::Logger.log_event(
-          "workflow_enqueued",
+      def log_enqueued(job, workflow_id, task_queue, duplicate:, scheduled_at: nil)
+        attributes = {
           workflow_id: workflow_id,
           job_class: job.class.name,
           job_id: job.job_id,
           queue: job.queue_name,
           task_queue: task_queue,
           duplicate: duplicate
+        }
+        attributes[:scheduled_at] = scheduled_at if scheduled_at
+
+        ActiveJob::Temporal::Logger.log_event("workflow_enqueued", **attributes)
+      end
+
+      def log_enqueued_with_options(job, options, payload, duplicate:)
+        log_enqueued(
+          job,
+          options[:id],
+          options[:task_queue],
+          duplicate: duplicate,
+          scheduled_at: payload[:scheduled_at]
+        )
+      end
+
+      def build_enqueue_error_message(job, error)
+        format(
+          "Failed to enqueue job %<job_class>s (%<job_id>s): %<error>s",
+          job_class: job.class.name,
+          job_id: job.job_id,
+          error: error.message
         )
       end
     end

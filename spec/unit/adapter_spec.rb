@@ -142,14 +142,7 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
     job
   end
 
-  let(:payload) do
-    {
-      job_class: "SimpleJob",
-      job_id: "job-123",
-      queue_name: "mailers",
-      arguments: []
-    }
-  end
+  let(:payload) { { job_class: "SimpleJob", job_id: "job-123", queue_name: "mailers", arguments: [] } }
 
   let(:retry_policy) do
     {
@@ -167,7 +160,7 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
   let(:workflow_handle) { instance_double("WorkflowHandle") }
 
   before do
-    allow(ActiveJob::Temporal::Payload).to receive(:from_job).with(job).and_return(payload)
+    allow(ActiveJob::Temporal::Payload).to receive(:from_job).with(job, scheduled_at: nil).and_return(payload)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(SimpleJob).and_return(retry_policy)
     allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
     allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
@@ -241,6 +234,84 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
       adapter.enqueue(job)
 
       expect(ActiveJob::Temporal::RetryMapper).to have_received(:for).with(SimpleJob)
+    end
+  end
+
+  describe "#enqueue_at" do
+    let(:job) do
+      job = ScheduledJob.new
+      job.job_id = "job-456"
+      job.queue_name = "billing"
+      job
+    end
+
+    let(:timestamp) { (Time.now + 300).to_i }
+    let(:scheduled_time) { Time.at(timestamp) }
+    let(:workflow_id) { "ajwf:ScheduledJob:job-456" }
+    let(:task_queue) { "billing" }
+    let(:search_attributes) { { ajClass: "ScheduledJob", ajQueue: "billing" } }
+    let(:payload) do
+      {
+        job_class: "ScheduledJob",
+        job_id: "job-456",
+        queue_name: "billing",
+        arguments: []
+      }
+    end
+    let(:payload_with_schedule) { payload.merge(scheduled_at: scheduled_time.iso8601) }
+
+    before do
+      allow(Time).to receive(:at).with(timestamp).and_return(scheduled_time)
+      allow(ActiveJob::Temporal::Payload)
+        .to receive(:from_job)
+        .with(job, scheduled_at: scheduled_time)
+        .and_return(payload_with_schedule)
+      allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(ScheduledJob).and_return(retry_policy)
+      allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
+      allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
+      allow(ActiveJob::Temporal::SearchAttributes).to receive(:for).with(job).and_return(search_attributes)
+    end
+
+    it "converts the timestamp to a Time and passes it to Payload.from_job" do
+      adapter.enqueue_at(job, timestamp)
+
+      expect(Time).to have_received(:at).with(timestamp)
+      expect(ActiveJob::Temporal::Payload).to have_received(:from_job).with(job, scheduled_at: scheduled_time)
+    end
+
+    it "includes scheduled_at in ISO8601 format within the payload" do
+      adapter.enqueue_at(job, timestamp)
+
+      expect(payload_with_schedule[:scheduled_at]).to eq(scheduled_time.iso8601)
+      expect(payload_with_schedule[:retry_policy]).to eq(retry_policy)
+    end
+
+    it "starts the workflow immediately with the scheduled payload" do
+      adapter.enqueue_at(job, timestamp)
+
+      expect(client).to have_received(:start_workflow).with(
+        ActiveJob::Temporal::Workflows::AjWorkflow,
+        payload_with_schedule,
+        id: workflow_id,
+        task_queue: task_queue,
+        id_conflict_policy: :reject,
+        search_attributes: search_attributes
+      )
+    end
+
+    it "logs the enqueue event with scheduled_at metadata" do
+      adapter.enqueue_at(job, timestamp)
+
+      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
+        "workflow_enqueued",
+        workflow_id: workflow_id,
+        job_class: "ScheduledJob",
+        job_id: "job-456",
+        queue: "billing",
+        task_queue: task_queue,
+        duplicate: false,
+        scheduled_at: scheduled_time.iso8601
+      )
     end
   end
 end
