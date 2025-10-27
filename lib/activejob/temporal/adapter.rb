@@ -56,6 +56,12 @@ module ActiveJob
         enqueue_with_payload(job, payload)
       end
 
+      # Signals ActiveJob to defer enqueuing until after the current database transaction commits.
+      # This prevents Temporal workflows from starting for rolled-back transactions.
+      def enqueue_after_transaction_commit?
+        true
+      end
+
       private
 
       def enqueue_with_payload(job, payload)

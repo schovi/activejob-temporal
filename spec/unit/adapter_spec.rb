@@ -314,4 +314,10 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
       )
     end
   end
+
+  describe "#enqueue_after_transaction_commit?" do
+    it "returns true to enable transaction-aware enqueuing" do
+      expect(adapter.enqueue_after_transaction_commit?).to be true
+    end
+  end
 end
