@@ -70,3 +70,11 @@ end
 class ExternalConstantRetryJob < ActiveJob::Base
   retry_on "NetworkTimeoutError", wait: 15.seconds, attempts: 2
 end
+
+class TestJob < ActiveJob::Base
+  queue_as :default
+
+  def perform(arg)
+    $test_result = arg
+  end
+end
