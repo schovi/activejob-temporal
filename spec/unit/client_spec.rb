@@ -39,8 +39,8 @@ RSpec.describe ActiveJob::Temporal, ".client" do
 
     client_instance = instance_double("Temporalio::Client")
     expect(Temporalio::Client).to receive(:connect).with(
-      target: "localhost:7233",
-      namespace: "custom"
+      "localhost:7233",
+      "custom"
     ).and_return(client_instance)
 
     expect(described_class.client).to be(client_instance)
@@ -63,7 +63,9 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     ENV["TEMPORAL_TLS_SERVER_NAME"] = "temporal.example.dev"
 
     client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |kwargs|
+    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
+      expect(target).to eq("127.0.0.1:7233")
+      expect(namespace).to eq("default")
       expect(kwargs[:tls]).to eq(
         certificate: "cert-data",
         private_key: "key-data",
@@ -79,7 +81,9 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     ENV["TEMPORAL_TLS_CERT"] = "cert-data"
 
     client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |kwargs|
+    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
+      expect(target).to eq("127.0.0.1:7233")
+      expect(namespace).to eq("default")
       expect(kwargs[:tls]).to eq(certificate: "cert-data")
       client_instance
     end
@@ -100,7 +104,9 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     }
 
     client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |kwargs|
+    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
+      expect(target).to eq("localhost:7233")
+      expect(namespace).to eq("custom")
       expect(kwargs[:tls]).to eq(
         certificate: "config-cert",
         private_key: "config-key"

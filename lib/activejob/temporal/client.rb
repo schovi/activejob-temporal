@@ -17,7 +17,11 @@ module ActiveJob
       module_function
 
       def build(configuration)
-        Temporalio::Client.connect(**connection_options(configuration))
+        Temporalio::Client.connect(
+          configuration.target,
+          configuration.namespace,
+          **connection_kwargs(configuration)
+        )
       rescue StandardError => e
         raise ActiveJob::Temporal::Error,
               format(
@@ -28,17 +32,13 @@ module ActiveJob
               )
       end
 
-      def connection_options(configuration)
-        options = {
-          target: configuration.target,
-          namespace: configuration.namespace
-        }
-
+      def connection_kwargs(configuration)
         tls = tls_options(configuration)
-        options[:tls] = tls if tls
-        options
+        return {} unless tls
+
+        { tls: tls }
       end
-      private_class_method :connection_options
+      private_class_method :connection_kwargs
 
       def tls_options(configuration)
         return configuration.tls if configuration.respond_to?(:tls) && configuration.tls

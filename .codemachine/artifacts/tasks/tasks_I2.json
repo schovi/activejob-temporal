@@ -82,7 +82,7 @@
     "acceptance_criteria": "`build_workflow_id(job)` returns string in format `\"ajwf:<ClassName>:<job_id>\"`; Example: For `SendInvoiceJob` with job_id \"abc-123\", returns `\"ajwf:SendInvoiceJob:abc-123\"`; Calling `build_workflow_id` twice with same job returns same string (deterministic); Different job classes with same job_id return different workflow IDs (class name prevents collision); Unit tests verify format and determinism; `rake spec` passes for adapter_spec.rb; Code passes `rake rubocop`",
     "dependencies": [],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I2.T5",

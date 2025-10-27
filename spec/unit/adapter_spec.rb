@@ -66,4 +66,68 @@ RSpec.describe ActiveJob::Temporal::Adapter do
       end
     end
   end
+
+  describe ".resolve_task_queue" do
+    let(:job) { SimpleJob.new }
+
+    context "when no prefix is configured" do
+      before do
+        allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return(nil)
+      end
+
+      it "returns the job queue name" do
+        job.queue_name = "billing"
+
+        expect(described_class.resolve_task_queue(job)).to eq("billing")
+      end
+
+      it "falls back to the default queue when queue_name is nil" do
+        job.queue_name = nil
+
+        expect(described_class.resolve_task_queue(job)).to eq("default")
+      end
+
+      it "treats blank queue names as default" do
+        job.queue_name = "   "
+
+        expect(described_class.resolve_task_queue(job)).to eq("default")
+      end
+    end
+
+    context "when a prefix is configured" do
+      before do
+        allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return("prod-")
+      end
+
+      it "prepends the prefix to the queue name" do
+        job.queue_name = "billing"
+
+        expect(described_class.resolve_task_queue(job)).to eq("prod-billing")
+      end
+
+      it "prepends the prefix to the default queue" do
+        job.queue_name = nil
+
+        expect(described_class.resolve_task_queue(job)).to eq("prod-default")
+      end
+
+      it "works for other queue names" do
+        job.queue_name = "mailers"
+
+        expect(described_class.resolve_task_queue(job)).to eq("prod-mailers")
+      end
+    end
+
+    context "when the prefix is an empty string" do
+      before do
+        allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return("")
+      end
+
+      it "treats an empty prefix as absent" do
+        job.queue_name = "exports"
+
+        expect(described_class.resolve_task_queue(job)).to eq("exports")
+      end
+    end
+  end
 end

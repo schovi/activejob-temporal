@@ -3,14 +3,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-export BUNDLE_GEMFILE="$REPO_ROOT/Gemfile"
-export BUNDLE_PATH="${BUNDLE_PATH:-$REPO_ROOT/vendor/bundle}"
-PATH_ENTRY="$REPO_ROOT/bin"
-if [[ ":$PATH:" != *":$PATH_ENTRY:"* ]]; then
-  export PATH="$PATH_ENTRY:$PATH"
-fi
 
 bash "$SCRIPT_DIR/install.sh"
+
+ENV_EXPORT_FILE="$SCRIPT_DIR/.bundle-env"
+if [[ ! -f "$ENV_EXPORT_FILE" ]]; then
+  echo "Environment export file not found at $ENV_EXPORT_FILE. Run tools/install.sh manually to debug." >&2
+  exit 1
+fi
+
+# shellcheck source=/dev/null
+source "$ENV_EXPORT_FILE"
 
 cd "$REPO_ROOT"
 bundle exec rake

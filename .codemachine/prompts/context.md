@@ -10,20 +10,24 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I2.T4",
+  "task_id": "I2.T5",
   "iteration_id": "I2",
   "iteration_goal": "Implement the core Temporal workflow (AjWorkflow) and activity (AjRunnerActivity) that orchestrate and execute ActiveJob jobs. Generate sequence diagrams for execution flows.",
-  "description": "Create a helper method in `lib/activejob/temporal/adapter.rb` (or a separate helper module) for building deterministic workflow IDs. Implement `build_workflow_id(job)` method that returns a string in format `\"ajwf:#{job.class.name}:#{job.job_id}\"`. This ensures idempotent enqueue (same job_id → same workflow_id → Temporal rejects duplicate via `:reject` conflict policy). Write unit tests in `spec/unit/adapter_spec.rb` (this spec will be expanded in I3) covering: workflow ID format, determinism (same job → same ID), uniqueness across job classes. This is a small helper but critical for deduplication.",
+  "description": "Create a helper method in `lib/activejob/temporal/adapter.rb` (or helper module) for resolving Temporal task queue names from ActiveJob queue names. Implement `resolve_task_queue(job)` method that extracts `job.queue_name` (default to \"default\" if nil), applies `config.task_queue_prefix` (if present), and returns the final task queue string. Example: If `job.queue_name` is \"billing\" and `config.task_queue_prefix` is \"prod-\", return \"prod-billing\". If no prefix, return \"billing\". Write unit tests in `spec/unit/adapter_spec.rb` covering: task queue resolution with and without prefix, default queue name (\"default\"), nil queue_name handling.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "Section 3.7 (Interaction Flow - Workflow ID Generation), ActiveJob job structure",
+  "inputs": "Section 3.7 (Interaction Flow - Task Queue Resolution), configuration from I1.T3",
   "target_files": [
     "lib/activejob/temporal/adapter.rb",
     "spec/unit/adapter_spec.rb"
   ],
-  "input_files": [],
-  "deliverables": "Working workflow ID builder, passing unit tests",
-  "acceptance_criteria": "`build_workflow_id(job)` returns string in format `\"ajwf:<ClassName>:<job_id>\"`; Example: For `SendInvoiceJob` with job_id \"abc-123\", returns `\"ajwf:SendInvoiceJob:abc-123\"`; Calling `build_workflow_id` twice with same job returns same string (deterministic); Different job classes with same job_id return different workflow IDs (class name prevents collision); Unit tests verify format and determinism; `rake spec` passes for adapter_spec.rb; Code passes `rake rubocop`",
-  "dependencies": [],
+  "input_files": [
+    "lib/activejob/temporal.rb"
+  ],
+  "deliverables": "Working task queue resolver, passing unit tests",
+  "acceptance_criteria": "`resolve_task_queue(job)` returns task queue string; If `job.queue_name` is \"billing\" and `config.task_queue_prefix` is nil, returns \"billing\"; If `job.queue_name` is \"billing\" and `config.task_queue_prefix` is \"prod-\", returns \"prod-billing\"; If `job.queue_name` is nil, returns \"default\" (or \"prod-default\" with prefix); Unit tests cover all scenarios: with prefix, without prefix, nil queue_name, explicit queue_name; `rake spec` passes for adapter_spec.rb; Code passes `rake rubocop`",
+  "dependencies": [
+    "I1.T3"
+  ],
   "parallelizable": true,
   "done": false
 }
@@ -75,50 +79,48 @@ Adapter -> Client : client.start_workflow(
 - Gem ↔ Temporal: gRPC over HTTP/2 (network call, ~50-100ms latency)
 ```
 
-### Context: decision-workflow-id-deduplication (from 06_Rationale_and_Future.md)
+### Context: task-i2-t5 (from 02_Iteration_I2.md)
 
 ```markdown
-#### **Decision 2: Deterministic Workflow ID + :reject Conflict Policy**
-
-**Choice:** Generate workflow IDs as `ajwf:<JobClass>:<job_id>` with `:reject` conflict policy.
-
-**Rationale:**
-
-- **Idempotency**: Prevents duplicate job execution if `perform_later` is called twice (e.g., due to retry logic)
-- **Debuggability**: Workflow ID embeds job class and UUID, making it easy to correlate in logs/UI
-- **Temporal Best Practice**: Workflow IDs should be deterministic and meaningful
-
-**Trade-offs:**
-
-| Benefit | Cost |
-|---------|------|
-| Guarantees no duplicate workflows | Cannot re-enqueue same job_id (must generate new UUID) |
-| Easy to find workflows in Temporal UI | Workflow ID collisions raise errors (not silent failures) |
-
-**Alternatives Considered:**
-
-1. **Random Workflow IDs**: Generate UUID for each workflow
-   - **Rejected**: Loses deduplication; same job could run twice
-2. **Use Only job_id**: Workflow ID = job_id (no class prefix)
-   - **Rejected**: Collisions across job classes (e.g., two jobs with same UUID)
-
-**Caveat**: If job_id is reused across different job classes, collisions still occur (addressed by including class name in ID).
-```
-
-### Context: task-i2-t4 (from 02_Iteration_I2.md)
-
-```markdown
-*   **Task 2.4: Implement Workflow ID Builder Helper**
-    *   **Task ID:** `I2.T4`
-    *   **Description:** Create a helper method in `lib/activejob/temporal/adapter.rb` (or a separate helper module) for building deterministic workflow IDs. Implement `build_workflow_id(job)` method that returns a string in format `"ajwf:#{job.class.name}:#{job.job_id}"`. This ensures idempotent enqueue (same job_id → same workflow_id → Temporal rejects duplicate via `:reject` conflict policy). Write unit tests in `spec/unit/adapter_spec.rb` (this spec will be expanded in I3) covering: workflow ID format, determinism (same job → same ID), uniqueness across job classes. This is a small helper but critical for deduplication.
+*   **Task 2.5: Implement Task Queue Resolver Helper**
+    *   **Task ID:** `I2.T5`
+    *   **Description:** Create a helper method in `lib/activejob/temporal/adapter.rb` (or helper module) for resolving Temporal task queue names from ActiveJob queue names. Implement `resolve_task_queue(job)` method that extracts `job.queue_name` (default to "default" if nil), applies `config.task_queue_prefix` (if present), and returns the final task queue string. Example: If `job.queue_name` is "billing" and `config.task_queue_prefix` is "prod-", return "prod-billing". If no prefix, return "billing". Write unit tests in `spec/unit/adapter_spec.rb` covering: task queue resolution with and without prefix, default queue name ("default"), nil queue_name handling.
     *   **Acceptance Criteria:**
-        - `build_workflow_id(job)` returns string in format `"ajwf:<ClassName>:<job_id>"`
-        - Example: For `SendInvoiceJob` with job_id "abc-123", returns `"ajwf:SendInvoiceJob:abc-123"`
-        - Calling `build_workflow_id` twice with same job returns same string (deterministic)
-        - Different job classes with same job_id return different workflow IDs (class name prevents collision)
-        - Unit tests verify format and determinism
+        - `resolve_task_queue(job)` returns task queue string
+        - If `job.queue_name` is "billing" and `config.task_queue_prefix` is nil, returns "billing"
+        - If `job.queue_name` is "billing" and `config.task_queue_prefix` is "prod-", returns "prod-billing"
+        - If `job.queue_name` is nil, returns "default" (or "prod-default" with prefix)
+        - Unit tests cover all scenarios: with prefix, without prefix, nil queue_name, explicit queue_name
         - `rake spec` passes for adapter_spec.rb
         - Code passes `rake rubocop`
+```
+
+### Context: Configuration Reference - task_queue_prefix
+
+```markdown
+## Configuration Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `task_queue_prefix` | String or `nil` | `nil` | Optional prefix applied to every task queue name generated by the adapter. |
+
+## Usage Examples
+
+```ruby
+# config/initializers/activejob_temporal.rb
+ActiveJob::Temporal.configure do |config|
+  config.target = "temporal.example.com:7233"
+  config.namespace = "production"
+  config.task_queue_prefix = "rails-"
+  config.default_activity_timeout = 30.seconds
+end
+```
+
+You can read the configuration anywhere after initialization:
+
+```ruby
+ActiveJob::Temporal.config.logger.info("Temporal target: #{ActiveJob::Temporal.config.target}")
+```
 ```
 
 ---
@@ -129,180 +131,200 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
+*   **File:** `lib/activejob/temporal/adapter.rb`
+    *   **Summary:** This file currently contains ONLY the `build_workflow_id` method (lines 8-13). It uses a module structure with `module_function` to define utility methods. The module is properly documented with YARD comments.
+    *   **Recommendation:** You MUST add the new `resolve_task_queue(job)` method to this same file, following the existing pattern. Add it right after the `build_workflow_id` method. Use the same YARD documentation style.
+
 *   **File:** `lib/activejob/temporal.rb`
-    *   **Summary:** This is the main module file for the gem. It contains the `Configuration` class and module-level methods like `config`, `configure`, and `client`. The module is already properly structured with all foundation components loaded via `require_relative` statements (lines 6-12).
-    *   **Recommendation:** You MUST add `require_relative "temporal/adapter"` after line 12 to ensure the adapter module is loaded when the gem is required. This follows the existing pattern used for other modules.
+    *   **Summary:** This is the main configuration module. The `Configuration` class (lines 19-70) defines all configuration options including `task_queue_prefix` (line 22, initialized to `nil` on line 34). The configuration is accessible via `ActiveJob::Temporal.config` (lines 73-75).
+    *   **Recommendation:** Your method MUST read the configuration using `ActiveJob::Temporal.config.task_queue_prefix`. This is the ONLY way to access configuration in this gem.
 
 *   **File:** `spec/fixtures/sample_jobs.rb`
-    *   **Summary:** This file contains sample ActiveJob classes used for testing. It includes both custom `ApplicationJob` classes (SimpleJob, ScheduledJob) and ActiveJob::Base classes (RetryableJob, DiscardableJob, etc.). The `ApplicationJob` mock class (lines 10-22) defines the minimal interface: `job_id`, `queue_name`, `executions`, `exception_executions`, and `arguments` attributes.
-    *   **Recommendation:** You MUST use these sample job classes in your tests. Create instances like `job = SimpleJob.new` and set `job.job_id = "test-123"` for testing. This ensures your tests work with both the mock ApplicationJob and real ActiveJob::Base classes.
+    *   **Summary:** This file contains mock job classes for testing. The `ApplicationJob` mock class (lines 10-22) defines the interface: it has a `queue_name` accessor (line 11) that defaults to `"default"` (line 16). The mock can be instantiated and its `queue_name` can be set to any value including `nil`.
+    *   **Recommendation:** You MUST use these sample job classes in your tests. Create instances like `job = SimpleJob.new` and test different `queue_name` values: `nil`, `"default"`, `"billing"`, `"mailers"`, etc.
+
+*   **File:** `spec/unit/adapter_spec.rb`
+    *   **Summary:** This file currently contains tests for `build_workflow_id` method only (lines 7-68). It uses standard RSpec structure with `describe`, `context`, `let`, and `it` blocks. Tests are well-organized and descriptive.
+    *   **Recommendation:** You MUST add a new `describe ".resolve_task_queue"` block to this file (after the existing describe block). Follow the same testing structure and patterns. Use `let` blocks for job setup and configuration mocking.
 
 *   **File:** `lib/activejob/temporal/payload.rb`
-    *   **Summary:** This file demonstrates the gem's coding style and structure. It uses a module with `extend self` pattern (line 10), contains both public and private methods, follows frozen_string_literal convention, and shows proper error handling with `ActiveJob::SerializationError`.
-    *   **Recommendation:** Your adapter.rb file SHOULD follow the same pattern - use a module with `extend self` and `module_function` for utility methods. This is consistent with other utility modules in the gem.
-
-*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
-    *   **Summary:** This file already uses workflow_id in its implementation (line 40): `workflow_id = Temporalio::Activity.info&.workflow_id || "unknown-workflow"` and constructs the idempotency key as `"#{workflow_id}/runner"` (line 41).
-    *   **Recommendation:** This confirms that the workflow_id format pattern is already being consumed by the activity runner. Your `build_workflow_id` method MUST generate IDs in the exact format that the activity expects to parse and use.
-
-*   **File:** `spec/unit/workflows/aj_workflow_spec.rb` and other spec files
-    *   **Summary:** These files show the project's RSpec testing patterns: use of `describe`, `context`, `it` blocks, proper use of `let` for setup, mocking with `allow().to receive()`, and comprehensive test coverage.
-    *   **Recommendation:** Follow the same RSpec structure and style for your `adapter_spec.rb`. Use descriptive test names like `"returns workflow ID in correct format"` and organize related tests in `context` blocks.
+    *   **Summary:** This file demonstrates the gem's utility module pattern. It uses `module Payload`, `extend self`, and `module_function` for defining utility methods (line 10). Methods are documented with YARD comments showing `@param`, `@return`, and descriptions.
+    *   **Recommendation:** Follow the EXACT same pattern in adapter.rb. Your new method should be at the same level as `build_workflow_id` - both should be module functions that can be called as `Adapter.resolve_task_queue(job)`.
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The workflow ID format is CRITICAL for the entire system. The format `"ajwf:#{job.class.name}:#{job.job_id}"` is used in multiple places:
-    1. In the adapter to create deterministic workflow IDs (this task)
-    2. In the activity runner to construct idempotency keys (already implemented)
-    3. In the cancellation API (I3.T5) to rebuild workflow IDs from job_class and job_id
+*   **Tip:** The task queue resolution logic follows this pattern:
+    1. Extract `queue_name` from job (use `job.queue_name`)
+    2. Default to `"default"` if `queue_name` is `nil` or empty
+    3. Read prefix from `ActiveJob::Temporal.config.task_queue_prefix`
+    4. If prefix is present and not empty, prepend it: `"#{prefix}#{queue_name}"`
+    5. Otherwise, return just the queue name
 
-    Your implementation MUST follow this exact format with NO variations.
+*   **Tip:** The method should be VERY simple - just string concatenation. NO:
+    - Network calls or I/O
+    - Complex validation or error handling
+    - Caching or memoization
+    - Side effects or logging
 
-*   **Tip:** The gem does NOT yet have a `lib/activejob/temporal/adapter.rb` file. You MUST create it from scratch. Based on the codebase patterns, structure it as:
+    Just pure string manipulation based on inputs.
+
+*   **Note:** According to line 112 of the architecture doc, the task queue is used in the sequence diagram:
+    ```
+    Adapter -> Adapter : task_queue = "billing"
+    ```
+    This shows the task queue is resolved internally in the adapter before calling `client.start_workflow(task_queue: task_queue, ...)`.
+
+*   **Warning:** The `task_queue_prefix` can be `nil` (the default). Your code MUST handle this gracefully:
+    - If prefix is `nil`, return just the queue name
+    - If prefix is an empty string `""`, treat it as no prefix
+    - Only prepend prefix if it's a non-empty string
+
+*   **Important:** The gem uses `# frozen_string_literal: true` at the top of EVERY file. You must NOT modify this in adapter.rb - it's already there.
+
+*   **Testing Strategy:** Your tests MUST cover these scenarios:
+    1. **No prefix, explicit queue**: `queue_name = "billing"`, `prefix = nil` → `"billing"`
+    2. **No prefix, default queue**: `queue_name = nil`, `prefix = nil` → `"default"`
+    3. **With prefix, explicit queue**: `queue_name = "billing"`, `prefix = "prod-"` → `"prod-billing"`
+    4. **With prefix, default queue**: `queue_name = nil`, `prefix = "prod-"` → `"prod-default"`
+    5. **Empty prefix**: `queue_name = "billing"`, `prefix = ""` → `"billing"`
+    6. **Multiple queues**: Test with different queue names like `"mailers"`, `"exports"`, etc.
+
+*   **Configuration Mocking in Tests:** You MUST mock the configuration to test different prefix values. Use RSpec's `allow` syntax:
     ```ruby
-    # frozen_string_literal: true
-
-    module ActiveJob
-      module Temporal
-        module Adapter
-          extend self
-
-          # Builds a deterministic workflow ID from an ActiveJob instance
-          # @param job [ActiveJob::Base] The job instance
-          # @return [String] Workflow ID in format "ajwf:<ClassName>:<job_id>"
-          def build_workflow_id(job)
-            "ajwf:#{job.class.name}:#{job.job_id}"
-          end
-
-          module_function :build_workflow_id
-        end
-      end
+    before do
+      allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return("prod-")
     end
     ```
-
-*   **Note:** The unit test file `spec/unit/adapter_spec.rb` does NOT exist yet. You must create it from scratch. Based on other spec files:
-    - Use `require "spec_helper"` at the top
-    - Use RSpec describe/context/it blocks
-    - Create mock job objects using sample jobs from `spec/fixtures/sample_jobs.rb`
-    - Test the method with different job classes and job_ids to verify uniqueness
-
-*   **Warning:** The Rubocop configuration at `.rubocop.yml` is fairly strict. Based on reviewing other files:
-    - Use `# frozen_string_literal: true` comment at the top
-    - Use double quotes for strings (not single quotes)
-    - Follow the style of existing modules (Payload, RetryMapper, etc.)
-    - Keep methods simple and focused (this one should be ~3 lines)
-
-*   **Important:** According to the architecture documentation, the `:reject` conflict policy relies on deterministic workflow IDs. This means:
-    - Same job instance → same workflow_id → Temporal rejects duplicate (idempotent)
-    - Different job classes with same job_id → different workflow_ids (class name prevents collision)
-    - Your tests MUST verify both scenarios
-
-*   **Note:** The method should be simple and stateless - just string interpolation. DO NOT:
-    - Call any external services or APIs
-    - Read from configuration
-    - Perform validation on the job object
-    - Generate new IDs or UUIDs
-    - Add any caching or memoization
-
-    Simply format the existing `job.class.name` and `job.job_id` into the required format.
-
-*   **Testing Strategy:** Your spec should test at minimum:
-    1. **Format verification**: Assert the exact string format `"ajwf:JobClassName:job-id"`
-    2. **Determinism**: Calling twice with same job returns same ID
-    3. **Uniqueness**: Two different job classes with same job_id produce different workflow IDs
-    4. **Multiple job classes**: Test with different job types (SimpleJob, ScheduledJob, RetryableJob)
-
-    Use `let` blocks to create sample jobs with specific job_ids for predictable testing:
-    ```ruby
-    let(:simple_job) do
-      job = SimpleJob.new
-      job.job_id = "abc-123"
-      job
-    end
-    ```
+    This is the ONLY way to test different configuration values without actually changing global config.
 
 *   **Code Style Requirements:**
-    - Use `# frozen_string_literal: true` at the top of both files
-    - Use double quotes for strings
+    - Use double quotes for strings (not single quotes)
     - Use 2-space indentation
     - Add YARD documentation comments above the method
-    - Follow the module structure pattern from other utility modules
+    - Use descriptive parameter names
+    - Keep the method simple (should be ~5-8 lines total)
 
-*   **Performance Note:** This method will be called frequently (on every job enqueue), so keep it extremely simple and fast. No I/O, no complex computation - just pure string interpolation.
+*   **Edge Cases to Handle:**
+    - `job.queue_name` is `nil` → default to `"default"`
+    - `job.queue_name` is an empty string `""` → treat as `nil`, default to `"default"`
+    - `config.task_queue_prefix` is `nil` → no prefix
+    - `config.task_queue_prefix` is empty string `""` → no prefix
+    - Both queue_name and prefix are provided → concatenate properly
+
+*   **Performance Note:** This method will be called on EVERY job enqueue, so keep it extremely fast. No complex logic, just simple string operations.
 
 *   **Integration Context:** While you're only implementing a helper method now, understand that:
     - In I3.T1, this method will be called from `TemporalAdapter.enqueue(job)`
-    - The workflow ID will be passed to `client.start_workflow(id: workflow_id, ...)`
-    - The ID format must match what cancellation API expects to reconstruct
+    - The returned task queue string will be passed to `client.start_workflow(task_queue: resolved_queue, ...)`
+    - Workers must poll the SAME task queue name to pick up workflows
+    - Task queue naming affects workflow routing and worker distribution
 
-### Suggested Test Structure
+### Suggested Implementation Pattern
 
-Your `spec/unit/adapter_spec.rb` should include these test cases:
+Your `lib/activejob/temporal/adapter.rb` should look like this after adding the new method:
 
 ```ruby
 # frozen_string_literal: true
 
-require "spec_helper"
-require "activejob/temporal/adapter"
+module ActiveJob
+  module Temporal
+    module Adapter
+      module_function
 
-RSpec.describe ActiveJob::Temporal::Adapter do
-  describe ".build_workflow_id" do
-    context "with a simple job" do
-      let(:job) do
-        job = SimpleJob.new
-        job.job_id = "abc-123"
-        job
+      # Builds a deterministic workflow ID from an ActiveJob instance
+      # @param job [ActiveJob::Base] The job instance
+      # @return [String] Workflow ID in format "ajwf:<ClassName>:<job_id>"
+      def build_workflow_id(job)
+        "ajwf:#{job.class.name}:#{job.job_id}"
       end
 
-      it "returns workflow ID in correct format" do
-        expect(described_class.build_workflow_id(job)).to eq("ajwf:SimpleJob:abc-123")
-      end
+      # Resolves the Temporal task queue name from an ActiveJob instance
+      # @param job [ActiveJob::Base] The job instance
+      # @return [String] Task queue name (optionally prefixed)
+      def resolve_task_queue(job)
+        queue_name = job.queue_name.to_s.strip
+        queue_name = "default" if queue_name.empty?
 
-      it "is deterministic (same job, same ID)" do
-        first_call = described_class.build_workflow_id(job)
-        second_call = described_class.build_workflow_id(job)
-        expect(first_call).to eq(second_call)
-      end
-    end
+        prefix = ActiveJob::Temporal.config.task_queue_prefix
+        return queue_name if prefix.nil? || prefix.to_s.strip.empty?
 
-    context "with different job classes" do
-      let(:simple_job) do
-        job = SimpleJob.new
-        job.job_id = "same-id"
-        job
-      end
-
-      let(:scheduled_job) do
-        job = ScheduledJob.new
-        job.job_id = "same-id"
-        job
-      end
-
-      it "produces different workflow IDs for different classes" do
-        simple_id = described_class.build_workflow_id(simple_job)
-        scheduled_id = described_class.build_workflow_id(scheduled_job)
-
-        expect(simple_id).to eq("ajwf:SimpleJob:same-id")
-        expect(scheduled_id).to eq("ajwf:ScheduledJob:same-id")
-        expect(simple_id).not_to eq(scheduled_id)
+        "#{prefix}#{queue_name}"
       end
     end
+  end
+end
+```
 
-    context "with different job IDs" do
-      it "produces different workflow IDs" do
-        job1 = SimpleJob.new
-        job1.job_id = "id-1"
+### Suggested Test Structure
 
-        job2 = SimpleJob.new
-        job2.job_id = "id-2"
+Your `spec/unit/adapter_spec.rb` should have a new describe block added:
 
-        id1 = described_class.build_workflow_id(job1)
-        id2 = described_class.build_workflow_id(job2)
+```ruby
+describe ".resolve_task_queue" do
+  context "when no prefix is configured" do
+    before do
+      allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return(nil)
+    end
 
-        expect(id1).to eq("ajwf:SimpleJob:id-1")
-        expect(id2).to eq("ajwf:SimpleJob:id-2")
-        expect(id1).not_to eq(id2)
-      end
+    it "returns the job's queue name" do
+      job = SimpleJob.new
+      job.queue_name = "billing"
+
+      expect(described_class.resolve_task_queue(job)).to eq("billing")
+    end
+
+    it "returns 'default' when queue_name is nil" do
+      job = SimpleJob.new
+      job.queue_name = nil
+
+      expect(described_class.resolve_task_queue(job)).to eq("default")
+    end
+
+    it "returns 'default' when queue_name is empty string" do
+      job = SimpleJob.new
+      job.queue_name = ""
+
+      expect(described_class.resolve_task_queue(job)).to eq("default")
+    end
+  end
+
+  context "when prefix is configured" do
+    before do
+      allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return("prod-")
+    end
+
+    it "prepends prefix to job's queue name" do
+      job = SimpleJob.new
+      job.queue_name = "billing"
+
+      expect(described_class.resolve_task_queue(job)).to eq("prod-billing")
+    end
+
+    it "prepends prefix to default queue" do
+      job = SimpleJob.new
+      job.queue_name = nil
+
+      expect(described_class.resolve_task_queue(job)).to eq("prod-default")
+    end
+
+    it "works with different queue names" do
+      job = SimpleJob.new
+      job.queue_name = "mailers"
+
+      expect(described_class.resolve_task_queue(job)).to eq("prod-mailers")
+    end
+  end
+
+  context "when prefix is empty string" do
+    before do
+      allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return("")
+    end
+
+    it "treats empty prefix as no prefix" do
+      job = SimpleJob.new
+      job.queue_name = "billing"
+
+      expect(described_class.resolve_task_queue(job)).to eq("billing")
     end
   end
 end
@@ -313,27 +335,51 @@ end
 ## 4. Summary & Next Steps
 
 ### What You're Building
-A simple but critical helper method that generates deterministic workflow IDs for Temporal workflows. The method takes an ActiveJob instance and returns a formatted string.
+A simple helper method that converts ActiveJob queue names to Temporal task queue names, with support for an optional global prefix from configuration.
 
 ### Key Requirements
-1. **Format**: Exactly `"ajwf:#{job.class.name}:#{job.job_id}"`
-2. **Determinism**: Same job → same ID every time
-3. **Uniqueness**: Different job classes with same UUID → different IDs (class name differentiates)
-4. **Testing**: Comprehensive tests covering format, determinism, and uniqueness
-5. **Style**: Follow existing gem patterns (frozen_string_literal, double quotes, YARD docs)
-
-### Files to Create
-1. `lib/activejob/temporal/adapter.rb` - The adapter module with build_workflow_id method
-2. `spec/unit/adapter_spec.rb` - Comprehensive unit tests
+1. **Method Signature**: `resolve_task_queue(job)` → returns `String`
+2. **Logic**:
+   - Extract `job.queue_name` (default to `"default"` if nil/empty)
+   - Read `config.task_queue_prefix`
+   - Prepend prefix if present and non-empty
+   - Return final task queue string
+3. **Testing**: Comprehensive tests covering all prefix/queue combinations
+4. **Style**: Follow existing gem patterns (YARD docs, module_function, double quotes)
 
 ### Files to Modify
-1. `lib/activejob/temporal.rb` - Add `require_relative "temporal/adapter"` after line 12
+1. `lib/activejob/temporal/adapter.rb` - Add `resolve_task_queue` method after `build_workflow_id`
+2. `spec/unit/adapter_spec.rb` - Add comprehensive test suite in new describe block
+
+### Files to Read (for context)
+1. `lib/activejob/temporal.rb` - To understand configuration structure
+2. `spec/fixtures/sample_jobs.rb` - To use proper test job classes
 
 ### Success Criteria
-✓ Create adapter.rb with build_workflow_id method
-✓ Create adapter_spec.rb with comprehensive tests
-✓ Format returns exactly `"ajwf:<ClassName>:<job_id>"`
-✓ Tests verify format, determinism, uniqueness
+✓ Add `resolve_task_queue(job)` method to adapter.rb
+✓ Method returns correct task queue for all scenarios
+✓ Tests cover: no prefix, with prefix, nil queue, explicit queue, empty strings
+✓ Configuration is properly mocked in tests
 ✓ All tests pass (`rake spec`)
 ✓ Code passes style checks (`rake rubocop`)
-✓ Adapter module is properly required from main gem file
+✓ YARD documentation is complete and clear
+
+### Example Expected Behavior
+```ruby
+# No prefix configured
+job.queue_name = "billing"
+resolve_task_queue(job) # => "billing"
+
+# Prefix configured as "prod-"
+job.queue_name = "billing"
+resolve_task_queue(job) # => "prod-billing"
+
+# Nil queue name, no prefix
+job.queue_name = nil
+resolve_task_queue(job) # => "default"
+
+# Nil queue name, with prefix
+job.queue_name = nil
+config.task_queue_prefix = "staging-"
+resolve_task_queue(job) # => "staging-default"
+```
