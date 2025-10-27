@@ -31,19 +31,11 @@ RSpec.describe "Temporal shim definitions" do
     Object.send(:remove_const, :Temporalio) if Object.const_defined?(:Temporalio)
     Object.const_set(:Temporalio, original_temporalio) if original_temporalio
 
-    if original_workflow_defined
-      workflows_mod.send(:remove_const, :AjWorkflow) if workflows_mod.const_defined?(:AjWorkflow, false)
-      workflows_mod.const_set(:AjWorkflow, original_workflow_class)
-    else
-      workflows_mod.send(:remove_const, :AjWorkflow) if workflows_mod.const_defined?(:AjWorkflow, false)
-    end
+    workflows_mod.send(:remove_const, :AjWorkflow) if workflows_mod.const_defined?(:AjWorkflow, false)
+    workflows_mod.const_set(:AjWorkflow, original_workflow_class) if original_workflow_defined
 
-    if original_activity_defined
-      activities_mod.send(:remove_const, :AjRunnerActivity) if activities_mod.const_defined?(:AjRunnerActivity, false)
-      activities_mod.const_set(:AjRunnerActivity, original_activity_class)
-    else
-      activities_mod.send(:remove_const, :AjRunnerActivity) if activities_mod.const_defined?(:AjRunnerActivity, false)
-    end
+    activities_mod.send(:remove_const, :AjRunnerActivity) if activities_mod.const_defined?(:AjRunnerActivity, false)
+    activities_mod.const_set(:AjRunnerActivity, original_activity_class) if original_activity_defined
   end
 
   it "provides Temporal stubs when the SDK is unavailable" do
