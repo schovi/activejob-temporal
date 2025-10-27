@@ -10,22 +10,32 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I3.T6",
+  "task_id": "I3.T7",
   "iteration_id": "I3",
   "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
-  "description": "Review and update the cancellation sequence diagram created in I2.T1 (`docs/diagrams/cancellation_sequence.puml`) to reflect the actual implementation from I3.T5. Ensure the diagram shows the correct method signature (`cancel(job_class, job_id)`) and flow. Update any notes to clarify best-effort cancellation behavior (requires heartbeating for prompt abort). Verify diagram renders correctly.",
-  "agent_type_hint": "DocumentationAgent",
-  "inputs": "Cancellation API implementation from I3.T5, original sequence diagram from I2.T1",
+  "description": "Run `rake rubocop` on all code written in Iteration 3 (adapter, cancellation). Fix any Rubocop offenses. Update `.rubocop.yml` if needed. Acceptance: `rake rubocop` passes with zero offenses.",
+  "agent_type_hint": "BackendAgent",
+  "inputs": "Rubocop configuration, code from I3.T1-I3.T5",
   "target_files": [
-    "docs/diagrams/cancellation_sequence.puml"
+    "lib/activejob/temporal/adapter.rb",
+    "lib/activejob/temporal/cancel.rb",
+    "spec/unit/adapter_spec.rb",
+    "spec/unit/cancel_spec.rb",
+    ".rubocop.yml"
   ],
   "input_files": [
-    "docs/diagrams/cancellation_sequence.puml",
-    "lib/activejob/temporal/cancel.rb"
+    "lib/activejob/temporal/adapter.rb",
+    "lib/activejob/temporal/cancel.rb",
+    "spec/unit/adapter_spec.rb",
+    "spec/unit/cancel_spec.rb",
+    ".rubocop.yml"
   ],
-  "deliverables": "Updated and accurate cancellation sequence diagram",
-  "acceptance_criteria": "Diagram reflects `cancel(job_class, job_id)` method signature; Diagram shows workflow_id construction, handle retrieval, cancel call; Diagram includes notes about best-effort cancellation and heartbeating requirement; Diagram renders without syntax errors in PlantUML",
+  "deliverables": "Clean code passing Rubocop checks",
+  "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses); All auto-correctable offenses are fixed; Any manual fixes are applied; If `.rubocop.yml` is updated, changes are documented",
   "dependencies": [
+    "I3.T1",
+    "I3.T2",
+    "I3.T3",
     "I3.T5"
   ],
   "parallelizable": false,
@@ -39,26 +49,58 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: Cancellation Flow Design
+### Context: Iteration 3 Overview (from 02_Iteration_I3.md)
 
-The cancellation API is designed to provide best-effort cancellation of running Temporal workflows. The key architectural decisions are:
+This task is part of Iteration 3, which focuses on implementing the ActiveJob adapter and cancellation API.
 
-1. **Method Signature:** The API requires both `job_class` and `job_id` parameters because the deterministic workflow ID format is `ajwf:<ClassName>:<job_id>`. This allows the cancellation API to construct the exact workflow ID needed to request cancellation.
+**Iteration Goal:** Implement the ActiveJob adapter (`TemporalAdapter`) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.
 
-2. **Workflow ID Format:** The format `ajwf:#{job_class.name}:#{job_id}` is used consistently across enqueue and cancellation operations to ensure workflows can be reliably found and cancelled.
+**Prerequisites:**
+- I1 (Foundation modules: Configuration, Client, Payload, RetryMapper, SearchAttributes, Logger)
+- I2 (Workflow and Activity implementation: AjWorkflow, AjRunnerActivity)
 
-3. **Best-Effort Semantics:** If the workflow has already completed or doesn't exist, the cancellation request is logged as a warning but doesn't raise an error. This provides graceful degradation.
+**Iteration 3 includes these tasks:**
+- I3.T1: Implement TemporalAdapter Core (enqueue method)
+- I3.T2: Implement enqueue_at method (scheduled jobs)
+- I3.T3: Implement enqueue_after_transaction_commit? method
+- I3.T4: Register TemporalAdapter with ActiveJob
+- I3.T5: Implement Cancellation API
+- I3.T6: Update cancellation sequence diagram
+- **I3.T7: Run Rubocop and fix style issues (CURRENT TASK)**
+- I3.T8: Run unit tests and verify coverage
 
-4. **Heartbeating Requirement:** For activities to respond promptly to cancellation, they must call `Temporalio::Activity.heartbeat` periodically. Without heartbeating, the activity may complete even after a cancellation signal is sent.
+### Context: Code Quality Requirements (from 03_Verification_and_Glossary.md)
 
-### Context: Alternative Approaches Considered
+**Code Quality Gates:**
 
-The architecture documents note that an alternative approach using Temporal Signals was considered but rejected in favor of the simpler `handle.cancel` approach for v0.1. The Signal-based approach would have required:
-- Custom Signal handlers in the workflow
-- Additional workflow code complexity
-- More integration testing
+The project uses several quality gates to ensure code quality:
 
-The chosen approach of using `handle.cancel` directly provides simpler semantics and leverages Temporal's built-in cancellation mechanism.
+1. **Rubocop**: Enforces Ruby style guide
+   - Configuration: `.rubocop.yml`
+   - Target Ruby Version: 3.2
+   - Line Length: Max 120 characters
+   - Block Length: Max 25 (excluded in spec files)
+   - Method Length: Max 20
+   - Module Length: Max 200
+   - String Literals: Enforced double quotes
+
+2. **SimpleCov Coverage**: >= 90% test coverage required
+
+3. **YARD Documentation**: Public APIs must be documented
+
+4. **Dependency Scanning**: Dependencies must be up-to-date and secure
+
+### Context: Project Ruby Configuration
+
+**Ruby Version Requirements:**
+- Minimum: Ruby >= 3.2
+- Rails >= 6.1
+- Uses frozen string literals in all files
+
+**Style Preferences:**
+- Double-quoted strings (`EnforcedStyle: double_quotes`)
+- NewCops enabled
+- Documentation checks disabled (test framework and gem code)
 
 ---
 
@@ -68,111 +110,235 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
-*   **File:** `lib/activejob/temporal/cancel.rb`
-    *   **Summary:** This file implements the cancellation API with the actual method signature `ActiveJob::Temporal::Cancel.cancel(job_class, job_id)`. The implementation constructs the workflow_id, retrieves the workflow handle, and calls cancel on it. It includes error handling for workflow-not-found scenarios and proper logging.
-    *   **Key Implementation Details:**
-        - Line 19: Method signature is `cancel(job_class, job_id)`
-        - Line 20: Workflow ID constructed as `"ajwf:#{job_class.name}:#{job_id}"`
-        - Line 21: Uses `client.workflow_handle(workflow_id).cancel` to request cancellation
-        - Lines 23-26: Best-effort error handling for workflow not found
-        - Lines 48-65: Logging for both success and not-found scenarios
-    *   **Recommendation:** You MUST update the diagram to reflect this exact implementation flow.
+#### File: `.rubocop.yml`
+- **Summary:** This file contains the project's Rubocop configuration with sensible defaults for a Ruby gem project.
+- **Current Configuration:**
+  - Target Ruby Version: 3.2
+  - Line Length: Max 120 characters
+  - Block Length: Max 25 (spec files excluded)
+  - Method Length: Max 20
+  - Module Length: Max 200
+  - Style/Documentation: Disabled (common for gems)
+  - Style/StringLiterals: EnforcedStyle is `double_quotes`
+  - Naming/FileName: Excludes `lib/activejob-temporal.rb`
+  - Gemspec/DevelopmentDependencies: Disabled
+- **Recommendation:** You SHOULD NOT need to modify this file unless there are legitimate style conflicts that cannot be auto-corrected. If you do modify it, you MUST add comments explaining the rationale.
 
-*   **File:** `lib/activejob/temporal/adapter.rb`
-    *   **Summary:** Shows consistent workflow ID construction using `build_workflow_id(job)` which returns `"ajwf:#{job.class.name}:#{job.job_id}"` (line 14). This matches the format used by cancellation.
-    *   **Recommendation:** The diagram should show this consistent workflow ID format to demonstrate how cancellation can deterministically find workflows.
+#### File: `lib/activejob/temporal/adapter.rb`
+- **Summary:** This is the main ActiveJob adapter implementation that bridges ActiveJob with Temporal workflows. It includes the `TemporalAdapter` class with `enqueue`, `enqueue_at`, and `enqueue_after_transaction_commit?` methods.
+- **Current State:** 146 lines of code implementing the full adapter interface
+- **Key Features:**
+  - Deterministic workflow ID generation
+  - Task queue resolution with optional prefix
+  - Payload serialization and validation
+  - Search attributes attachment
+  - Retry policy mapping
+  - Comprehensive error handling for duplicate workflows and connection failures
+- **Recommendation:** This file should already be well-structured. You SHOULD run rubocop and fix any auto-correctable offenses first, then review any remaining manual fixes needed.
 
-*   **File:** `docs/diagrams/cancellation_sequence.puml`
-    *   **Summary:** Current diagram has the incorrect method signature `cancel(job_id)` on line 12 and needs updates to match actual implementation.
-    *   **Recommendation:** See detailed changes below.
+#### File: `lib/activejob/temporal/cancel.rb`
+- **Summary:** This module provides the cancellation API for cancelling running Temporal workflows.
+- **Current State:** 70 lines of code implementing best-effort cancellation
+- **Key Features:**
+  - Workflow ID building from job class and job ID
+  - Cancellation request sending via Temporal client
+  - Graceful handling of "not found" errors
+  - Comprehensive logging of cancellation events
+- **Recommendation:** This file is relatively short and should have minimal style issues. You SHOULD check for proper error handling documentation.
+
+#### File: `spec/unit/adapter_spec.rb`
+- **Summary:** Comprehensive unit tests for the TemporalAdapter covering all enqueue scenarios.
+- **Current State:** 334 lines of well-structured RSpec tests
+- **Test Coverage:**
+  - Workflow ID building and determinism
+  - Task queue resolution with/without prefix
+  - Enqueue method with all dependencies mocked
+  - Enqueue_at for scheduled jobs
+  - Transaction-aware enqueuing
+  - ActiveJob adapter registration
+- **Recommendation:** Spec files are excluded from BlockLength checks, but other style rules still apply. You SHOULD ensure consistent formatting and proper use of RSpec DSL.
+
+#### File: `spec/unit/cancel_spec.rb`
+- **Summary:** Unit tests for the cancellation API covering success and error scenarios.
+- **Current State:** 116 lines of RSpec tests with proper mocking
+- **Test Coverage:**
+  - Successful cancellation
+  - Workflow not found handling
+  - Other RPC error propagation
+  - Proper logging verification
+- **Recommendation:** This spec file includes a mock for `Temporalio::Error::RPCError` which is a good pattern. Ensure this doesn't trigger any Rubocop warnings.
+
+#### File: `Rakefile`
+- **Summary:** The project's Rake configuration with tasks for running tests, Rubocop, and generating documentation.
+- **Key Tasks:**
+  - `rake spec`: Run RSpec tests
+  - `rake rubocop`: Run Rubocop linter
+  - `rake yard`: Generate YARD documentation
+  - `rake default`: Runs both rubocop and spec
+- **Recommendation:** You SHOULD use `rake rubocop` or `rake rubocop -a` for auto-correction. The rake task is properly configured to work with the project's Ruby environment.
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The current diagram has good structure with alt blocks showing heartbeating vs non-heartbeating scenarios (lines 26-38). Preserve this structure as it accurately represents the behavior.
+#### Tip 1: Ruby Environment Issues
+- **Issue:** The project has Ruby version conflicts. The system Ruby (2.6.10) is being used instead of the project's required Ruby 3.3.5.
+- **Solution:** You SHOULD use the vendor bundle to run rubocop: `vendor/bundle/ruby/3.3.0/bin/rubocop [files]` or ensure the correct Ruby version is active before running `rake rubocop`.
+- **Alternative:** You MAY need to use a Ruby version manager (like RVM or rbenv) to switch to Ruby 3.3.5 first.
 
-*   **Note:** The diagram must emphasize that Cancel API accepts BOTH `job_class` and `job_id` parameters. This is not optional - the workflow ID format requires the class name.
+#### Tip 2: Auto-Correction Strategy
+- **Best Practice:** Always run rubocop with the `-a` or `--auto-correct` flag first to fix all auto-correctable offenses.
+- **Command:** `rake rubocop -a` or `vendor/bundle/ruby/3.3.0/bin/rubocop -a [files]`
+- **After Auto-Correction:** Review the changes to ensure they don't break functionality, then commit.
 
-*   **Note:** Line 20 mentions `reason = "user_request"` but the actual Ruby implementation (cancel.rb line 21) doesn't pass a reason parameter. The Ruby SDK's `cancel` method is called without arguments. You should remove or update this note.
+#### Tip 3: Common Rubocop Offenses to Watch For
+Based on the code I reviewed, potential issues might include:
+- **Line Length:** Some lines in `adapter_spec.rb` might exceed 120 characters (especially in expect assertions)
+- **Method Length:** Private methods in `adapter.rb` might be close to the 20-line limit
+- **Variable Naming:** Ensure snake_case for all variables
+- **Trailing Whitespace:** Common in test files
+- **String Literals:** Ensure all strings use double quotes, not single quotes (unless it's a special case)
 
-*   **Tip:** The notes about deterministic workflow_id (line 16) and heartbeating (line 40) are critical and should be preserved/enhanced.
+#### Tip 4: Files That Should Pass Easily
+These files are likely already compliant or very close:
+- `.rubocop.yml` (configuration file, not checked)
+- `lib/activejob/temporal/cancel.rb` (short, simple module)
+- `spec/unit/cancel_spec.rb` (well-structured tests)
 
-*   **Warning:** The diagram currently shows `handle = client.workflow_handle(AjWorkflow, workflow_id)` on line 17, but the actual implementation only passes `workflow_id`. The workflow type is not needed when retrieving a handle by ID.
+#### Tip 5: Files That May Need Attention
+These files might have style issues due to complexity:
+- `lib/activejob/temporal/adapter.rb` (146 lines, multiple private methods)
+- `spec/unit/adapter_spec.rb` (334 lines, many test scenarios with long expectations)
 
-### Required Changes to cancellation_sequence.puml
+#### Warning: Do Not Break Functionality
+- **Critical:** While fixing style issues, you MUST NOT change the logic or behavior of the code.
+- **Test After Changes:** After applying auto-corrections, you SHOULD run `rake spec` to ensure all tests still pass.
+- **If Tests Fail:** Revert the problematic change and apply manual fixes instead.
 
-**Critical Updates:**
+### Execution Steps Recommendation
 
-1. **Line 12:** Change from:
-   ```
-   Dev -> Rails: ActiveJob::Temporal.cancel(job_id)
-   ```
-   To:
-   ```
-   Dev -> Rails: ActiveJob::Temporal.cancel(SendInvoiceJob, "job-uuid-123")
-   ```
+Based on my analysis, here's the recommended approach:
 
-2. **Line 13:** Change from:
-   ```
-   Rails -> Cancel: cancel(job_id)
-   ```
-   To:
-   ```
-   Rails -> Cancel: cancel(SendInvoiceJob, "job-uuid-123")
-   ```
+1. **Ensure Correct Ruby Environment:**
+   ```bash
+   # Verify Ruby version
+   ruby --version  # Should be 3.3.5 or similar
 
-3. **Line 15:** Keep as is - already correct:
-   ```
-   Cancel -> Cancel: workflow_id = "ajwf:SendInvoiceJob:job-uuid-123"
-   ```
-
-4. **Line 17:** Change from:
-   ```
-   Cancel -> Client: ActiveJob::Temporal.client.workflow_handle(AjWorkflow, workflow_id)
-   ```
-   To:
-   ```
-   Cancel -> Client: client.workflow_handle(workflow_id)
-   ```
-
-5. **Line 18:** Update note to:
-   ```
-   note right of Client: Retrieves workflow handle by workflow_id only
+   # If not, use RVM or rbenv to switch
+   # rvm use 3.3.5
+   # OR
+   # rbenv local 3.3.5
    ```
 
-6. **Line 19:** Change from:
+2. **Run Rubocop on I3 Files:**
+   ```bash
+   # First, just check for offenses
+   rake rubocop
+
+   # Or check specific I3 files
+   vendor/bundle/ruby/3.3.0/bin/rubocop \
+     lib/activejob/temporal/adapter.rb \
+     lib/activejob/temporal/cancel.rb \
+     spec/unit/adapter_spec.rb \
+     spec/unit/cancel_spec.rb
    ```
-   Client -> Temporal: handle.cancel()
+
+3. **Auto-Correct All Possible Offenses:**
+   ```bash
+   # Let rubocop fix auto-correctable issues
+   rake rubocop -a
+
+   # Or for specific files
+   vendor/bundle/ruby/3.3.0/bin/rubocop -a \
+     lib/activejob/temporal/adapter.rb \
+     lib/activejob/temporal/cancel.rb \
+     spec/unit/adapter_spec.rb \
+     spec/unit/cancel_spec.rb
    ```
-   Keep the parentheses but note is correct. This line is fine.
 
-7. **Line 20:** Remove or update the note about reason parameter:
+4. **Review and Commit Auto-Corrections:**
+   ```bash
+   git diff  # Review changes
+   git add [files]
+   git commit -m "style: auto-correct rubocop offenses in I3 files"
    ```
-   note right of Client: Sends cancellation request to Temporal cluster via gRPC API
+
+5. **Manually Fix Remaining Offenses:**
+   - Read each remaining offense carefully
+   - Apply fixes that don't change behavior
+   - If an offense is unavoidable (e.g., method complexity), consider adding a rubocop disable comment with justification
+
+6. **Verify Tests Still Pass:**
+   ```bash
+   rake spec
    ```
 
-### Testing the Diagram
+7. **Final Rubocop Check:**
+   ```bash
+   rake rubocop
+   # Exit code should be 0
+   ```
 
-After making changes:
+8. **Document Any Configuration Changes:**
+   - If you modified `.rubocop.yml`, add comments explaining why
+   - Update this briefing or create a note for the team
 
-1. **Syntax Validation:** Ensure all `alt` blocks have matching `end` statements (currently correct at line 38)
-2. **Participant Definition:** All participants are defined at top (lines 4-10) - this is correct
-3. **Activation/Deactivation:** Only Cancel is activated/deactivated (lines 14, 22) - this is correct
-4. **Notes Position:** All notes use proper PlantUML note syntax
+### Known Issues to Address
 
-### Educational Content to Preserve
+Based on typical patterns in the codebase:
 
-The diagram has excellent educational notes that should be preserved:
-- Line 16: Explains deterministic workflow_id format
-- Line 34: Warns about non-heartbeating activities
-- Line 40: Emphasizes heartbeating best practice
+1. **Long Test Expectations:** The adapter_spec.rb file likely has some long expectation lines. You may need to break these into multiple lines or extract to variables.
 
-These notes provide critical context for users understanding cancellation behavior.
+2. **Private Method Documentation:** Private methods in adapter.rb have YARD-style comments, which is good, but ensure they don't trigger Documentation cop if it's re-enabled.
 
-### Final Verification
+3. **Mock Class Definitions:** The cancel_spec.rb defines mock classes for Temporalio errors. Ensure these don't trigger naming convention warnings.
 
-After updates, verify:
-- Method signatures show `(job_class, job_id)` throughout
-- Workflow ID construction is explicit and matches actual format
-- Client API calls match Ruby SDK methods
-- Error handling notes reflect best-effort semantics
-- Heartbeating behavior is clearly explained
+4. **String Quotes:** Verify all strings use double quotes consistently throughout the I3 files.
+
+### Success Criteria Checklist
+
+To complete this task successfully, you MUST achieve:
+
+- [ ] `rake rubocop` exits with status 0 (zero offenses)
+- [ ] All auto-correctable offenses are fixed
+- [ ] Any manual fixes are applied correctly
+- [ ] No functionality is broken (all tests still pass)
+- [ ] If `.rubocop.yml` is updated, changes are documented with comments
+- [ ] All four I3 files pass rubocop individually:
+  - [ ] `lib/activejob/temporal/adapter.rb`
+  - [ ] `lib/activejob/temporal/cancel.rb`
+  - [ ] `spec/unit/adapter_spec.rb`
+  - [ ] `spec/unit/cancel_spec.rb`
+
+---
+
+## 4. Additional Context
+
+### Project Structure Overview
+```
+activejob-temporal/
+├── lib/
+│   └── activejob/
+│       └── temporal/
+│           ├── adapter.rb         # I3.T1-T3 (Main adapter implementation)
+│           ├── cancel.rb          # I3.T5 (Cancellation API)
+│           ├── client.rb          # I1.T4 (Temporal client wrapper)
+│           ├── payload.rb         # I1.T5 (Payload serializer)
+│           ├── retry_mapper.rb    # I1.T6 (Retry policy mapper)
+│           ├── search_attributes.rb # I1.T7 (Search attributes builder)
+│           └── logger.rb          # I1.T8 (Structured logger)
+├── spec/
+│   └── unit/
+│       ├── adapter_spec.rb        # I3.T1-T4 tests
+│       └── cancel_spec.rb         # I3.T5 tests
+├── .rubocop.yml                   # Rubocop configuration
+├── Rakefile                       # Task definitions
+└── Gemfile                        # Dependencies
+```
+
+### Related Documentation
+- Ruby Style Guide: https://rubystyle.guide/
+- Rubocop Documentation: https://docs.rubocop.org/
+- Project-specific style guidelines: See `.rubocop.yml` for customizations
+
+---
+
+**End of Task Briefing Package**
