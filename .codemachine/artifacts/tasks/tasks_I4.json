@@ -12,7 +12,7 @@
     "acceptance_criteria": "`bin/temporal-worker` file exists and is executable (`chmod +x`); Script starts with shebang: `#!/usr/bin/env ruby`; Script requires gem entrypoint and (optionally) Rails environment; Worker is created with correct parameters: `task_queue`, `workflows`, `activities`, `shutdown_signals`, `max_concurrent_activity_task_executions`; Worker starts and blocks on `worker.run`; Log event \"worker_started\" is written with task_queue, max_concurrency; On SIGTERM/SIGINT, worker gracefully shuts down (logs \"worker_shutdown\" event); `docs/worker_setup.md` includes: prerequisites (Temporal test server running), how to run worker (`bin/temporal-worker`), environment variables needed, expected log output; Manual test: Running `TEMPORAL_TARGET=localhost:7233 AJ_TEMPORAL_WORKER_QUEUE=default bin/temporal-worker` starts worker without errors (can be tested manually or in integration tests)",
     "dependencies": ["I1.T4", "I1.T8", "I2.T2", "I2.T3"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I4.T2",

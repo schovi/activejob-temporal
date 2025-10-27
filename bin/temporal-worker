@@ -1,0 +1,55 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "activejob-temporal"
+
+begin
+  require "temporalio/worker"
+rescue LoadError => e
+  warn("temporalio-worker gem is required to run this worker: #{e.message}")
+  exit(1)
+end
+
+rails_root = ENV.fetch("RAILS_ROOT", nil)
+if rails_root && !rails_root.empty?
+  # Load Rails application so job classes and initializers are available.
+  require File.expand_path("config/environment", rails_root)
+end
+
+ActiveJob::Temporal.configure do |config|
+  config.target = ENV.fetch("TEMPORAL_TARGET", config.target)
+  config.namespace = ENV.fetch("TEMPORAL_NAMESPACE", config.namespace)
+end
+
+task_queue = ENV.fetch("AJ_TEMPORAL_WORKER_QUEUE", "default")
+max_concurrent_activities = ENV.fetch("AJ_TEMPORAL_MAX_ACT", 100).to_i
+
+client = ActiveJob::Temporal.client
+
+worker = Temporalio::Worker.new(
+  client: client,
+  task_queue: task_queue,
+  workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
+  activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
+  shutdown_signals: %w[SIGINT SIGTERM],
+  max_concurrent_activity_task_executions: max_concurrent_activities
+)
+
+ActiveJob::Temporal::Logger.log_event(
+  "worker_started",
+  task_queue: task_queue,
+  max_concurrent_activities: max_concurrent_activities,
+  namespace: ActiveJob::Temporal.config.namespace,
+  target: ActiveJob::Temporal.config.target
+)
+
+begin
+  worker.run
+rescue Interrupt
+  # Temporal worker raises Interrupt on shutdown signals; swallow to allow clean exit.
+ensure
+  ActiveJob::Temporal::Logger.log_event(
+    "worker_shutdown",
+    task_queue: task_queue
+  )
+end
