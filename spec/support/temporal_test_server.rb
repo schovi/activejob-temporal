@@ -60,7 +60,9 @@ module TemporalTestHelper
     end
 
     def store_original_configuration
-      @store_original_configuration ||= {
+      return @store_original_configuration if defined?(@store_original_configuration)
+
+      @store_original_configuration = {
         target: ActiveJob::Temporal.config.target,
         namespace: ActiveJob::Temporal.config.namespace
       }

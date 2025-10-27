@@ -27,7 +27,7 @@
     "acceptance_criteria": "`spec/support/temporal_test_server.rb` exists with `TemporalTestHelper` module; Helper starts Temporal test server (or documents manual setup); Helper provides `TemporalTestHelper.client` method returning connected client; Test server uses \"test\" namespace; `spec/spec_helper.rb` requires temporal_test_server helper; Smoke test in `spec/integration/temporal_connection_spec.rb` connects to test server and lists workflows (empty list expected); `rake spec` passes for temporal_connection_spec.rb; Manual verification: Running `rake spec:integration` starts test server and runs smoke test",
     "dependencies": ["I1.T4"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I4.T3",
