@@ -131,3 +131,116 @@ RSpec.describe ActiveJob::Temporal::Adapter do
     end
   end
 end
+
+RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
+  subject(:adapter) { described_class.new }
+
+  let(:job) do
+    job = SimpleJob.new
+    job.job_id = "job-123"
+    job.queue_name = "mailers"
+    job
+  end
+
+  let(:payload) do
+    {
+      job_class: "SimpleJob",
+      job_id: "job-123",
+      queue_name: "mailers",
+      arguments: []
+    }
+  end
+
+  let(:retry_policy) do
+    {
+      initial_interval: 30.0,
+      backoff_coefficient: 2.0,
+      maximum_attempts: 3,
+      non_retryable_error_types: []
+    }
+  end
+
+  let(:workflow_id) { "ajwf:SimpleJob:job-123" }
+  let(:task_queue) { "mailers" }
+  let(:search_attributes) { { ajClass: "SimpleJob", ajQueue: "mailers" } }
+  let(:client) { instance_double("TemporalClient") }
+  let(:workflow_handle) { instance_double("WorkflowHandle") }
+
+  before do
+    allow(ActiveJob::Temporal::Payload).to receive(:from_job).with(job).and_return(payload)
+    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(SimpleJob).and_return(retry_policy)
+    allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
+    allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
+    allow(ActiveJob::Temporal::SearchAttributes).to receive(:for).with(job).and_return(search_attributes)
+    allow(ActiveJob::Temporal).to receive(:client).and_return(client)
+    allow(client).to receive(:start_workflow).and_return(workflow_handle)
+    allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+  end
+
+  describe "#enqueue" do
+    it "serializes payload, augments retry policy, and starts workflow" do
+      result = adapter.enqueue(job)
+
+      expect(result).to eq(workflow_handle)
+      expect(payload[:retry_policy]).to eq(retry_policy)
+      expect(client).to have_received(:start_workflow).with(
+        ActiveJob::Temporal::Workflows::AjWorkflow,
+        payload,
+        id: workflow_id,
+        task_queue: task_queue,
+        id_conflict_policy: :reject,
+        search_attributes: search_attributes
+      )
+      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
+        "workflow_enqueued",
+        workflow_id: workflow_id,
+        job_class: "SimpleJob",
+        job_id: "job-123",
+        queue: "mailers",
+        task_queue: task_queue,
+        duplicate: false
+      )
+    end
+
+    it "propagates serialization errors" do
+      error = ActiveJob::SerializationError.new("too large")
+      allow(ActiveJob::Temporal::Payload).to receive(:from_job).and_raise(error)
+
+      expect { adapter.enqueue(job) }.to raise_error(ActiveJob::SerializationError, "too large")
+    end
+
+    it "wraps Temporal client failures in ActiveJob::EnqueueError" do
+      allow(client).to receive(:start_workflow).and_raise(StandardError, "connection refused")
+
+      expect { adapter.enqueue(job) }
+        .to raise_error(ActiveJob::EnqueueError, /Failed to enqueue job SimpleJob \(job-123\): connection refused/)
+    end
+
+    it "treats duplicate workflow IDs as successful enqueue" do
+      duplicate_error = Class.new(StandardError)
+      stub_const("Temporalio", Module.new) unless defined?(Temporalio)
+      stub_const("Temporalio::Client", Module.new) unless defined?(Temporalio::Client)
+      stub_const("Temporalio::Client::WorkflowAlreadyStartedError", duplicate_error)
+      allow(client).to receive(:start_workflow).and_raise(duplicate_error.new("already started"))
+
+      result = adapter.enqueue(job)
+
+      expect(result).to be_nil
+      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
+        "workflow_enqueued",
+        workflow_id: workflow_id,
+        job_class: "SimpleJob",
+        job_id: "job-123",
+        queue: "mailers",
+        task_queue: task_queue,
+        duplicate: true
+      )
+    end
+
+    it "fetches retry policy for the job class" do
+      adapter.enqueue(job)
+
+      expect(ActiveJob::Temporal::RetryMapper).to have_received(:for).with(SimpleJob)
+    end
+  end
+end
