@@ -10,32 +10,26 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I4.T1",
+  "task_id": "I4.T2",
   "iteration_id": "I4",
   "iteration_goal": "Implement the Temporal worker bootstrap script, write comprehensive integration tests with a real Temporal test server, and validate end-to-end functionality (enqueue → workflow → activity → job execution).",
-  "description": "Create `bin/temporal-worker` executable script that bootstraps a Temporal worker process. The script must: (1) Require the gem's entrypoint (`require 'activejob-temporal'`). (2) Require Rails environment if RAILS_ROOT env var is set (for loading job classes): `require File.expand_path('../config/environment', ENV['RAILS_ROOT'])` (or similar). (3) Read worker configuration from environment variables: `TEMPORAL_TARGET`, `TEMPORAL_NAMESPACE`, `AJ_TEMPORAL_WORKER_QUEUE` (task queue to poll), `AJ_TEMPORAL_MAX_ACT` (max concurrent activities, default 100). (4) Get Temporal client using `ActiveJob::Temporal.client` (configured via env vars or config file). (5) Create Temporal worker: `worker = Temporalio::Worker.new(client: client, task_queue: ENV.fetch('AJ_TEMPORAL_WORKER_QUEUE', 'default'), workflows: [ActiveJob::Temporal::Workflows::AjWorkflow], activities: [ActiveJob::Temporal::Activities::AjRunnerActivity], shutdown_signals: %w[SIGINT SIGTERM], max_concurrent_activity_task_executions: ENV.fetch('AJ_TEMPORAL_MAX_ACT', 100).to_i)`. (6) Start worker with `worker.run` (blocks until shutdown signal). (7) Log worker startup and shutdown events using `Logger.log_event`. (8) Handle graceful shutdown: on SIGTERM/SIGINT, worker finishes in-flight activities before exiting. Make the script executable (`chmod +x bin/temporal-worker`). Write basic manual test instructions in `docs/worker_setup.md` explaining how to run the worker locally against a Temporal test server.",
+  "description": "Create `spec/support/temporal_test_server.rb` with a helper to start and stop a Temporal test server for integration tests. The Temporal Ruby SDK may include a test server (check SDK documentation). If available, wrap it in RSpec `before(:suite)` and `after(:suite)` hooks to start server once before all integration tests and stop after. If SDK doesn't include test server, document manual setup: run `temporal server start-dev` in background before tests, or use Docker Compose. Provide a method `TemporalTestHelper.client` that returns a client connected to the test server. Ensure test server uses a test namespace (e.g., \"test\"). Write a simple smoke test in `spec/integration/temporal_connection_spec.rb` that verifies connection to test server (e.g., list workflows, should return empty list initially). This ensures test infrastructure is working before writing real integration tests.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "Section 3.9 (Deployment View - Worker Bootstrap), temporalio Ruby worker documentation, environment variable best practices",
+  "inputs": "temporalio Ruby testing documentation, Temporal test server documentation, RSpec setup patterns",
   "target_files": [
-    "bin/temporal-worker",
-    "docs/worker_setup.md"
+    "spec/support/temporal_test_server.rb",
+    "spec/integration/temporal_connection_spec.rb",
+    "spec/spec_helper.rb"
   ],
   "input_files": [
-    "lib/activejob-temporal.rb",
-    "lib/activejob/temporal/workflows/aj_workflow.rb",
-    "lib/activejob/temporal/activities/aj_runner_activity.rb",
-    "lib/activejob/temporal/client.rb",
-    "lib/activejob/temporal/logger.rb"
+    "spec/spec_helper.rb"
   ],
-  "deliverables": "Executable worker script, worker setup documentation, working graceful shutdown",
-  "acceptance_criteria": "`bin/temporal-worker` file exists and is executable (`chmod +x`); Script starts with shebang: `#!/usr/bin/env ruby`; Script requires gem entrypoint and (optionally) Rails environment; Worker is created with correct parameters: `task_queue`, `workflows`, `activities`, `shutdown_signals`, `max_concurrent_activity_task_executions`; Worker starts and blocks on `worker.run`; Log event \"worker_started\" is written with task_queue, max_concurrency; On SIGTERM/SIGINT, worker gracefully shuts down (logs \"worker_shutdown\" event); `docs/worker_setup.md` includes: prerequisites (Temporal test server running), how to run worker (`bin/temporal-worker`), environment variables needed, expected log output; Manual test: Running `TEMPORAL_TARGET=localhost:7233 AJ_TEMPORAL_WORKER_QUEUE=default bin/temporal-worker` starts worker without errors (can be tested manually or in integration tests)",
+  "deliverables": "Working Temporal test server setup, passing smoke test for connection",
+  "acceptance_criteria": "`spec/support/temporal_test_server.rb` exists with `TemporalTestHelper` module; Helper starts Temporal test server (or documents manual setup); Helper provides `TemporalTestHelper.client` method returning connected client; Test server uses \"test\" namespace; `spec/spec_helper.rb` requires temporal_test_server helper; Smoke test in `spec/integration/temporal_connection_spec.rb` connects to test server and lists workflows (empty list expected); `rake spec` passes for temporal_connection_spec.rb; Manual verification: Running `rake spec:integration` starts test server and runs smoke test",
   "dependencies": [
-    "I1.T4",
-    "I1.T8",
-    "I2.T2",
-    "I2.T3"
+    "I1.T4"
   ],
-  "parallelizable": false,
+  "parallelizable": true,
   "done": false
 }
 ```
@@ -46,57 +40,61 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: logging-strategy (from 05_Operational_Architecture.md)
+### Context: Testing Levels (from 03_Verification_and_Glossary.md)
 
-```markdown
-##### **Logging Strategy**
+The activejob-temporal gem employs a comprehensive, multi-layered testing strategy to ensure correctness, reliability, and production readiness.
 
-**Structured Logging (JSON Format)**
+**Unit Testing (RSpec)**
 
-The gem emits structured logs to `Rails.logger` (configurable via `ActiveJob::Temporal.config.logger`).
+- **Scope**: Individual classes and modules in isolation
+- **Location**: `spec/unit/`
+- **Coverage Target**: >= 90% code coverage for each module
+- **Mocking Strategy**: Mock external dependencies (Temporal client, workflow/activity execution, job classes) to isolate logic
+- **Tools**: RSpec 3.x, SimpleCov for coverage
 
-**Log Events & Attributes:**
+**Integration Testing (RSpec with Temporal Test Server)**
 
-| Event | Level | Attributes | Example |
-|-------|-------|------------|---------|
-| **Workflow Enqueued** | `info` | `workflow_id`, `run_id`, `job_class`, `job_id`, `queue`, `scheduled_at` (optional) | `{"event": "workflow_enqueued", "workflow_id": "ajwf:SendInvoiceJob:abc123", ...}` |
-| **Activity Started** | `info` | `workflow_id`, `run_id`, `activity_id`, `job_class`, `attempt` | `{"event": "activity_started", "attempt": 1, ...}` |
-| **Activity Completed** | `info` | `workflow_id`, `duration_ms`, `job_class` | `{"event": "activity_completed", "duration_ms": 1234, ...}` |
-| **Activity Failed** | `error` | `workflow_id`, `attempt`, `exception_class`, `exception_message`, `backtrace` (first 5 lines) | `{"event": "activity_failed", "exception_class": "PSP::TransientError", ...}` |
-| **Activity Retry** | `warn` | `workflow_id`, `attempt`, `next_retry_interval`, `exception_class` | `{"event": "activity_retry", "attempt": 2, "next_retry_interval": 60, ...}` |
-| **Cancellation Requested** | `warn` | `workflow_id`, `job_id`, `reason` (optional) | `{"event": "cancellation_requested", ...}` |
-| **Cancellation Acknowledged** | `info` | `workflow_id`, `activity_id` | `{"event": "cancellation_acknowledged", ...}` |
-| **Payload Size Warning** | `warn` | `job_class`, `payload_size_kb`, `limit_kb` | `{"event": "payload_size_warning", "payload_size_kb": 200, ...}` |
-| **Serialization Error** | `error` | `job_class`, `job_id`, `exception_class`, `exception_message` | `{"event": "serialization_error", ...}` |
+- **Scope**: End-to-end workflows with real Temporal server
+- **Location**: `spec/integration/`
+- **Environment**: Temporal test server (in-memory or Docker-based)
+- **Coverage Target**: >= 90% overall coverage (combined with unit tests)
+- **Key Scenarios**:
+  - **Immediate Job Execution**: Enqueue → Workflow → Activity → Job performs → Completion
+  - **Scheduled Job Execution**: Enqueue with `set(wait:)` → Workflow sleeps → Activity executes after delay
+  - **Retry Behavior**: Job fails with retryable exception → Temporal retries activity per policy → Eventual success
+  - **Discard Behavior**: Job fails with non-retryable exception → Workflow fails immediately without retry
+  - **Cancellation**: Enqueue → Job starts → Cancel called → Activity aborts via heartbeat → Workflow cancelled
+  - **Search Attributes**: Enqueue → Workflow completes → Query Temporal for attributes → Verify presence and values
+- **Tools**: RSpec 3.x, Temporal test server helper, SimpleCov
 
-**Logger Configuration:**
+### Context: CI/CD Strategy (from 03_Verification_and_Glossary.md)
 
-```ruby
-# config/initializers/activejob_temporal.rb
-ActiveJob::Temporal.configure do |c|
-  c.logger = SemanticLogger['ActiveJobTemporal'] # or Rails.logger
-end
-```
+**Continuous Integration (GitHub Actions)**
 
-**Best Practices:**
+- **Jobs**:
+  1. **Lint**: Run Rubocop (`bundle exec rubocop`), fail build on offenses
+  2. **Unit Tests**: Run RSpec unit tests (`bundle exec rake spec:unit`), fail on test failures
+  3. **Integration Tests**: Run RSpec integration tests with Temporal test server (`bundle exec rake spec:integration`), fail on test failures
+  4. **Coverage Check**: Upload coverage report to Codecov (optional), enforce >= 90% threshold
+  5. **YARD Docs**: Generate YARD docs (`bundle exec rake yard`), fail on warnings
+  6. **Gem Build**: Build gem (`gem build activejob-temporal.gemspec`), fail if build errors
 
-- **Include Correlation IDs**: Always log `workflow_id` and `run_id` for traceability
-- **Redact Sensitive Data**: Do not log job arguments directly (may contain PII); log argument count or types only
-- **Use Semantic Logger**: Recommended for JSON output + tagging support
-```
+This indicates that the CI system expects separate `rake spec:unit` and `rake spec:integration` tasks to exist.
 
-### Context: worker-authorization (from 05_Operational_Architecture.md)
+### Context: Testing Framework Design (from 06_Rationale_and_Future.md)
 
-```markdown
-**Worker Authorization**
+**Areas for Deeper Dive - Testing Framework**
 
-- **Task Queue Isolation**: Workers only poll queues they're configured for
-  - Example: "billing" worker only processes billing jobs
-  - Prevents cross-queue job execution
-- **No Dynamic Queue Switching (v0.1)**: Workers are statically configured with one task queue
+Design a testing framework tailored for activejob-temporal that simplifies writing tests for Temporal-backed jobs:
 
-**Recommendation**: Use Temporal's namespace-level access control + mTLS for production deployments.
-```
+- **Unit testing helpers**: Stub Temporal workflow execution
+- **Integration tests with Temporal test server** (slow)
+- **Time travel**: `Temporal.time_warp(5.minutes)` in tests (future consideration)
+- **Workflow history assertions**: Verify sleep/activity calls
+- Study Temporal Go/Java SDK test frameworks
+- Document testing best practices
+
+This indicates that integration tests with a real Temporal server are expected to be slower than unit tests, so separating them makes sense.
 
 ---
 
@@ -106,104 +104,118 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
-*   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
-    *   **Summary:** This file defines the `AjWorkflow` class that orchestrates job execution. It inherits from `Temporalio::Workflow::Definition` and implements the `execute(payload)` method with sleep logic for scheduled jobs.
-    *   **Recommendation:** You MUST reference this workflow class when creating the worker. Use `ActiveJob::Temporal::Workflows::AjWorkflow` in the workflows array.
-    *   **Note:** The file includes a shim for `Temporalio::Workflow::Definition` that creates a dummy class when the SDK is not loaded. Your worker script should work with the REAL Temporal SDK.
+*   **File:** `spec/spec_helper.rb`
+    *   **Summary:** This is the main RSpec configuration file. It sets up SimpleCov for code coverage, requires bundler/setup and activejob/temporal, and configures RSpec expectations and mocking.
+    *   **Current State:** The file does NOT load support files from `spec/support/`. It only requires the gem itself.
+    *   **Recommendation:** You MUST modify this file to require the new `spec/support/temporal_test_server.rb` helper. Add `require_relative "support/temporal_test_server"` after the existing requires (around line 10, after `require "activejob/temporal"`).
+    *   **Alternative:** You could use RSpec's auto-loading of support files by adding `Dir[File.join(__dir__, 'support', '**', '*.rb')].each { |f| require f }`, but explicit requiring is simpler for a single file.
 
-*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
-    *   **Summary:** This file defines the `AjRunnerActivity` class that hydrates and executes ActiveJob jobs inside Temporal activities. It handles exception mapping for discard_on behavior.
-    *   **Recommendation:** You MUST reference this activity class when creating the worker. Use `ActiveJob::Temporal::Activities::AjRunnerActivity` in the activities array.
-    *   **Note:** Like the workflow, this file includes shims for `Temporalio::Activity::Definition` and `Temporalio::Activity::ApplicationError` for testing. The worker will use the real SDK classes.
+*   **File:** `lib/activejob/temporal.rb`
+    *   **Summary:** This is the main module file that defines the `ActiveJob::Temporal` module, Configuration class, and class methods like `client`, `config`, and `cancel`. The `client` method returns a memoized Temporal client connection built using `Client.build(config)`.
+    *   **Recommendation:** Your test helper SHOULD use `ActiveJob::Temporal.configure` to set up test-specific configuration (e.g., test namespace, test target). You MUST be aware that the client is memoized (`@client ||= ...`), so you'll need to reset it in your test helper if you want to use a test-specific client instead of the production one.
+    *   **Critical Detail:** The configuration defaults are: `target: "127.0.0.1:7233"`, `namespace: "default"`. For integration tests, you should override the namespace to "test" to isolate test workflows.
 
 *   **File:** `lib/activejob/temporal/client.rb`
-    *   **Summary:** This module provides the `Client.build(configuration)` method that creates a `Temporalio::Client` instance with TLS support (optional, via env vars or config).
-    *   **Recommendation:** You SHOULD use `ActiveJob::Temporal.client` to get the client instance for the worker. This client is already configured with the correct target, namespace, and TLS settings.
-    *   **Critical Detail:** The client method will read from `ActiveJob::Temporal.config`, which itself reads from environment variables like `TEMPORAL_TARGET` and `TEMPORAL_NAMESPACE`.
+    *   **Summary:** This module provides the `Client.build(configuration)` method that creates a connection to Temporal using `Temporalio::Client.connect(target, namespace, **kwargs)`. It supports TLS configuration via environment variables or configuration object.
+    *   **Recommendation:** Your `TemporalTestHelper.client` method SHOULD follow a similar pattern. You can either:
+      1. Configure `ActiveJob::Temporal` with test settings and use `ActiveJob::Temporal.client`
+      2. Or create a separate client directly: `Temporalio::Client.connect("localhost:7233", "test")`
+    *   **Note:** The file includes a `begin/rescue LoadError` block to handle the case where the Temporal SDK is not present. Your test helper should assume the SDK IS present (since integration tests require it), but you MAY want to add a check to provide a helpful error message if the SDK is missing.
 
-*   **File:** `lib/activejob/temporal/logger.rb`
-    *   **Summary:** This module provides structured JSON logging with `log_event(event_name, attributes)` and level-specific methods (`info`, `warn`, `error`). It supports both standard Ruby Logger and SemanticLogger.
-    *   **Recommendation:** You MUST use `ActiveJob::Temporal::Logger.log_event("worker_started", attributes)` and `Logger.log_event("worker_shutdown", attributes)` to log worker lifecycle events.
-    *   **Tip:** Include relevant attributes in your log events: `task_queue`, `max_concurrent_activities`, etc. This follows the architectural best practices for including correlation IDs and operational metadata.
-
-*   **File:** `spec/spec_helper.rb`
-    *   **Summary:** This is the RSpec test configuration file. It requires `simplecov` for coverage tracking and loads the gem with `require "activejob/temporal"`.
-    *   **Recommendation:** Your worker script should follow a similar pattern: require the gem entrypoint (`require "activejob-temporal"`), then access modules via `ActiveJob::Temporal`.
-
-*   **File:** `spec/fixtures/sample_jobs.rb`
-    *   **Summary:** This file defines multiple sample ActiveJob classes for testing (SimpleJob, RetryableJob, DiscardableJob, etc.). It includes a shim for `ApplicationJob` to work without Rails.
-    *   **Note:** This demonstrates how jobs are defined. When the worker script requires the Rails environment (`RAILS_ROOT`), it will load real job classes from the Rails app.
+*   **File:** `spec/unit/client_spec.rb`
+    *   **Summary:** This file contains unit tests for the client connection logic. It uses `stub_const("Temporalio::Client", class_double("Temporalio::Client"))` to mock the Temporal client and tests memoization, TLS options, and error handling.
+    *   **Key Pattern:** The test resets memoized state with `described_class.instance_variable_set(:@client, nil)` and `described_class.instance_variable_set(:@config, nil)` in the `before` block.
+    *   **Recommendation:** Your integration test setup SHOULD NOT mock the Temporal client (unlike unit tests). Instead, you MUST connect to a real Temporal test server. However, you MAY need to reset the memoized client if you're using `ActiveJob::Temporal.client` in tests, to ensure it picks up test configuration.
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The bin/ directory currently exists but is empty. You MUST create the `bin/temporal-worker` script from scratch.
+*   **Tip:** The Temporal Ruby SDK (temporalio gem v1.0.0) does NOT appear to provide a built-in test server utility like the Go or Java SDKs. Based on my analysis of the vendor/bundle directory, I do not see any `Temporalio::Testing` module or similar. Therefore, you should implement the **manual setup approach** documented in the task description.
 
-*   **Tip:** After creating the script, you MUST make it executable using `chmod +x bin/temporal-worker` (you can do this via Bash tool after writing the file).
+*   **Critical Decision:** Since the SDK doesn't provide a test server, your `spec/support/temporal_test_server.rb` file should:
+    1. Define a `TemporalTestHelper` module
+    2. Provide a `TemporalTestHelper.client` method that connects to `localhost:7233` with namespace `"test"`
+    3. Include comments/documentation explaining how to manually start the test server before running integration tests
 
-*   **Critical Architecture Decision:** The worker configuration is read from environment variables, NOT from `ActiveJob::Temporal.config` directly. This is because:
-    1. The config module reads from ENV by default (see I1.T3 implementation)
-    2. Environment variables allow workers to be deployed with different settings without code changes
-    3. The task spec explicitly calls out these env vars: `TEMPORAL_TARGET`, `TEMPORAL_NAMESPACE`, `AJ_TEMPORAL_WORKER_QUEUE`, `AJ_TEMPORAL_MAX_ACT`
+*   **Manual Test Server Setup:** Document these options in comments in the helper file:
+    - **Option 1 (Recommended)**: Use Temporal CLI: `temporal server start-dev --namespace test`
+    - **Option 2**: Use Docker: `docker run -p 7233:7233 -p 8233:8233 temporalio/auto-setup:latest`
+    - The test suite will connect to `localhost:7233` by default
 
-*   **Worker Creation Pattern:** Based on the task description, the worker should be created with:
+*   **Directory Structure:** The task requires creating `spec/integration/` directory. This directory does NOT exist yet (I confirmed from the file tree). You MUST create it when adding `temporal_connection_spec.rb`.
+
+*   **Test Namespace:** Use "test" as the namespace (as specified in acceptance criteria). This isolates integration test workflows from any development or production workflows that might be running on the same Temporal server.
+
+*   **Smoke Test Strategy:** The smoke test should verify basic connectivity by listing workflows. The Temporal Ruby SDK likely provides a method like:
+    - `client.list_workflows` (check SDK docs for exact signature)
+    - Or `client.workflow_service.list_workflows`
+    - The exact method name may vary, so you'll need to check the temporalio gem documentation or source code
+
+*   **RSpec Tags:** Consider tagging integration specs with `:integration` to allow running them separately. Example:
     ```ruby
-    worker = Temporalio::Worker.new(
-      client: client,
-      task_queue: ENV.fetch('AJ_TEMPORAL_WORKER_QUEUE', 'default'),
-      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-      activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
-      shutdown_signals: %w[SIGINT SIGTERM],
-      max_concurrent_activity_task_executions: ENV.fetch('AJ_TEMPORAL_MAX_ACT', 100).to_i
-    )
+    RSpec.describe "Temporal connection", :integration do
+      # ...
+    end
     ```
+    This enables running `rspec --tag integration` or `rspec --tag ~integration` (exclude integration tests).
 
-*   **Rails Environment Loading:** The script MUST conditionally require the Rails environment only if `ENV['RAILS_ROOT']` is set. This allows:
-    1. The worker to run standalone for testing (without Rails)
-    2. The worker to load job classes from a Rails app in production
-
-    Pattern to use:
+*   **Rake Task Addition:** The acceptance criteria mention `rake spec:integration`. You SHOULD add this task to the Rakefile along with `rake spec:unit`. Example:
     ```ruby
-    if ENV['RAILS_ROOT']
-      require File.expand_path('../config/environment', ENV['RAILS_ROOT'])
+    namespace :spec do
+      RSpec::Core::RakeTask.new(:unit) do |t|
+        t.pattern = 'spec/unit/**/*_spec.rb'
+      end
+
+      RSpec::Core::RakeTask.new(:integration) do |t|
+        t.pattern = 'spec/integration/**/*_spec.rb'
+      end
     end
     ```
 
-*   **Graceful Shutdown:** According to the Temporal SDK documentation, when you pass `shutdown_signals: %w[SIGINT SIGTERM]`, the worker automatically handles graceful shutdown. You do NOT need to manually trap signals - the SDK does this for you. However, you SHOULD log the shutdown event. The worker will finish in-flight activities before exiting when a shutdown signal is received.
+*   **Configuration Approach:** I recommend configuring ActiveJob::Temporal for tests rather than creating a separate client. Pattern:
+    ```ruby
+    module TemporalTestHelper
+      def self.setup
+        ActiveJob::Temporal.configure do |config|
+          config.target = ENV.fetch('TEMPORAL_TEST_TARGET', 'localhost:7233')
+          config.namespace = 'test'
+        end
+        # Reset memoized client to pick up new config
+        ActiveJob::Temporal.instance_variable_set(:@client, nil)
+      end
 
-*   **Logging Requirements:** Based on the architecture document's logging strategy, you should log:
-    - `worker_started` with attributes: `task_queue`, `max_concurrent_activities`, `namespace`, `target`
-    - `worker_shutdown` with attributes: `task_queue`, `reason` (e.g., "SIGTERM received")
+      def self.client
+        ActiveJob::Temporal.client
+      end
+    end
+    ```
 
-*   **Error Handling:** If client creation fails (e.g., cannot connect to Temporal), the `ActiveJob::Temporal.client` method will raise an `ActiveJob::Temporal::Error` with a descriptive message. You SHOULD let this error propagate and crash the worker (fail-fast principle) - do not catch and retry indefinitely.
+*   **Lifecycle Hooks:** Since there's no automatic server start/stop, you can use `before(:suite)` to configure the test client, but you should NOT try to start/stop a server automatically (it must be running manually). Use the hook to verify connectivity and fail fast if the server isn't available.
 
-*   **Documentation File:** You MUST create `docs/worker_setup.md` with:
-    1. Prerequisites: Temporal test server running (or production cluster)
-    2. Environment variables needed (with examples)
-    3. How to run the worker: `bin/temporal-worker`
-    4. Expected log output (JSON format with worker_started event)
-    5. How to stop the worker (Ctrl+C or SIGTERM)
+*   **Error Handling:** If the Temporal test server is not running when tests start, the connection will fail. You SHOULD catch this and provide a helpful error message directing users to start the server manually.
 
-*   **Testing Note:** This task includes manual testing instructions. Full integration tests will be written in I4.T2-I4.T8. For now, focus on making the worker script executable and well-documented.
+*   **Workflow Listing:** For the smoke test, listing workflows should return an empty array initially (assuming a clean test namespace). The assertion would be something like: `expect(workflows.to_a).to be_empty` or similar.
 
 ### Project Conventions
 
-*   **Frozen String Literals:** All Ruby files in this project start with `# frozen_string_literal: true`. Your worker script MUST include this.
+*   **Frozen String Literals:** All Ruby files in this project start with `# frozen_string_literal: true`. Your helper and test files MUST include this.
 
-*   **Module Structure:** The gem uses `ActiveJob::Temporal` as the top-level namespace. All worker-related code should reference this namespace.
+*   **RSpec Style:** The project uses RSpec 3.x with `expect` syntax (not `should`). Your smoke test must follow this convention.
 
-*   **Configuration Access:** Always use `ActiveJob::Temporal.config` to access configuration, and `ActiveJob::Temporal.client` to get the Temporal client instance.
-
-*   **Shebang Convention:** Executable scripts use `#!/usr/bin/env ruby` as the shebang, which makes them portable across different Ruby installations.
+*   **Module Naming:** Use `TemporalTestHelper` as the module name (as specified in acceptance criteria).
 
 ### Potential Pitfalls
 
-*   **Warning:** The worker script is an EXECUTABLE, not a library file. Do NOT add it to `lib/`. It goes in `bin/`.
+*   **Warning:** The `spec/integration/` directory does NOT exist yet. You must create it (or the file write will fail).
 
-*   **Warning:** The worker will BLOCK on `worker.run`. This is intentional - the worker is a long-running process, not a script that exits immediately.
+*   **Warning:** The current spec_helper does NOT auto-load support files. You MUST explicitly require the helper file, or tests won't have access to `TemporalTestHelper`.
 
-*   **Warning:** Environment variable defaults matter. `TEMPORAL_TARGET` and `TEMPORAL_NAMESPACE` should be read from config (which has defaults), but `AJ_TEMPORAL_WORKER_QUEUE` and `AJ_TEMPORAL_MAX_ACT` are worker-specific and should use `ENV.fetch` with inline defaults.
+*   **Warning:** Memoized client state can cause issues. If `ActiveJob::Temporal.client` is called before test configuration is set, it will memoize the production config. Reset it in your test setup: `ActiveJob::Temporal.instance_variable_set(:@client, nil)`.
 
-*   **Warning:** The Temporal SDK's `Temporalio::Worker.new` expects an array of workflow/activity CLASSES, not instances. Pass the class objects directly: `workflows: [AjWorkflow]`, not `workflows: [AjWorkflow.new]`.
+*   **Warning:** Integration tests require a running Temporal server. The tests will FAIL if the server isn't running. Provide clear error messages and documentation about this prerequisite.
+
+*   **Warning:** The Temporal SDK's list workflows method may have a specific signature (e.g., require query parameters). You'll need to check the SDK documentation or source code to use it correctly. It might be something like `client.list_workflows(namespace: "test")` or similar.
+
+*   **Tip:** If you have trouble finding the exact SDK method for listing workflows, you can verify connection more simply by checking that the client object is created without error and has the expected namespace. A minimal smoke test could just verify the client connects successfully.
 
 ---
 
@@ -211,21 +223,50 @@ The following analysis is based on my direct review of the current codebase. Use
 
 Use this checklist to verify your implementation meets all requirements:
 
-- [ ] `bin/temporal-worker` exists and is executable (`chmod +x`)
-- [ ] Script starts with `#!/usr/bin/env ruby` shebang
-- [ ] Script includes `# frozen_string_literal: true` at the top
-- [ ] Script requires gem entrypoint: `require "activejob-temporal"`
-- [ ] Script conditionally requires Rails environment if `ENV['RAILS_ROOT']` is set
-- [ ] Worker reads configuration from ENV vars: `TEMPORAL_TARGET`, `TEMPORAL_NAMESPACE`, `AJ_TEMPORAL_WORKER_QUEUE`, `AJ_TEMPORAL_MAX_ACT`
-- [ ] Worker gets client via `ActiveJob::Temporal.client`
-- [ ] Worker is created with correct parameters (task_queue, workflows array, activities array, shutdown_signals, max_concurrent_activity_task_executions)
-- [ ] Worker starts with `worker.run`
-- [ ] Log event "worker_started" is written with task_queue and max_concurrency attributes
-- [ ] Worker gracefully shuts down on SIGTERM/SIGINT (handled by SDK)
-- [ ] Log event "worker_shutdown" is written when shutting down
-- [ ] `docs/worker_setup.md` exists with all required sections
-- [ ] Documentation includes prerequisites (Temporal server running)
-- [ ] Documentation includes all environment variables with examples
-- [ ] Documentation includes how to run the worker
-- [ ] Documentation includes expected log output examples
-- [ ] Manual test: Running `TEMPORAL_TARGET=localhost:7233 AJ_TEMPORAL_WORKER_QUEUE=default bin/temporal-worker` starts worker without errors
+- [ ] `spec/support/temporal_test_server.rb` exists
+- [ ] File includes `TemporalTestHelper` module definition
+- [ ] Helper includes documentation on how to manually start test server (comments explaining `temporal server start-dev` or Docker)
+- [ ] Helper provides `TemporalTestHelper.client` method
+- [ ] Helper configures Temporal to use "test" namespace
+- [ ] Helper configures target to `localhost:7233` (or ENV-configurable)
+- [ ] `spec/spec_helper.rb` is modified to require the temporal_test_server helper
+- [ ] `spec/integration/` directory is created
+- [ ] `spec/integration/temporal_connection_spec.rb` exists
+- [ ] Smoke test requires `spec_helper`
+- [ ] Smoke test connects to test server via `TemporalTestHelper.client`
+- [ ] Smoke test lists workflows (or verifies connection in another way)
+- [ ] Smoke test asserts that workflow list is empty initially
+- [ ] Smoke test is properly structured (describe/it blocks)
+- [ ] Rakefile is updated with `spec:unit` and `spec:integration` tasks (if not already present)
+- [ ] Running `rake spec` passes (or provides clear error if server not running)
+- [ ] Running `rake spec:integration` specifically runs integration tests
+- [ ] All files include `# frozen_string_literal: true`
+- [ ] Code passes Rubocop (will be checked in I4.T10, but avoid obvious violations)
+
+---
+
+## 5. Recommended File Structure
+
+```
+spec/
+├── spec_helper.rb (MODIFY - add require for temporal_test_server)
+├── support/ (already exists)
+│   └── temporal_test_server.rb (NEW - create this file)
+├── integration/ (NEW - create this directory)
+│   └── temporal_connection_spec.rb (NEW - create this file)
+└── unit/ (already exists)
+    └── ... (existing unit tests)
+```
+
+---
+
+## 6. Suggested Implementation Order
+
+1. **First:** Create `spec/support/temporal_test_server.rb` with `TemporalTestHelper` module
+2. **Second:** Modify `spec/spec_helper.rb` to require the helper
+3. **Third:** Create `spec/integration/` directory
+4. **Fourth:** Create `spec/integration/temporal_connection_spec.rb` with smoke test
+5. **Fifth:** Update `Rakefile` to add `spec:unit` and `spec:integration` tasks
+6. **Finally:** Test manually by starting Temporal server and running `rake spec:integration`
+
+This order minimizes the chance of errors and allows incremental testing.

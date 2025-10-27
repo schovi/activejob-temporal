@@ -8,6 +8,18 @@ require "yard"
 desc "Run the spec suite"
 RSpec::Core::RakeTask.new(:spec)
 
+namespace :spec do
+  desc "Run unit specs"
+  RSpec::Core::RakeTask.new(:unit) do |t|
+    t.pattern = "spec/unit/**/*_spec.rb"
+  end
+
+  desc "Run integration specs"
+  RSpec::Core::RakeTask.new(:integration) do |t|
+    t.pattern = "spec/integration/**/*_spec.rb"
+  end
+end
+
 RuboCop::RakeTask.new(:rubocop)
 
 YARD::Rake::YardocTask.new(:yard)

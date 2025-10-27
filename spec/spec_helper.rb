@@ -8,6 +8,7 @@ end
 
 require "bundler/setup"
 require "activejob/temporal"
+require_relative "support/temporal_test_server"
 
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|
