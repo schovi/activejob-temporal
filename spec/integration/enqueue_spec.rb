@@ -11,13 +11,13 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
-    $test_result = nil
+    TestJob.last_argument = nil
 
     example.run
   ensure
     ActiveJob::Base.queue_adapter = original_adapter
     stop_worker(@worker_thread)
-    $test_result = nil
+    TestJob.last_argument = nil
   end
 
   it "executes an enqueued job immediately via Temporal" do
@@ -28,7 +28,7 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
 
     wait_for_result(42)
 
-    expect($test_result).to eq(42)
+    expect(TestJob.last_argument).to eq(42)
 
     description = client.workflow_handle(workflow_id).describe
     expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
@@ -60,7 +60,7 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
   def wait_for_result(expected)
     Timeout.timeout(10) do
       loop do
-        break if $test_result == expected
+        break if TestJob.last_argument == expected
 
         sleep 0.1
       end

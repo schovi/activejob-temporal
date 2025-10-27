@@ -72,9 +72,13 @@ class ExternalConstantRetryJob < ActiveJob::Base
 end
 
 class TestJob < ActiveJob::Base
+  class << self
+    attr_accessor :last_argument
+  end
+
   queue_as :default
 
   def perform(arg)
-    $test_result = arg
+    self.class.last_argument = arg
   end
 end
