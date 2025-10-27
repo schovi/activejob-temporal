@@ -9,15 +9,15 @@ participant "Temporal Cluster" as Temporal
 participant "Worker Process" as Worker
 participant "AjRunnerActivity" as Activity
 
-Dev -> Rails: ActiveJob::Temporal.cancel(job_id)
-Rails -> Cancel: cancel(job_id)
+Dev -> Rails: ActiveJob::Temporal.cancel(SendInvoiceJob, "job-uuid-123")
+Rails -> Cancel: cancel(SendInvoiceJob, "job-uuid-123")
 activate Cancel
 Cancel -> Cancel: workflow_id = "ajwf:SendInvoiceJob:job-uuid-123"
 note right of Cancel: Deterministic workflow_id = "ajwf:#{job_class}:#{job_id}" ensures handle lookup
-Cancel -> Client: ActiveJob::Temporal.client.workflow_handle(AjWorkflow, workflow_id)
-note right of Client: Retrieves handle scoped to AjWorkflow + job_id
+Cancel -> Client: client.workflow_handle(workflow_id)
+note right of Client: Retrieves workflow handle by workflow_id only
 Client -> Temporal: handle.cancel()
-note right of Client: Best-effort cancel request sent via Temporal API with reason = "user_request"
+note right of Client: Best-effort cancel request sent via Temporal API; no-op if workflow already finished
 Cancel --> Rails: request acknowledged
 Rails --> Dev: cancellation requested
 deactivate Cancel
@@ -37,5 +37,5 @@ else Activity not heartbeating
   Temporal -> Worker: workflow marked Cancelled after completion
 end
 
-note over Activity, Temporal: Jobs should heartbeat periodically for prompt cancellation handling
+note over Activity, Temporal: Best-effort cancellation relies on jobs heartbeating periodically for prompt handling
 @enduml

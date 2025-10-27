@@ -127,7 +127,7 @@
     "acceptance_criteria": "Diagram reflects `cancel(job_class, job_id)` method signature; Diagram shows workflow_id construction, handle retrieval, cancel call; Diagram includes notes about best-effort cancellation and heartbeating requirement; Diagram renders without syntax errors in PlantUML",
     "dependencies": ["I3.T5"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I3.T7",
