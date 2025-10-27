@@ -23,7 +23,7 @@
     "acceptance_criteria": "`TemporalAdapter` class exists in `ActiveJob::QueueAdapters` namespace; `enqueue(job)` method is defined; Payload is serialized using `Payload.from_job(job)`; Payload size is validated; `SerializationError` raised if > 250KB; Workflow ID is built using `build_workflow_id(job)`; Task queue is resolved using `resolve_task_queue(job)`; Retry policy is retrieved using `RetryMapper.for(job.class)`; Search attributes are built using `SearchAttributes.for(job)`; `client.start_workflow` is called with correct parameters: `(AjWorkflow, payload, id:, task_queue:, id_conflict_policy: :reject, search_attributes:)`; Log event \"workflow_enqueued\" is written with workflow_id, job_class, queue, etc.; If `start_workflow` raises exception (mocked Temporal connection error), `ActiveJob::EnqueueError` is raised; Unit tests mock `client.start_workflow` and verify all parameters; Unit tests mock all dependencies (Payload, RetryMapper, SearchAttributes, Logger) to isolate adapter logic; `rake spec` passes for adapter_spec.rb (enqueue tests); Code passes `rake rubocop`",
     "dependencies": ["I1.T4", "I1.T5", "I1.T6", "I1.T7", "I1.T8", "I2.T2", "I2.T4", "I2.T5"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I3.T2",
@@ -44,7 +44,7 @@
     "acceptance_criteria": "`enqueue_at(job, timestamp)` method is defined in TemporalAdapter; Timestamp (integer) is converted to Time object; `Payload.from_job(job, scheduled_at: time_object)` is called; Payload includes `scheduled_at` field in ISO8601 format; Workflow is started immediately (no delay on Temporal side; `start_workflow` called right away); Log event includes `scheduled_at` attribute; Unit tests verify: `enqueue_at` with future timestamp, payload structure, workflow start parameters; Unit tests mock `client.start_workflow` and `Payload.from_job`; `rake spec` passes for adapter_spec.rb (enqueue_at tests); Code passes `rake rubocop`",
     "dependencies": ["I3.T1"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I3.T3",
@@ -64,7 +64,7 @@
     "acceptance_criteria": "`enqueue_after_transaction_commit?` method is defined in TemporalAdapter; Method returns `true`; Unit test verifies return value; `rake spec` passes for adapter_spec.rb; Code passes `rake rubocop`",
     "dependencies": ["I3.T1"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I3.T4",
@@ -85,7 +85,7 @@
     "acceptance_criteria": "`ActiveJob::QueueAdapters::TemporalAdapter` class exists; `ActiveJob::QueueAdapters.lookup(:temporal)` returns `TemporalAdapter` class; Unit test verifies adapter lookup; Example initializer created (optional, or documented in README); `rake spec` passes for adapter_spec.rb (lookup test); Code passes `rake rubocop`",
     "dependencies": ["I3.T1"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I3.T5",
@@ -107,7 +107,7 @@
     "acceptance_criteria": "`ActiveJob::Temporal.cancel(job_class, job_id)` method is defined; Workflow ID is built correctly: `\"ajwf:#{job_class.name}:#{job_id}\"`; `client.get_workflow_handle(workflow_id)` is called; `handle.cancel` is called; Log event \"cancellation_requested\" is written with workflow_id, job_class, job_id; If workflow not found (handle raises exception), error is caught, warning logged, method returns gracefully (doesn't raise); Unit tests mock `client.get_workflow_handle` and `handle.cancel`; Unit tests verify: successful cancel, workflow not found handling, logging; `rake spec` passes for cancel_spec.rb; Code passes `rake rubocop`; API is documented in code comments (YARD format: `@param job_class [Class]`, `@param job_id [String]`, `@return [void]`)",
     "dependencies": ["I1.T4", "I1.T8", "I2.T4"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I3.T6",

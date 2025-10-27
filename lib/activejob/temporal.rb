@@ -11,6 +11,7 @@ require_relative "temporal/search_attributes"
 require_relative "temporal/retry_mapper"
 require_relative "temporal/adapter"
 require_relative "temporal/workflows/aj_workflow"
+require_relative "temporal/cancel"
 
 module ActiveJob
   module Temporal
@@ -79,6 +80,10 @@ module ActiveJob
       # TLS options can be provided via configuration or ENV variables (see Client module).
       def client
         @client ||= Client.build(config)
+      end
+
+      def cancel(job_class, job_id)
+        Cancel.cancel(job_class, job_id)
       end
 
       def configure
