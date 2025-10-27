@@ -10,25 +10,39 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I2.T5",
+  "task_id": "I2.T6",
   "iteration_id": "I2",
   "iteration_goal": "Implement the core Temporal workflow (AjWorkflow) and activity (AjRunnerActivity) that orchestrate and execute ActiveJob jobs. Generate sequence diagrams for execution flows.",
-  "description": "Create a helper method in `lib/activejob/temporal/adapter.rb` (or helper module) for resolving Temporal task queue names from ActiveJob queue names. Implement `resolve_task_queue(job)` method that extracts `job.queue_name` (default to \"default\" if nil), applies `config.task_queue_prefix` (if present), and returns the final task queue string. Example: If `job.queue_name` is \"billing\" and `config.task_queue_prefix` is \"prod-\", return \"prod-billing\". If no prefix, return \"billing\". Write unit tests in `spec/unit/adapter_spec.rb` covering: task queue resolution with and without prefix, default queue name (\"default\"), nil queue_name handling.",
+  "description": "Run `rake rubocop` on all code written in Iteration 2 (workflows, activities, adapter helpers). Fix any Rubocop offenses. Ensure code adheres to Ruby style guide. Update `.rubocop.yml` if needed with justified exceptions. Acceptance: `rake rubocop` passes with zero offenses.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "Section 3.7 (Interaction Flow - Task Queue Resolution), configuration from I1.T3",
+  "inputs": "Rubocop configuration, code from I2.T2-I2.T5",
   "target_files": [
+    "lib/activejob/temporal/workflows/aj_workflow.rb",
+    "lib/activejob/temporal/activities/aj_runner_activity.rb",
     "lib/activejob/temporal/adapter.rb",
-    "spec/unit/adapter_spec.rb"
+    "spec/unit/workflows/*.rb",
+    "spec/unit/activities/*.rb",
+    "spec/unit/adapter_spec.rb",
+    ".rubocop.yml"
   ],
   "input_files": [
-    "lib/activejob/temporal.rb"
+    "lib/activejob/temporal/workflows/aj_workflow.rb",
+    "lib/activejob/temporal/activities/aj_runner_activity.rb",
+    "lib/activejob/temporal/adapter.rb",
+    "spec/unit/workflows/*.rb",
+    "spec/unit/activities/*.rb",
+    "spec/unit/adapter_spec.rb",
+    ".rubocop.yml"
   ],
-  "deliverables": "Working task queue resolver, passing unit tests",
-  "acceptance_criteria": "`resolve_task_queue(job)` returns task queue string; If `job.queue_name` is \"billing\" and `config.task_queue_prefix` is nil, returns \"billing\"; If `job.queue_name` is \"billing\" and `config.task_queue_prefix` is \"prod-\", returns \"prod-billing\"; If `job.queue_name` is nil, returns \"default\" (or \"prod-default\" with prefix); Unit tests cover all scenarios: with prefix, without prefix, nil queue_name, explicit queue_name; `rake spec` passes for adapter_spec.rb; Code passes `rake rubocop`",
+  "deliverables": "Clean code passing Rubocop checks",
+  "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses); All auto-correctable offenses are fixed; Any manual fixes are applied; If `.rubocop.yml` is updated, changes are documented",
   "dependencies": [
-    "I1.T3"
+    "I2.T2",
+    "I2.T3",
+    "I2.T4",
+    "I2.T5"
   ],
-  "parallelizable": true,
+  "parallelizable": false,
   "done": false
 }
 ```
@@ -39,36 +53,75 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: Task Queue Resolution (from 04_Behavior_and_Communication.md)
+### Context: code-quality-gates (from 03_Verification_and_Glossary.md)
 
 ```markdown
-**Key Steps:**
+### 5.3. Code Quality Gates
 
-1. **Developer calls `perform_later`**: Rails ActiveJob captures job class, arguments, and generates a UUID `job_id`
-2. **ActiveJob calls adapter**: Invokes `TemporalAdapter.enqueue(job)`
-3. **Payload serialization**: Converts ActiveJob arguments to JSON-compatible format
-4. **Retry policy mapping**: Inspects job class's `retry_on`/`discard_on` declarations, builds Temporal `RetryPolicy`
-5. **Search attributes building**: Extracts metadata (`ajClass`, `ajQueue`, etc.) for Temporal visibility
-6. **Workflow ID generation**: Creates deterministic ID `ajwf:SendInvoiceJob:<job_id>` (enables deduplication)
-7. **Task queue resolution**: Maps job's `queue_name` to Temporal task queue (with optional prefix)
-8. **Temporal workflow start**: Calls `client.start_workflow` (gRPC to Temporal cluster)
-9. **Temporal persists workflow**: Creates workflow in `Scheduled` state, returns workflow run handle
-10. **Enqueue completes**: Rails call returns immediately (doesn't wait for job to execute)
+**Rubocop (Linting & Style)**
 
-**Communication Protocols:**
-- Rails ↔ Gem: Ruby method calls (in-process)
-- Gem ↔ Temporal: gRPC over HTTP/2 (network call, ~50-100ms latency)
+- **Configuration**: `.rubocop.yml` with project-specific rules
+- **Enforcement**: CI fails on any offenses (zero-tolerance policy)
+- **Auto-Correction**: Run `rubocop -A` to auto-fix safe offenses
+- **Custom Rules**:
+  - Max line length: 120 characters (configurable)
+  - Max method complexity: 10 (cyclomatic complexity)
+  - Enforce Ruby 3.2+ syntax features
+- **Exclusions**: `spec/fixtures/` (sample jobs may intentionally violate style for testing)
 ```
 
-### Context: Configuration from I1.T3
+### Context: task-i2-t6 (from 02_Iteration_I2.md)
 
-The configuration module was implemented in task I1.T3 and provides access to `task_queue_prefix` via:
-
-```ruby
-ActiveJob::Temporal.config.task_queue_prefix
+```markdown
+*   **Task 2.6: Run Rubocop and Fix Style Issues**
+    *   **Task ID:** `I2.T6`
+    *   **Description:** Run `rake rubocop` on all code written in Iteration 2 (workflows, activities, adapter helpers). Fix any Rubocop offenses. Ensure code adheres to Ruby style guide. Update `.rubocop.yml` if needed with justified exceptions. Acceptance: `rake rubocop` passes with zero offenses.
+    *   **Agent Type Hint:** `BackendAgent`
+    *   **Inputs:** Rubocop configuration, code from I2.T2-I2.T5
+    *   **Input Files:**
+        - `lib/activejob/temporal/workflows/aj_workflow.rb`
+        - `lib/activejob/temporal/activities/aj_runner_activity.rb`
+        - `lib/activejob/temporal/adapter.rb`
+        - `spec/unit/workflows/*.rb`
+        - `spec/unit/activities/*.rb`
+        - `spec/unit/adapter_spec.rb`
+        - `.rubocop.yml`
+    *   **Target Files:** All Ruby files in `lib/activejob/temporal/workflows/`, `lib/activejob/temporal/activities/`, `lib/activejob/temporal/adapter.rb`, and corresponding specs (updated with style fixes)
+    *   **Deliverables:** Clean code passing Rubocop checks
+    *   **Acceptance Criteria:**
+        - `rake rubocop` exits with status 0 (zero offenses)
+        - All auto-correctable offenses are fixed
+        - Any manual fixes are applied
+        - If `.rubocop.yml` is updated, changes are documented
+    *   **Dependencies:** I2.T2, I2.T3, I2.T4, I2.T5 (all code must be written)
+    *   **Parallelizable:** No (must run after all code is written)
 ```
 
-This configuration option defaults to `nil` but can be set by users to add a prefix to all task queue names (e.g., "prod-", "staging-").
+### Context: testing-levels (from 03_Verification_and_Glossary.md)
+
+```markdown
+### 5.1. Testing Levels
+
+The activejob-temporal gem employs a comprehensive, multi-layered testing strategy to ensure correctness, reliability, and production readiness.
+
+**Unit Testing (RSpec)**
+
+- **Scope**: Individual classes and modules in isolation
+- **Location**: `spec/unit/`
+- **Coverage Target**: >= 90% code coverage for each module
+- **Mocking Strategy**: Mock external dependencies (Temporal client, workflow/activity execution, job classes) to isolate logic
+- **Key Areas**:
+  - Configuration module: default values, configuration block, validation
+  - Payload serializer: round-trip serialization, GlobalID support, size limits, error handling
+  - Retry mapper: retry_on/discard_on translation, exception hierarchy handling
+  - Search attributes builder: metadata extraction, tenant handling
+  - Temporal client: memoization, connection error handling
+  - Adapter: enqueue/enqueue_at logic, workflow ID generation, task queue resolution
+  - Workflow: sleep logic (mocked), activity invocation (mocked)
+  - Activity: job instantiation, error mapping, idempotency key lifecycle
+  - Cancellation API: workflow handle retrieval, cancel call, error handling
+- **Tools**: RSpec 3.x, SimpleCov for coverage
+```
 
 ---
 
@@ -76,98 +129,140 @@ This configuration option defaults to `nil` but can be set by users to add a pre
 
 The following analysis is based on my direct review of the current codebase. Use these notes and tips to guide your implementation.
 
-### ✅ **TASK ALREADY COMPLETED**
-
-After analyzing the codebase, I've discovered that **this task (I2.T5) has already been fully implemented and meets all acceptance criteria**. Here's what exists:
-
 ### Relevant Existing Code
 
+*   **File:** `.rubocop.yml`
+    *   **Summary:** The project's Rubocop configuration file with project-specific rules. Key settings include Ruby 3.2 target, 120 char line length, spec exclusions for block length, and double quotes as the string literal style.
+    *   **Recommendation:** You SHOULD review this file to understand the current rules. The configuration is well-structured with exclusions for `vendor/`, `tmp/`, and `pkg/` directories.
+    *   **Current Configuration:**
+        - Target Ruby Version: 3.2
+        - Line Length: Max 120 characters
+        - Block Length: Max 25 (excluded for specs)
+        - Method Length: Max 20
+        - Module Length: Max 200
+        - Documentation: Disabled
+        - String Literals: Enforced double quotes
+        - Filename check: Disabled for `lib/activejob-temporal.rb`
+        - Development Dependencies check: Disabled
+
+*   **File:** `Rakefile`
+    *   **Summary:** Defines rake tasks including `rubocop`, `spec`, and `yard`. The default task runs both rubocop and spec.
+    *   **Recommendation:** You MUST use `rake rubocop` or `bundle exec rubocop` to run the linter. The rake task is already configured via RuboCop::RakeTask.
+
+*   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
+    *   **Summary:** Implements the Temporal workflow orchestration logic with scheduled execution support (sleep, activity invocation).
+    *   **Current Status:** The code is well-structured with clear separation of concerns (extract_scheduled_time, sleep_until, activity_options private methods).
+    *   **Potential Issues:** The code looks clean and follows Ruby best practices. The use of stub classes for Temporalio when not loaded is appropriate for testing.
+    *   **Code Quality:** 59 lines total, includes frozen_string_literal, proper module nesting, private methods for internal logic.
+
+*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
+    *   **Summary:** Implements the Temporal activity that executes ActiveJob jobs with idempotency key management and exception handling.
+    *   **Current Status:** Code includes comprehensive Temporalio stubs for testing, proper error handling, and idempotency key lifecycle management.
+    *   **Potential Issues:** The file has substantial stub code (lines 8-54) to support testing without real Temporal SDK. This is acceptable and documented with comments.
+    *   **Code Quality:** 107 lines total, well-organized with clear separation between stub definitions and actual implementation.
+
 *   **File:** `lib/activejob/temporal/adapter.rb`
-    *   **Summary:** This file contains the Adapter module with two helper methods: `build_workflow_id` (from I2.T4) and `resolve_task_queue` (this task).
-    *   **Implementation Status:** ✅ **COMPLETE**
-    *   **Current Implementation (lines 15-26):**
-        ```ruby
-        # Resolves the Temporal task queue name for a given job.
-        # @param job [ActiveJob::Base] ActiveJob instance being enqueued
-        # @return [String] Task queue name, optionally prefixed
-        def resolve_task_queue(job)
-          queue_name = job.queue_name.to_s.strip
-          queue_name = "default" if queue_name.empty?
+    *   **Summary:** Provides helper methods for workflow ID generation and task queue resolution.
+    *   **Current Status:** Simple module with two well-documented methods using YARD format. Code is clean and follows functional programming style with `module_function`.
+    *   **Potential Issues:** No obvious style issues. The code is concise and clear (30 lines total).
 
-          prefix = ActiveJob::Temporal.config.task_queue_prefix
-          return queue_name if prefix.nil? || prefix.to_s.strip.empty?
+*   **File:** `spec/unit/workflows/aj_workflow_spec.rb`
+    *   **Summary:** Comprehensive RSpec tests for AjWorkflow covering immediate execution, scheduled execution, past scheduled times, and retry policy handling.
+    *   **Current Status:** Well-structured tests with proper mocking, clear context blocks, and descriptive test names.
+    *   **Code Quality:** 106 lines, uses RSpec best practices with let blocks, before blocks, and clear expectations.
 
-          "#{prefix}#{queue_name}"
-        end
-        ```
-    *   **Analysis:** The implementation correctly:
-        - Extracts `job.queue_name` and converts to string
-        - Defaults to "default" when queue_name is nil or empty/blank
-        - Applies the configured `task_queue_prefix` when present
-        - Handles edge cases (nil prefix, empty string prefix)
-        - Includes proper YARD documentation
+*   **File:** `spec/unit/activities/aj_runner_activity_spec.rb`
+    *   **Summary:** RSpec tests for AjRunnerActivity covering job execution, idempotency key lifecycle, retryable exceptions, and discard_on behavior.
+    *   **Current Status:** Thorough test coverage with proper use of doubles and stubs.
+    *   **Code Quality:** 76 lines, well-organized with clear test cases and proper mocking.
 
 *   **File:** `spec/unit/adapter_spec.rb`
-    *   **Summary:** Contains comprehensive unit tests for both `build_workflow_id` and `resolve_task_queue` methods.
-    *   **Test Coverage Status:** ✅ **COMPLETE**
-    *   **Test Coverage (lines 70-132):**
-        - ✅ No prefix configured → returns bare queue name
-        - ✅ No prefix configured + nil queue_name → returns "default"
-        - ✅ No prefix configured + blank queue_name → returns "default"
-        - ✅ Prefix configured → prepends prefix to queue name
-        - ✅ Prefix configured + nil queue_name → returns "prod-default"
-        - ✅ Prefix configured + different queue names → works correctly
-        - ✅ Empty string prefix → treated as absent
-    *   **Analysis:** All acceptance criteria scenarios are covered with proper RSpec structure and mocking of the configuration.
+    *   **Summary:** RSpec tests for adapter helper methods (workflow ID building and task queue resolution).
+    *   **Current Status:** Comprehensive test coverage with multiple contexts and edge cases.
+    *   **Code Quality:** 134 lines, excellent use of RSpec contexts to organize test scenarios.
 
-*   **File:** `lib/activejob/temporal.rb`
-    *   **Summary:** Main module file that provides the configuration system.
-    *   **Recommendation:** The `task_queue_prefix` configuration option is already defined (line 22) and properly initialized to `nil` (line 34).
+### Implementation Tips & Notes
 
-### Implementation Status Summary
+*   **Tip:** The project enforces zero-tolerance for Rubocop offenses. Run `rake rubocop` or `bundle exec rubocop` first to see all violations.
+*   **Tip:** Use `rubocop -A` or `bundle exec rubocop -A` to automatically fix all safe violations. This will handle most style issues automatically.
+*   **Tip:** If you encounter offenses that cannot be auto-fixed, you should:
+    1. First try to fix them manually following Ruby style guide best practices
+    2. Only add exclusions to `.rubocop.yml` if there's a strong justification
+    3. Document any exclusions with clear comments explaining why
+*   **Note:** The existing `.rubocop.yml` already has reasonable exclusions:
+    - `spec/**/*` is excluded from BlockLength check (common for RSpec tests)
+    - `Style/Documentation` is disabled (project doesn't require class-level docs for everything)
+    - Development dependencies check is disabled for the gemspec
+*   **Note:** All files in scope already use `# frozen_string_literal: true` magic comment, which is good.
+*   **Note:** The project uses double quotes for string literals (enforced by `.rubocop.yml`), so ensure all string literals use `"` not `'`.
+*   **Warning:** Do NOT add blanket disables or too many exclusions to `.rubocop.yml`. The plan emphasizes maintaining high code quality standards. Only update `.rubocop.yml` if absolutely necessary with proper justification.
+*   **Process:** Follow this workflow:
+    1. Run `bundle exec rubocop` to see all current violations
+    2. Run `bundle exec rubocop -A` to auto-correct safe offenses
+    3. Review remaining offenses and fix manually
+    4. Run `bundle exec rubocop` again to verify zero offenses
+    5. If any offenses cannot be reasonably fixed, document the justification and consider whether to update `.rubocop.yml`
 
-| Acceptance Criterion | Status | Location |
-|---------------------|--------|----------|
-| `resolve_task_queue(job)` returns task queue string | ✅ Complete | `adapter.rb:18-26` |
-| Returns "billing" when queue_name="billing" and no prefix | ✅ Complete | `adapter_spec.rb:78-82` |
-| Returns "prod-billing" when queue_name="billing" and prefix="prod-" | ✅ Complete | `adapter_spec.rb:102-106` |
-| Returns "default" when queue_name is nil and no prefix | ✅ Complete | `adapter_spec.rb:84-88` |
-| Returns "prod-default" when queue_name is nil and prefix="prod-" | ✅ Complete | `adapter_spec.rb:108-112` |
-| Unit tests cover all scenarios | ✅ Complete | `adapter_spec.rb:70-132` |
-| Code passes `rake rubocop` | ✅ Expected to pass | Well-formatted code |
-| `rake spec` passes | ✅ Expected to pass | Tests properly structured |
+### Expected Outcome
 
-### Recommended Action
+Based on my review, the code quality is already high. I expect:
+- Most or all offenses will be auto-correctable
+- You may need to make minor manual adjustments (whitespace, line breaks)
+- You SHOULD NOT need to update `.rubocop.yml` unless unexpected issues arise
+- All files should pass with zero offenses after running auto-correct
 
-**This task should be marked as `"done": true`** in the task tracking system. The implementation is complete, well-tested, and follows best practices:
+### Files in Scope for This Task
 
-1. **Code Quality:** Proper method signature, parameter handling, edge case coverage
-2. **Documentation:** YARD comments present
-3. **Testing:** Comprehensive test coverage with proper mocking and edge cases
-4. **Integration:** Properly uses the configuration system from I1.T3
+Target files that MUST be checked and fixed:
+1. `lib/activejob/temporal/workflows/aj_workflow.rb` (59 lines)
+2. `lib/activejob/temporal/activities/aj_runner_activity.rb` (107 lines)
+3. `lib/activejob/temporal/adapter.rb` (30 lines)
+4. `spec/unit/workflows/aj_workflow_spec.rb` (106 lines)
+5. `spec/unit/activities/aj_runner_activity_spec.rb` (76 lines)
+6. `spec/unit/adapter_spec.rb` (134 lines)
 
-### Next Steps
+Total: 6 files, approximately 512 lines of code
 
-Since this task is already complete, you should:
+---
 
-1. **Mark task I2.T5 as done** in `/Users/schovi/work/activejob-temporal/.codemachine/artifacts/tasks/tasks_I2.json`
-2. **Verify the tests pass** (though there appear to be some Ruby version conflicts in the test environment that are not related to this code)
-3. **Proceed to the next actionable task** (likely I2.T6 - Rubocop check, or I2.T7 - Unit test coverage)
+## 4. Additional Context
 
-### Notes & Warnings
+### Iteration 2 Goals
 
-*   **Note:** The test environment appears to have Ruby version compatibility issues (system Ruby 2.6 vs project Ruby 3.3.5), but this is an infrastructure issue, not a code issue.
-*   **Tip:** The implementation follows Ruby conventions (using `module_function` to make methods callable as module methods).
-*   **Warning:** When marking this task complete, ensure the related I1.T3 dependency is also marked complete (it should be, based on the completed tasks list).
+This task is part of Iteration 2, which focuses on implementing the core Temporal workflow and activity components. All dependencies (I2.T2-I2.T5) are complete, meaning:
+- ✅ I2.T2: AjWorkflow is implemented
+- ✅ I2.T3: AjRunnerActivity is implemented
+- ✅ I2.T4: Workflow ID builder helper is implemented
+- ✅ I2.T5: Task queue resolver helper is implemented
+- ✅ All unit tests are written
 
-### Implementation Details
+Your task is purely code quality enforcement - ensuring all code adheres to the Ruby style guide as enforced by Rubocop.
 
-The method is exactly 12 lines long (including documentation and blank lines) and implements a clean, straightforward algorithm:
+### Success Criteria
 
-1. Converts `job.queue_name` to string and strips whitespace
-2. Defaults to "default" if the resulting string is empty
-3. Reads the prefix from configuration
-4. Returns the queue name without prefix if prefix is nil or empty
-5. Returns concatenated prefix + queue name otherwise
+✅ `rake rubocop` exits with status 0 (zero offenses)
+✅ All auto-correctable offenses are fixed
+✅ Any manual fixes are applied correctly
+✅ If `.rubocop.yml` is updated, changes are documented with comments
+✅ Code maintains its functionality (no breaking changes)
+✅ Code readability is maintained or improved
 
-This is an excellent implementation that handles all edge cases without unnecessary complexity.
+### Rubocop Command Reference
+
+- `bundle exec rubocop` - Run all checks
+- `bundle exec rubocop -A` - Auto-fix all safe offenses
+- `bundle exec rubocop --list-target-files` - List files that will be checked
+- `bundle exec rubocop lib/activejob/temporal/workflows/` - Check specific directory
+- `bundle exec rubocop --format progress` - Show progress during check
+- `rake rubocop` - Run via rake task (recommended)
+
+### Known Exclusions in .rubocop.yml
+
+Already excluded/disabled (no action needed):
+- `vendor/**/*` - Bundled gems
+- `tmp/**/*` - Temporary files
+- `pkg/**/*` - Built gem files
+- `spec/**/*` - Specs excluded from BlockLength check
+- `Style/Documentation` - Class documentation not required
+- `Naming/FileName` - Filename check disabled for `lib/activejob-temporal.rb`
+- `Gemspec/DevelopmentDependencies` - Dev dependency check disabled
