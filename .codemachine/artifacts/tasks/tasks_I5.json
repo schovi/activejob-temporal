@@ -72,7 +72,7 @@
     "acceptance_criteria": "Gemspec includes all required metadata; Runtime dependencies are declared; Development dependencies are declared; Files list includes all necessary runtime files, excludes tests and dev artifacts; Executables includes temporal-worker; Required Ruby version is >= 3.2; gem build activejob-temporal.gemspec succeeds without errors; Built gem (.gem file) is created; Installing gem locally succeeds; Requiring gem in irb succeeds",
     "dependencies": ["I1.T1", "I5.T1"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I5.T6",
