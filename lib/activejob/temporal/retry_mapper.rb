@@ -4,9 +4,56 @@ require "active_support/core_ext/string/inflections"
 
 module ActiveJob
   module Temporal
+    # Translates ActiveJob retry DSL to Temporal RetryPolicy.
+    #
+    # This module introspects a job class's `retry_on` and `discard_on` declarations
+    # and converts them into a Temporal-compatible retry policy hash. It handles:
+    # - Retry intervals (wait durations)
+    # - Retry attempt limits
+    # - Non-retryable error types (from discard_on)
+    #
+    # @note Algorithmic Wait Values
+    #   If `retry_on` uses a Proc or Symbol for `:wait`, it falls back to the configured
+    #   `default_retry_initial_interval` because Temporal only accepts numeric intervals.
+    #
+    # @example Retry policy structure
+    #   {
+    #     initial_interval: 30.0,              # seconds (Float)
+    #     backoff_coefficient: 2.0,            # exponential backoff multiplier
+    #     maximum_attempts: 5,                 # max retry count (0 = unlimited)
+    #     non_retryable_error_types: ["MyError::ClassName"]
+    #   }
     module RetryMapper
       module_function
 
+      # Builds a Temporal retry policy hash from a job class's retry configuration.
+      #
+      # Inspects the job class's `retry_on` declarations and constructs a retry policy.
+      # If an exception is provided, selects the matching retry handler; otherwise uses
+      # the first retry handler found.
+      #
+      # @param job_class [Class] ActiveJob class with retry_on/discard_on declarations
+      # @param exception [Exception, nil] Optional exception to match against handlers
+      #
+      # @return [Hash] Retry policy with keys:
+      #   - :initial_interval [Float] Initial retry delay in seconds
+      #   - :backoff_coefficient [Float] Exponential backoff multiplier
+      #   - :maximum_attempts [Integer] Max retry attempts (0 = unlimited)
+      #   - :non_retryable_error_types [Array<String>] Exception class names to not retry
+      #
+      # @example Basic retry policy
+      #   class MyJob < ApplicationJob
+      #     retry_on StandardError, wait: 5.seconds, attempts: 3
+      #   end
+      #   RetryMapper.for(MyJob)
+      #   # => { initial_interval: 5.0, backoff_coefficient: 2.0, maximum_attempts: 3, ... }
+      #
+      # @example Unlimited retries
+      #   class MyJob < ApplicationJob
+      #     retry_on NetworkError, wait: 30.seconds, attempts: :unlimited
+      #   end
+      #   RetryMapper.for(MyJob)
+      #   # => { ..., maximum_attempts: 0 }
       def for(job_class, exception = nil)
         config = ActiveJob::Temporal.config
         retry_entry = select_retry_entry(job_class, exception)
@@ -19,6 +66,23 @@ module ActiveJob
         }
       end
 
+      # Checks if an exception should be discarded (not retried).
+      #
+      # Inspects the job class's `discard_on` declarations to determine if the given
+      # exception matches any discard handler. If true, the activity should raise
+      # a non-retryable error to stop Temporal from retrying.
+      #
+      # @param job_class [Class] ActiveJob class with discard_on declarations
+      # @param exception [Exception] Exception instance to check
+      #
+      # @return [Boolean] true if exception should be discarded, false otherwise
+      #
+      # @example Check if exception is discardable
+      #   class MyJob < ApplicationJob
+      #     discard_on ActiveRecord::RecordNotFound
+      #   end
+      #   RetryMapper.discard_exception?(MyJob, ActiveRecord::RecordNotFound.new)
+      #   # => true
       def discard_exception?(job_class, exception)
         return false unless job_class && exception
 

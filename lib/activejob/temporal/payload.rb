@@ -6,9 +6,56 @@ require "active_job/arguments"
 
 module ActiveJob
   module Temporal
+    # Payload serialization and deserialization for ActiveJob.
+    #
+    # This module converts ActiveJob instances into JSON-serializable hash payloads
+    # for transmission to Temporal workflows and activities. It also handles argument
+    # deserialization back into Ruby objects.
+    #
+    # @note Payload Size Limit
+    #   Temporal enforces a maximum payload size (configurable via `max_payload_size_kb`,
+    #   default 250 KB). Large payloads will raise a SerializationError.
+    #
+    # @example Payload structure
+    #   {
+    #     job_class: "MyJob",
+    #     job_id: "abc-123",
+    #     queue_name: "default",
+    #     arguments: [{"_aj_serialized"=>"ActiveJob::Serializers::ObjectSerializer", ...}],
+    #     executions: 0,
+    #     exception_executions: {},
+    #     scheduled_at: "2025-10-29T12:00:00Z" # optional
+    #   }
     module Payload
       extend self
 
+      # Converts an ActiveJob instance into a serializable payload hash.
+      #
+      # @param job [ActiveJob::Base] The job instance to serialize
+      # @param scheduled_at [Time, String, nil] Optional scheduled execution time
+      #
+      # @return [Hash] Serialized payload with keys:
+      #   - :job_class [String] Fully-qualified job class name
+      #   - :job_id [String] Unique job identifier
+      #   - :queue_name [String] Target queue name
+      #   - :arguments [Array] Serialized job arguments (via ActiveJob::Arguments)
+      #   - :executions [Integer] Current execution count (default 0)
+      #   - :exception_executions [Hash] Exception execution counts (default {})
+      #   - :scheduled_at [String] ISO8601 timestamp (optional)
+      #
+      # @raise [ActiveJob::SerializationError] if arguments cannot be serialized
+      # @raise [ActiveJob::SerializationError] if payload exceeds max_payload_size_kb
+      # @raise [ArgumentError] if scheduled_at is not convertible to Time
+      #
+      # @example Basic job payload
+      #   job = MyJob.new
+      #   payload = Payload.from_job(job)
+      #   # => { job_class: "MyJob", job_id: "...", arguments: [...], ... }
+      #
+      # @example Scheduled job payload
+      #   job = MyJob.new
+      #   payload = Payload.from_job(job, scheduled_at: 1.hour.from_now)
+      #   # => { ..., scheduled_at: "2025-10-29T13:00:00Z" }
       def from_job(job, scheduled_at: nil)
         payload = {
           job_class: job.class.name,
@@ -24,6 +71,23 @@ module ActiveJob
         payload
       end
 
+      # Deserializes job arguments from a payload hash.
+      #
+      # Extracts the serialized arguments array from the payload and uses
+      # ActiveJob's built-in deserialization to reconstruct Ruby objects
+      # (including GlobalID references to ActiveRecord models).
+      #
+      # @param payload [Hash] Payload hash containing serialized arguments
+      # @option payload [Array] :arguments Serialized arguments (required)
+      #
+      # @return [Array] Deserialized arguments array ready for job.perform(*args)
+      #
+      # @raise [ActiveJob::SerializationError] if deserialization fails
+      #
+      # @example Deserialize arguments
+      #   payload = { arguments: [{"_aj_serialized"=>"..."}] }
+      #   args = Payload.deserialize_args(payload)
+      #   # => [actual_ruby_object]
       def deserialize_args(payload)
         serialized_args = payload[:arguments] || payload["arguments"]
         ActiveJob::Arguments.deserialize(serialized_args)

@@ -5,21 +5,66 @@ require "time"
 
 module ActiveJob
   module Temporal
+    # Structured logging for activejob-temporal gem.
+    #
+    # This module provides structured JSON logging with event names and typed attributes.
+    # It integrates with SemanticLogger if available, otherwise falls back to standard
+    # Ruby Logger with JSON formatting.
+    #
+    # All log entries include:
+    # - event: Event name (String or Symbol)
+    # - timestamp: ISO8601 UTC timestamp
+    # - Custom attributes (Hash)
+    #
+    # @example Basic logging
+    #   Logger.info("job.enqueued", job_id: "123", queue: "default")
+    #   # => { "event": "job.enqueued", "timestamp": "2025-10-29T12:00:00Z", "job_id": "123", "queue": "default" }
+    #
+    # @example Error logging
+    #   Logger.error("job.failed", job_id: "123", error: "NetworkError")
     module Logger
       extend self
 
+      # Logs an event at INFO level.
+      #
+      # @param event_name [String, Symbol] Name of the event (e.g., "job.enqueued")
+      # @param attributes [Hash] Additional structured data to include in log entry
+      # @return [void]
+      # @example
+      #   Logger.log_event("workflow.started", workflow_id: "wf-123", job_class: "MyJob")
       def log_event(event_name, attributes = {})
         log(:info, event_name, attributes)
       end
 
+      # Logs an event at INFO level.
+      #
+      # @param event_name [String, Symbol] Name of the event
+      # @param attributes [Hash] Additional structured data
+      # @return [void]
+      # @example
+      #   Logger.info("job.completed", job_id: "123", duration_ms: 1500)
       def info(event_name, attributes = {})
         log(:info, event_name, attributes)
       end
 
+      # Logs an event at WARN level.
+      #
+      # @param event_name [String, Symbol] Name of the event
+      # @param attributes [Hash] Additional structured data
+      # @return [void]
+      # @example
+      #   Logger.warn("job.retry", job_id: "123", attempt: 2, error: "Timeout")
       def warn(event_name, attributes = {})
         log(:warn, event_name, attributes)
       end
 
+      # Logs an event at ERROR level.
+      #
+      # @param event_name [String, Symbol] Name of the event
+      # @param attributes [Hash] Additional structured data
+      # @return [void]
+      # @example
+      #   Logger.error("job.failed", job_id: "123", error_class: "RuntimeError", message: "Boom")
       def error(event_name, attributes = {})
         log(:error, event_name, attributes)
       end

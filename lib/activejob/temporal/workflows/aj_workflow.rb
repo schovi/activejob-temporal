@@ -25,9 +25,47 @@ end
 module ActiveJob
   module Temporal
     module Workflows
-      # AjWorkflow is the deterministic orchestration layer that optionally delays
-      # execution until the scheduled time and then hands control to AjRunnerActivity.
+      # Deterministic orchestration workflow for ActiveJob execution.
+      #
+      # This workflow serves as the durable scheduling and orchestration layer for ActiveJob.
+      # It handles delayed execution (via `Workflow.sleep`) and invokes the activity that
+      # executes the actual job logic.
+      #
+      # @note Workflow Determinism
+      #   This workflow MUST remain deterministic. It contains no I/O operations,
+      #   no random number generation, no system time calls (only `Workflow.now`),
+      #   and no direct method calls to external services. All side effects occur
+      #   in the activity layer.
+      #
+      # @example Workflow execution flow
+      #   1. Extract scheduled_at timestamp from payload
+      #   2. If scheduled_at is in the future, sleep until that time
+      #   3. Execute AjRunnerActivity with the payload and retry policy
+      #   4. Return activity result
       class AjWorkflow < Temporalio::Workflow::Definition
+        # Executes the workflow: optionally sleeps until scheduled time, then runs the activity.
+        #
+        # @param payload [Hash] Job payload containing execution metadata
+        # @option payload [String] :job_class Fully-qualified job class name
+        # @option payload [String] :job_id Unique job identifier
+        # @option payload [String] :queue_name Target queue name
+        # @option payload [Array] :arguments Serialized job arguments
+        # @option payload [String] :scheduled_at ISO8601 timestamp for delayed execution (optional)
+        # @option payload [Integer] :executions Current execution count (default: 0)
+        # @option payload [Hash] :exception_executions Exception execution counts (default: {})
+        #
+        # @return [Object, nil] Result from the activity execution
+        #
+        # @example Immediate execution
+        #   execute({ job_class: "MyJob", job_id: "123", arguments: ["arg1"] })
+        #
+        # @example Scheduled execution
+        #   execute({
+        #     job_class: "MyJob",
+        #     job_id: "123",
+        #     scheduled_at: "2025-10-29T12:00:00Z",
+        #     arguments: []
+        #   })
         def execute(payload)
           scheduled_time = extract_scheduled_time(payload)
           sleep_until(scheduled_time) if scheduled_time

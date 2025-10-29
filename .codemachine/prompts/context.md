@@ -10,28 +10,41 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I5.T1",
+  "task_id": "I5.T2",
   "iteration_id": "I5",
   "iteration_goal": "Complete comprehensive documentation (README, API docs, migration guide), create example Rails app, finalize gemspec, prepare CHANGELOG, and ensure gem is ready for v0.1.0 release.",
-  "description": "Create a comprehensive README.md file that serves as the primary user-facing documentation for the gem. The README must include the following sections: (1) Introduction: Brief description of activejob-temporal, what it does, key benefits (durable execution, fault tolerance, observability). (2) Features: Bulleted list of v0.1 features (enqueue, enqueue_at, retry_on/discard_on mapping, cancellation, search attributes, transactional enqueue). (3) Installation: How to add gem to Gemfile, bundle install, gemspec dependency requirements (Ruby >= 3.2, Rails >= 6.1). (4) Quick Start: Step-by-step guide to get started including configuration examples. (5) Configuration: Detailed list of all configuration options. (6) Scheduled Jobs, (7) Retries, (8) Cancellation, (9) Observability, (10) Worker Deployment, (11) Limitations (v0.1), (12) Migration from Sidekiq/Resque, (13) Contributing, (14) License, (15) Versioning. Use clear Markdown formatting, code examples, badges. Aim for ~300-500 lines.",
+  "description": "Add comprehensive YARD documentation comments to all public classes and methods in the gem. Use YARD tags: @param, @return, @raise, @example, @note, @see. Document at minimum: ActiveJob::Temporal module, Config class, client method, cancel method, TemporalAdapter class, AjWorkflow class, AjRunnerActivity class, Payload, RetryMapper, SearchAttributes modules. Generate YARD documentation using rake yard (add this task to Rakefile if not present). Output to doc/ directory. Review generated HTML docs for completeness and correctness. Acceptance: YARD docs cover all public APIs, render correctly in HTML.",
   "agent_type_hint": "DocumentationAgent",
-  "inputs": "Entire project plan (all sections), gem functionality from I1-I4, configuration reference from I1.T3, worker setup docs from I4.T1",
+  "inputs": "YARD documentation best practices, all gem code from I1-I4",
   "target_files": [
-    "README.md"
+    "lib/activejob/temporal.rb",
+    "lib/activejob/temporal/client.rb",
+    "lib/activejob/temporal/adapter.rb",
+    "lib/activejob/temporal/workflows/aj_workflow.rb",
+    "lib/activejob/temporal/activities/aj_runner_activity.rb",
+    "lib/activejob/temporal/payload.rb",
+    "lib/activejob/temporal/retry_mapper.rb",
+    "lib/activejob/temporal/search_attributes.rb",
+    "lib/activejob/temporal/cancel.rb",
+    "doc/",
+    "Rakefile"
   ],
   "input_files": [
-    "docs/configuration_reference.md",
-    "docs/worker_setup.md",
     "lib/activejob/temporal.rb",
-    "spec/fixtures/sample_jobs.rb"
+    "lib/activejob/temporal/client.rb",
+    "lib/activejob/temporal/adapter.rb",
+    "lib/activejob/temporal/workflows/aj_workflow.rb",
+    "lib/activejob/temporal/activities/aj_runner_activity.rb",
+    "lib/activejob/temporal/payload.rb",
+    "lib/activejob/temporal/retry_mapper.rb",
+    "lib/activejob/temporal/search_attributes.rb",
+    "lib/activejob/temporal/cancel.rb",
+    "Rakefile"
   ],
-  "deliverables": "Comprehensive, user-friendly README with all required sections, code examples, clear formatting",
-  "acceptance_criteria": "README.md exists and is ~300-500 lines; All required sections are present; Quick Start section provides complete, copy-paste-able setup instructions; Configuration section lists all 9 config options with descriptions, types, defaults; Code examples are correct and executable; Markdown is properly formatted and renders correctly on GitHub; No broken links (all referenced docs exist); README passes markdownlint (if configured)",
-  "dependencies": [
-    "I1.T3",
-    "I4.T1"
-  ],
-  "parallelizable": false,
+  "deliverables": "Complete YARD documentation comments, generated HTML docs",
+  "acceptance_criteria": "All public classes have YARD class-level comments; All public methods have YARD method-level comments with @param, @return, @example; rake yard task exists and runs successfully; YARD generates HTML documentation in doc/ directory; Generated docs are browsable and include all public APIs; No YARD warnings about undocumented methods",
+  "dependencies": [],
+  "parallelizable": true,
   "done": false
 }
 ```
@@ -42,300 +55,94 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: introduction-and-goals (from 01_Context_and_Drivers.md)
+### Context: architectural-style (from 02_Architecture_Overview.md)
 
-**Overview of project vision, objectives, scope, and assumptions for activejob-temporal gem**
+```markdown
+**Primary Style: Adapter + Orchestration Pattern**
 
-The activejob-temporal gem provides a production-ready ActiveJob adapter backed by Temporal's durable execution engine. This integration enables Rails applications to leverage Temporal's reliability, observability, and fault-tolerance capabilities with minimal code changes.
+The activejob-temporal gem employs a **layered adapter architecture** that bridges two distinct execution models:
 
-**Key Objectives:**
-- Drop-in replacement for existing ActiveJob adapters (Sidekiq, Resque, etc.)
-- Durable, fault-tolerant job execution backed by Temporal workflows
-- Support for immediate and scheduled job execution
-- Comprehensive retry configuration (retry_on/discard_on mapping)
-- Job cancellation API
-- Search attributes for visibility in Temporal UI
-- Transactional enqueue support (defer until DB commit)
+1. **Rails ActiveJob Layer**: The familiar Rails job abstraction with its DSL (`perform_later`, `retry_on`, etc.)
+2. **Temporal Orchestration Layer**: Durable workflows and activities with guaranteed execution semantics
 
-**Target Audience:**
-- Rails developers seeking improved reliability for background jobs
-- Teams already using Temporal who want to integrate with ActiveJob
-- Organizations needing better observability and debugging for asynchronous work
+**Architectural Pattern Rationale:**
 
-### Context: project-vision (from 01_Context_and_Drivers.md)
+The architecture is fundamentally an **Adapter Pattern** implementation:
+- The `TemporalAdapter` translates ActiveJob's `enqueue`/`enqueue_at` calls into Temporal workflow starts
+- A single, simple **Orchestration Workflow** (`AjWorkflow`) acts as a durable scheduler and executor
+- A single **Activity** (`AjRunnerActivity`) provides the execution context for actual job logic
 
-**High-level vision for bridging ActiveJob and Temporal with minimal code changes**
+This is **not** a microservices architecture (no network-based service boundaries), nor a traditional queue-based system. Instead, it's a **durability wrapper** that uses Temporal's orchestration engine as a fault-tolerant job executor.
 
-The activejob-temporal gem's vision is to provide the simplest possible path for Rails applications to adopt Temporal's durable execution model. Developers should be able to replace their existing queue adapter (e.g., Sidekiq) with `:temporal` and immediately gain:
+**Key Characteristics:**
 
-- **Durable execution:** Jobs survive process restarts and infrastructure failures
-- **Built-in retries:** Leverage Temporal's battle-tested retry policies
-- **Superior observability:** Use Temporal UI and search attributes to track job execution
-- **Simplified operations:** No separate Redis or database-backed queue infrastructure needed
+| Aspect | ActiveJob (Traditional) | activejob-temporal (Temporal) |
+|--------|-------------------------|-------------------------------|
+| **Execution Model** | Queue-based, polling workers | Workflow-based, durable state machine |
+| **Scheduling** | Redis/DB timers or worker threads | Temporal Workflow.sleep (non-blocking) |
+| **Retries** | In-process or queue-level retries | Temporal Activity RetryPolicy (durable) |
+| **State Persistence** | External (Redis/DB) | Built-in (Temporal history) |
+| **Failure Recovery** | Job re-enqueue or DLQ | Automatic workflow/activity retry |
+| **Observability** | Logs + custom metrics | Temporal UI + Search Attributes + Logs |
 
-The gem achieves this by implementing the ActiveJob adapter interface and mapping job semantics (enqueue, retry_on, discard_on) to Temporal primitives (workflows, activities, retry policies).
+**Why This Style?**
 
-### Context: functional-requirements-summary (from 01_Context_and_Drivers.md)
+1. **Minimal Code Changes**: Rails developers change only the adapter line; no job code modifications
+2. **Durable-by-Default**: Temporal's workflow engine provides fault tolerance without additional infrastructure
+3. **Operational Simplicity**: No need for separate Redis/Postgres for job state; Temporal handles persistence
+4. **Clear Separation**: The adapter, workflow, and activity have distinct responsibilities:
+   - **Adapter**: Translates ActiveJob → Temporal
+   - **Workflow**: Orchestrates scheduling and activity invocation
+   - **Activity**: Executes the actual job logic (the only place side effects occur)
 
-**Core functional requirements for job execution, scheduling, retries, and visibility**
+**Architectural Constraints Enforced:**
 
-The gem must provide:
-
-1. **Job Enqueue:**
-   - Support `MyJob.perform_later(args)` for immediate execution
-   - Support `MyJob.set(wait: duration).perform_later(args)` for scheduled execution
-   - Serialize job arguments safely (JSON, GlobalID support)
-
-2. **Retry Behavior:**
-   - Map `retry_on ExceptionClass, wait: duration, attempts: N` to Temporal RetryPolicy
-   - Map `discard_on ExceptionClass` to non-retryable errors
-   - Support exponential backoff and custom retry intervals
-
-3. **Job Cancellation:**
-   - Provide API to cancel in-flight jobs: `ActiveJob::Temporal.cancel(job_class, job_id)`
-   - Best-effort cancellation (requires activity heartbeating for prompt termination)
-
-4. **Observability:**
-   - Attach search attributes (job class, queue, job_id, tenant_id, enqueued_at)
-   - Enable filtering and debugging in Temporal UI
-   - Emit structured JSON logs for integration with logging infrastructure
-
-5. **Reliability:**
-   - Support transactional enqueue (`enqueue_after_transaction_commit?`)
-   - Idempotent workflow execution (deterministic workflow IDs)
-   - Graceful worker shutdown
-
-### Context: key-objectives (from 01_Context_and_Drivers.md)
-
-**Functional and non-functional objectives including reliability, observability, and maintainability**
-
-**Functional Objectives:**
-- ✅ Drop-in ActiveJob adapter
-- ✅ Immediate and scheduled job execution
-- ✅ Retry/discard behavior mapping
-- ✅ Job cancellation
-- ✅ Search attributes for visibility
-- ✅ Transactional enqueue support
-
-**Non-Functional Objectives:**
-- **Reliability:** Fault-tolerant execution, workflow durability, automatic retries
-- **Performance:** Minimal adapter overhead (<10ms per enqueue), efficient serialization
-- **Scalability:** Horizontal worker scaling, no single point of failure
-- **Observability:** Structured logging, search attributes, OpenTelemetry tracing support
-- **Maintainability:** Clean Ruby code, >= 90% test coverage, YARD documentation
-- **Security:** Safe payload serialization, 250KB payload limit, TLS support
-- **Usability:** Minimal learning curve, clear error messages, comprehensive documentation
-
-### Context: scope (from 01_Context_and_Drivers.md)
-
-**What's included in v0.1 (workflows, activities, adapter) and explicitly out of scope**
-
-**In Scope for v0.1:**
-- ActiveJob adapter implementation
-- Single workflow + activity pattern (one job = one workflow + one activity)
-- Immediate enqueue (`perform_later`)
-- Scheduled enqueue (`set(wait:).perform_later`)
-- Retry mapping (`retry_on` → RetryPolicy)
-- Discard mapping (`discard_on` → non-retryable errors)
-- Job cancellation API
-- Search attributes (job class, queue, job_id, tenant_id, enqueued_at)
-- Transactional enqueue support
-- Worker bootstrap script
-- Configuration DSL
-- Comprehensive documentation
-
-**Explicitly Out of Scope for v0.1:**
-- Multi-activity workflows (job chains/pipelines) → v0.3
-- Temporal Schedules API (recurring jobs) → v0.2
-- Signals/Queries/Updates → v0.3
-- Child workflows → v0.3
-- Rails generators → v1.0
-- ActiveRecord callback interception → deferred
-- Built-in metrics/alerting → v0.2
-
-### Context: technology-stack-summary (from 02_Architecture_Overview.md)
-
-**Complete technology stack including Ruby, Rails, Temporal, and dependencies**
-
-**Core Technologies:**
-- **Ruby:** >= 3.2 (required for latest Temporal SDK features)
-- **Rails:** >= 6.1 (ActiveJob 6.1+)
-- **Temporal Ruby SDK:** >= 1.0 (temporalio gem)
-- **ActiveJob:** >= 6.1 (core framework)
-- **GlobalID:** >= 0.3 (for ActiveRecord model serialization)
-
-**Development Dependencies:**
-- **RSpec:** Testing framework
-- **Rubocop:** Linting and style enforcement
-- **SimpleCov:** Code coverage reporting (target >= 90%)
-- **YARD:** API documentation generation
-
-**Serialization:**
-- JSON for workflow payloads
-- ActiveJob::Arguments serializer (supports GlobalID, primitives, arrays, hashes)
-
-**Deployment:**
-- Docker / Kubernetes (optional)
-- systemd / Foreman / other process managers
-- Temporal cluster (self-hosted or Temporal Cloud)
-
-**Observability:**
-- Temporal Web UI (built-in)
-- Structured JSON logging (semantic_logger or stdlib Logger)
-- OpenTelemetry tracing (optional, via enable_tracing config)
-
-### Context: component-diagram (from 03_System_Structure_and_Data.md)
-
-**C4 Level 3 diagram detailing adapter and activity internal components**
-
-The gem's internal architecture consists of the following primary components:
-
-**1. TemporalAdapter (ActiveJob::QueueAdapters::TemporalAdapter)**
-   - Implements ActiveJob adapter interface: `enqueue(job)`, `enqueue_at(job, timestamp)`
-   - Calls supporting modules: Payload, RetryMapper, SearchAttributes
-   - Starts Temporal workflows via Client
-
-**2. Client (ActiveJob::Temporal::Client)**
-   - Memoized Temporalio::Client singleton
-   - Configured via `ActiveJob::Temporal.config`
-   - Provides connection to Temporal cluster
-
-**3. AjWorkflow (Temporal Workflow)**
-   - Single workflow definition for all jobs
-   - Handles scheduled execution via `Workflow.sleep`
-   - Executes AjRunnerActivity with retry policy
-
-**4. AjRunnerActivity (Temporal Activity)**
-   - Deserializes job payload
-   - Instantiates job class
-   - Calls `job.perform(*args)`
-   - Maps exceptions to retryable/non-retryable
-
-**5. Supporting Modules:**
-   - **Payload:** Serializes/deserializes job arguments
-   - **RetryMapper:** Translates retry_on/discard_on to RetryPolicy
-   - **SearchAttributes:** Builds search attributes hash
-   - **Logger:** Structured JSON logging
-   - **Cancel:** Job cancellation API
-
-**6. Configuration (ActiveJob::Temporal::Configuration)**
-   - DSL for configuring client, timeouts, retries
-   - Accessed via `ActiveJob::Temporal.config`
-
-### Context: data-entities (from 03_System_Structure_and_Data.md)
-
-**Key data entities including job payload, search attributes, and retry policy**
-
-**Job Payload (Workflow Input):**
-```ruby
-{
-  job_class: "SendInvoiceJob",           # String, required
-  job_id: "550e8400-e29b-41d4-a716-...", # String, required (UUID)
-  queue_name: "billing",                  # String, required
-  arguments: [1234, { notify: true }],    # Array, required (serialized)
-  scheduled_at: "2025-10-25T14:30:00Z",  # String (ISO8601), optional
-  executions: 0,                          # Integer, required
-  exception_executions: {}                # Hash, required
-}
+- **Workflow Determinism**: `AjWorkflow` contains no I/O, only `sleep` and `execute_activity`
+- **Activity Idempotency**: `AjRunnerActivity` may re-execute on retries; must be idempotent
+- **Stateless Workers**: Workers are horizontally scalable with no shared state
 ```
 
-**Search Attributes:**
-```ruby
-{
-  ajClass: "SendInvoiceJob",             # Keyword
-  ajQueue: "billing",                     # Keyword
-  ajJobId: "550e8400-...",               # Keyword
-  ajEnqueuedAt: Time.now,                 # Datetime
-  ajTenantId: "tenant-456"                # Keyword (optional)
-}
+### Context: container-diagram (from 03_System_Structure_and_Data.md)
+
+```markdown
+**Description:**
+
+This diagram zooms into the **activejob-temporal gem** and shows its major internal components (containers in C4 terminology, though here they're Ruby modules/classes). It also shows how the gem interacts with Rails, the Temporal cluster, and worker processes.
+
+**Key Containers:**
+- **TemporalAdapter**: ActiveJob adapter implementation (entry point from Rails)
+- **Temporal Client**: Memoized client connection to Temporal cluster
+- **AjWorkflow**: Temporal workflow definition (orchestrates scheduling + activity execution)
+- **AjRunnerActivity**: Temporal activity definition (executes actual job logic)
+- **Configuration Module**: Gem configuration (target, namespace, timeouts, etc.)
+- **Payload Serializer**: Converts ActiveJob arguments to/from JSON
+- **Retry Mapper**: Translates `retry_on`/`discard_on` to Temporal `RetryPolicy`
+- **Search Attributes Builder**: Constructs metadata for Temporal visibility
+- **Cancellation API**: Exposes `ActiveJob::Temporal.cancel(job_id)`
 ```
 
-**Retry Policy:**
-```ruby
-{
-  initial_interval: 30,                   # Seconds (from config or retry_on wait:)
-  backoff_coefficient: 2.0,               # Float (exponential backoff)
-  maximum_attempts: 1,                    # Integer (from retry_on attempts: or config)
-  non_retryable_error_types: ["FatalError"] # Array of exception class names (from discard_on)
-}
+### Context: technology-stack (from 02_Architecture_Overview.md)
+
+```markdown
+#### **Core Technologies**
+
+| Component | Technology | Version | Rationale |
+|-----------|-----------|---------|-----------|
+| **Language** | Ruby | >= 3.2 (3.3+ preferred) | Modern Fiber scheduler, performance improvements, Rails compatibility |
+| **Framework** | Rails (ActiveJob) | >= 6.1 | ActiveJob API stability, broad adoption, transactional callback support |
+| **Orchestration Engine** | Temporal | Server 1.22+ | Production-proven durable execution, rich observability, strong consistency |
+| **Temporal SDK** | `temporalio` | GA (Oct 2025+) | Official Ruby SDK with workflow/activity primitives, native code performance |
+
+#### **Key Dependencies**
+
+| Dependency | Purpose | Required? |
+|------------|---------|-----------|
+| `temporalio` | Temporal client, workflow, activity runtime | **Yes** |
+| `activejob` (via Rails) | Job abstraction, serialization, DSL | **Yes** |
+| `globalid` (via Rails) | Serialize ActiveRecord models as job arguments | **Yes** |
+| `opentelemetry-sdk` | Distributed tracing spans | Optional |
+| `semantic_logger` | Structured logging (JSON output) | Optional (falls back to `Logger`) |
 ```
-
-### Context: configuration-reference (from configuration_reference.md)
-
-**Configuration options with descriptions, types, defaults, and examples**
-
-The gem provides 10 configuration options:
-
-1. **target** (String, default: `"127.0.0.1:7233"`) - Temporal frontend service host:port
-2. **namespace** (String, default: `"default"`) - Temporal namespace for workflows
-3. **task_queue_prefix** (String or nil, default: `nil`) - Optional prefix for task queue names
-4. **default_activity_timeout** (Duration, default: `15.minutes`) - Activity start_to_close timeout
-5. **default_retry_initial_interval** (Duration, default: `30.seconds`) - Initial retry delay
-6. **default_retry_backoff** (Float, default: `2.0`) - Exponential backoff factor
-7. **default_retry_max_attempts** (Integer, default: `1`) - Max retry attempts (when no retry_on)
-8. **logger** (Logger, default: `Rails.logger` or `Logger.new($stdout)`) - Log destination
-9. **enable_tracing** (Boolean, default: `true`) - Enable OpenTelemetry instrumentation
-10. **max_payload_size_kb** (Integer, default: `250`) - Max payload size before error
-
-**Example Configuration:**
-```ruby
-ActiveJob::Temporal.configure do |config|
-  config.target = "temporal.example.com:7233"
-  config.namespace = "production"
-  config.task_queue_prefix = "rails-"
-  config.default_activity_timeout = 30.seconds
-  config.enable_tracing = false
-end
-```
-
-### Context: worker-setup (from worker_setup.md)
-
-**Worker bootstrap script usage and environment variables**
-
-The gem provides a `bin/temporal-worker` executable for running workers.
-
-**Required Environment Variables:**
-- `TEMPORAL_TARGET` - Temporal server address (e.g., `localhost:7233`)
-- `TEMPORAL_NAMESPACE` - Temporal namespace (e.g., `default`)
-- `AJ_TEMPORAL_WORKER_QUEUE` - Task queue to poll (e.g., `default`)
-- `AJ_TEMPORAL_MAX_ACT` (optional) - Max concurrent activities (default: `100`)
-
-**Starting the Worker:**
-```bash
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=default \
-bin/temporal-worker
-```
-
-**Expected Log Output:**
-```json
-{"event":"worker_started","task_queue":"default","max_concurrent_activities":100,"namespace":"default","target":"localhost:7233","timestamp":"2024-05-01T18:42:13Z"}
-```
-
-**Graceful Shutdown:**
-Press `Ctrl+C` or send `SIGTERM`. Worker finishes in-flight activities before exiting.
-
-### Context: api-cancellation (from 04_Behavior_and_Communication.md)
-
-**Job cancellation via cancel API**
-
-The gem provides a cancellation API for stopping in-flight jobs:
-
-```ruby
-ActiveJob::Temporal.cancel(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
-```
-
-**Behavior:**
-- Builds deterministic workflow ID: `"ajwf:<ClassName>:<job_id>"`
-- Retrieves workflow handle from Temporal
-- Calls `handle.cancel`
-- Best-effort: If workflow not found or already completed, logs warning but doesn't raise
-- For prompt cancellation, job's `perform` method should call `Temporalio::Activity::Context.current.heartbeat` periodically
-
-**Limitations:**
-- Jobs that don't heartbeat may not terminate immediately
-- Cancellation is asynchronous (workflow may still execute cleanup logic)
 
 ---
 
@@ -345,92 +152,149 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
-*   **File:** `README.md`
-    *   **Summary:** Currently contains a minimal placeholder README (~50 lines) with basic installation and usage instructions. Needs significant expansion to become comprehensive user documentation.
-    *   **Recommendation:** You MUST replace the existing README with the comprehensive version. Keep the existing structure but expand every section significantly. Add all 15 required sections.
+#### **File:** `Rakefile`
+- **Summary:** The Rakefile already includes YARD task configuration at line 27: `YARD::Rake::YardocTask.new(:yard)`. The `rake yard` task is functional and ready to generate documentation.
+- **Recommendation:** You do NOT need to add a YARD task to the Rakefile - it's already configured. Simply run `rake yard` after adding documentation comments to generate HTML docs.
 
-*   **File:** `docs/configuration_reference.md`
-    *   **Summary:** Complete, well-structured configuration reference listing all 10 config options with types, defaults, descriptions, and usage examples. Also includes Search Attributes documentation.
-    *   **Recommendation:** You SHOULD reuse content from this file for the Configuration section of the README. Include the configuration table and example code block. Reference this file for deeper details.
+#### **File:** `lib/activejob/temporal.rb`
+- **Summary:** This is the main entrypoint module. It contains the `Configuration` class (lines 21-74) and module-level methods `config`, `client`, `cancel`, and `configure` (lines 76-97). Currently has NO YARD documentation.
+- **Recommendation:** You MUST add comprehensive YARD documentation to:
+  - The `ActiveJob::Temporal` module itself (module-level comment explaining what the gem does)
+  - The `Configuration` class with documentation for all attributes
+  - The `configure` method explaining the block configuration pattern
+  - The `client` method explaining memoization
+  - The `cancel` method with @param, @return, @example
 
-*   **File:** `docs/worker_setup.md`
-    *   **Summary:** Comprehensive worker setup guide with prerequisites, environment variables, startup commands, log output examples, and manual testing instructions.
-    *   **Recommendation:** You SHOULD adapt content from this file for the Worker Deployment section of the README. Include the environment variables table and startup command example. Reference this file for deployment details.
+#### **File:** `lib/activejob/temporal/adapter.rb`
+- **Summary:** Contains two parts: (1) `ActiveJob::Temporal::Adapter` helper module with `build_workflow_id` and `resolve_task_queue` methods (lines 7-31), both already have YARD comments. (2) `ActiveJob::QueueAdapters::TemporalAdapter` class (lines 35-147) with `enqueue`, `enqueue_at`, and `enqueue_after_transaction_commit?` methods - these already have YARD comments.
+- **Recommendation:** This file already has good YARD documentation. You MAY want to enhance with @example tags showing usage patterns, but existing docs are solid. Consider adding class-level documentation to the TemporalAdapter class itself.
 
-*   **File:** `lib/activejob/temporal.rb`
-    *   **Summary:** Main entrypoint defining the Configuration class with all config options and the `ActiveJob::Temporal.configure` DSL. Also exposes `client` and `cancel` methods.
-    *   **Recommendation:** Use this file to verify the exact list of configuration options (10 options). Reference the `cancel` method signature for the Cancellation section.
+#### **File:** `lib/activejob/temporal/cancel.rb`
+- **Summary:** Contains the `ActiveJob::Temporal::Cancel` module with the `cancel` class method (lines 7-27). This method already has comprehensive YARD documentation including @param, @return, @raise, and @example tags.
+- **Recommendation:** This file is already well-documented. No major changes needed. You MAY want to add a module-level comment explaining the cancellation strategy.
 
-*   **File:** `spec/fixtures/sample_jobs.rb`
-    *   **Summary:** Contains sample job classes demonstrating various features: SimpleJob, RetryableJob (with retry_on), DiscardableJob (with discard_on), LongRunningJob (with heartbeat for cancellation), TestJob, ScheduledJob, etc.
-    *   **Recommendation:** You SHOULD use these job definitions as the basis for code examples in the README. For example, use RetryableJob to demonstrate retry_on usage, DiscardableJob for discard_on, and LongRunningJob for cancellation.
+#### **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
+- **Summary:** Contains `AjWorkflow` class (lines 30-87) with the `execute` method as the primary entry point. Currently has only minimal inline comments, NO YARD documentation.
+- **Recommendation:** You MUST add YARD documentation to:
+  - The `AjWorkflow` class itself explaining its role as the deterministic orchestration layer
+  - The `execute` method with @param (payload hash structure), @return
+  - Add @note explaining workflow determinism constraints (no I/O, only sleep/execute_activity)
+  - Private methods don't require public docs, but consider adding internal comments
 
-*   **File:** `lib/activejob/temporal/adapter.rb`
-    *   **Summary:** Implements the TemporalAdapter with `enqueue`, `enqueue_at`, and `enqueue_after_transaction_commit?` methods. This is the core integration point between ActiveJob and Temporal.
-    *   **Recommendation:** Reference this file to verify the adapter's capabilities (immediate enqueue, scheduled enqueue, transactional enqueue) when writing the Features section.
+#### **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
+- **Summary:** Contains `AjRunnerActivity` class (lines 60-110) with the `execute` method. Currently has minimal documentation (no YARD tags).
+- **Recommendation:** You MUST add YARD documentation to:
+  - The `AjRunnerActivity` class explaining it executes the actual job logic inside a Temporal activity
+  - The `execute` method with @param (payload structure), @return (nil or job result)
+  - Add @note about idempotency key lifecycle and exception handling strategy
+  - Explain that activities may re-execute on retries
 
-*   **File:** `lib/activejob/temporal/cancel.rb`
-    *   **Summary:** Implements the cancellation API with the exact method signature `ActiveJob::Temporal.cancel(job_class, job_id)`. Handles workflow not found errors gracefully.
-    *   **Recommendation:** Use this file to verify the cancel API signature and behavior for the Cancellation section. Include best-effort cancellation note.
+#### **File:** `lib/activejob/temporal/payload.rb`
+- **Summary:** Module with `from_job` and `deserialize_args` methods (lines 12-32). No YARD documentation currently.
+- **Recommendation:** You MUST add YARD documentation to:
+  - The `Payload` module itself
+  - `from_job` method with @param job, @param scheduled_at, @return (Hash structure), @raise SerializationError
+  - `deserialize_args` method with @param payload, @return (Array of deserialized arguments), @raise SerializationError
+  - Add @example showing payload structure and usage patterns
+  - Document the 250KB payload size limit
 
-*   **File:** `activejob-temporal.gemspec`
-    *   **Summary:** Gem specification with metadata, dependencies, and version. Declares Ruby >= 3.2, Rails >= 6.1, and Temporal >= 1.0 as dependencies.
-    *   **Recommendation:** Use this file to verify installation requirements and dependencies for the Installation section. Include Ruby and Rails version requirements.
+#### **File:** `lib/activejob/temporal/retry_mapper.rb`
+- **Summary:** Module with `for` and `discard_exception?` methods (lines 10-28). No YARD documentation.
+- **Recommendation:** You MUST add YARD documentation to:
+  - The `RetryMapper` module itself explaining it translates ActiveJob retry DSL to Temporal RetryPolicy
+  - `for` method with @param job_class, @param exception (optional), @return (Hash with retry policy structure)
+  - `discard_exception?` method with @param job_class, @param exception, @return (Boolean)
+  - Add @example showing how retry_on declarations are mapped
+  - Document the returned hash structure (initial_interval, backoff_coefficient, maximum_attempts, non_retryable_error_types)
 
-*   **File:** `lib/activejob/temporal/version.rb`
-    *   **Summary:** Defines the current version as `"0.1.0"`.
-    *   **Recommendation:** Include version badge or mention in the README header.
+#### **File:** `lib/activejob/temporal/search_attributes.rb`
+- **Summary:** Module with `for` method (line 8-19). No YARD documentation.
+- **Recommendation:** You MUST add YARD documentation to:
+  - The `SearchAttributes` module itself
+  - `for` method with @param job, @return (Temporalio::SearchAttributes)
+  - Document which attributes are created: ajClass, ajQueue, ajJobId, ajEnqueuedAt, ajTenantId (optional)
+  - Add @note about requiring search attributes to be pre-registered in Temporal cluster
+  - Add @example showing usage and resulting attributes
 
-*   **File:** `CHANGELOG.md`
-    *   **Summary:** Currently contains only a placeholder entry for "Unreleased" with "Initial project setup". Needs to be updated with v0.1.0 release notes (handled in I5.T6).
-    *   **Recommendation:** Reference this file for versioning information. The README should link to CHANGELOG for release history.
+#### **File:** `lib/activejob/temporal/client.rb`
+- **Summary:** Module with `build` method (lines 19-33). No YARD documentation.
+- **Recommendation:** You MUST add YARD documentation to:
+  - The `Client` module itself explaining it builds memoized Temporal client connections
+  - `build` method with @param configuration, @return (Temporalio::Client), @raise (ActiveJob::Temporal::Error)
+  - Document TLS options and environment variables (TLS_CERT_ENV, TLS_KEY_ENV, TLS_SERVER_NAME_ENV)
+  - Add @example showing configuration usage
+
+#### **File:** `lib/activejob/temporal/logger.rb`
+- **Summary:** Module with structured logging methods: `log_event`, `info`, `warn`, `error` (lines 11-25). No YARD documentation.
+- **Recommendation:** You MUST add YARD documentation to:
+  - The `Logger` module itself explaining structured JSON logging
+  - Public methods: `log_event`, `info`, `warn`, `error` with @param event_name, @param attributes, @return (void)
+  - Document that logs include standard fields: event, timestamp, plus custom attributes
+  - Add @example showing typical usage
+  - Mention semantic_logger optional integration
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The Configuration section should be a summary/table format for quick reference. You SHOULD copy the configuration table from `docs/configuration_reference.md` (lines 5-18) into the README and add a note: "For detailed configuration documentation, see [Configuration Reference](docs/configuration_reference.md)."
+#### **Tip #1: YARD Task Already Exists**
+- The Rakefile already has the YARD task configured at line 27. You do NOT need to modify the Rakefile. Simply run `rake yard` after adding documentation to generate HTML output in the `doc/` directory.
 
-*   **Tip:** For the Quick Start section, provide a complete, copy-pasteable example that includes: (1) Installation (Gemfile), (2) Configuration (initializer), (3) Setting adapter, (4) Sample job definition, (5) Enqueuing the job, (6) Starting the worker. This should be runnable by someone new to the gem.
+#### **Tip #2: Partial Documentation Already Exists**
+- Two files already have good YARD documentation: `adapter.rb` and `cancel.rb`. These can serve as templates for the documentation style and level of detail to apply to other files.
+- The existing documentation in `adapter.rb` shows good patterns: clear @param descriptions, @raise tags for error cases, and formatted multi-line descriptions.
 
-*   **Tip:** The Features section should be a bulleted list with brief descriptions. Example format:
-    - ✅ **Immediate job execution:** Use `MyJob.perform_later(args)` for instant enqueue
-    - ✅ **Scheduled execution:** Use `MyJob.set(wait: 5.minutes).perform_later(args)` for delayed jobs
-    - ✅ **Retry mapping:** ActiveJob `retry_on` declarations automatically map to Temporal retry policies
-    - ✅ **Discard mapping:** `discard_on` maps to non-retryable errors
-    - ✅ **Job cancellation:** Cancel in-flight jobs via `ActiveJob::Temporal.cancel(JobClass, job_id)`
-    - ✅ **Search attributes:** Filter and debug jobs in Temporal UI using job class, queue, ID, tenant
-    - ✅ **Transactional enqueue:** Jobs defer enqueue until database transaction commits
+#### **Tip #3: Focus on Public API Surface**
+- The task explicitly states "all public classes and methods." Private methods do not need YARD documentation, but you should add module-level and class-level comments to explain overall purpose.
+- Public API includes:
+  - `ActiveJob::Temporal.configure`, `.config`, `.client`, `.cancel`
+  - `ActiveJob::QueueAdapters::TemporalAdapter#enqueue`, `#enqueue_at`, `#enqueue_after_transaction_commit?`
+  - `AjWorkflow#execute`
+  - `AjRunnerActivity#execute`
+  - `Payload.from_job`, `.deserialize_args`
+  - `RetryMapper.for`, `.discard_exception?`
+  - `SearchAttributes.for`
+  - `Client.build`
+  - `Logger.log_event`, `.info`, `.warn`, `.error`
 
-*   **Tip:** The Scheduled Jobs section should show a practical example using `set(wait:)` or `set(wait_until:)`. Reference the sample_jobs.rb for inspiration. Include a note that Temporal's Schedules API (for recurring jobs) is planned for v0.2.
+#### **Tip #4: Document Data Structures**
+- Many methods return or accept complex Hash structures (payload, retry policy). Document the expected keys and types. For example:
+  - Payload hash: `{ job_class: String, job_id: String, queue_name: String, arguments: Array, scheduled_at: String (ISO8601), ... }`
+  - Retry policy hash: `{ initial_interval: Float, backoff_coefficient: Float, maximum_attempts: Integer, non_retryable_error_types: Array<String> }`
 
-*   **Tip:** The Retries section should demonstrate both `retry_on` and `discard_on` with code examples from sample_jobs.rb. Include a note about exponential backoff and configurable retry policies.
+#### **Tip #5: Add Examples**
+- YARD @example tags greatly improve documentation usability. Include at least one example for each major public method showing realistic usage:
+  ```ruby
+  # @example Configure the gem
+  #   ActiveJob::Temporal.configure do |config|
+  #     config.target = "temporal.example.com:7233"
+  #     config.namespace = "production"
+  #   end
+  ```
 
-*   **Tip:** The Cancellation section must include the EXACT method signature: `ActiveJob::Temporal.cancel(JobClass, job_id)`. Include a warning that jobs must heartbeat for prompt cancellation (reference LongRunningJob example).
+#### **Tip #6: Workflow Determinism Note**
+- When documenting `AjWorkflow`, include a @note tag explaining Temporal's workflow determinism requirements: "This workflow MUST remain deterministic. It contains no I/O operations, no random number generation, no system time calls (only `Workflow.now`), and no direct method calls to external services. All side effects occur in the activity."
 
-*   **Tip:** The Observability section should explain Search Attributes and link to the configuration reference for the `tctl` registration command. Mention Temporal UI filtering capabilities.
+#### **Tip #7: Idempotency Note**
+- When documenting `AjRunnerActivity`, include a @note explaining: "Activities may be re-executed on retries due to transient failures. Job implementations MUST be idempotent. The activity sets a thread-local idempotency key before execution to assist with idempotent external operations."
 
-*   **Tip:** The Worker Deployment section should include the basic worker startup command and link to `docs/worker_setup.md` for detailed deployment instructions.
+#### **Note:** Current YARD Output
+- The `doc/` directory already exists with HTML documentation, but it's likely incomplete because most modules lack YARD comments. After adding documentation, the regenerated `doc/` will be much more comprehensive.
 
-*   **Tip:** The Limitations section should clearly state what's NOT in v0.1:
-    - No multi-activity workflows (job chains) → v0.3
-    - No recurring jobs via Temporal Schedules → v0.2
-    - No Signals/Queries/Updates → v0.3
-    - No ActiveRecord callback interception
-    - 250KB payload size limit enforced
+#### **Warning:** YARD Undocumented Method Warnings
+- When you run `rake yard` after adding documentation, YARD will show warnings for any undocumented public methods. Your goal is to achieve zero warnings. You can run `rake yard --no-stats` to suppress statistics, but for this task, pay attention to warnings to ensure completeness.
 
-*   **Tip:** The Migration section should be a brief overview with a link to `docs/migration_guide.md` (which will be created in I5.T3). Include common migration steps: (1) Add gem, (2) Change adapter, (3) Configure Temporal, (4) Deploy workers, (5) Drain old queue.
+#### **Note:** README Already Complete
+- Task I5.T1 (Write README) is marked as complete. The README.md file is comprehensive and should NOT be modified for this task. Focus only on YARD API documentation.
 
-*   **Tip:** The Contributing section should include: "Contributions welcome! Please open an issue or PR. Ensure tests pass (`rake spec`) and code is linted (`rake rubocop`)."
+---
 
-*   **Tip:** The License section should state "MIT. See [LICENSE](LICENSE)."
+## End of Task Briefing Package
 
-*   **Tip:** The Versioning section should state: "This project follows [Semantic Versioning](https://semver.org/). See [CHANGELOG](CHANGELOG.md) for release history."
+You now have everything needed to add comprehensive YARD documentation to all public classes and methods. Remember to:
+1. Add module/class-level documentation explaining purpose and role
+2. Add method-level documentation with @param, @return, @raise, @example tags
+3. Document data structures (hashes, arrays) with expected keys and types
+4. Include notes about determinism, idempotency, and other architectural constraints
+5. Run `rake yard` to generate HTML docs in `doc/` directory
+6. Verify no YARD warnings about undocumented methods
 
-*   **Note:** The task specifies ~300-500 lines. Given the 15 required sections, aim for concise but complete documentation. Use tables, code blocks, and bullet points to maximize information density without verbosity.
-
-*   **Note:** Include a project status badge or warning at the top: "⚠️ This gem is under active development. Expect rapid iteration and potential breaking changes until v1.0.0." (This already exists in the current README - keep it.)
-
-*   **Warning:** Ensure all code examples are syntactically correct and executable. Test them mentally against the actual implementation. For example, the cancel API takes TWO arguments (job_class, job_id), not just job_id.
-
-*   **Warning:** Do not invent features that don't exist. Only document what has been implemented in iterations I1-I4. For example, Temporal Schedules API is NOT implemented yet (planned for v0.2), so don't document it as a current feature.
-
-*   **Success Criterion:** The README should be comprehensive enough that a Rails developer with no prior Temporal experience can: (1) Install the gem, (2) Configure it, (3) Convert an existing job, (4) Start a worker, (5) Enqueue and execute a job successfully - all within 15-30 minutes of reading the documentation.
+Good luck, Coder Agent!

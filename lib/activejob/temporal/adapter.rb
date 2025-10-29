@@ -4,19 +4,43 @@ require "active_job"
 
 module ActiveJob
   module Temporal
+    # Helper methods for the TemporalAdapter.
+    #
+    # This module provides utility functions for building workflow IDs and resolving
+    # task queue names. Used internally by the adapter.
     module Adapter
       module_function
 
       # Builds deterministic workflow ID used for Temporal workflows.
+      #
+      # Creates a unique, reproducible workflow ID from the job class and job ID.
+      # This enables idempotent enqueuing (duplicate enqueue calls with same job_id
+      # will be rejected by Temporal with FAIL conflict policy).
+      #
       # @param job [ActiveJob::Base] ActiveJob instance being enqueued
       # @return [String] Workflow ID in format "ajwf:<ClassName>:<job_id>"
+      # @example
+      #   job = MyJob.new
+      #   job.job_id # => "abc-123"
+      #   build_workflow_id(job) # => "ajwf:MyJob:abc-123"
       def build_workflow_id(job)
         "ajwf:#{job.class.name}:#{job.job_id}"
       end
 
       # Resolves the Temporal task queue name for a given job.
+      #
+      # Extracts the queue name from the job and applies the configured task_queue_prefix
+      # if present. Defaults to "default" if queue_name is blank.
+      #
       # @param job [ActiveJob::Base] ActiveJob instance being enqueued
       # @return [String] Task queue name, optionally prefixed
+      # @example Without prefix
+      #   job.queue_name # => "mailers"
+      #   resolve_task_queue(job) # => "mailers"
+      # @example With prefix
+      #   ActiveJob::Temporal.config.task_queue_prefix = "myapp-"
+      #   job.queue_name # => "mailers"
+      #   resolve_task_queue(job) # => "myapp-mailers"
       def resolve_task_queue(job)
         queue_name = job.queue_name.to_s.strip
         queue_name = "default" if queue_name.empty?
@@ -32,23 +56,62 @@ end
 
 module ActiveJob
   module QueueAdapters
+    # ActiveJob queue adapter for Temporal workflows.
+    #
+    # This adapter integrates ActiveJob with Temporal by starting workflows for each
+    # enqueued job. It translates ActiveJob's `perform_later` and `set(wait:).perform_later`
+    # into Temporal workflow starts with the AjWorkflow.
+    #
+    # @note Idempotent Enqueuing
+    #   Jobs with the same job_id will not be enqueued twice. The adapter uses
+    #   FAIL conflict policy, so duplicate enqueue attempts return nil (not an error).
+    #
+    # @note Transaction Safety
+    #   The adapter implements `enqueue_after_transaction_commit?`, which defers
+    #   workflow starts until the current database transaction commits. This prevents
+    #   workflows from starting for rolled-back jobs.
+    #
+    # @example Basic usage
+    #   class MyJob < ApplicationJob
+    #     self.queue_adapter = :temporal
+    #     def perform(arg)
+    #       # job logic
+    #     end
+    #   end
+    #   MyJob.perform_later("arg")
+    #
+    # @example Scheduled job
+    #   MyJob.set(wait: 1.hour).perform_later("arg")
     class TemporalAdapter
-      # Enqueues a job for execution on Temporal by starting the AjWorkflow.
+      # Enqueues a job for immediate execution on Temporal by starting the AjWorkflow.
+      #
       # @param job [ActiveJob::Base] the job instance provided by ActiveJob
+      # @return [Object, nil] workflow run handle (if provided by Temporal SDK), or nil if duplicate
       # @raise [ActiveJob::SerializationError] when payload serialization fails
       # @raise [ActiveJob::EnqueueError] when the Temporal client cannot start the workflow
-      # @return [Object, nil] workflow run handle (if provided by Temporal SDK)
+      # @example
+      #   adapter = TemporalAdapter.new
+      #   job = MyJob.new("arg1", "arg2")
+      #   adapter.enqueue(job)
       def enqueue(job)
         payload = build_payload(job)
         enqueue_with_payload(job, payload)
       end
 
       # Enqueues a job for execution at a specific time by starting the AjWorkflow immediately.
+      #
+      # The workflow starts immediately but sleeps (non-blockingly) until the scheduled time
+      # before executing the activity. This leverages Temporal's durable timers.
+      #
       # @param job [ActiveJob::Base] the job instance provided by ActiveJob
-      # @param timestamp [Integer] UNIX timestamp when the job should be executed
+      # @param timestamp [Integer, Float] UNIX timestamp when the job should be executed
+      # @return [Object, nil] workflow run handle (if provided by Temporal SDK), or nil if duplicate
       # @raise [ActiveJob::SerializationError] when payload serialization fails
       # @raise [ActiveJob::EnqueueError] when the Temporal client cannot start the workflow
-      # @return [Object, nil] workflow run handle (if provided by Temporal SDK)
+      # @example
+      #   adapter = TemporalAdapter.new
+      #   job = MyJob.new("arg")
+      #   adapter.enqueue_at(job, 1.hour.from_now.to_i)
       def enqueue_at(job, timestamp)
         scheduled_time = Time.at(timestamp)
         payload = build_payload(job, scheduled_at: scheduled_time)
@@ -57,7 +120,18 @@ module ActiveJob
       end
 
       # Signals ActiveJob to defer enqueuing until after the current database transaction commits.
-      # This prevents Temporal workflows from starting for rolled-back transactions.
+      #
+      # This prevents Temporal workflows from starting for jobs created within rolled-back
+      # database transactions. Rails will automatically defer `enqueue` and `enqueue_at` calls
+      # until the transaction commits.
+      #
+      # @return [Boolean] always returns true
+      # @example Transaction-safe enqueuing
+      #   ActiveRecord::Base.transaction do
+      #     user = User.create!(name: "Alice")
+      #     MyJob.perform_later(user) # Deferred until commit
+      #     raise ActiveRecord::Rollback # Job is NOT enqueued
+      #   end
       def enqueue_after_transaction_commit?
         true
       end

@@ -27,7 +27,7 @@
     "acceptance_criteria": "All public classes have YARD class-level comments; All public methods have YARD method-level comments with @param, @return, @example; rake yard task exists and runs successfully; YARD generates HTML documentation in doc/ directory; Generated docs are browsable and include all public APIs; No YARD warnings about undocumented methods",
     "dependencies": [],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I5.T3",
