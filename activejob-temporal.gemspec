@@ -25,9 +25,12 @@ Gem::Specification.new do |spec|
 
   spec.files = Dir.chdir(__dir__) do
     `git ls-files -z`.split("\x0").reject do |f|
-      f.start_with?("spec/", "docs/", "examples/", "tmp/")
+      f.start_with?("spec/", "docs/", "examples/", "tmp/", "tools/", ".codemachine/", ".github/") ||
+        f.match?(%r{^(\.|docker-compose\.yml|coverage/|Gemfile|Rakefile)})
     end
   end
+  spec.bindir = "bin"
+  spec.executables = ["temporal-worker"]
   spec.require_paths = ["lib"]
 
   spec.add_dependency "activejob", ">= 6.1"
