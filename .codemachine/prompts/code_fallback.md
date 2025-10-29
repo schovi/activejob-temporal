@@ -1,6 +1,6 @@
 # Code Refinement Task
 
-The previous code submission did not pass verification. You must fix the following issues and resubmit your work.
+The previous code submission did not pass verification. You must address the following issues before the task can be marked complete.
 
 ---
 
@@ -12,59 +12,53 @@ Create a git tag for the v0.1.0 release. Ensure all code is committed and pushed
 
 ## Issues Detected
 
-*   **Uncommitted Changes:** The file `.codemachine/template.json` has been modified but not committed. The tag `v0.1.0` was created pointing to commit `0370d44`, but this does not represent a clean working tree state. According to acceptance criteria, "All code is committed and pushed to main branch" must be satisfied.
+*   **Missing Remote Repository:** The repository has NO remote configured. Running `git remote -v` returns empty. The acceptance criteria requires pushing the tag to remote with `git push origin v0.1.0`, but this command will fail because there is no remote named "origin".
+*   **GitHub Release Cannot Be Created:** Since there is no GitHub remote configured, a GitHub release cannot be created as specified in the acceptance criteria.
+*   **Incomplete Acceptance Criteria:** The task acceptance criteria explicitly requires:
+    - Tag pushed to remote: `git push origin v0.1.0` (CANNOT BE COMPLETED)
+    - Tag is visible on GitHub (if applicable) (CANNOT BE COMPLETED)
+    - GitHub release created from tag with CHANGELOG notes (CANNOT BE COMPLETED)
 
-*   **Missing Remote Configuration:** No git remote is configured (`git remote -v` returns empty). This prevents both pushing the tag to remote and creating a GitHub release. The acceptance criteria requires "Tag pushed to remote: `git push origin v0.1.0`" and "GitHub release created from tag with CHANGELOG notes (if using GitHub)".
+---
 
-*   **Incomplete Workflow:** While the annotated tag was created correctly with proper message format and pointing to the master branch, the complete release workflow cannot be finished without addressing the above issues.
+## Current State (What IS Working)
+
+✅ Tag `v0.1.0` exists and is properly created
+✅ Tag is an annotated tag with comprehensive release message
+✅ Tag points to current HEAD commit (fbc7e83)
+✅ All code is committed to the repository
+✅ CHANGELOG.md is complete with v0.1.0 release notes
 
 ---
 
 ## Best Approach to Fix
 
-You MUST complete the following steps in order:
+**You have two options to complete this task:**
 
-1. **Commit the outstanding changes:**
-   ```bash
-   git add .codemachine/template.json
-   git commit -m "chore: finalize codemachine template for v0.1.0 release"
-   ```
+### Option A: Configure Remote and Push (Recommended if publishing to GitHub)
 
-2. **Delete and recreate the tag** to point to the new clean commit:
-   ```bash
-   git tag -d v0.1.0
-   git tag -a v0.1.0 -m "Release v0.1.0 - Initial release of activejob-temporal gem
+1.  Ask the user if they intend to publish this gem to GitHub
+2.  If yes, ask them for the GitHub repository URL (e.g., `git@github.com:username/activejob-temporal.git`)
+3.  Configure the remote: `git remote add origin <URL>`
+4.  Push the main branch: `git push -u origin master`
+5.  Push the tag: `git push origin v0.1.0`
+6.  Create a GitHub release using the `gh` CLI tool:
+    ```bash
+    gh release create v0.1.0 \
+      --title "v0.1.0 - Initial Release" \
+      --notes-file <(sed -n '/^## \[0\.1\.0\]/,/^## \[/p' CHANGELOG.md | head -n -1)
+    ```
+7.  Verify the tag and release are visible on GitHub
 
-   First production-ready release of the activejob-temporal gem, providing
-   a Temporal-backed adapter for Rails ActiveJob.
+### Option B: Document Local-Only Release (If not publishing)
 
-   See CHANGELOG.md for full release notes."
-   ```
+1.  If the user confirms this is a local-only project (not being pushed to GitHub), then:
+2.  Document in a comment or release notes that this is a local release only
+3.  Update the task acceptance criteria to reflect that remote push and GitHub release are not applicable for this project
+4.  Consider the task complete with the local tag creation
 
-3. **Verify clean state:**
-   ```bash
-   git status  # Should show "nothing to commit, working tree clean"
-   git tag -l  # Should show v0.1.0
-   git show v0.1.0 --quiet  # Should display tag details
-   ```
+**Action Required:** Clarify with the user whether they intend to:
+- Publish this gem to a GitHub repository (then follow Option A)
+- Keep this as a local-only project (then follow Option B)
 
-4. **Handle remote push conditionally:**
-   - First, check if a remote exists: `git remote -v`
-   - If a remote named "origin" exists, push the tag: `git push origin v0.1.0`
-   - If NO remote exists, output clear instructions for the user on how to add a remote and push manually:
-     ```
-     No git remote configured. To push the tag to GitHub:
-     1. git remote add origin <your-repository-url>
-     2. git push origin master
-     3. git push origin v0.1.0
-     ```
-
-5. **GitHub Release (if applicable):**
-   - If remote exists and is GitHub, use `gh` CLI if available: `gh release create v0.1.0 --title "v0.1.0" --notes-file CHANGELOG.md`
-   - If `gh` is not available or no remote exists, provide manual instructions for creating the release via GitHub web UI using the CHANGELOG.md content
-
-6. **Verification:**
-   - Confirm working tree is clean: `git status`
-   - Confirm tag exists: `git tag -l`
-   - Confirm tag points to latest commit: `git log --oneline --decorate -1`
-   - Document any steps that couldn't be automated (remote configuration, GitHub release)
+Without a configured remote, the acceptance criteria cannot be met as written.
