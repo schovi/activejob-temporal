@@ -147,6 +147,6 @@
     "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses); All auto-correctable offenses are fixed; Any manual fixes are applied; Worker script (`bin/temporal-worker`) passes Rubocop checks; Integration test files pass Rubocop checks",
     "dependencies": ["I4.T1", "I4.T3", "I4.T4", "I4.T5", "I4.T6", "I4.T7", "I4.T8"],
     "parallelizable": false,
-    "done": false
+    "done": true
   }
 ]
