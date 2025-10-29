@@ -41,16 +41,21 @@ RSpec.describe "ActiveJob Temporal retry behavior", :integration do
     description = handle.describe
     expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
 
-    # Verify workflow history
-    # Note: Temporal Ruby SDK handles activity retries at the worker level,
-    # so intermediate failures may not appear as separate events in workflow history.
-    # The critical validation is that the job executed twice and eventually succeeded.
+    # Verify workflow history shows activity retry
     history = handle.fetch_history
     event_types = history.events.map(&:event_type)
 
-    # Verify activity was scheduled and completed
+    # Verify activity was scheduled and eventually completed
     expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED)
     expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_COMPLETED)
+
+    # Verify retry occurred by checking the attempt number in ACTIVITY_TASK_STARTED event
+    # Note: Temporal Ruby SDK handles activity retries at the worker level,
+    # so the workflow history shows only the final STARTED event, but its
+    # attempt counter indicates how many times the activity was executed
+    activity_started_event = history.events.find { |e| e.event_type == :EVENT_TYPE_ACTIVITY_TASK_STARTED }
+    expect(activity_started_event).not_to be_nil
+    expect(activity_started_event.activity_task_started_event_attributes.attempt).to eq(2)
   ensure
     stop_worker(@worker_thread)
   end

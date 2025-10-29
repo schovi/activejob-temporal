@@ -72,7 +72,7 @@
     "acceptance_criteria": "Integration test defines a job that fails once then succeeds; Job uses `retry_on StandardError, wait: 1, attempts: 3`; Test enqueues job, starts worker; Test waits for job to fail, retry, and succeed (max 10 seconds); Test asserts final result is 'success'; Test queries workflow history for activity failure + retry events; `rake spec:integration` passes for retries_spec.rb; Test is isolated",
     "dependencies": ["I3.T1", "I2.T3", "I1.T6", "I4.T2"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I4.T6",
