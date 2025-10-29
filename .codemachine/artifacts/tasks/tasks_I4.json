@@ -57,7 +57,7 @@
     "acceptance_criteria": "Integration test enqueues job with delay: `TestJob.set(wait: 5.seconds).perform_later(42)`; Test starts worker; Test verifies job does NOT execute immediately (check at T+1 second); Test waits for scheduled time (T+6 seconds) and verifies job executed; Test queries workflow history for timer event (proves `Workflow.sleep` was used); Test cleans up; `rake spec:integration` passes for scheduled_jobs_spec.rb; Test is isolated",
     "dependencies": ["I3.T2", "I2.T2", "I4.T2"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I4.T5",

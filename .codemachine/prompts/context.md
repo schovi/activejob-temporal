@@ -10,26 +10,28 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I4.T3",
+  "task_id": "I4.T4",
   "iteration_id": "I4",
   "iteration_goal": "Implement the Temporal worker bootstrap script, write comprehensive integration tests with a real Temporal test server, and validate end-to-end functionality (enqueue → workflow → activity → job execution).",
-  "description": "Write integration test in `spec/integration/enqueue_spec.rb` that tests end-to-end immediate job execution (no scheduling). Test flow: (1) Define a simple test job (e.g., `class TestJob < ApplicationJob; def perform(arg); $test_result = arg; end; end`). (2) Configure ActiveJob to use TemporalAdapter (in test setup). (3) Enqueue job: `TestJob.perform_later(42)`. (4) Start a Temporal worker in a background thread (or subprocess) polling the \"default\" task queue. (5) Wait for job to execute (poll `$test_result` or use a more robust mechanism like condition variables or test helper). (6) Assert `$test_result == 42`. (7) Verify workflow completed in Temporal (query workflow history using test client). (8) Clean up: stop worker, reset state. Use Temporal test server from I4.T2. This is a full end-to-end test proving enqueue → workflow → activity → job execution works.",
+  "description": "Write integration test in `spec/integration/scheduled_jobs_spec.rb` that tests scheduled job execution using `set(wait:)`. Test flow: (1) Define test job. (2) Enqueue job with delay: `TestJob.set(wait: 5.seconds).perform_later(42)`. (3) Start worker. (4) Assert job does NOT execute immediately (wait 1 second, verify `$test_result` is still nil). (5) Wait for scheduled time (total 6 seconds from enqueue). (6) Assert job executed after delay. (7) Verify workflow used `Workflow.sleep` (check workflow history for timer event using Temporal test client). This test proves durable scheduled execution works.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "RSpec integration test patterns, Temporal test server helper from I4.T2, adapter from I3.T1, workflow/activity from I2.T2/I2.T3, worker bootstrap logic from I4.T1",
+  "inputs": "RSpec integration test patterns, Temporal test server helper from I4.T2, adapter from I3.T2, workflow sleep logic from I2.T2",
   "target_files": [
-    "spec/integration/enqueue_spec.rb",
-    "spec/fixtures/sample_jobs.rb"
+    "spec/integration/scheduled_jobs_spec.rb"
   ],
   "input_files": [
     "spec/support/temporal_test_server.rb",
     "lib/activejob/temporal/adapter.rb",
     "lib/activejob/temporal/workflows/aj_workflow.rb",
-    "lib/activejob/temporal/activities/aj_runner_activity.rb",
     "spec/fixtures/sample_jobs.rb"
   ],
-  "deliverables": "Passing integration test for immediate job execution",
-  "acceptance_criteria": "Integration test defines a simple ActiveJob job (TestJob); Test configures ActiveJob adapter to TemporalAdapter; Test enqueues job: `TestJob.perform_later(42)`; Test starts a worker in background (thread or subprocess) polling task queue; Test waits for job execution (max 10 seconds timeout); Test asserts job executed with correct argument (`$test_result == 42` or similar); Test queries Temporal for workflow completion (using test client); Test cleans up: stops worker, resets state; `rake spec:integration` (or `rake spec`) passes for enqueue_spec.rb (immediate execution test); Test is isolated (can run multiple times without interference)",
-  "dependencies": ["I3.T1", "I2.T2", "I2.T3", "I4.T2"],
+  "deliverables": "Passing integration test for scheduled job execution",
+  "acceptance_criteria": "Integration test enqueues job with delay: `TestJob.set(wait: 5.seconds).perform_later(42)`; Test starts worker; Test verifies job does NOT execute immediately (check at T+1 second); Test waits for scheduled time (T+6 seconds) and verifies job executed; Test queries workflow history for timer event (proves `Workflow.sleep` was used); Test cleans up; `rake spec:integration` passes for scheduled_jobs_spec.rb; Test is isolated",
+  "dependencies": [
+    "I3.T2",
+    "I2.T2",
+    "I4.T2"
+  ],
   "parallelizable": false,
   "done": false
 }
@@ -41,92 +43,79 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: Interaction Flow Enqueue (from 04_Behavior_and_Communication.md)
+### Context: Scheduled Job Execution Architecture
 
-```markdown
-#### **Key Interaction Flow 1: Job Enqueue (Immediate Execution)**
+**Scheduled Execution via `set(wait:)`:**
+- When users call `TestJob.set(wait: 5.seconds).perform_later(42)`, ActiveJob invokes `enqueue_at` on the adapter
+- The adapter converts the delay into a Unix timestamp and passes it to the payload serializer
+- The payload includes a `scheduled_at` field in ISO8601 format
+- The workflow is started **immediately** in Temporal, but the `AjWorkflow.execute` method extracts the `scheduled_at` timestamp and calls `Workflow.sleep` for the calculated duration
+- This is a **durable sleep** - the workflow doesn't block any worker threads during the sleep
+- After the sleep completes, the workflow proceeds to execute the activity
 
-**Scenario**: Rails application enqueues a job for immediate execution via `perform_later`.
+**Key Design Decision:**
+The architecture explicitly chose to use `Workflow.sleep` within the workflow rather than Temporal's start delay or Schedules API. This ensures:
+1. The workflow is created immediately (supports deduplication via workflow ID)
+2. The sleep is durable and survives worker restarts
+3. The workflow history includes a timer event that can be verified in tests
 
-**Key Steps:**
+### Context: Workflow Sleep Implementation
 
-1. **Developer calls** `SendInvoiceJob.perform_later(42)` in Rails
-2. **ActiveJob creates job instance** with UUID job_id and arguments [42]
-3. **Adapter.enqueue(job)** is invoked
-4. **Payload Serializer** creates JSON payload: `{job_class: "SendInvoiceJob", job_id: "...", arguments: [42], ...}`
-5. **Retry Mapper** extracts retry policy from job class (retry_on/discard_on declarations)
-6. **Search Attributes Builder** creates metadata: `{ajClass: "SendInvoiceJob", ajQueue: "billing", ajJobId: "...", ajEnqueuedAt: Time.now}`
-7. **Client.start_workflow** calls Temporal gRPC API with:
-   - workflow_id: `"ajwf:SendInvoiceJob:#{job_id}"`
-   - task_queue: resolved from job.queue_name (with optional prefix)
-   - id_conflict_policy: `:reject` (prevents duplicate workflows)
-   - search_attributes: metadata for visibility
-8. **Temporal Cluster** creates workflow, returns workflow_run handle
-9. **Adapter logs** "workflow_enqueued" event
-10. **Error Handling**: If Temporal unreachable, raises `ActiveJob::EnqueueError`
+The `AjWorkflow` class (from `lib/activejob/temporal/workflows/aj_workflow.rb`) includes:
+
+```ruby
+def execute(payload)
+  scheduled_time = extract_scheduled_time(payload)
+  sleep_until(scheduled_time) if scheduled_time
+
+  Temporalio::Workflow.execute_activity(
+    AjRunnerActivity,
+    payload,
+    **activity_options(payload)
+  )
+end
+
+private
+
+def extract_scheduled_time(payload)
+  timestamp = payload[:scheduled_at] || payload["scheduled_at"]
+  return unless timestamp
+
+  Time.iso8601(timestamp)
+end
+
+def sleep_until(target_time)
+  now = Temporalio::Workflow.now
+  delay = target_time - now
+  return unless delay.positive?
+
+  Temporalio::Workflow.sleep(delay)
+end
 ```
 
-### Context: Workflow & Activity Execution Flow (from 04_Behavior_and_Communication.md)
+**Critical points:**
+- Uses `Temporalio::Workflow.now` (not `Time.now`) for determinism
+- Calculates delay as `target_time - now`
+- Only sleeps if delay is positive (handles edge cases where scheduled_at is in the past)
+- The sleep is deterministic and will be recorded in workflow history as a timer event
 
-```markdown
-#### **Key Interaction Flow 3: Workflow & Activity Execution**
+### Context: Adapter enqueue_at Method
 
-**Scenario**: A Temporal worker picks up the workflow task, executes the workflow logic, then executes the activity (actual job).
+The adapter's `enqueue_at` method (from `lib/activejob/temporal/adapter.rb`):
 
-**Key Steps:**
+```ruby
+def enqueue_at(job, timestamp)
+  scheduled_time = Time.at(timestamp)
+  payload = build_payload(job, scheduled_at: scheduled_time)
 
-1. **Worker polls for workflow task**: Long-poll request to Temporal, receives workflow task
-2. **Workflow execution begins**: Worker invokes `AjWorkflow.execute(payload)`
-3. **(Optional) Sleep**: If `scheduled_at` is set and in the future, workflow calls `Workflow.sleep`
-   - **Crucially**: Worker thread is **not blocked**; it returns to poll for other tasks
-   - Temporal persists a timer event in workflow history
-4. **Workflow schedules activity**: Calls `execute_activity(AjRunnerActivity, payload, ...)`
-5. **Workflow task completes**: Worker reports back to Temporal; workflow enters "Waiting for activity" state
-6. **Worker polls for activity task**: Receives activity task from Temporal
-7. **Activity execution begins**: Worker invokes `AjRunnerActivity.execute(payload)`
-8. **Payload deserialization**: Converts JSON payload back to Ruby job arguments
-9. **Idempotency key set**: Stores workflow/activity identifiers in `Thread.current` (app code can read this)
-10. **Job instantiation & execution**: Creates job instance, calls `job.perform(args)`
-11. **Job logic runs**: Makes external API calls, database writes, etc.
-12. **Activity completes**: Returns to worker, which reports success to Temporal
-13. **Workflow completes**: Temporal marks workflow as `Completed`, archives to history
-
-**Error Handling**: If `job.perform` raises an exception, the activity checks if it matches `discard_on` declarations. If yes, wraps in `Temporalio::Activity::ApplicationError(non_retryable: true)`. Otherwise, re-raises for Temporal's retry mechanism.
+  enqueue_with_payload(job, payload)
+end
 ```
 
-### Context: Task I4.T3 Description (from 02_Iteration_I4.md)
-
-```markdown
-<!-- anchor: task-i4-t3 -->
-*   **Task 4.3: Write Integration Test - Immediate Job Execution**
-    *   **Task ID:** `I4.T3`
-    *   **Description:** Write integration test in `spec/integration/enqueue_spec.rb` that tests end-to-end immediate job execution (no scheduling). Test flow: (1) Define a simple test job (e.g., `class TestJob < ApplicationJob; def perform(arg); $test_result = arg; end; end`). (2) Configure ActiveJob to use TemporalAdapter (in test setup). (3) Enqueue job: `TestJob.perform_later(42)`. (4) Start a Temporal worker in a background thread (or subprocess) polling the "default" task queue. (5) Wait for job to execute (poll `$test_result` or use a more robust mechanism like condition variables or test helper). (6) Assert `$test_result == 42`. (7) Verify workflow completed in Temporal (query workflow history using test client). (8) Clean up: stop worker, reset state. Use Temporal test server from I4.T2. This is a full end-to-end test proving enqueue → workflow → activity → job execution works.
-    *   **Agent Type Hint:** `BackendAgent`
-    *   **Inputs:** RSpec integration test patterns, Temporal test server helper from I4.T2, adapter from I3.T1, workflow/activity from I2.T2/I2.T3, worker bootstrap logic from I4.T1
-    *   **Input Files:**
-        - `spec/support/temporal_test_server.rb`
-        - `lib/activejob/temporal/adapter.rb`
-        - `lib/activejob/temporal/workflows/aj_workflow.rb`
-        - `lib/activejob/temporal/activities/aj_runner_activity.rb`
-        - `spec/fixtures/sample_jobs.rb` (update with TestJob)
-    *   **Target Files:**
-        - `spec/integration/enqueue_spec.rb`
-        - `spec/fixtures/sample_jobs.rb` (updated with TestJob)
-    *   **Deliverables:** Passing integration test for immediate job execution
-    *   **Acceptance Criteria:**
-        - Integration test defines a simple ActiveJob job (TestJob)
-        - Test configures ActiveJob adapter to TemporalAdapter
-        - Test enqueues job: `TestJob.perform_later(42)`
-        - Test starts a worker in background (thread or subprocess) polling task queue
-        - Test waits for job execution (max 10 seconds timeout)
-        - Test asserts job executed with correct argument (`$test_result == 42` or similar)
-        - Test queries Temporal for workflow completion (using test client)
-        - Test cleans up: stops worker, resets state
-        - `rake spec:integration` (or `rake spec`) passes for enqueue_spec.rb (immediate execution test)
-        - Test is isolated (can run multiple times without interference)
-    *   **Dependencies:** I3.T1 (Adapter), I2.T2 (AjWorkflow), I2.T3 (AjRunnerActivity), I4.T2 (Temporal test server)
-    *   **Parallelizable:** No (integration test, depends on I3 and I4.T2)
-```
+**Critical points:**
+- Converts Unix timestamp to Time object
+- Passes `scheduled_at: scheduled_time` to `Payload.from_job`
+- The workflow is started immediately (no delay on Temporal side)
 
 ---
 
@@ -137,105 +126,180 @@ The following analysis is based on my direct review of the current codebase. Use
 ### Relevant Existing Code
 
 *   **File:** `spec/integration/enqueue_spec.rb`
-    *   **Summary:** This file ALREADY EXISTS and implements the exact test described in task I4.T3. The integration test for immediate job execution is complete with all required functionality.
-    *   **Current Implementation:**
-        - Defines a complete test case "executes an enqueued job immediately via Temporal"
-        - Uses `TestJob.perform_later(42)` to enqueue a job
-        - Starts a worker in a background thread using `start_worker` helper
-        - Waits for job execution with `wait_for_result(42)` using a timeout-based polling mechanism
-        - Asserts `TestJob.last_argument == 42` to verify job executed
-        - Queries workflow status using `client.workflow_handle(workflow_id).describe`
-        - Verifies workflow completion with `expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)`
-        - Cleans up worker properly in `around` block and `ensure` clause
-    *   **Recommendation:** **THE TASK IS ALREADY COMPLETE**. The file at `spec/integration/enqueue_spec.rb` already implements all the acceptance criteria specified in task I4.T3.
-
-*   **File:** `spec/fixtures/sample_jobs.rb`
-    *   **Summary:** Contains job fixtures including `TestJob` which is used by the integration test.
-    *   **Current Implementation:**
-        - `TestJob` is defined at lines 74-84 as an `ActiveJob::Base` subclass
-        - Uses a class variable `TestJob.last_argument` instead of a global `$test_result`
-        - Has `queue_as :default` declaration
-        - Implements `perform(arg)` method that sets `self.class.last_argument = arg`
-    *   **Recommendation:** The `TestJob` is already properly implemented. The integration test uses this job class correctly.
+    *   **Summary:** This file contains the working integration test for immediate job execution. It provides the complete pattern for worker management, result verification, and workflow status checking.
+    *   **Recommendation:** You MUST reuse the test patterns from this file:
+        - The `around` block for setup/cleanup
+        - The `start_worker` helper method
+        - The `stop_worker` helper method
+        - The `wait_for_result` polling mechanism
+        - Copy these helper methods directly into your new `scheduled_jobs_spec.rb` file
 
 *   **File:** `spec/support/temporal_test_server.rb`
-    *   **Summary:** Provides helper methods for setting up and managing the Temporal test server connection for integration tests.
-    *   **Key Features:**
-        - `TemporalTestHelper.client` method that returns a configured Temporal client
-        - Automatic setup/teardown via RSpec hooks (`before(:suite)` and `after(:suite)`)
-        - Connection verification to ensure Temporal server is available
-        - Clear error messages if test server is not running
-        - Configuration management (stores/restores original config)
-    *   **Recommendation:** The integration test correctly uses `TemporalTestHelper.client` to get the test client.
-
-*   **File:** `lib/activejob/temporal/adapter.rb`
-    *   **Summary:** Implements the `TemporalAdapter` that bridges ActiveJob and Temporal.
-    *   **Key Methods:**
-        - `enqueue(job)`: Serializes payload, builds workflow_id, resolves task_queue, starts workflow
-        - `build_workflow_id(job)`: Returns deterministic workflow ID in format `"ajwf:#{job.class.name}:#{job.job_id}"`
-        - `resolve_task_queue(job)`: Returns task queue name (with optional prefix)
-        - Error handling for duplicate workflows (logs but doesn't raise)
-    *   **Recommendation:** The integration test correctly uses `ActiveJob::Temporal::Adapter.build_workflow_id(job)` to get the workflow_id for verification.
+    *   **Summary:** This helper configures the Temporal test client and ensures connection to the test server.
+    *   **Recommendation:** You SHOULD use `TemporalTestHelper.client` to get the test client for querying workflow history.
 
 *   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
-    *   **Summary:** Implements the deterministic workflow that orchestrates job execution.
-    *   **Key Logic:**
-        - `execute(payload)`: Main workflow method
-        - Extracts `scheduled_at` from payload and sleeps if present
-        - Calls `execute_activity(AjRunnerActivity, payload, **activity_options)`
-        - Passes retry policy from payload to activity options
-    *   **Recommendation:** The workflow is registered correctly in the worker thread created by `start_worker` helper.
+    *   **Summary:** The workflow implementation that handles scheduled execution via `sleep_until`.
+    *   **Key Implementation:**
+        - Extracts `scheduled_at` from payload
+        - Calculates delay using `Temporalio::Workflow.now`
+        - Calls `Temporalio::Workflow.sleep(delay)` if delay is positive
+        - This sleep is durable and creates a timer event in workflow history
+    *   **Recommendation:** You MUST verify that `Workflow.sleep` was called by inspecting the workflow history for a timer event.
 
-*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
-    *   **Summary:** Implements the activity that deserializes and executes the actual job.
-    *   **Key Logic:**
-        - `execute(payload)`: Deserializes arguments, constantizes job class, instantiates job, calls perform
-        - Sets idempotency key in `Thread.current`
-        - Handles exceptions: wraps discard_on errors in `ApplicationError(non_retryable: true)`
-    *   **Recommendation:** The activity is registered correctly in the worker thread created by `start_worker` helper.
+*   **File:** `lib/activejob/temporal/adapter.rb`
+    *   **Summary:** The adapter with `enqueue_at` method that accepts a Unix timestamp.
+    *   **Key Methods:**
+        - `enqueue_at(job, timestamp)`: Converts timestamp to Time, adds to payload, starts workflow immediately
+        - `build_workflow_id(job)`: Returns deterministic workflow ID in format `"ajwf:#{job.class.name}:#{job.job_id}"`
+    *   **Recommendation:** When calling `TestJob.set(wait: 5.seconds).perform_later(42)`, ActiveJob will convert the delay to a timestamp and call `enqueue_at`.
+
+*   **File:** `spec/fixtures/sample_jobs.rb`
+    *   **Summary:** Contains `TestJob` class with `last_argument` class variable for result verification.
+    *   **Current Implementation:**
+        ```ruby
+        class TestJob < ActiveJob::Base
+          class << self
+            attr_accessor :last_argument
+          end
+
+          queue_as :default
+
+          def perform(arg)
+            self.class.last_argument = arg
+          end
+        end
+        ```
+    *   **Recommendation:** You MUST use `TestJob` for the scheduled job test. Reset `TestJob.last_argument = nil` before and after each test.
+
+*   **File:** `lib/activejob/temporal/payload.rb`
+    *   **Summary:** Serializes job data including `scheduled_at` in ISO8601 format.
+    *   **Recommendation:** The payload handling is already implemented. Focus on verifying the workflow behavior.
 
 ### Implementation Tips & Notes
 
-*   **Critical Finding:** The integration test file `spec/integration/enqueue_spec.rb` **ALREADY EXISTS** and fully implements task I4.T3. The test includes:
-    1. ✅ TestJob definition (in sample_jobs.rb)
-    2. ✅ ActiveJob adapter configuration (in `around` block)
-    3. ✅ Job enqueue (`TestJob.perform_later(42)`)
-    4. ✅ Worker started in background thread
-    5. ✅ Wait for job execution with timeout (10 seconds via `Timeout.timeout(10)`)
-    6. ✅ Assertion that job executed correctly (`expect(TestJob.last_argument).to eq(42)`)
-    7. ✅ Workflow completion verification (`expect(description.status).to eq(...::COMPLETED)`)
-    8. ✅ Proper cleanup (worker stopped in `around` block's `ensure` clause)
+*   **Test Structure Pattern:** Create a new file `spec/integration/scheduled_jobs_spec.rb` following this structure:
+    ```ruby
+    require "spec_helper"
+    require "timeout"
+    require "temporalio/worker"
+    require_relative "../fixtures/sample_jobs"
 
-*   **Test Isolation:** The test uses an `around` block to:
-    - Save original adapter: `original_adapter = ActiveJob::Base.queue_adapter`
-    - Set Temporal adapter: `ActiveJob::Base.queue_adapter = :temporal`
-    - Reset test state: `TestJob.last_argument = nil`
-    - Clean up: `ActiveJob::Base.queue_adapter = original_adapter` and `stop_worker(@worker_thread)`
+    RSpec.describe "ActiveJob Temporal scheduled jobs", :integration do
+      let(:client) { TemporalTestHelper.client }
 
-*   **Worker Management:** The test uses a thread-based worker (not subprocess):
-    - `start_worker` creates a new thread that runs `Temporalio::Worker.new(...).run`
-    - Worker is configured with correct task_queue ("default"), workflows, and activities
-    - `stop_worker` kills the thread with `thread.kill` and waits for it to join (5 second timeout)
+      around do |example|
+        original_adapter = ActiveJob::Base.queue_adapter
+        ActiveJob::Base.queue_adapter = :temporal
+        TestJob.last_argument = nil
 
-*   **Result Verification:** Instead of using a global `$test_result`, the implementation uses:
-    - Class attribute: `TestJob.last_argument` (cleaner and thread-safe for test isolation)
-    - Polling loop: `wait_for_result(expected)` polls until `TestJob.last_argument == expected`
-    - Timeout protection: Wrapped in `Timeout.timeout(10)` to prevent hanging tests
+        example.run
+      ensure
+        ActiveJob::Base.queue_adapter = original_adapter
+        stop_worker(@worker_thread)
+        TestJob.last_argument = nil
+      end
 
-*   **Workflow Query:** The test correctly:
-    - Builds workflow_id using the adapter helper
-    - Gets workflow handle: `client.workflow_handle(workflow_id)`
-    - Calls `describe` method to get workflow description
-    - Checks status: `description.status == Temporalio::Client::WorkflowExecutionStatus::COMPLETED`
+      # Your test case here
+    end
+    ```
 
-*   **Test Tag:** The test is marked with `:integration` tag (`RSpec.describe "...", :integration`), which allows running integration tests separately from unit tests.
+*   **Critical Test Flow:** The test must verify TWO things:
+    1. The job does NOT execute immediately (verify at T+1 second)
+    2. The job DOES execute after the delay (verify at T+6 seconds)
+
+*   **Timing Implementation:**
+    ```ruby
+    it "executes a scheduled job after delay" do
+      # Start worker FIRST (before enqueue)
+      @worker_thread = start_worker
+
+      # Enqueue job with 5 second delay
+      job = TestJob.set(wait: 5.seconds).perform_later(42)
+      workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
+
+      # Verify job does NOT execute immediately
+      sleep 1
+      expect(TestJob.last_argument).to be_nil
+
+      # Wait for scheduled execution (remaining ~9 seconds)
+      wait_for_result(42)
+
+      # Verify job executed
+      expect(TestJob.last_argument).to eq(42)
+
+      # Verify workflow completed with timer event
+      # (See workflow history verification below)
+    end
+    ```
+
+*   **Worker Helper Methods:** Copy these from `enqueue_spec.rb`:
+    ```ruby
+    def start_worker
+      Thread.new do
+        worker = Temporalio::Worker.new(
+          client: TemporalTestHelper.client,
+          task_queue: "default",
+          workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
+          activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
+        )
+        worker.run
+      end
+    end
+
+    def stop_worker(thread)
+      return unless thread&.alive?
+      thread.kill
+      thread.join(5)
+    end
+
+    def wait_for_result(expected)
+      Timeout.timeout(10) do
+        loop do
+          break if TestJob.last_argument == expected
+          sleep 0.1
+        end
+      end
+    end
+    ```
+
+*   **Workflow History Verification:** After the job completes, query workflow history:
+    ```ruby
+    description = client.workflow_handle(workflow_id).describe
+
+    # Verify workflow completed
+    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+
+    # Note: Verifying timer events in workflow history depends on the Temporal Ruby SDK's API
+    # If the SDK provides access to history events, you can check for a timer event
+    # If not, the timing test (job didn't run immediately) is sufficient proof
+    ```
+
+*   **Critical Timing Consideration:**
+    - The task specifies `wait: 5.seconds` but you should check at T+1 second and wait until T+6 seconds
+    - The actual timing might be slightly longer due to serialization, network latency, and worker polling
+    - That's why the test uses a 10-second total timeout in `wait_for_result`
+
+*   **Start Worker BEFORE Enqueue:** This is critical to avoid a race condition. Start the worker first, then enqueue the job.
+
+*   **Test Isolation Requirements:**
+    - The test MUST clean up the worker thread in the `ensure` block
+    - The test MUST reset `TestJob.last_argument` to nil before and after
+    - The test MUST restore the original ActiveJob adapter
+    - Use unique job instances to avoid workflow ID conflicts
 
 ### Action Required
 
-**NO CODE CHANGES ARE NEEDED.** This task (I4.T3) has already been completed. The integration test exists, is properly implemented, and meets all acceptance criteria specified in the task description.
+You need to create a new file `spec/integration/scheduled_jobs_spec.rb` that:
+1. Follows the test structure pattern from `enqueue_spec.rb`
+2. Enqueues a job with `TestJob.set(wait: 5.seconds).perform_later(42)`
+3. Verifies the job does NOT execute immediately (check at T+1 second)
+4. Verifies the job DOES execute after the delay (check around T+6 seconds)
+5. Queries workflow history to verify completion (timer event verification if SDK supports it)
+6. Properly cleans up worker and test state
 
-To verify the test works:
-1. Ensure a Temporal test server is running: `temporal server start-dev --namespace test`
-2. Run the integration test: `bundle exec rspec spec/integration/enqueue_spec.rb`
+---
 
-The task can be marked as `"done": true` in the tasks manifest.
+## End of Task Briefing Package
+
+You now have all the information needed to implement the scheduled jobs integration test. Follow the patterns from `enqueue_spec.rb`, verify both timing (no immediate execution) and workflow history (timer event), and ensure proper cleanup.
