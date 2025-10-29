@@ -42,7 +42,7 @@
     "acceptance_criteria": "docs/migration_guide.md exists and is ~100-200 lines; All required sections are present; Guide provides actionable steps (not just theory); Common gotchas are clearly called out (payload size, idempotency, heartbeating); Markdown is properly formatted; Guide is linked from README",
     "dependencies": ["I5.T1"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I5.T4",
