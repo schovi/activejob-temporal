@@ -133,3 +133,29 @@ This document tracks all quality checks required before releasing activejob-temp
 
 **Notes:**
 All acceptance criteria have been met. The gem is production-ready for v0.1.0 release.
+
+---
+
+## Publication Status
+
+**Publication to RubyGems.org:** ⏸️ DEFERRED
+
+The gem is technically ready for publication, but publication has been deferred until the required infrastructure is in place.
+
+### Infrastructure Blockers
+- ❌ No git remote configured (`git remote -v` returns empty)
+- ❌ Gemspec homepage points to non-accessible repository (github.com/temporalio/activejob-temporal)
+- ❌ No RubyGems.org account/credentials detected
+
+### Why This Matters
+Publishing to RubyGems.org is a one-way operation. Publishing with broken source code links would create a poor user experience. Best practice is to ensure all infrastructure is working before making the gem public.
+
+### Prerequisites for Publication
+1. Configure git remote: `git remote add origin git@github.com:temporalio/activejob-temporal.git`
+2. Push code and tag: `git push origin master && git push origin v0.1.0`
+3. Verify repository is publicly accessible
+4. Set up RubyGems.org account with MFA enabled
+5. Sign in: `gem signin`
+6. Publish: `gem push activejob-temporal-0.1.0.gem`
+
+**Complete publishing documentation:** See `docs/publishing.md` for detailed step-by-step instructions, verification procedures, and troubleshooting guidance.

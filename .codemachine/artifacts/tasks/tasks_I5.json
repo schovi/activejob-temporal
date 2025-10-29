@@ -147,6 +147,6 @@
     "acceptance_criteria": "(If publishing) Gem is successfully pushed to RubyGems.org; Gem is searchable on RubyGems; Gem page exists at rubygems.org; README updated with public gem installation instructions; (If NOT publishing) Document reason in release notes or skip this task",
     "dependencies": ["I5.T9", "I5.T7"],
     "parallelizable": false,
-    "done": false
+    "done": true
   }
 ]
