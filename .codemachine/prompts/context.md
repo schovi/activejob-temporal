@@ -129,9 +129,9 @@ commit fbc7e839794c8dd05901b5f903911efb5cf77fba
 
 **Key Facts:**
 - Tag was created with an ENHANCED message (more descriptive than the minimal example in task description)
-- Tag points to commit `fbc7e83` (from commit history, this is 3 commits behind current HEAD)
-- Current HEAD is at commit `03b612f` ("chore(codemachine): refine git release workflow guidance")
-- There are 3 commits AFTER the tag was created
+- Tag points to commit `fbc7e83` ("chore: finalize codemachine template for v0.1.0 release")
+- Current HEAD is at commit `5449b52` ("chore(codemachine): document git release task status and blockers")
+- There are 5 commits AFTER the tag was created (most are codemachine bookkeeping, but one includes GitHub Actions CI)
 
 ### Remote Repository Status - CRITICAL ISSUE
 
@@ -209,13 +209,17 @@ no changes added to commit (use "git add" and/or "git commit -a")
 
 ### Commits Since Tag Creation
 
-**Three commits exist after the v0.1.0 tag was created:**
+**Five commits exist after the v0.1.0 tag was created:**
 
 1. `f22e907` - "chore(codemachine): update workflow progress and add fallback prompt"
-2. `79f2d14` - "feat(ci): add GitHub Actions workflow and update docs"
-3. `03b612f` (HEAD) - "chore(codemachine): refine git release workflow guidance"
+2. `0370d44` - "chore: update codemachine configuration files"
+3. `79f2d14` - "feat(ci): add GitHub Actions workflow and update docs" ← **SIGNIFICANT FEATURE**
+4. `03b612f` - "chore(codemachine): refine git release workflow guidance"
+5. `18fa92a` - "chore(codemachine): refine release workflow and git tagging guidance"
+6. `359fe38` - "chore(codemachine): refine fallback prompt and update workflow state"
+7. `5449b52` (HEAD) - "chore(codemachine): document git release task status and blockers"
 
-**Critical Question:** Should the tag be moved to include the GitHub Actions CI workflow (commit `79f2d14`)? This seems like an important feature that should be part of v0.1.0.
+**Critical Question:** Should the tag be moved to include the GitHub Actions CI workflow (commit `79f2d14`)? This seems like an important feature documented in the README that should be part of v0.1.0.
 
 ### Implementation Tips & Notes
 
