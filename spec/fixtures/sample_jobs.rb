@@ -109,3 +109,20 @@ class DiscardTestJob < ActiveJob::Base
     raise NonRetryableTestError, "This error should not be retried"
   end
 end
+
+class LongRunningJob < ActiveJob::Base
+  queue_as :default
+
+  def perform
+    $long_running_iterations = 0
+    $long_running_completed = false
+
+    10.times do
+      Temporalio::Activity::Context.current.heartbeat
+      sleep 1
+      $long_running_iterations += 1
+    end
+
+    $long_running_completed = true
+  end
+end

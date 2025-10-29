@@ -10,30 +10,28 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I4.T6",
+  "task_id": "I4.T7",
   "iteration_id": "I4",
   "iteration_goal": "Implement the Temporal worker bootstrap script, write comprehensive integration tests with a real Temporal test server, and validate end-to-end functionality (enqueue → workflow → activity → job execution).",
-  "description": "Write integration test in `spec/integration/retries_spec.rb` (same file, different test case) that tests discard_on behavior for non-retryable errors. Test flow: (1) Define a job that raises `FatalError` (custom exception class). (2) Configure job with `discard_on FatalError`. (3) Enqueue job. (4) Start worker. (5) Wait for job to execute and fail. (6) Verify job does NOT retry (workflow fails immediately). (7) Verify workflow history shows activity failed with non_retryable error. This test proves discard_on mapping works and errors are not retried.",
+  "description": "Write integration test in `spec/integration/cancellation_spec.rb` that tests job cancellation. Test flow: (1) Define a long-running job that calls `Temporalio::Activity.heartbeat` periodically (e.g., `10.times { Temporalio::Activity.heartbeat; sleep 1 }`). (2) Enqueue job. (3) Start worker. (4) Wait for job to start executing (check workflow is running). (5) Call `ActiveJob::Temporal.cancel(TestJob, job_id)`. (6) Wait for workflow to be cancelled (max 5 seconds). (7) Verify workflow status is Cancelled. (8) Verify job did not complete (heartbeat loop interrupted). This test proves cancellation API works and activities can be aborted mid-execution via heartbeating.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "RSpec integration test patterns, Temporal test server, adapter, activity error mapping from I2.T3, retry mapper from I1.T6",
+  "inputs": "RSpec integration test patterns, Temporal test server, cancellation API from I3.T5, activity heartbeat documentation",
   "target_files": [
-    "spec/integration/retries_spec.rb",
+    "spec/integration/cancellation_spec.rb",
     "spec/fixtures/sample_jobs.rb"
   ],
   "input_files": [
     "spec/support/temporal_test_server.rb",
-    "lib/activejob/temporal/adapter.rb",
+    "lib/activejob/temporal/cancel.rb",
     "lib/activejob/temporal/workflows/aj_workflow.rb",
     "lib/activejob/temporal/activities/aj_runner_activity.rb",
-    "lib/activejob/temporal/retry_mapper.rb",
     "spec/fixtures/sample_jobs.rb"
   ],
-  "deliverables": "Passing integration test for discard_on behavior",
-  "acceptance_criteria": "Integration test defines a job that raises FatalError; Job uses `discard_on FatalError`; Test enqueues job, starts worker; Test waits for job to fail (max 5 seconds); Test verifies job did NOT retry (workflow failed on first attempt); Test queries workflow history for activity failed with non_retryable ApplicationError; `rake spec:integration` passes for discard test case in retries_spec.rb; Test is isolated",
+  "deliverables": "Passing integration test for cancellation",
+  "acceptance_criteria": "Integration test defines a long-running job that heartbeats; Test enqueues job, starts worker; Test waits for workflow to start (query workflow status); Test calls `ActiveJob::Temporal.cancel(LongRunningJob, job_id)`; Test waits for workflow to be cancelled (max 5 seconds); Test verifies workflow status is Cancelled (query via test client); Test verifies job did not complete (heartbeat loop was interrupted, no final result); `rake spec:integration` passes for cancellation_spec.rb; Test is isolated",
   "dependencies": [
-    "I3.T1",
+    "I3.T5",
     "I2.T3",
-    "I1.T6",
     "I4.T2"
   ],
   "parallelizable": false,
@@ -47,82 +45,93 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: Non-Retryable Exceptions (discard_on) - Communication Flow (from 04_Behavior_and_Communication.md)
+### Context: Job Cancellation Flow (from 04_Behavior_and_Communication.md)
 
 ```markdown
-**Non-Retryable Exceptions (`discard_on`):**
+#### **Key Interaction Flow 4: Job Cancellation**
 
-If the exception is in the `discard_on` list:
+**Scenario**: User cancels an in-flight job via `ActiveJob::Temporal.cancel(job_id)`.
 
-~~~plantuml
-@startuml
-participant "AjRunnerActivity" as Activity
-participant "Job Class" as Job
-participant "Error Mapper" as ErrorMapper
-participant "Retry Mapper" as RetryMapper
-participant "Temporal Cluster" as Temporal
+**Key Steps:**
 
-Activity -> Job : job.perform(42)
-Job --> Activity : raise PSP::FatalError
+1. **User calls cancellation API**: `ActiveJob::Temporal.cancel(job_id)`
+2. **Build workflow ID**: Deterministic ID constructed from job class and job_id
+3. **Get workflow handle**: Temporal client retrieves handle to running workflow
+4. **Send cancellation**: gRPC `RequestCancelWorkflowExecution` call (non-blocking, returns immediately)
+5. **Temporal propagates signal**: Sends cancellation to workflow and any running activities
+6. **(If activity heartbeats)**: Activity receives `CancelledError`, can abort early
+7. **(If no heartbeat)**: Activity completes normally; workflow still marked as cancelled afterward
 
-Activity -> ErrorMapper : map_exception(error, job_class)
-ErrorMapper -> RetryMapper : discard_exception?(SendInvoiceJob, error)
-RetryMapper --> ErrorMapper : true (in discard_on list)
-
-ErrorMapper --> Activity : Raise ApplicationError(\n  message: "Fatal error",\n  non_retryable: true,\n  cause: error\n)
-
-Activity --> Temporal : Activity failed (non-retryable)
-Temporal -> Temporal : Mark activity as Failed (no retry)
-Temporal -> Temporal : Workflow fails (activity failure bubbles up)
-
-@enduml
-~~~
+**Best Practice**: Jobs should call `Temporalio::Activity.heartbeat` periodically (e.g., every 30s) to enable prompt cancellation.
 ```
 
 **Key Flow Summary:**
-- When a job raises an exception that matches `discard_on`, the `AjRunnerActivity` queries `RetryMapper.discard_exception?(job_class, error)`
-- If it returns `true`, the activity re-raises the exception as `Temporalio::Activity::ApplicationError` with `non_retryable: true`
-- This signals to Temporal that the activity should NOT be retried
-- The workflow then fails immediately (activity failure bubbles up to workflow)
+- When a job is cancelled via `ActiveJob::Temporal.cancel(job_class, job_id)`, the cancellation API builds the workflow_id and sends a cancellation request
+- The cancellation is **best-effort**: it only interrupts activities that call `Temporalio::Activity.heartbeat`
+- Jobs must explicitly call `Temporalio::Activity.heartbeat` periodically (e.g., every 1 second in a loop) to enable prompt cancellation
+- When heartbeat is called and a cancellation has been requested, Temporal raises a `CancelledError` exception
+- The workflow status will eventually be `CANCELLED` regardless of whether the activity heartbeats, but heartbeating allows immediate interruption
 
-### Context: Retry Policy Data Model (from 03_System_Structure_and_Data.md)
+### Context: Cancellation Sequence Diagram (from docs/diagrams/cancellation_sequence.puml)
 
-```markdown
-**3. Retry Policy (Activity Configuration)**
+```plantuml
+alt Activity heartbeating
+  Worker -> Activity: cancellation requested (signal)
+  Activity -> Temporal: Temporalio::Activity.heartbeat(details)
+  Temporal --> Activity: raises CancelledError
+  Activity -> Worker: abort job.perform and cleanup
+  Worker -> Temporal: report ActivityCancelled
+  Temporal --> Client: cancellation acknowledged
+else Activity not heartbeating
+  note right of Activity: Without heartbeat the activity may finish even after cancel signal
+  Activity --> Worker: completes work as normal
+  Worker -> Temporal: ActivityCompleted
+  Temporal -> Worker: workflow marked Cancelled after completion
+end
 
-Derived from ActiveJob's `retry_on`/`discard_on` DSL and passed to `execute_activity`.
-
-| Field | Type | Source | Example |
-|-------|------|--------|---------|
-| `initial_interval` | Duration | `retry_on wait:` or config default | `30.seconds` |
-| `backoff_coefficient` | Float | Config default (2.0) | `2.0` |
-| `maximum_attempts` | Integer | `retry_on attempts:` or config default | `5` |
-| `non_retryable_error_types` | Array<String> | `discard_on` exception classes | `["PSP::FatalError"]` |
+note over Activity, Temporal: Best-effort cancellation relies on jobs heartbeating periodically for prompt handling
 ```
 
 **Key Insight:**
-- The `discard_on` declarations are converted to an array of exception class **names** (strings) in the `non_retryable_error_types` field
-- This array is passed to Temporal's `RetryPolicy` when the workflow starts the activity
-- When an activity raises an exception with `non_retryable: true`, Temporal does NOT retry it
+- The test MUST have two paths: one where the activity heartbeats (and gets interrupted), and one where it doesn't (and completes normally)
+- For this task, we're testing the **heartbeating path** where cancellation interrupts the job mid-execution
+- The diagram shows that when `Temporalio::Activity.heartbeat` is called, it will raise a `CancelledError` if cancellation was requested
+- This exception should propagate out of the job's perform method, causing the activity to fail with cancellation
 
-### Context: Component Error Mapping (from 03_System_Structure_and_Data.md)
+### Context: Cancellation API Implementation (from lib/activejob/temporal/cancel.rb)
 
-```markdown
-Container_Boundary(activity_boundary, "AjRunnerActivity") {
-  Component(job_instantiator, "JobInstantiator", "Ruby Method", "Deserializes payload, creates job instance")
-  Component(error_mapper, "ErrorMapper", "Ruby Module", "Maps discard_on → ApplicationError(non_retryable)")
-  Component(idempotency_key, "IdempotencyKeyProvider", "Ruby Module", "Sets Thread.current[:aj_temporal_idempotency_key]")
-}
+```ruby
+# Cancels a running Temporal workflow by sending a cancellation request.
+# This is a best-effort operation; if the workflow already completed or
+# does not exist, the error is logged and suppressed.
+#
+# @param job_class [Class] The ActiveJob class for the job to cancel.
+# @param job_id [String] Identifier of the job to cancel.
+#
+# @example Cancel a running job
+#   ActiveJob::Temporal.cancel(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
+def cancel(job_class, job_id)
+  workflow_id = build_workflow_id(job_class, job_id)
+  ActiveJob::Temporal.client.workflow_handle(workflow_id).cancel
+  log_cancellation_requested(job_class, job_id, workflow_id)
+rescue StandardError => e
+  return log_workflow_not_found(job_class, job_id, workflow_id, e) if workflow_not_found?(e)
 
-Component_Ext(retry_mapper_module, "Retry Mapper", "Ruby Module", "for(job_class), discard_exception?")
+  raise
+end
 
-Rel(error_mapper, retry_mapper_module, "Calls discard_exception?", "Ruby")
+private
+
+def build_workflow_id(job_class, job_id)
+  "ajwf:#{job_class.name}:#{job_id}"
+end
 ```
 
-**Key Component:**
-- The `error_mapper` logic is built into `AjRunnerActivity.handle_exception` method
-- It calls `RetryMapper.discard_exception?(job_class, exception)` to determine if the exception should be discarded
-- If true, it raises `Temporalio::Activity::ApplicationError.new(..., non_retryable: true)`
+**Key Details:**
+- The cancellation API requires **both** `job_class` and `job_id` parameters (not just job_id)
+- It constructs the workflow_id using the format `"ajwf:#{job_class.name}:#{job_id}"`
+- The cancel method is best-effort and returns gracefully if the workflow is not found
+- In your test, you MUST call: `ActiveJob::Temporal.cancel(LongRunningJob, job.job_id)`
 
 ---
 
@@ -132,89 +141,78 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
-*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
-    *   **Summary:** This file contains the Temporal activity that executes ActiveJob jobs. It includes the critical `handle_exception` method (lines 99-109) which implements the error mapping logic for `discard_on` behavior.
-    *   **Recommendation:** You MUST understand the exact behavior of `handle_exception`. When `RetryMapper.discard_exception?(job_class, error)` returns `true`, the method raises `Temporalio::Activity::ApplicationError` with `non_retryable: true`. This is the core mechanism you are testing.
-    *   **Code Reference:** Lines 99-109 show the exact exception handling logic:
-        ```ruby
-        def handle_exception(job_class, error)
-          if job_class && RetryMapper.discard_exception?(job_class, error)
-            raise Temporalio::Activity::ApplicationError.new(
-              error.message,
-              non_retryable: true,
-              cause: error
-            )
-          end
+*   **File:** `lib/activejob/temporal/cancel.rb`
+    *   **Summary:** This file implements the cancellation API that your test will invoke. The `cancel(job_class, job_id)` method sends a cancellation request to Temporal.
+    *   **Recommendation:** You MUST use the correct signature: `ActiveJob::Temporal.cancel(LongRunningJob, job.job_id)` (with job class, not just job_id).
+    *   **Critical Detail:** The cancel method is synchronous but **non-blocking** - it returns immediately after sending the cancellation request. You need to wait asynchronously for the workflow to actually reach the CANCELLED state.
 
-          raise error
+*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
+    *   **Summary:** This file contains the activity that executes ActiveJob jobs. It does NOT currently include any heartbeat logic.
+    *   **Critical Finding:** The activity's `execute` method (lines 63-76) directly calls `job.perform(*args)` without any heartbeat mechanism. This means:
+        1. For cancellation to work, the **job itself** must call `Temporalio::Activity.heartbeat` inside its `perform` method
+        2. You cannot rely on the activity wrapper to heartbeat automatically
+    *   **Recommendation:** Your test job's `perform` method MUST explicitly call `Temporalio::Activity.heartbeat` in a loop. Example:
+        ```ruby
+        def perform
+          10.times do
+            Temporalio::Activity.heartbeat
+            sleep 1
+            $long_running_iterations += 1
+          end
+          $long_running_completed = true
         end
         ```
 
-*   **File:** `lib/activejob/temporal/retry_mapper.rb`
-    *   **Summary:** This module maps ActiveJob's `retry_on`/`discard_on` declarations to Temporal's `RetryPolicy`. The key method for this task is `discard_exception?(job_class, exception)` (lines 22-28).
-    *   **Recommendation:** Your test job MUST declare `discard_on FatalError` (or similar custom exception class). The RetryMapper will inspect the job class's rescue handlers and determine if the raised exception matches any `discard_on` declarations. The matching is done via inheritance check (line 156): `candidate_class <= handler_class`.
-    *   **Implementation Detail:** The `discard_exception?` method returns `true` if the exception or any of its ancestors match a `discard_on` declaration (lines 25-27).
-
 *   **File:** `spec/integration/retries_spec.rb`
-    *   **Summary:** This is the existing integration test file for retry behavior. It currently contains ONE test case for successful retry behavior (`RetryTestJob`). You MUST ADD a second test case to this same file.
-    *   **Recommendation:** Follow the exact same test structure: use `around` block for setup/teardown (lines 11-23), start a worker (line 26), enqueue job, wait for workflow failure, verify workflow status is FAILED (not COMPLETED), and check workflow history for non-retryable error evidence.
-    *   **Critical Pattern:** The existing test uses `wait_for_result("success")` and `wait_for_workflow_completion(workflow_id)`. For your test, you'll need a helper to wait for workflow FAILURE instead of completion. Consider a `wait_for_workflow_failure(workflow_id)` method that checks for `WorkflowExecutionStatus::FAILED` status.
+    *   **Summary:** This is the existing integration test file for retry behavior. It demonstrates the standard test pattern you should follow.
+    *   **Recommendation:** Follow the exact same structure: use `around` block for setup/teardown (lines 12-26), start a worker with a unique task queue (line 30), enqueue job (line 34), wait for workflow state change, verify workflow status, check workflow history.
+    *   **Critical Pattern:** The test uses global variables (`$attempt_count`, `$test_result`) to track execution state. For your test, you should use similar global variables like `$long_running_iterations` and `$long_running_completed` to verify the job was interrupted mid-execution.
+
+*   **File:** `spec/integration/enqueue_spec.rb`
+    *   **Summary:** This file shows the basic worker setup and workflow status checking patterns.
+    *   **Recommendation:** Copy the `start_worker` and `stop_worker` helper methods (lines 41-58). These are the same pattern used in retries_spec.rb.
 
 *   **File:** `spec/fixtures/sample_jobs.rb`
-    *   **Summary:** This file contains sample job classes for testing. Several discard-related jobs already exist: `DiscardableJob` (lines 40-43), `DiscardOnlyJob` (lines 45-47), and exception classes `FatalJobError` and `DerivedFatalJobError` (lines 32-33).
-    *   **Recommendation:** You SHOULD create a new test job class specifically for this integration test. Name it `DiscardTestJob` or similar. It MUST inherit from `ActiveJob::Base`, declare `discard_on FatalJobError` (or create a new exception class like `NonRetryableTestError`), and raise that exception in its `perform` method. DO NOT reuse `DiscardableJob` as it has both `retry_on` and `discard_on` which could complicate the test.
+    *   **Summary:** This file contains sample job classes for testing. It currently has NO long-running job that heartbeats.
+    *   **Recommendation:** You MUST create a new job class called `LongRunningJob` (or similar) at the end of this file. It should:
+        1. Inherit from `ActiveJob::Base`
+        2. Have a `queue_as :default` declaration
+        3. Implement a `perform` method that loops 10 times, calling `Temporalio::Activity.heartbeat` and `sleep 1` on each iteration
+        4. Set global variables to track progress: `$long_running_iterations` (counter) and `$long_running_completed` (boolean flag)
     *   **Example Pattern:**
         ```ruby
-        class NonRetryableTestError < StandardError; end
-
-        class DiscardTestJob < ActiveJob::Base
-          discard_on NonRetryableTestError
+        class LongRunningJob < ActiveJob::Base
           queue_as :default
 
           def perform
-            raise NonRetryableTestError, "This error should not be retried"
+            $long_running_iterations = 0
+            10.times do
+              Temporalio::Activity.heartbeat
+              sleep 1
+              $long_running_iterations += 1
+            end
+            $long_running_completed = true
           end
         end
         ```
 
 *   **File:** `spec/support/temporal_test_server.rb`
     *   **Summary:** Helper module that manages Temporal test server connection for integration tests. Provides `TemporalTestHelper.client` method.
-    *   **Recommendation:** You MUST use `TemporalTestHelper.client` to get the Temporal client for querying workflow status and history. This is already done correctly in the existing test (line 9).
-
-*   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
-    *   **Summary:** The Temporal workflow that orchestrates job execution. It passes the `RetryPolicy` (with `non_retryable_error_types`) to the activity when calling `execute_activity` (lines 23-27).
-    *   **Note:** You don't need to modify this file. It's relevant because when your test job is enqueued, the workflow will automatically include the `non_retryable_error_types` from the `discard_on` declaration in the RetryPolicy passed to the activity.
+    *   **Recommendation:** You MUST use `TemporalTestHelper.client` to get the Temporal client for querying workflow status. This is already done correctly in the existing tests.
 
 ### Implementation Tips & Notes
 
-*   **Tip #1: Workflow Status Check**
-    The key difference between this test and the retry test is the expected workflow status. The retry test expects `WorkflowExecutionStatus::COMPLETED`, but your test MUST verify `WorkflowExecutionStatus::FAILED`. Create a helper method similar to `wait_for_workflow_completion` but check for FAILED status instead.
-
-*   **Tip #2: Activity Attempt Count**
-    For the discard test, the activity should execute only ONCE (attempt 1), then fail with non-retryable error. You can verify this by checking the workflow history:
+*   **Tip #1: Workflow Status Polling**
+    Your test needs to wait for the workflow to reach the `CANCELLED` state. Create a helper method similar to `wait_for_workflow_completion` from retries_spec.rb but check for CANCELLED status:
     ```ruby
-    activity_started_event = history.events.find { |e| e.event_type == :EVENT_TYPE_ACTIVITY_TASK_STARTED }
-    expect(activity_started_event.activity_task_started_event_attributes.attempt).to eq(1)
-    ```
-
-*   **Tip #3: Workflow History Verification**
-    You MUST check the workflow history to prove the activity failed with a non-retryable error. Look for these event types:
-    - `:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED` - activity was scheduled
-    - `:EVENT_TYPE_ACTIVITY_TASK_STARTED` - activity execution began
-    - `:EVENT_TYPE_ACTIVITY_TASK_FAILED` - activity failed
-    - `:EVENT_TYPE_WORKFLOW_EXECUTION_FAILED` - workflow failed (due to activity failure)
-
-    The activity failed event will contain details about the non-retryable error.
-
-*   **Tip #4: Timeout Value**
-    Since the job should fail immediately (no retries), use a shorter timeout than the retry test. The acceptance criteria specifies "max 5 seconds" (vs 10 seconds for retry test). Adjust your `wait_for_workflow_failure` helper accordingly:
-    ```ruby
-    def wait_for_workflow_failure(workflow_id)
+    def wait_for_workflow_cancellation(workflow_id)
       Timeout.timeout(5) do
         loop do
           handle = client.workflow_handle(workflow_id)
           description = handle.describe
-          break if description.status == Temporalio::Client::WorkflowExecutionStatus::FAILED
+          status = description.status
+          break if status == Temporalio::Client::WorkflowExecutionStatus::CANCELLED ||
+                   status == Temporalio::Client::WorkflowExecutionStatus::COMPLETED
 
           sleep 0.1
         end
@@ -222,39 +220,196 @@ The following analysis is based on my direct review of the current codebase. Use
     end
     ```
 
+*   **Tip #2: Wait for Workflow to Start**
+    Before calling cancel, you need to ensure the workflow has actually started and the activity is executing. Use a helper to poll until the workflow status is RUNNING:
+    ```ruby
+    def wait_for_workflow_running(workflow_id)
+      Timeout.timeout(5) do
+        loop do
+          handle = client.workflow_handle(workflow_id)
+          description = handle.describe
+          break if description.status == Temporalio::Client::WorkflowExecutionStatus::RUNNING
+
+          sleep 0.1
+        end
+      end
+    end
+    ```
+
+*   **Tip #3: Verify Job Was Interrupted**
+    After cancellation, verify the job did NOT complete by checking the global variables:
+    ```ruby
+    expect($long_running_completed).to eq(false)  # Job should NOT have completed
+    expect($long_running_iterations).to be < 10   # Job should have been interrupted mid-loop
+    expect($long_running_iterations).to be > 0    # Job should have started (at least 1 iteration)
+    ```
+
+*   **Tip #4: Test Timing**
+    The test flow should be:
+    1. Enqueue job
+    2. Start worker
+    3. Wait for workflow to reach RUNNING status (~1-2 seconds)
+    4. Call cancel
+    5. Wait for workflow to reach CANCELLED status (~1-3 seconds)
+    6. Verify status and incomplete execution
+
+    Total timeout should be ~5 seconds, as specified in acceptance criteria.
+
 *   **Tip #5: Global Variable Management**
-    The existing test uses `$attempt_count` and `$test_result` global variables. For your test, you may NOT need these since you're verifying failure, not success. However, if you want to prove the job executed exactly once, you could use `$discard_test_executed = true` to verify the job's perform method was called. Reset it in the `around` block's ensure clause.
+    Initialize and reset the global variables in the `around` block:
+    ```ruby
+    around do |example|
+      original_adapter = ActiveJob::Base.queue_adapter
+      ActiveJob::Base.queue_adapter = :temporal
+      $long_running_iterations = 0
+      $long_running_completed = false
 
-*   **Tip #6: Test Isolation**
-    The `around` block ensures proper cleanup. Make sure your test follows this pattern to avoid test pollution. The existing test already handles worker cleanup via `stop_worker(@worker_thread)` in the ensure block (line 20).
+      example.run
+    ensure
+      ActiveJob::Base.queue_adapter = original_adapter
+      stop_worker(@worker_thread)
+      $long_running_iterations = 0
+      $long_running_completed = false
+    end
+    ```
 
-*   **Warning: ApplicationError Details**
-    When querying the workflow history, the activity failed event will show the `ApplicationError` with `non_retryable: true`. Temporal SDK may represent this as a specific error type or attribute in the event. You may need to inspect the actual event structure in your test to verify the non-retryable flag. Refer to the Temporal Ruby SDK documentation for the exact event attribute structure.
+*   **Tip #6: Workflow History Verification (Optional Enhancement)**
+    While not strictly required by acceptance criteria, you may want to verify the workflow history shows activity cancellation:
+    ```ruby
+    history = handle.fetch_history
+    event_types = history.events.map(&:event_type)
+    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED)
+    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_STARTED)
+    # May include EVENT_TYPE_ACTIVITY_TASK_CANCELED or similar
+    expect(event_types).to include(:EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED)
+    ```
 
-*   **Note: Job Definition Location**
-    Add your new `DiscardTestJob` (or `NonRetryableTestJob`) to `spec/fixtures/sample_jobs.rb` at the end of the file, following the existing pattern. Ensure it's an `ActiveJob::Base` subclass, not a plain `ApplicationJob`, since `discard_on` is an ActiveJob feature.
+*   **Warning: Heartbeat API Availability**
+    The `Temporalio::Activity.heartbeat` method is only available when code is running inside a real Temporal activity context. In unit tests with stubs, this would fail. However, since this is an integration test with a real Temporal test server and worker, the heartbeat API should be available. If you encounter issues, verify:
+    1. The worker is actually running (check thread is alive)
+    2. The activity is executing on the worker (not in the main test thread)
+
+*   **Warning: Exception Handling in Job**
+    The job's perform method should NOT catch the `Temporalio::Activity::CancelledError` exception (or whatever exception Temporal raises on heartbeat). Let it propagate naturally so the activity reports cancellation back to Temporal. If you catch and suppress it, the job will complete normally instead of being cancelled.
+
+*   **Note: Task Queue Isolation**
+    Like the retry test, use a unique task queue for each test run to avoid interference:
+    ```ruby
+    task_queue = "cancel-test-#{SecureRandom.hex(4)}"
+    @worker_thread = start_worker(task_queue)
+    job = LongRunningJob.set(queue: task_queue).perform_later
+    ```
 
 ### Test Structure Recommendation
 
-Based on the existing retry test, your discard test should follow this structure:
+Based on the existing retry test and cancellation requirements, your test should follow this structure:
 
-1. **Test name:** `"discards non-retryable errors according to discard_on configuration"`
-2. **Setup:** Start worker, enqueue `DiscardTestJob`
-3. **Wait:** Call `wait_for_workflow_failure(workflow_id)` with 5-second timeout
-4. **Verify workflow status:** `expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::FAILED)`
-5. **Verify activity attempt count:** Should be 1 (no retries)
-6. **Verify workflow history:** Should include `EVENT_TYPE_ACTIVITY_TASK_FAILED` and `EVENT_TYPE_WORKFLOW_EXECUTION_FAILED`
-7. **Cleanup:** Stop worker in ensure block
+```ruby
+RSpec.describe "ActiveJob Temporal cancellation", :integration do
+  let(:client) { TemporalTestHelper.client }
+
+  around do |example|
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :temporal
+    $long_running_iterations = 0
+    $long_running_completed = false
+
+    example.run
+  ensure
+    ActiveJob::Base.queue_adapter = original_adapter
+    stop_worker(@worker_thread)
+    $long_running_iterations = 0
+    $long_running_completed = false
+  end
+
+  it "cancels a long-running job via heartbeat mechanism" do
+    task_queue = "cancel-test-#{SecureRandom.hex(4)}"
+    @worker_thread = start_worker(task_queue)
+    sleep 0.5  # Give worker time to start
+
+    job = LongRunningJob.set(queue: task_queue).perform_later
+    workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
+
+    # Wait for workflow to start executing
+    wait_for_workflow_running(workflow_id)
+
+    # Cancel the job
+    ActiveJob::Temporal.cancel(LongRunningJob, job.job_id)
+
+    # Wait for workflow to be cancelled
+    wait_for_workflow_cancellation(workflow_id)
+
+    # Verify workflow status is CANCELLED
+    handle = client.workflow_handle(workflow_id)
+    description = handle.describe
+    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::CANCELLED)
+
+    # Verify job did not complete (heartbeat loop was interrupted)
+    expect($long_running_completed).to eq(false)
+    expect($long_running_iterations).to be < 10  # Interrupted before 10 iterations
+    expect($long_running_iterations).to be > 0   # But started (at least 1 iteration)
+  end
+
+  private
+
+  def start_worker(task_queue)
+    @worker = Temporalio::Worker.new(
+      client: TemporalTestHelper.client,
+      task_queue: task_queue,
+      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
+      activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
+    )
+
+    Thread.new { @worker.run }
+  end
+
+  def stop_worker(thread)
+    return unless thread&.alive?
+
+    thread.kill
+    thread.join(5)
+  end
+
+  def wait_for_workflow_running(workflow_id)
+    Timeout.timeout(5) do
+      loop do
+        handle = client.workflow_handle(workflow_id)
+        description = handle.describe
+        break if description.status == Temporalio::Client::WorkflowExecutionStatus::RUNNING
+
+        sleep 0.1
+      end
+    end
+  end
+
+  def wait_for_workflow_cancellation(workflow_id)
+    Timeout.timeout(5) do
+      loop do
+        handle = client.workflow_handle(workflow_id)
+        description = handle.describe
+        status = description.status
+        break if status == Temporalio::Client::WorkflowExecutionStatus::CANCELLED
+
+        sleep 0.1
+      end
+    end
+  end
+end
+```
 
 ---
 
 ## Summary
 
-You are implementing Task I4.T6: an integration test for `discard_on` behavior that proves non-retryable errors are NOT retried by Temporal. The test MUST:
-- Define a new job class with `discard_on FatalError` (or similar custom exception)
-- Enqueue the job and start a worker
-- Wait for the workflow to FAIL (not complete)
-- Verify the activity executed only once (no retries)
-- Check the workflow history for non-retryable error evidence
+You are implementing Task I4.T7: an integration test for job cancellation that proves the cancellation API works and activities can be aborted mid-execution via heartbeating. The test MUST:
+1. **Create a new LongRunningJob** in `spec/fixtures/sample_jobs.rb` that loops 10 times, calling `Temporalio::Activity.heartbeat` and `sleep 1` on each iteration
+2. **Create a new test file** `spec/integration/cancellation_spec.rb` with the cancellation test
+3. **Enqueue the job** and start a worker
+4. **Wait for the workflow to start** executing (status = RUNNING)
+5. **Call the cancel API**: `ActiveJob::Temporal.cancel(LongRunningJob, job.job_id)`
+6. **Wait for cancellation** (workflow status becomes CANCELLED)
+7. **Verify the job was interrupted** mid-execution (global variable shows < 10 iterations, and completed flag is false)
 
-All necessary infrastructure (test server helper, worker setup, existing test patterns) is already in place. You are ADDING a second test case to the existing `spec/integration/retries_spec.rb` file and potentially adding a new job class to `spec/fixtures/sample_jobs.rb`.
+The key insight is that cancellation is **best-effort** and relies on the job explicitly calling `Temporalio::Activity.heartbeat`. Without heartbeat calls, the cancellation signal is ignored until the activity completes. Your test proves that WITH heartbeating, cancellation interrupts the job promptly.
+
+All necessary infrastructure (test server helper, worker setup, cancel API) is already in place. You are creating TWO new files: the test file and adding a new job class to sample_jobs.rb.

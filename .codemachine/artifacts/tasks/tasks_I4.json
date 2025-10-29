@@ -102,7 +102,7 @@
     "acceptance_criteria": "Integration test defines a long-running job that heartbeats; Test enqueues job, starts worker; Test waits for workflow to start (query workflow status); Test calls `ActiveJob::Temporal.cancel(LongRunningJob, job_id)`; Test waits for workflow to be cancelled (max 5 seconds); Test verifies workflow status is Cancelled (query via test client); Test verifies job did not complete (heartbeat loop was interrupted, no final result); `rake spec:integration` passes for cancellation_spec.rb; Test is isolated",
     "dependencies": ["I3.T5", "I2.T3", "I4.T2"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I4.T8",
