@@ -82,3 +82,17 @@ class TestJob < ActiveJob::Base
     self.class.last_argument = arg
   end
 end
+
+class RetryTestJob < ActiveJob::Base
+  retry_on StandardError, wait: 1, attempts: 3
+
+  queue_as :default
+
+  def perform
+    $attempt_count ||= 0
+    $attempt_count += 1
+    raise StandardError, "Transient error" if $attempt_count == 1
+
+    $test_result = "success"
+  end
+end
