@@ -102,7 +102,7 @@
     "acceptance_criteria": "docs/release_checklist.md exists with all quality check items; bundle install succeeds; rake rubocop exits with status 0; rake spec exits with status 0; rake yard succeeds without warnings; gem build succeeds; Coverage report shows >= 90%; Manual smoke tests with example app succeed; All documentation reviewed and accurate; No unresolved TODO/FIXME comments; LICENSE file present; Checklist is marked complete",
     "dependencies": ["I5.T1", "I5.T2", "I5.T3", "I5.T4", "I5.T5", "I5.T6"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I5.T8",

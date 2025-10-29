@@ -9,6 +9,7 @@ AllCops:
     - "tmp/**/*"
     - "vendor/**/*"
     - "pkg/**/*"
+    - "examples/**/*"
 
 Layout/LineLength:
   Max: 120
