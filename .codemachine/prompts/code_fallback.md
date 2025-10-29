@@ -1,204 +1,136 @@
-# Code Refinement Task
+# Code Refinement Task - Git Release Configuration Required
 
-The previous code submission did not pass verification. The git tag v0.1.0 was created, but the task cannot be considered complete because several acceptance criteria are not met.
+The previous attempt to create and push the v0.1.0 release tag did not pass verification. The tag exists locally but cannot be pushed due to missing git configuration.
 
 ---
 
 ## Original Task Description
 
-**Task I5.T9: Create git tag for v0.1.0 release**
-
-Create a git tag for the v0.1.0 release. Ensure all code is committed and pushed to the main branch. Create an annotated tag: `git tag -a v0.1.0 -m "Release v0.1.0 - Initial release of activejob-temporal gem"`. Push tag to remote: `git push origin v0.1.0`. If using GitHub, create a release from the tag with release notes copied from CHANGELOG.md (v0.1.0 section). Verify tag is visible on GitHub (or Git hosting platform). This marks the official v0.1.0 release in version control.
-
-**Acceptance Criteria:**
-- All code is committed and pushed to main branch
-- Annotated tag v0.1.0 created locally
-- Tag pushed to remote
-- Tag is visible in git tag -l and on GitHub
-- GitHub release created from tag with CHANGELOG notes (if using GitHub)
+Create a git tag for the v0.1.0 release. Ensure all code is committed and pushed to the main branch. Create an annotated tag: git tag -a v0.1.0 -m "Release v0.1.0 - Initial release of activejob-temporal gem". Push tag to remote: git push origin v0.1.0. If using GitHub, create a release from the tag with release notes copied from CHANGELOG.md (v0.1.0 section). Verify tag is visible on GitHub (or Git hosting platform). This marks the official v0.1.0 release in version control.
 
 ---
 
 ## Issues Detected
 
-### Critical Issues:
+### Critical Blockers
 
-*   **No Remote Repository Configured:** The command `git remote -v` returns empty output. There is NO remote repository configured for this project. This means:
-    - `git push origin v0.1.0` will fail with "fatal: 'origin' does not appear to be a git repository"
-    - Cannot push the tag to remote (acceptance criteria violated)
-    - Cannot create GitHub release (acceptance criteria violated)
-    - Cannot verify tag on GitHub (acceptance criteria violated)
-
-*   **Uncommitted Changes:** The working directory has uncommitted changes:
+*   **Missing Git Remote:** The repository has no remote configured (`git remote -v` returns empty). Cannot push tag without a configured remote pointing to the GitHub repository.
+*   **Uncommitted Changes:** The working directory has three uncommitted changes:
     - `.codemachine/prompts/code_fallback.md` (deleted)
     - `.codemachine/prompts/context.md` (modified)
     - `.codemachine/template.json` (modified)
 
-    While these are codemachine configuration files and not part of the gem itself, the acceptance criteria states "all code is committed" before tagging.
+    Task acceptance criteria requires "All code is committed and pushed to main branch" before creating the release.
 
-*   **Tag Points to Old Commit:** The v0.1.0 tag points to commit `fbc7e83`, but current HEAD is at commit `359fe38`. There is 1 commit after the tag:
-    - `359fe38 chore(codemachine): refine fallback prompt and update workflow state`
+### Status of Completed Work
 
-    The task requires "all code is committed" before creating the tag, implying the tag should point to the latest commit on the main branch.
-
-### Status of Acceptance Criteria:
-
-- ❌ **All code is committed and pushed to main branch** - Uncommitted changes exist, no remote to push to
-- ✅ **Annotated tag v0.1.0 created locally** - Tag exists with good message
-- ❌ **Tag pushed to remote** - No remote repository configured
-- ✅ **Tag is visible in git tag -l** - Tag visible locally
-- ❌ **Tag visible on GitHub** - No remote repository configured
-- ❌ **GitHub release created from tag with CHANGELOG notes** - No remote repository configured
-
-**3 out of 6 acceptance criteria are failing.**
+*   **Tag Created:** ✓ The annotated tag v0.1.0 exists locally with correct message and annotation
+*   **Tag Format:** ✓ Tag follows proper format and points to commit fbc7e83
+*   **Tag Message:** ✓ Includes "Release v0.1.0 - Initial release of activejob-temporal gem" plus detailed notes
+*   **CHANGELOG:** ✓ File contains complete v0.1.0 release notes dated 2025-10-29
+*   **Gem Built:** ✓ File `activejob-temporal-0.1.0.gem` exists
 
 ---
 
 ## Best Approach to Fix
 
-You MUST perform the following steps in this exact order:
+You MUST complete the following steps in order:
 
-### Step 1: Determine Remote Repository URL
+### Step 1: Handle Uncommitted Changes
 
-**FIRST**, you need to find out where this gem should be hosted. Check the following locations for clues:
+The `.codemachine/` directory contains development/tooling files. You have two options:
 
-1. Look in `activejob-temporal.gemspec` for the `homepage` or `source_code_uri` metadata
-2. Look in `README.md` for GitHub badges or links
-3. Look in `.git/config` for any remote configuration that might have been removed
-
-Based on your findings, you will likely discover that this project is intended to be hosted on GitHub at `https://github.com/temporalio/activejob-temporal` (this is referenced in the gemspec).
-
-### Step 2: Configure Remote Repository
-
-**IF** you find a GitHub URL in the gemspec or README, configure the remote:
-
+**Option A (Recommended):** Commit the changes since they're part of the release preparation workflow:
 ```bash
-git remote add origin https://github.com/temporalio/activejob-temporal.git
-```
-
-**HOWEVER**, before executing this command, you MUST inform the user that you are about to add a remote repository and get their confirmation. This is a critical operation because:
-- The user might not have write access to this repository
-- The repository might not exist yet on GitHub
-- This might be an internal fork with a different remote URL
-
-**Alternative:** If you cannot determine the correct remote URL, or if the user indicates this is a local/internal project not meant for GitHub, then you should:
-1. Update the task to document that remote push and GitHub release steps are not applicable
-2. Mark only the local tag creation as complete
-3. Recommend the user configure the remote when ready to publish
-
-### Step 3: Commit Outstanding Changes
-
-Commit the codemachine configuration changes so the working directory is clean:
-
-```bash
-cd /Users/schovi/work/activejob-temporal
 git add .codemachine/
-git commit -m "chore(codemachine): update workflow state and prompts"
+git commit -m "chore(codemachine): update workflow state for v0.1.0 release"
 ```
 
-### Step 4: Move Tag to Current HEAD
+**Option B:** Stash the changes if they shouldn't be part of the release:
+```bash
+git stash push -m "codemachine workflow state"
+```
 
-Since there is a commit after the existing tag, you should move the tag to point to the current HEAD:
+Choose the option that best represents whether these changes should be part of the v0.1.0 release commit history.
+
+### Step 2: Configure Git Remote
+
+Based on the gemspec and README, the repository should be hosted at `https://github.com/temporalio/activejob-temporal`. However, you MUST verify this with the user first:
+
+1. **Ask the user** if they have write access to `https://github.com/temporalio/activejob-temporal`
+2. **If yes**, configure the remote:
+   ```bash
+   git remote add origin https://github.com/temporalio/activejob-temporal.git
+   git remote -v  # Verify
+   ```
+3. **If no**, ask the user for the correct repository URL (e.g., a fork or alternative hosting)
+
+### Step 3: Push Master Branch
+
+Note: The current branch is `master`, not `main` as mentioned in the task description.
 
 ```bash
-# Delete the old tag locally
-git tag -d v0.1.0
-
-# Create new annotated tag at current HEAD
-git tag -a v0.1.0 -m "Release v0.1.0 - Initial release of activejob-temporal gem
-
-First production-ready release of the activejob-temporal gem, providing
-a Temporal-backed adapter for Rails ActiveJob.
-
-See CHANGELOG.md for full release notes."
+git push -u origin master
 ```
 
-### Step 5: Push Tag to Remote (If Remote is Configured)
+This step may require authentication (PAT, SSH key, or `gh auth login`). Handle authentication errors appropriately.
 
-**ONLY IF** you successfully configured a remote in Step 2 AND got user confirmation:
+### Step 4: Push the Existing Tag
+
+Since the v0.1.0 tag already exists locally with correct formatting, simply push it:
 
 ```bash
 git push origin v0.1.0
 ```
 
-If this command fails with permission errors, inform the user they need to:
-- Set up GitHub repository
-- Configure access credentials
-- Grant you push permissions
+### Step 5: Verify Tag on Remote
 
-### Step 6: Create GitHub Release (If Using GitHub)
+```bash
+git ls-remote --tags origin | grep v0.1.0
+```
 
-**ONLY IF** the remote is GitHub and the tag was successfully pushed:
+This should show the tag exists on the remote repository.
 
-Extract the v0.1.0 section from CHANGELOG.md and create a GitHub release:
+### Step 6: Create GitHub Release
+
+If the repository is hosted on GitHub and the user has the GitHub CLI installed and authenticated:
 
 ```bash
 gh release create v0.1.0 \
-  --title "v0.1.0 - Initial Release" \
-  --notes "## [0.1.0] - 2025-10-29
-
-### Added
-- ActiveJob adapter backed by Temporal workflows as a drop-in replacement for existing adapters
-- Immediate job execution via \`perform_later\`
-- Scheduled job execution with \`set(wait:)\` and \`set(wait_until:)\`
-- Automatic retry policy mapping from \`retry_on\` declarations with exponential backoff
-- Automatic discard policy handling from \`discard_on\` declarations
-- Job cancellation API via \`ActiveJob::Temporal.cancel(JobClass, job_id)\`
-- Search attributes for filtering and debugging jobs in Temporal UI (job class, queue, job ID, tenant ID, enqueue timestamp)
-- Transactional enqueue support with automatic deferral until database transaction commits
-- GlobalID serialization support for ActiveRecord models and other GlobalID-compatible objects
-- Configurable activity timeouts and retry policies (global and per-job)
-- Temporal worker executable (\`bin/temporal-worker\`) for running workers
-- Structured JSON logging for observability integration
-- Comprehensive documentation including README, API documentation (YARD), migration guide, and example Rails application
-
-### Security
-- Payload size limit of 250KB enforced to prevent denial-of-service attacks from oversized job payloads"
+  --title "Release v0.1.0" \
+  --notes "$(sed -n '/## \[0.1.0\]/,/^## \[/p' CHANGELOG.md | sed '$d')" \
+  --latest
 ```
 
-Optionally, attach the built gem file as a release asset:
+Alternatively, provide instructions for manual release creation via the GitHub web UI:
+1. Navigate to `https://github.com/temporalio/activejob-temporal/releases`
+2. Click "Draft a new release"
+3. Select tag `v0.1.0`
+4. Set title to "Release v0.1.0"
+5. Copy the v0.1.0 section from CHANGELOG.md (lines 8-26) into the release notes
+6. Publish the release
 
-```bash
-gh release upload v0.1.0 activejob-temporal-0.1.0.gem
-```
+### Step 7: Final Verification
 
-### Step 7: Verify Final State
-
-After completing the above steps, verify:
-
-```bash
-# Tag exists locally
-git tag -l v0.1.0
-
-# Tag points to current HEAD
-git rev-parse v0.1.0
-git rev-parse HEAD
-
-# Remote is configured
-git remote -v
-
-# Tag exists on remote (if push was successful)
-git ls-remote --tags origin v0.1.0
-
-# Working directory is clean
-git status
-```
+Confirm all acceptance criteria are met:
+- [ ] All code is committed (no uncommitted changes in `git status`)
+- [ ] Code is pushed to remote master branch
+- [ ] Tag v0.1.0 exists locally (`git tag -l v0.1.0`)
+- [ ] Tag is pushed to remote (`git ls-remote --tags origin | grep v0.1.0`)
+- [ ] Tag is visible on GitHub releases page
+- [ ] GitHub release created with CHANGELOG notes
 
 ---
 
 ## Important Notes
 
-*   **User Interaction Required:** This task CANNOT be completed fully without user input about the remote repository. You must ask the user whether:
-    1. This project is meant to be published on GitHub at `temporalio/activejob-temporal`
-    2. They have write access to that repository
-    3. The repository already exists on GitHub
-    4. Or if this is meant to be a local/internal project only
+*   **Authentication:** Pushing to remote requires proper authentication. Ensure the user has configured either:
+    - Personal Access Token (classic or fine-grained with repo write access)
+    - SSH key configured for GitHub
+    - GitHub CLI authenticated (`gh auth login`)
 
-*   **Don't Assume Write Access:** Even if you find a GitHub URL, do NOT assume you have write access. The user might need to fork the repository or configure credentials first.
+*   **Branch Name:** The task mentions "main branch" but the repository uses `master`. Use `master` in all commands.
 
-*   **Document Partial Completion:** If remote push cannot be completed, clearly document:
-    - Local tag v0.1.0 has been created successfully
-    - Remote repository needs to be configured
-    - Steps the user needs to take to complete the push and release creation manually
+*   **Repository Access:** Do NOT proceed with git remote configuration until you confirm the user has write access to the target repository. Attempting to push without access will fail.
 
-*   **Preserve Tag Quality:** The existing tag message is excellent and comprehensive. Make sure to preserve this quality when recreating the tag.
+*   **Tag Already Exists:** Do NOT run `git tag -a v0.1.0 -m "..."` again. The tag already exists with the correct format. You only need to push the existing tag.

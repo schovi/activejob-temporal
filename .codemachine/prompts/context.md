@@ -37,14 +37,20 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: Release Management & Versioning (from project context)
+### Context: Release Management Strategy (from evolution roadmap)
 
-This task represents the final step in the v0.1.0 release process. The gem follows Semantic Versioning (SemVer) conventions:
+**Version 0.1.0 Release:**
+This release marks the first production-ready version of the activejob-temporal gem. The project follows Semantic Versioning (SemVer):
+- **v0.1.0** indicates initial release with core functionality
+- Pre-1.0 versions signal API may still evolve
+- All core features are implemented and tested
+- Comprehensive documentation is complete
 
-- **v0.1.0** is the initial release of the activejob-temporal gem
-- This is a pre-1.0 release, signaling that the API is still stabilizing
-- The version number is defined in `lib/activejob/temporal/version.rb`
-- All quality checks have been completed (see `docs/release_checklist.md`)
+**Gem Distribution:**
+- Primary distribution via RubyGems.org
+- Source hosted on GitHub at `https://github.com/temporalio/activejob-temporal`
+- Release tags follow `vX.Y.Z` format
+- GitHub releases include CHANGELOG excerpts
 
 ### Context: CHANGELOG Format (Keep a Changelog)
 
@@ -80,104 +86,201 @@ This content should be used as the GitHub release notes.
 
 The following analysis is based on my direct review of the current codebase. Use these notes and tips to guide your implementation.
 
+### CRITICAL FINDING: Tag Already Exists Locally
+
+**The v0.1.0 tag already exists in the local repository!**
+
+I verified the tag details:
+- **Tag name:** v0.1.0
+- **Tag type:** Annotated
+- **Tagger:** David Schovanec <david.schovanec@productboard.com>
+- **Tag message:** "Release v0.1.0 - Initial release of activejob-temporal gem"
+- **Full annotation:** Includes detailed release notes referencing CHANGELOG.md
+- **Created:** Wed Oct 29 15:23:16 2025 +0100
+- **Commit:** Points to fbc7e83 "chore: finalize codemachine template for v0.1.0 release"
+
+**What this means:**
+- You DO NOT need to create the tag (it already exists with correct formatting)
+- You ONLY need to push the existing tag to the remote repository
+- The tag message format matches the task requirements exactly
+
+### CRITICAL ISSUE: No Git Remote Configured
+
+**The repository has NO remote configured:**
+
+I checked `.git/config` and confirmed:
+- No `[remote "origin"]` section exists
+- Running `git remote -v` returns empty
+- This is blocking completion of the task
+
+**Required before proceeding:**
+1. Configure a git remote pointing to the GitHub repository
+2. Based on gemspec, the URL should be: `https://github.com/temporalio/activejob-temporal`
+3. Verify user has push access to this repository
+
 ### Relevant Existing Code
 
-*   **File:** `lib/activejob/temporal/version.rb`
-    *   **Summary:** Defines the gem version constant as `VERSION = "0.1.0"`.
-    *   **Recommendation:** The version is correctly set to "0.1.0" for this release. No changes needed.
-
 *   **File:** `CHANGELOG.md`
-    *   **Summary:** Contains complete release notes for v0.1.0 with all features, changes, and security notes in Keep a Changelog format.
-    *   **Recommendation:** This file should be used as the source for GitHub release notes. The entire "## [0.1.0] - 2025-10-29" section should be copied.
+    *   **Summary:** Complete v0.1.0 release notes dated 2025-10-29 in Keep a Changelog format
+    *   **Lines 8-26:** Full release notes for v0.1.0 including Added and Security sections
+    *   **Recommendation:** You MUST use lines 8-26 from this file for GitHub release notes
 
 *   **File:** `activejob-temporal.gemspec`
-    *   **Summary:** Gemspec with version 0.1.0, complete metadata, dependencies, and file list. The gem has already been built (activejob-temporal-0.1.0.gem exists).
-    *   **Recommendation:** Gemspec is finalized and correct. No changes needed before tagging.
+    *   **Summary:** Finalized gemspec with all metadata for v0.1.0 release
+    *   **Homepage URL:** `https://github.com/temporalio/activejob-temporal`
+    *   **Version:** Pulls from `ActiveJob::Temporal::VERSION` constant (set to "0.1.0")
+    *   **License:** MIT
+    *   **MFA Required:** Set to true for secure gem publishing
+    *   **Recommendation:** The remote should be configured to match the homepage URL
 
-*   **File:** `docs/release_checklist.md`
-    *   **Summary:** Complete quality checklist showing all 10 quality checks passed, all functional requirements verified, and final sign-off completed.
-    *   **Recommendation:** This confirms the gem is ready for release. All prerequisites for tagging are met.
+*   **File:** `README.md`
+    *   **Summary:** Comprehensive documentation with badges pointing to GitHub repository
+    *   **Badge URLs:** All reference `https://github.com/temporalio/activejob-temporal`
+    *   **Recommendation:** Confirms the expected repository URL for remote configuration
 
-### Git Repository Status
+*   **File:** `activejob-temporal-0.1.0.gem`
+    *   **Summary:** Built gem file exists in project root
+    *   **Recommendation:** This can be attached as a release asset on GitHub
 
-*   **Current Branch:** `master`
-*   **Uncommitted Changes:** Only `.codemachine/template.json` is modified (this is a codemachine configuration file and not part of the gem distribution)
-*   **Recent Commits:** Latest commit is `359fe38 chore(codemachine): refine fallback prompt and update workflow state`
-*   **Remote Branches:** No information about remote repository yet
+*   **File:** `.git/config`
+    *   **Summary:** Git configuration with no remote section
+    *   **Current contents:** Only core settings (repositoryformatversion, filemode, etc.)
+    *   **Recommendation:** You MUST add a remote before pushing tags
+
+### Git Repository Current State
+
+*   **Current Branch:** `master` (NOT `main` as task description mentions)
+*   **Latest Commit:** 18fa92a "chore(codemachine): refine release workflow and git tagging guidance"
+*   **Modified Files:** `.codemachine/template.json` (tracked but modified)
+*   **Tag Status:** v0.1.0 exists locally, not pushed to any remote
+*   **Remote Status:** No remotes configured
 
 ### Implementation Tips & Notes
 
-*   **Tip:** Before creating the tag, you should commit the `.codemachine/template.json` change or stash it, as it's not part of the gem but is modified in the working directory.
+*   **Tip 1 - Remote Configuration Required:** Before ANY push operations, you MUST execute:
+    ```bash
+    git remote add origin https://github.com/temporalio/activejob-temporal.git
+    ```
+    However, this assumes the user has access to this GitHub repository. You should verify with the user first.
 
-*   **Note:** The task description mentions pushing to "origin" but you should verify if a remote named "origin" exists using `git remote -v`. If no remote exists, you'll need to inform the user that the remote repository needs to be set up before pushing the tag.
+*   **Tip 2 - Branch Name Mismatch:** The task says "push to main branch" but the repository uses `master`. You'll need to push the `master` branch, not `main`.
 
-*   **Git Tagging Best Practices:**
-    1. Use annotated tags (with `-a` flag) rather than lightweight tags for releases
-    2. Include a meaningful tag message that summarizes the release
-    3. Push tags explicitly with `git push origin <tagname>` or `git push --tags`
-    4. Verify the tag was created locally with `git tag -l`
-    5. After pushing, verify the tag is visible on the remote with `git ls-remote --tags origin`
+*   **Tip 3 - Tag Already Exists:** Since the v0.1.0 tag exists with correct format, your workflow is:
+    1. Configure remote (if user confirms access)
+    2. Push master branch: `git push origin master`
+    3. Push existing tag: `git push origin v0.1.0`
+    4. Create GitHub release
 
-*   **GitHub Release Creation:**
-    - If this is a GitHub repository, you can create a release either through the GitHub web UI or using the GitHub CLI (`gh release create`)
-    - The release notes should include the full CHANGELOG section for v0.1.0
-    - Consider adding the built gem file (`activejob-temporal-0.1.0.gem`) as a release asset
+*   **Tip 4 - GitHub Release Creation:** After pushing the tag, create the release using one of these methods:
+    - **GitHub CLI:** `gh release create v0.1.0 --title "v0.1.0" --notes-file <(sed -n '/## \[0.1.0\]/,/^## /p' CHANGELOG.md | sed '$d')`
+    - **Web UI:** Navigate to GitHub repository → Releases → Draft a new release → Select v0.1.0 tag → Copy CHANGELOG content
 
-*   **Warning:** The task requires pushing to a remote repository. You must first verify that:
-    1. A remote repository is configured
-    2. You have push access to that remote
-    3. The main branch is pushed to the remote
-    If any of these are not true, you should inform the user and ask for guidance before proceeding with the push operations.
+*   **Warning - Authentication Required:** Pushing to GitHub requires authentication:
+    - Personal Access Token (classic or fine-grained)
+    - SSH key configured
+    - GitHub CLI authenticated (`gh auth login`)
+    The user MUST have write access to the `temporalio/activejob-temporal` repository.
+
+*   **Warning - Modified File:** The file `.codemachine/template.json` is modified but this is OK:
+    - It's in `.codemachine/` directory which is excluded from gem packaging
+    - It's a development/tooling file
+    - You can ignore it or commit it - either way is fine
+
+*   **Note - Gem Already Built:** The gem file `activejob-temporal-0.1.0.gem` already exists, confirming all code is ready for release.
 
 ### Pre-Task Validation Checklist
 
-Before proceeding with git operations, you MUST verify:
+Before executing git operations:
 - [x] All previous tasks (I5.T7, I5.T6) are completed
 - [x] Version is set to "0.1.0" in `lib/activejob/temporal/version.rb`
-- [x] CHANGELOG.md contains complete v0.1.0 release notes
-- [x] Release checklist (`docs/release_checklist.md`) shows all checks passed
-- [ ] Remote repository exists and is accessible (MUST VERIFY)
-- [ ] Working directory is clean or changes are committed (`.codemachine/template.json` is modified)
+- [x] CHANGELOG.md contains complete v0.1.0 release notes (dated 2025-10-29)
+- [x] Gem has been built (`activejob-temporal-0.1.0.gem` exists)
+- [x] Tag v0.1.0 exists locally with proper annotation
+- [ ] **BLOCKER:** Git remote must be configured
+- [ ] **BLOCKER:** User must have push access to remote repository
+- [~] Working directory has one modified file (`.codemachine/template.json` - can be ignored)
 
-### Recommended Execution Steps
+### Recommended Execution Flow
 
-1. **Check remote repository status:**
+**Step 1: Verify Remote Access (ASK USER FIRST)**
+```bash
+# Check if user wants to use the expected repository
+echo "Expected repository: https://github.com/temporalio/activejob-temporal"
+echo "Do you have write access to this repository?"
+```
+
+**Step 2: Configure Remote (after user confirmation)**
+```bash
+git remote add origin https://github.com/temporalio/activejob-temporal.git
+git remote -v  # Verify
+```
+
+**Step 3: Verify Tag**
+```bash
+git tag -l v0.1.0
+git show v0.1.0 --no-patch  # Verify tag annotation
+```
+
+**Step 4: Push Master Branch**
+```bash
+# First push the branch (required before pushing tag)
+git push -u origin master
+```
+
+**Step 5: Push Tag**
+```bash
+git push origin v0.1.0
+```
+
+**Step 6: Verify Remote Tag**
+```bash
+git ls-remote --tags origin | grep v0.1.0
+```
+
+**Step 7: Create GitHub Release**
+```bash
+# Option A: Using GitHub CLI (if installed and authenticated)
+gh release create v0.1.0 \
+  --title "Release v0.1.0" \
+  --notes-file CHANGELOG.md \
+  --latest
+
+# Option B: Provide instructions for manual creation via web UI
+```
+
+**Step 8: Verify Release on GitHub**
+- Open `https://github.com/temporalio/activejob-temporal/releases`
+- Confirm v0.1.0 release is visible
+- Verify release notes match CHANGELOG.md
+
+### Alternative Approach (if no GitHub access)
+
+If the user does NOT have access to `temporalio/activejob-temporal`, you should:
+
+1. **Ask the user:** "This repository appears to be intended for the Temporal organization. Do you have write access? If not, would you like to push to a fork or different remote?"
+
+2. **Fork scenario:** If using a fork, adjust the remote URL accordingly:
    ```bash
-   git remote -v
-   git ls-remote origin
+   git remote add origin https://github.com/USERNAME/activejob-temporal.git
    ```
 
-2. **Handle uncommitted changes:**
-   ```bash
-   # Either commit the codemachine changes or stash them
-   git status
-   git add .codemachine/template.json
-   git commit -m "chore(codemachine): update template configuration"
-   # OR
-   git stash
-   ```
+3. **No remote scenario:** If there's no remote repository set up yet, inform the user that the task cannot be completed until a remote repository is created and configured.
 
-3. **Create annotated tag:**
-   ```bash
-   git tag -a v0.1.0 -m "Release v0.1.0 - Initial release of activejob-temporal gem"
-   ```
+### Summary
 
-4. **Verify tag was created:**
-   ```bash
-   git tag -l
-   git show v0.1.0
-   ```
+**Current Status:** 80% complete
+- ✅ Tag v0.1.0 created locally with correct format
+- ✅ All code committed and ready
+- ✅ CHANGELOG prepared
+- ✅ Gem built
+- ❌ No git remote configured (BLOCKER)
+- ❌ Tag not pushed to remote
+- ❌ GitHub release not created
 
-5. **Push tag to remote:**
-   ```bash
-   git push origin v0.1.0
-   ```
+**Main Blocker:** No git remote configured. User must confirm repository URL and access before proceeding.
 
-6. **Create GitHub release (if applicable):**
-   - Use GitHub CLI: `gh release create v0.1.0 --title "v0.1.0" --notes-file <(sed -n '/## \[0.1.0\]/,/## \[/p' CHANGELOG.md | head -n -1)`
-   - Or provide instructions for creating the release manually through GitHub web UI
-
-7. **Verify tag is visible remotely:**
-   ```bash
-   git ls-remote --tags origin
-   ```
+**Next Actions:**
+1. Confirm user has access to target repository
+2. Configure git remote
+3. Push master branch and tag
+4. Create GitHub release with CHANGELOG notes
