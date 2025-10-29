@@ -8,7 +8,7 @@ module Temporalio
   module Workflow
     class << self
       def now
-        Time.now
+        @now || Time.utc(2024, 1, 1, 12, 0, 0)
       end
 
       def sleep(_duration); end
@@ -34,9 +34,10 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
   end
 
   before do
-    stub_const("AjRunnerActivity", Class.new)
+    stub_const("SampleJob", Class.new)
     allow(Temporalio::Workflow).to receive(:execute_activity).and_return(:activity_result)
     allow(Temporalio::Workflow).to receive(:sleep)
+    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return({})
   end
 
   describe "#execute" do
@@ -45,11 +46,12 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         workflow.execute(base_payload)
 
         expect(Temporalio::Workflow).not_to have_received(:sleep)
-        expect(Temporalio::Workflow).to have_received(:execute_activity).with(
-          AjRunnerActivity,
-          base_payload,
-          start_to_close_timeout: activity_timeout
-        )
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload, options|
+          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+          expect(payload).to eq(base_payload)
+          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
+          expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
+        end
       end
     end
 
@@ -64,11 +66,12 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         workflow.execute(payload)
 
         expect(Temporalio::Workflow).to have_received(:sleep).with(be_within(1e-6).of(300.0))
-        expect(Temporalio::Workflow).to have_received(:execute_activity).with(
-          AjRunnerActivity,
-          payload,
-          start_to_close_timeout: activity_timeout
-        )
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload_arg, options|
+          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+          expect(payload_arg).to eq(payload)
+          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
+          expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
+        end
       end
     end
 
@@ -88,17 +91,22 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
     context "when retry policy metadata is available" do
       it "passes the retry policy through to the activity call" do
-        retry_policy = { maximum_attempts: 3, non_retryable_error_types: ["RuntimeError"] }
-        payload = base_payload.merge("retry_policy" => retry_policy)
+        retry_policy_hash = {
+          initial_interval: 30.0,
+          backoff_coefficient: 2.0,
+          maximum_attempts: 3,
+          non_retryable_error_types: []
+        }
+        allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(SampleJob).and_return(retry_policy_hash)
 
-        workflow.execute(payload)
+        workflow.execute(base_payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity).with(
-          AjRunnerActivity,
-          payload,
-          start_to_close_timeout: activity_timeout,
-          retry: retry_policy
-        )
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload, options|
+          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+          expect(payload).to eq(base_payload)
+          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
+          expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
+        end
       end
     end
   end

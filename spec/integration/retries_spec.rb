@@ -7,8 +7,6 @@ require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
 RSpec.describe "ActiveJob Temporal retry behavior", :integration do
-  let(:client) { TemporalTestHelper.client }
-
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -23,6 +21,10 @@ RSpec.describe "ActiveJob Temporal retry behavior", :integration do
     $attempt_count = 0
     $test_result = nil
     $discard_test_executed = false
+  end
+
+  def client
+    TemporalTestHelper.client
   end
 
   it "retries transient errors according to retry_on configuration" do

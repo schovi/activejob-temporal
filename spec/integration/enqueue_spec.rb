@@ -7,8 +7,6 @@ require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
 RSpec.describe "ActiveJob Temporal enqueue", :integration do
-  let(:client) { TemporalTestHelper.client }
-
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -19,6 +17,10 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
     ActiveJob::Base.queue_adapter = original_adapter
     stop_worker(@worker_thread)
     TestJob.last_argument = nil
+  end
+
+  def client
+    TemporalTestHelper.client
   end
 
   it "executes an enqueued job immediately via Temporal" do

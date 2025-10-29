@@ -161,27 +161,26 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
 
   before do
     allow(ActiveJob::Temporal::Payload).to receive(:from_job).with(job, scheduled_at: nil).and_return(payload)
-    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(SimpleJob).and_return(retry_policy)
     allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
     allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
     allow(ActiveJob::Temporal::SearchAttributes).to receive(:for).with(job).and_return(search_attributes)
     allow(ActiveJob::Temporal).to receive(:client).and_return(client)
     allow(client).to receive(:start_workflow).and_return(workflow_handle)
     allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+    allow(ActiveJob::Temporal.config).to receive(:enable_search_attributes).and_return(true)
   end
 
   describe "#enqueue" do
-    it "serializes payload, augments retry policy, and starts workflow" do
+    it "serializes payload and starts workflow" do
       result = adapter.enqueue(job)
 
       expect(result).to eq(workflow_handle)
-      expect(payload[:retry_policy]).to eq(retry_policy)
       expect(client).to have_received(:start_workflow).with(
         ActiveJob::Temporal::Workflows::AjWorkflow,
         payload,
         id: workflow_id,
         task_queue: task_queue,
-        id_conflict_policy: :reject,
+        id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL,
         search_attributes: search_attributes
       )
       expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
@@ -230,11 +229,6 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
       )
     end
 
-    it "fetches retry policy for the job class" do
-      adapter.enqueue(job)
-
-      expect(ActiveJob::Temporal::RetryMapper).to have_received(:for).with(SimpleJob)
-    end
   end
 
   describe "#enqueue_at" do
@@ -266,7 +260,6 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
         .to receive(:from_job)
         .with(job, scheduled_at: scheduled_time)
         .and_return(payload_with_schedule)
-      allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(ScheduledJob).and_return(retry_policy)
       allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
       allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
       allow(ActiveJob::Temporal::SearchAttributes).to receive(:for).with(job).and_return(search_attributes)
@@ -283,7 +276,6 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
       adapter.enqueue_at(job, timestamp)
 
       expect(payload_with_schedule[:scheduled_at]).to eq(scheduled_time.iso8601)
-      expect(payload_with_schedule[:retry_policy]).to eq(retry_policy)
     end
 
     it "starts the workflow immediately with the scheduled payload" do
@@ -294,7 +286,7 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
         payload_with_schedule,
         id: workflow_id,
         task_queue: task_queue,
-        id_conflict_policy: :reject,
+        id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL,
         search_attributes: search_attributes
       )
     end

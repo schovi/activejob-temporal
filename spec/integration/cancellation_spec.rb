@@ -7,8 +7,6 @@ require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
 RSpec.describe "ActiveJob Temporal cancellation", :integration do
-  let(:client) { TemporalTestHelper.client }
-
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -21,6 +19,10 @@ RSpec.describe "ActiveJob Temporal cancellation", :integration do
     stop_worker(@worker_thread)
     $long_running_iterations = 0
     $long_running_completed = false
+  end
+
+  def client
+    TemporalTestHelper.client
   end
 
   it "cancels a long-running job via heartbeat mechanism" do

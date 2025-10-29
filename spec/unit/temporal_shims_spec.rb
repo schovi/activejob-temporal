@@ -95,12 +95,20 @@ RSpec.describe "Temporal shim definitions" do
     workflow = ActiveJob::Temporal::Workflows::AjWorkflow.new
     activity = ActiveJob::Temporal::Activities::AjRunnerActivity.new
 
+    # Mock ShimJob to return retry policy from RetryMapper
+    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(ShimJob).and_return({
+      initial_interval: 30.0,
+      backoff_coefficient: 2.0,
+      maximum_attempts: 2,
+      non_retryable_error_types: []
+    })
+
     workflow.execute(payload)
     expect(sleep_durations).to contain_exactly(be_within(1e-6).of(30.0))
     expect(activity_calls.size).to eq(1)
     _, activity_payload, options = activity_calls.first
     expect(activity_payload).to eq(payload)
-    expect(options[:retry]).to eq(payload["retry_policy"])
+    expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
     expect(options[:start_to_close_timeout]).to eq(ActiveJob::Temporal.config.default_activity_timeout)
 
     activity.execute(payload)

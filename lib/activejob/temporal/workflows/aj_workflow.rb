@@ -10,6 +10,18 @@ unless defined?(Temporalio::Workflow::Definition)
   end
 end
 
+unless defined?(Temporalio::RetryPolicy)
+  module Temporalio
+    RetryPolicy = Data.define(
+      :initial_interval,
+      :backoff_coefficient,
+      :max_interval,
+      :max_attempts,
+      :non_retryable_error_types
+    )
+  end
+end
+
 module ActiveJob
   module Temporal
     module Workflows

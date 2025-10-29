@@ -24,20 +24,28 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
       end
 
       it "builds keyword attributes" do
-        expect(attributes).to include(
-          ajClass: "SimpleJob",
-          ajQueue: "billing",
-          ajJobId: "job-123"
-        )
+        expect(attributes).to be_a(Temporalio::SearchAttributes)
+
+        aj_class_key = Temporalio::SearchAttributes::Key.new("ajClass", Temporalio::SearchAttributes::IndexedValueType::KEYWORD)
+        aj_queue_key = Temporalio::SearchAttributes::Key.new("ajQueue", Temporalio::SearchAttributes::IndexedValueType::KEYWORD)
+        aj_job_id_key = Temporalio::SearchAttributes::Key.new("ajJobId", Temporalio::SearchAttributes::IndexedValueType::KEYWORD)
+
+        expect(attributes[aj_class_key]).to eq("SimpleJob")
+        expect(attributes[aj_queue_key]).to eq("billing")
+        expect(attributes[aj_job_id_key]).to eq("job-123")
       end
 
       it "includes the enqueue timestamp as a Time object" do
-        expect(attributes[:ajEnqueuedAt]).to be_a(Time)
-        expect(attributes[:ajEnqueuedAt]).to eq(timestamp)
+        aj_enqueued_at_key = Temporalio::SearchAttributes::Key.new("ajEnqueuedAt", Temporalio::SearchAttributes::IndexedValueType::TIME)
+
+        expect(attributes[aj_enqueued_at_key]).to be_a(Time)
+        expect(attributes[aj_enqueued_at_key]).to eq(timestamp)
       end
 
       it "omits ajTenantId when no tenant context exists" do
-        expect(attributes).not_to have_key(:ajTenantId)
+        aj_tenant_id_key = Temporalio::SearchAttributes::Key.new("ajTenantId", Temporalio::SearchAttributes::IndexedValueType::INTEGER)
+
+        expect(attributes[aj_tenant_id_key]).to be_nil
       end
     end
 
@@ -50,12 +58,14 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
       end
 
       it "falls back to the default queue" do
-        expect(attributes[:ajQueue]).to eq("default")
+        aj_queue_key = Temporalio::SearchAttributes::Key.new("ajQueue", Temporalio::SearchAttributes::IndexedValueType::KEYWORD)
+
+        expect(attributes[aj_queue_key]).to eq("default")
       end
     end
 
     context "when job has a tenant-aware argument" do
-      let(:tenant_context) { TenantContext.new("tenant-456") }
+      let(:tenant_context) { TenantContext.new(456) }
       let(:job) { SimpleJob.new([tenant_context]) }
 
       before do
@@ -64,7 +74,9 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
       end
 
       it "includes ajTenantId" do
-        expect(attributes[:ajTenantId]).to eq("tenant-456")
+        aj_tenant_id_key = Temporalio::SearchAttributes::Key.new("ajTenantId", Temporalio::SearchAttributes::IndexedValueType::INTEGER)
+
+        expect(attributes[aj_tenant_id_key]).to eq(456)
       end
     end
 
@@ -77,7 +89,9 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
       end
 
       it "does not include ajTenantId" do
-        expect(attributes).not_to have_key(:ajTenantId)
+        aj_tenant_id_key = Temporalio::SearchAttributes::Key.new("ajTenantId", Temporalio::SearchAttributes::IndexedValueType::INTEGER)
+
+        expect(attributes[aj_tenant_id_key]).to be_nil
       end
     end
 
@@ -90,8 +104,10 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
       end
 
       it "handles nil arguments without raising and omits ajTenantId" do
+        aj_tenant_id_key = Temporalio::SearchAttributes::Key.new("ajTenantId", Temporalio::SearchAttributes::IndexedValueType::INTEGER)
+
         expect { attributes }.not_to raise_error
-        expect(attributes).not_to have_key(:ajTenantId)
+        expect(attributes[aj_tenant_id_key]).to be_nil
       end
     end
   end
