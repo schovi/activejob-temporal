@@ -11,6 +11,7 @@ require_relative "temporal/search_attributes"
 require_relative "temporal/retry_mapper"
 require_relative "temporal/adapter"
 require_relative "temporal/workflows/aj_workflow"
+require_relative "temporal/activities/aj_runner_activity"
 require_relative "temporal/cancel"
 
 module ActiveJob

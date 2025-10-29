@@ -21,7 +21,7 @@ module ActiveJob
           sleep_until(scheduled_time) if scheduled_time
 
           Temporalio::Workflow.execute_activity(
-            AjRunnerActivity,
+            ActiveJob::Temporal::Activities::AjRunnerActivity,
             payload,
             **activity_options(payload)
           )
@@ -48,9 +48,29 @@ module ActiveJob
           options = {
             start_to_close_timeout: ActiveJob::Temporal.config.default_activity_timeout
           }
-          retry_policy = payload[:retry_policy] || payload["retry_policy"]
-          options[:retry] = retry_policy if retry_policy
+
+          # Look up job class and build retry policy
+          job_class_name = payload[:job_class] || payload["job_class"]
+          if job_class_name
+            job_class = Object.const_get(job_class_name)
+            retry_policy_hash = ActiveJob::Temporal::RetryMapper.for(job_class)
+            options[:retry_policy] = build_retry_policy(retry_policy_hash)
+          end
+
           options
+        end
+
+        def build_retry_policy(hash)
+          # RetryMapper returns maximum_attempts, but Temporalio::RetryPolicy expects max_attempts
+          max_attempts_value = hash[:maximum_attempts] || hash["maximum_attempts"]
+
+          Temporalio::RetryPolicy.new(
+            initial_interval: hash[:initial_interval] || hash["initial_interval"],
+            backoff_coefficient: hash[:backoff_coefficient] || hash["backoff_coefficient"],
+            max_interval: hash[:max_interval] || hash["max_interval"],
+            max_attempts: max_attempts_value,
+            non_retryable_error_types: hash[:non_retryable_error_types] || hash["non_retryable_error_types"]
+          )
         end
       end
     end

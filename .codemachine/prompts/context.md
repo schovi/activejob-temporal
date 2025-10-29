@@ -10,26 +10,30 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I4.T4",
+  "task_id": "I4.T5",
   "iteration_id": "I4",
   "iteration_goal": "Implement the Temporal worker bootstrap script, write comprehensive integration tests with a real Temporal test server, and validate end-to-end functionality (enqueue → workflow → activity → job execution).",
-  "description": "Write integration test in `spec/integration/scheduled_jobs_spec.rb` that tests scheduled job execution using `set(wait:)`. Test flow: (1) Define test job. (2) Enqueue job with delay: `TestJob.set(wait: 5.seconds).perform_later(42)`. (3) Start worker. (4) Assert job does NOT execute immediately (wait 1 second, verify `$test_result` is still nil). (5) Wait for scheduled time (total 6 seconds from enqueue). (6) Assert job executed after delay. (7) Verify workflow used `Workflow.sleep` (check workflow history for timer event using Temporal test client). This test proves durable scheduled execution works.",
+  "description": "Write integration test in `spec/integration/retries_spec.rb` that tests retry behavior for transient errors. Test flow: (1) Define a job that fails with `raise StandardError` on first execution, then succeeds on retry (use a counter: `$attempt_count ||= 0; $attempt_count += 1; raise StandardError if $attempt_count == 1; $test_result = 'success'`). (2) Configure job with `retry_on StandardError, wait: 1, attempts: 3`. (3) Enqueue job. (4) Start worker. (5) Wait for job to execute, fail, retry, and succeed. (6) Assert `$test_result == 'success'`. (7) Verify workflow history shows activity retry (check for activity failure + retry events). This test proves retry_on mapping works and Temporal retries activities.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "RSpec integration test patterns, Temporal test server helper from I4.T2, adapter from I3.T2, workflow sleep logic from I2.T2",
+  "inputs": "RSpec integration test patterns, Temporal test server, adapter, workflow, activity, retry mapper from I1.T6",
   "target_files": [
-    "spec/integration/scheduled_jobs_spec.rb"
+    "spec/integration/retries_spec.rb",
+    "spec/fixtures/sample_jobs.rb"
   ],
   "input_files": [
     "spec/support/temporal_test_server.rb",
     "lib/activejob/temporal/adapter.rb",
     "lib/activejob/temporal/workflows/aj_workflow.rb",
+    "lib/activejob/temporal/activities/aj_runner_activity.rb",
+    "lib/activejob/temporal/retry_mapper.rb",
     "spec/fixtures/sample_jobs.rb"
   ],
-  "deliverables": "Passing integration test for scheduled job execution",
-  "acceptance_criteria": "Integration test enqueues job with delay: `TestJob.set(wait: 5.seconds).perform_later(42)`; Test starts worker; Test verifies job does NOT execute immediately (check at T+1 second); Test waits for scheduled time (T+6 seconds) and verifies job executed; Test queries workflow history for timer event (proves `Workflow.sleep` was used); Test cleans up; `rake spec:integration` passes for scheduled_jobs_spec.rb; Test is isolated",
+  "deliverables": "Passing integration test for retry behavior",
+  "acceptance_criteria": "Integration test defines a job that fails once then succeeds; Job uses `retry_on StandardError, wait: 1, attempts: 3`; Test enqueues job, starts worker; Test waits for job to fail, retry, and succeed (max 10 seconds); Test asserts final result is 'success'; Test queries workflow history for activity failure + retry events; `rake spec:integration` passes for retries_spec.rb; Test is isolated",
   "dependencies": [
-    "I3.T2",
-    "I2.T2",
+    "I3.T1",
+    "I2.T3",
+    "I1.T6",
     "I4.T2"
   ],
   "parallelizable": false,
@@ -43,79 +47,72 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: Scheduled Job Execution Architecture
+### Context: Error Handling (Activity Retries) (from 04_Behavior_and_Communication.md)
 
-**Scheduled Execution via `set(wait:)`:**
-- When users call `TestJob.set(wait: 5.seconds).perform_later(42)`, ActiveJob invokes `enqueue_at` on the adapter
-- The adapter converts the delay into a Unix timestamp and passes it to the payload serializer
-- The payload includes a `scheduled_at` field in ISO8601 format
-- The workflow is started **immediately** in Temporal, but the `AjWorkflow.execute` method extracts the `scheduled_at` timestamp and calls `Workflow.sleep` for the calculated duration
-- This is a **durable sleep** - the workflow doesn't block any worker threads during the sleep
-- After the sleep completes, the workflow proceeds to execute the activity
+```markdown
+**Error Handling (Activity Retries):**
 
-**Key Design Decision:**
-The architecture explicitly chose to use `Workflow.sleep` within the workflow rather than Temporal's start delay or Schedules API. This ensures:
-1. The workflow is created immediately (supports deduplication via workflow ID)
-2. The sleep is durable and survives worker restarts
-3. The workflow history includes a timer event that can be verified in tests
+If `job.perform` raises an exception, the following flow occurs:
 
-### Context: Workflow Sleep Implementation
+1. **Exception raised**: Job raises an error (e.g., `PSP::TransientError`)
+2. **Activity catches error**: `AjRunnerActivity.execute` catches the exception
+3. **Check discard_on**: Activity calls `RetryMapper.discard_exception?(job_class, error)` to determine if the error is non-retryable
+4. **Retryable error path** (if `discard_exception?` returns `false`):
+   - Activity re-raises the original exception
+   - Temporal receives the activity failure
+   - Temporal checks the `RetryPolicy` (from `retry_on` mapping): attempt 1/5, wait 30s
+   - Temporal sleeps 30s (durable timer)
+   - Temporal schedules activity retry (attempt 2)
+   - Activity will be retried up to 5 times with exponential backoff (30s, 60s, 120s, ...)
 
-The `AjWorkflow` class (from `lib/activejob/temporal/workflows/aj_workflow.rb`) includes:
+**Non-Retryable Exceptions (`discard_on`):**
 
-```ruby
-def execute(payload)
-  scheduled_time = extract_scheduled_time(payload)
-  sleep_until(scheduled_time) if scheduled_time
+If the exception is in the `discard_on` list:
 
-  Temporalio::Workflow.execute_activity(
-    AjRunnerActivity,
-    payload,
-    **activity_options(payload)
-  )
-end
-
-private
-
-def extract_scheduled_time(payload)
-  timestamp = payload[:scheduled_at] || payload["scheduled_at"]
-  return unless timestamp
-
-  Time.iso8601(timestamp)
-end
-
-def sleep_until(target_time)
-  now = Temporalio::Workflow.now
-  delay = target_time - now
-  return unless delay.positive?
-
-  Temporalio::Workflow.sleep(delay)
-end
+1. **Exception raised**: Job raises a fatal error (e.g., `PSP::FatalError`)
+2. **Activity catches error**: `AjRunnerActivity.execute` catches the exception
+3. **Check discard_on**: Activity calls `RetryMapper.discard_exception?(job_class, error)` → returns `true`
+4. **Non-retryable error path**:
+   - Activity raises `Temporalio::Activity::ApplicationError` with `non_retryable: true`
+   - Temporal receives activity failure marked as non-retryable
+   - Temporal marks activity as Failed (no retry)
+   - Workflow fails (activity failure bubbles up)
 ```
 
-**Critical points:**
-- Uses `Temporalio::Workflow.now` (not `Time.now`) for determinism
-- Calculates delay as `target_time - now`
-- Only sleeps if delay is positive (handles edge cases where scheduled_at is in the past)
-- The sleep is deterministic and will be recorded in workflow history as a timer event
+### Context: retry_on/discard_on Mapping (from Architecture)
 
-### Context: Adapter enqueue_at Method
+```markdown
+**Retry Policy Mapping:**
 
-The adapter's `enqueue_at` method (from `lib/activejob/temporal/adapter.rb`):
+The `RetryMapper` module translates ActiveJob's `retry_on` and `discard_on` declarations to Temporal's `RetryPolicy`:
 
-```ruby
-def enqueue_at(job, timestamp)
-  scheduled_time = Time.at(timestamp)
-  payload = build_payload(job, scheduled_at: scheduled_time)
+- **retry_on parameters**:
+  - `wait` (seconds or duration) → `initial_interval` in RetryPolicy
+  - `attempts` (integer or `:unlimited`) → `maximum_attempts` in RetryPolicy (0 for unlimited)
+  - `exceptions` (array of exception classes) → Determines which errors trigger retry
 
-  enqueue_with_payload(job, payload)
-end
+- **discard_on parameters**:
+  - `exceptions` (array of exception classes) → `non_retryable_error_types` in RetryPolicy
+  - Errors matching discard_on are converted to `ApplicationError(non_retryable: true)` by the activity
+
+- **Default values** (from configuration):
+  - `default_retry_initial_interval`: 30 seconds
+  - `default_retry_backoff`: 2.0 (exponential backoff coefficient)
+  - `default_retry_max_attempts`: 1 (no retries by default)
 ```
 
-**Critical points:**
-- Converts Unix timestamp to Time object
-- Passes `scheduled_at: scheduled_time` to `Payload.from_job`
-- The workflow is started immediately (no delay on Temporal side)
+### Context: Integration Test Patterns (from existing specs)
+
+The existing integration tests follow this pattern:
+
+1. **Setup**: Configure ActiveJob adapter to `:temporal`, reset test state
+2. **Enqueue job**: Use `TestJob.perform_later(arg)` or `TestJob.set(wait: ...).perform_later(arg)`
+3. **Start worker**: Create worker thread polling the "default" task queue
+4. **Wait for result**: Use `Timeout.timeout(10)` with polling loop checking for expected result
+5. **Verify result**: Assert job executed correctly (e.g., `TestJob.last_argument == expected`)
+6. **Verify workflow state**: Query workflow handle via `client.workflow_handle(workflow_id).describe`
+7. **Verify workflow history** (optional): Fetch workflow history to check for specific events (e.g., timer events, activity retries)
+8. **Cleanup**: Stop worker thread, restore adapter, reset test state
 
 ---
 
@@ -125,181 +122,148 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
+*   **File:** `spec/fixtures/sample_jobs.rb`
+    *   **Summary:** This file contains sample job classes for testing, including jobs with `retry_on` and `discard_on` configurations. It already defines `RetryableJob` (with `retry_on SampleJobError, wait: 60.seconds, attempts: 5`) and other sample jobs.
+    *   **Recommendation:** You SHOULD add a new test job class to this file that uses `retry_on StandardError, wait: 1, attempts: 3` as specified in the task. This job should use a global variable to track attempts and fail on the first attempt, then succeed on retry.
+    *   **Tip:** The file already uses global variables for tracking state (e.g., `TestJob.last_argument`). You can follow this pattern with `$attempt_count` for tracking retry attempts.
+
 *   **File:** `spec/integration/enqueue_spec.rb`
-    *   **Summary:** This file contains the working integration test for immediate job execution. It provides the complete pattern for worker management, result verification, and workflow status checking.
-    *   **Recommendation:** You MUST reuse the test patterns from this file:
-        - The `around` block for setup/cleanup
-        - The `start_worker` helper method
-        - The `stop_worker` helper method
-        - The `wait_for_result` polling mechanism
-        - Copy these helper methods directly into your new `scheduled_jobs_spec.rb` file
+    *   **Summary:** This file demonstrates the basic integration test pattern: setting up the adapter, starting a worker, enqueuing a job, waiting for results, and verifying workflow state.
+    *   **Recommendation:** You MUST follow the same test structure as this file. Use the `around` block to configure the adapter and clean up after the test. Use the same helper methods (`start_worker`, `stop_worker`, `wait_for_result`).
+    *   **Note:** This file uses `TestJob.last_argument` as a class-level variable to communicate between the activity and the test. Your retry test should use a similar pattern with `$test_result` as specified in the task.
+
+*   **File:** `spec/integration/scheduled_jobs_spec.rb`
+    *   **Summary:** This file demonstrates how to verify workflow history by fetching events and checking for specific event types (e.g., `:EVENT_TYPE_TIMER_STARTED`).
+    *   **Recommendation:** You MUST use a similar approach to verify activity retries. After the job succeeds, fetch the workflow history using `handle.fetch_history` and check for activity failure/retry events.
+    *   **Tip:** Look for event types related to activity execution and failure. The Temporal SDK's event types include things like `:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED`, `:EVENT_TYPE_ACTIVITY_TASK_FAILED`, `:EVENT_TYPE_ACTIVITY_TASK_STARTED`. You should verify that the activity failed at least once (indicating a retry occurred).
 
 *   **File:** `spec/support/temporal_test_server.rb`
-    *   **Summary:** This helper configures the Temporal test client and ensures connection to the test server.
-    *   **Recommendation:** You SHOULD use `TemporalTestHelper.client` to get the test client for querying workflow history.
+    *   **Summary:** This file provides the `TemporalTestHelper` module that manages Temporal test server connection and configuration. It handles client setup, namespace configuration, and connection verification.
+    *   **Recommendation:** You MUST use `TemporalTestHelper.client` to get the Temporal client for your test. The test server setup is handled automatically by RSpec hooks.
+    *   **Note:** The helper configures the test namespace as "test" and uses the target from `TEMPORAL_TEST_TARGET` env var (default: 127.0.0.1:7233).
+
+*   **File:** `lib/activejob/temporal/retry_mapper.rb`
+    *   **Summary:** This file implements the logic for translating `retry_on`/`discard_on` to Temporal's RetryPolicy. It inspects the job class's rescue handlers and extracts retry parameters.
+    *   **Recommendation:** Your test job MUST use ActiveJob's standard `retry_on` declaration. The RetryMapper will automatically convert this to the appropriate Temporal RetryPolicy when the job is enqueued.
+    *   **Important:** The `wait` parameter in `retry_on` is converted to seconds. Since you need `wait: 1` (second), you can write `retry_on StandardError, wait: 1, attempts: 3` or `retry_on StandardError, wait: 1.second, attempts: 3`.
+
+*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
+    *   **Summary:** This file defines the activity that executes the job. It catches exceptions, checks if they're discardable using `RetryMapper.discard_exception?`, and either re-raises (for retry) or raises `ApplicationError(non_retryable: true)` (for discard).
+    *   **Recommendation:** You don't need to modify this file. The existing error handling logic will correctly propagate the `StandardError` for retry.
+    *   **Note:** The activity sets `Thread.current[:aj_temporal_idempotency_key]` before execution and clears it in an ensure block. This is already implemented.
 
 *   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
-    *   **Summary:** The workflow implementation that handles scheduled execution via `sleep_until`.
-    *   **Key Implementation:**
-        - Extracts `scheduled_at` from payload
-        - Calculates delay using `Temporalio::Workflow.now`
-        - Calls `Temporalio::Workflow.sleep(delay)` if delay is positive
-        - This sleep is durable and creates a timer event in workflow history
-    *   **Recommendation:** You MUST verify that `Workflow.sleep` was called by inspecting the workflow history for a timer event.
+    *   **Summary:** This file defines the workflow that orchestrates job execution. It optionally sleeps (for scheduled jobs) and then executes the activity with the retry policy from the payload.
+    *   **Recommendation:** You don't need to modify this file. The workflow already passes the `retry_policy` from the payload to the activity execution options.
+    *   **Note:** The retry policy is added to the payload by the adapter (in `lib/activejob/temporal/adapter.rb` line 85).
 
 *   **File:** `lib/activejob/temporal/adapter.rb`
-    *   **Summary:** The adapter with `enqueue_at` method that accepts a Unix timestamp.
-    *   **Key Methods:**
-        - `enqueue_at(job, timestamp)`: Converts timestamp to Time, adds to payload, starts workflow immediately
-        - `build_workflow_id(job)`: Returns deterministic workflow ID in format `"ajwf:#{job.class.name}:#{job.job_id}"`
-    *   **Recommendation:** When calling `TestJob.set(wait: 5.seconds).perform_later(42)`, ActiveJob will convert the delay to a timestamp and call `enqueue_at`.
-
-*   **File:** `spec/fixtures/sample_jobs.rb`
-    *   **Summary:** Contains `TestJob` class with `last_argument` class variable for result verification.
-    *   **Current Implementation:**
-        ```ruby
-        class TestJob < ActiveJob::Base
-          class << self
-            attr_accessor :last_argument
-          end
-
-          queue_as :default
-
-          def perform(arg)
-            self.class.last_argument = arg
-          end
-        end
-        ```
-    *   **Recommendation:** You MUST use `TestJob` for the scheduled job test. Reset `TestJob.last_argument = nil` before and after each test.
-
-*   **File:** `lib/activejob/temporal/payload.rb`
-    *   **Summary:** Serializes job data including `scheduled_at` in ISO8601 format.
-    *   **Recommendation:** The payload handling is already implemented. Focus on verifying the workflow behavior.
+    *   **Summary:** This file defines the ActiveJob adapter that enqueues jobs to Temporal. It builds the payload, including the retry policy from `RetryMapper.for(job.class)`.
+    *   **Recommendation:** You don't need to modify this file. The adapter already integrates retry policy mapping when building the payload.
+    *   **Tip:** Line 85 shows: `payload[:retry_policy] = ActiveJob::Temporal::RetryMapper.for(job.class)`. This ensures your test job's `retry_on` configuration is automatically converted to a Temporal RetryPolicy.
 
 ### Implementation Tips & Notes
 
-*   **Test Structure Pattern:** Create a new file `spec/integration/scheduled_jobs_spec.rb` following this structure:
+*   **Tip:** Use a global variable for tracking retry attempts because the job instance is recreated on each retry attempt. A class variable on the job won't work as expected since each activity execution creates a new job instance.
     ```ruby
-    require "spec_helper"
-    require "timeout"
-    require "temporalio/worker"
-    require_relative "../fixtures/sample_jobs"
+    $attempt_count = 0  # Initialize before test
 
-    RSpec.describe "ActiveJob Temporal scheduled jobs", :integration do
-      let(:client) { TemporalTestHelper.client }
+    class RetryTestJob < ActiveJob::Base
+      retry_on StandardError, wait: 1, attempts: 3
 
-      around do |example|
-        original_adapter = ActiveJob::Base.queue_adapter
-        ActiveJob::Base.queue_adapter = :temporal
-        TestJob.last_argument = nil
-
-        example.run
-      ensure
-        ActiveJob::Base.queue_adapter = original_adapter
-        stop_worker(@worker_thread)
-        TestJob.last_argument = nil
-      end
-
-      # Your test case here
-    end
-    ```
-
-*   **Critical Test Flow:** The test must verify TWO things:
-    1. The job does NOT execute immediately (verify at T+1 second)
-    2. The job DOES execute after the delay (verify at T+6 seconds)
-
-*   **Timing Implementation:**
-    ```ruby
-    it "executes a scheduled job after delay" do
-      # Start worker FIRST (before enqueue)
-      @worker_thread = start_worker
-
-      # Enqueue job with 5 second delay
-      job = TestJob.set(wait: 5.seconds).perform_later(42)
-      workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
-
-      # Verify job does NOT execute immediately
-      sleep 1
-      expect(TestJob.last_argument).to be_nil
-
-      # Wait for scheduled execution (remaining ~9 seconds)
-      wait_for_result(42)
-
-      # Verify job executed
-      expect(TestJob.last_argument).to eq(42)
-
-      # Verify workflow completed with timer event
-      # (See workflow history verification below)
-    end
-    ```
-
-*   **Worker Helper Methods:** Copy these from `enqueue_spec.rb`:
-    ```ruby
-    def start_worker
-      Thread.new do
-        worker = Temporalio::Worker.new(
-          client: TemporalTestHelper.client,
-          task_queue: "default",
-          workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-          activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-        )
-        worker.run
-      end
-    end
-
-    def stop_worker(thread)
-      return unless thread&.alive?
-      thread.kill
-      thread.join(5)
-    end
-
-    def wait_for_result(expected)
-      Timeout.timeout(10) do
-        loop do
-          break if TestJob.last_argument == expected
-          sleep 0.1
-        end
+      def perform
+        $attempt_count += 1
+        raise StandardError, "Transient error" if $attempt_count == 1
+        $test_result = "success"
       end
     end
     ```
 
-*   **Workflow History Verification:** After the job completes, query workflow history:
-    ```ruby
-    description = client.workflow_handle(workflow_id).describe
+*   **Tip:** In your test's `around` block, reset `$attempt_count = 0` and `$test_result = nil` before running the test and in the ensure block to maintain test isolation.
 
-    # Verify workflow completed
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+*   **Tip:** The `wait: 1` means Temporal will wait 1 second between retries. With exponential backoff (coefficient 2.0), retries will happen at approximately: T+0s (initial failure), T+1s (retry 1 fails), T+3s (retry 2 succeeds). Your total test timeout of 10 seconds is sufficient.
 
-    # Note: Verifying timer events in workflow history depends on the Temporal Ruby SDK's API
-    # If the SDK provides access to history events, you can check for a timer event
-    # If not, the timing test (job didn't run immediately) is sufficient proof
-    ```
+*   **Tip:** To verify activity retries in workflow history, look for these event types:
+    - `:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED` - Activity was scheduled
+    - `:EVENT_TYPE_ACTIVITY_TASK_STARTED` - Activity started executing
+    - `:EVENT_TYPE_ACTIVITY_TASK_FAILED` - Activity failed (this indicates a retry occurred)
+    - `:EVENT_TYPE_ACTIVITY_TASK_COMPLETED` - Activity succeeded
 
-*   **Critical Timing Consideration:**
-    - The task specifies `wait: 5.seconds` but you should check at T+1 second and wait until T+6 seconds
-    - The actual timing might be slightly longer due to serialization, network latency, and worker polling
-    - That's why the test uses a 10-second total timeout in `wait_for_result`
+    You should see multiple `ACTIVITY_TASK_STARTED` events (indicating retries) and at least one `ACTIVITY_TASK_FAILED` event (the initial failure).
 
-*   **Start Worker BEFORE Enqueue:** This is critical to avoid a race condition. Start the worker first, then enqueue the job.
+*   **Warning:** Make sure to stop the worker thread in the `ensure` block of your `around` hook. Leaving worker threads running can cause test interference and resource leaks.
 
-*   **Test Isolation Requirements:**
-    - The test MUST clean up the worker thread in the `ensure` block
-    - The test MUST reset `TestJob.last_argument` to nil before and after
-    - The test MUST restore the original ActiveJob adapter
-    - Use unique job instances to avoid workflow ID conflicts
+*   **Note:** The existing `wait_for_result` helper in `enqueue_spec.rb` uses a polling loop with `sleep 0.1`. You should implement a similar helper in your spec or verify that your result variable is being set correctly by the activity execution.
 
-### Action Required
+*   **Important:** Your test MUST define a job that fails exactly once and then succeeds. Don't make it fail on all three attempts, as that would result in workflow failure rather than demonstrating successful retry behavior. The task description explicitly states: "fails with `raise StandardError` on first execution, then succeeds on retry".
 
-You need to create a new file `spec/integration/scheduled_jobs_spec.rb` that:
-1. Follows the test structure pattern from `enqueue_spec.rb`
-2. Enqueues a job with `TestJob.set(wait: 5.seconds).perform_later(42)`
-3. Verifies the job does NOT execute immediately (check at T+1 second)
-4. Verifies the job DOES execute after the delay (check around T+6 seconds)
-5. Queries workflow history to verify completion (timer event verification if SDK supports it)
-6. Properly cleans up worker and test state
+*   **Testing Best Practice:** After asserting the final result (`$test_result == "success"`), also assert that `$attempt_count == 2` to confirm the job executed exactly twice (initial failure + successful retry). This provides stronger verification of retry behavior.
 
----
+### Expected Test Structure
 
-## End of Task Briefing Package
+Your test file should follow this structure:
 
-You now have all the information needed to implement the scheduled jobs integration test. Follow the patterns from `enqueue_spec.rb`, verify both timing (no immediate execution) and workflow history (timer event), and ensure proper cleanup.
+```ruby
+# frozen_string_literal: true
+
+require "spec_helper"
+require "timeout"
+require "temporalio/worker"
+require_relative "../fixtures/sample_jobs"
+
+RSpec.describe "ActiveJob Temporal retry behavior", :integration do
+  let(:client) { TemporalTestHelper.client }
+
+  around do |example|
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :temporal
+    $attempt_count = 0
+    $test_result = nil
+
+    example.run
+  ensure
+    ActiveJob::Base.queue_adapter = original_adapter
+    stop_worker(@worker_thread)
+    $attempt_count = 0
+    $test_result = nil
+  end
+
+  it "retries transient errors according to retry_on configuration" do
+    # 1. Enqueue the job
+    # 2. Start worker
+    # 3. Wait for job to complete (with retries)
+    # 4. Assert $test_result == "success"
+    # 5. Assert $attempt_count == 2 (failed once, succeeded once)
+    # 6. Verify workflow status is COMPLETED
+    # 7. Verify workflow history shows activity retry events
+  end
+
+  private
+
+  def start_worker
+    # Similar to enqueue_spec.rb
+  end
+
+  def stop_worker(thread)
+    # Similar to enqueue_spec.rb
+  end
+
+  def wait_for_result(expected)
+    # Similar to enqueue_spec.rb, but checking $test_result
+  end
+end
+```
+
+### Common Pitfalls to Avoid
+
+1. **Don't use instance variables on the job class** - Each retry creates a new job instance, so instance variables won't persist across retries.
+
+2. **Don't forget to reset global state** - Always reset `$attempt_count` and `$test_result` in both the setup and cleanup phases to ensure test isolation.
+
+3. **Don't make the job fail on every attempt** - The job should fail only on the first attempt (when `$attempt_count == 1`), then succeed on subsequent attempts.
+
+4. **Don't use `wait: 60.seconds`** - The task specifies `wait: 1` (or 1 second) to keep test execution fast. Don't copy the 60-second wait from the existing `RetryableJob` fixture.
+
+5. **Don't forget to query workflow history** - One of the acceptance criteria is verifying workflow history shows activity failure + retry events. You must fetch the history and check event types.
+
+6. **Don't assume worker is immediately ready** - In integration tests with real Temporal, there's a small delay between starting the worker and it being ready to process tasks. The existing tests handle this correctly by using `wait_for_result` with a timeout.

@@ -6,130 +6,171 @@ The previous code submission did not pass verification. You must fix the followi
 
 ## Original Task Description
 
-Write integration test in `spec/integration/scheduled_jobs_spec.rb` that tests scheduled job execution using `set(wait:)`. Test flow: (1) Define test job. (2) Enqueue job with delay: `TestJob.set(wait: 5.seconds).perform_later(42)`. (3) Start worker. (4) Assert job does NOT execute immediately (wait 1 second, verify `$test_result` is still nil). (5) Wait for scheduled time (total 6 seconds from enqueue). (6) Assert job executed after delay. (7) Verify workflow used `Workflow.sleep` (check workflow history for timer event using Temporal test client). This test proves durable scheduled execution works.
+Write integration test in `spec/integration/retries_spec.rb` that tests retry behavior for transient errors. Test flow: (1) Define a job that fails with `raise StandardError` on first execution, then succeeds on retry (use a counter: `$attempt_count ||= 0; $attempt_count += 1; raise StandardError if $attempt_count == 1; $test_result = 'success'`). (2) Configure job with `retry_on StandardError, wait: 1, attempts: 3`. (3) Enqueue job. (4) Start worker. (5) Wait for job to execute, fail, retry, and succeed. (6) Assert `$test_result == 'success'`. (7) Verify workflow history shows activity retry (check for activity failure + retry events). This test proves retry_on mapping works and Temporal retries activities.
 
 ---
 
 ## Issues Detected
 
-*   **Critical Adapter Bug:** Both the new `scheduled_jobs_spec.rb` test AND the existing `enqueue_spec.rb` test are failing with the same error: `Failed to enqueue job TestJob: undefined method '_to_proto' for an instance of Hash`
-*   **Root Cause:** In `lib/activejob/temporal/adapter.rb:85`, the `build_payload` method adds a plain Ruby hash from `RetryMapper.for(job.class)` to `payload[:retry_policy]`. This hash is then passed to the workflow, which extracts it in `aj_workflow.rb:51-52` and passes it as `:retry` to the activity options. The Temporal Ruby SDK expects a proper `Temporalio::Client::RetryPolicy` object, not a plain hash.
-*   **Test File Structure:** The test file `spec/integration/scheduled_jobs_spec.rb` is correctly structured and follows the pattern from `enqueue_spec.rb`, but it cannot run due to the adapter bug.
-*   **Integration Test Cannot Start:** The test enqueue fails immediately with `TestJob.set(wait: 5.seconds).perform_later(42)` returning `false` instead of a job instance, which causes line 29 to fail with `undefined method 'job_id' for false`.
+*   **Critical: Test File Not Created:** The file `spec/integration/retries_spec.rb` does not exist. The task was not implemented at all.
+*   **Critical: Test Job Not Created:** The test job class with retry behavior was not added to `spec/fixtures/sample_jobs.rb`.
+*   **Linting Errors in aj_runner_activity.rb:** There are indentation and alignment errors in `lib/activejob/temporal/activities/aj_runner_activity.rb` at lines 88-95:
+    - Line 89: Indentation is using 1 space instead of 2 spaces
+    - Line 90: `elsif` is not aligned with `if`
+    - Line 93: `else` is not aligned with `if`
+    - Line 95: `end` is not aligned with `if`
 
 ---
 
 ## Best Approach to Fix
 
-You MUST fix the adapter's retry policy handling in `lib/activejob/temporal/adapter.rb` and `lib/activejob/temporal/workflows/aj_workflow.rb`:
+### Step 1: Fix Linting Errors in aj_runner_activity.rb
 
-### Step 1: Fix the Adapter (lib/activejob/temporal/adapter.rb)
+Fix the indentation in the `set_idempotency_key` method at lines 87-96. The corrected code should be:
 
-Remove the `retry_policy` from the payload. It should NOT be part of the workflow argument. Instead, keep it separate so it can be properly converted before passing to the activity.
-
-**Current buggy code (lines 83-87):**
 ```ruby
-def build_payload(job, scheduled_at: nil)
-  payload = ActiveJob::Temporal::Payload.from_job(job, scheduled_at: scheduled_at)
-  payload[:retry_policy] = ActiveJob::Temporal::RetryMapper.for(job.class)
-  payload
+def set_idempotency_key
+  workflow_id = if defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
+                  Temporalio::Activity::Context.current.info.workflow_id
+                elsif Temporalio::Activity.respond_to?(:info)
+                  # For unit tests with stub
+                  Temporalio::Activity.info&.workflow_id || "unknown-workflow"
+                else
+                  "unknown-workflow"
+                end
+  Thread.current[IDEMPOTENCY_KEY] = "#{workflow_id}/runner"
 end
 ```
 
-**Correct approach:**
+### Step 2: Add Test Job to sample_jobs.rb
+
+Add the following job class to `spec/fixtures/sample_jobs.rb` at the end of the file:
+
 ```ruby
-def build_payload(job, scheduled_at: nil)
-  ActiveJob::Temporal::Payload.from_job(job, scheduled_at: scheduled_at)
+class RetryTestJob < ActiveJob::Base
+  retry_on StandardError, wait: 1, attempts: 3
+
+  queue_as :default
+
+  def perform
+    $attempt_count ||= 0
+    $attempt_count += 1
+    raise StandardError, "Transient error" if $attempt_count == 1
+    $test_result = "success"
+  end
 end
 ```
 
-The retry policy hash should be passed separately to the workflow, or the workflow needs to handle the conversion.
+### Step 3: Create the Integration Test File
 
-### Step 2: Fix the Workflow Activity Options (lib/activejob/temporal/workflows/aj_workflow.rb)
-
-The workflow's `activity_options` method currently extracts `retry_policy` from the payload and passes it directly as `:retry`. This is incorrect because the Temporal SDK expects a `Temporalio::Client::RetryPolicy` object.
-
-**Current code (lines 47-54):**
-```ruby
-def activity_options(payload)
-  options = {
-    start_to_close_timeout: ActiveJob::Temporal.config.default_activity_timeout
-  }
-  retry_policy = payload[:retry_policy] || payload["retry_policy"]
-  options[:retry] = retry_policy if retry_policy
-  options
-end
-```
-
-**Options to fix:**
-
-**Option A (Recommended):** Store retry policy metadata in payload but construct the proper Temporalio retry policy object in the workflow:
+Create the file `spec/integration/retries_spec.rb` with the following content:
 
 ```ruby
-def activity_options(payload)
-  options = {
-    start_to_close_timeout: ActiveJob::Temporal.config.default_activity_timeout
-  }
+# frozen_string_literal: true
 
-  retry_policy_hash = payload[:retry_policy] || payload["retry_policy"]
-  if retry_policy_hash
-    # Convert hash to proper Temporalio retry policy object
-    options[:retry_policy] = build_retry_policy(retry_policy_hash)
+require "spec_helper"
+require "timeout"
+require "temporalio/worker"
+require_relative "../fixtures/sample_jobs"
+
+RSpec.describe "ActiveJob Temporal retry behavior", :integration do
+  let(:client) { TemporalTestHelper.client }
+
+  around do |example|
+    original_adapter = ActiveJob::Base.queue_adapter
+    ActiveJob::Base.queue_adapter = :temporal
+    $attempt_count = 0
+    $test_result = nil
+
+    example.run
+  ensure
+    ActiveJob::Base.queue_adapter = original_adapter
+    stop_worker(@worker_thread)
+    $attempt_count = 0
+    $test_result = nil
   end
 
-  options
-end
+  it "retries transient errors according to retry_on configuration" do
+    # Start worker first
+    @worker_thread = start_worker
 
-def build_retry_policy(hash)
-  Temporalio::Client::RetryPolicy.new(
-    initial_interval: hash[:initial_interval] || hash["initial_interval"],
-    backoff_coefficient: hash[:backoff_coefficient] || hash["backoff_coefficient"],
-    maximum_attempts: hash[:maximum_attempts] || hash["maximum_attempts"],
-    non_retryable_error_types: hash[:non_retryable_error_types] || hash["non_retryable_error_types"] || []
-  )
-end
-```
+    # Enqueue the job
+    job = RetryTestJob.perform_later
+    workflow_id = "ajwf:RetryTestJob:#{job.job_id}"
 
-**Option B:** Remove retry policy from payload entirely and have the workflow look it up directly:
+    # Wait for job to complete (with retries) - max 10 seconds
+    wait_for_result("success")
 
-```ruby
-def activity_options(payload)
-  options = {
-    start_to_close_timeout: ActiveJob::Temporal.config.default_activity_timeout
-  }
+    # Assert final result
+    expect($test_result).to eq("success")
 
-  # Look up job class and get retry policy
-  job_class_name = payload[:job_class] || payload["job_class"]
-  if job_class_name
-    job_class = Object.const_get(job_class_name)
-    retry_hash = ActiveJob::Temporal::RetryMapper.for(job_class)
-    options[:retry_policy] = build_retry_policy(retry_hash)
+    # Assert job executed exactly twice (failed once, succeeded once)
+    expect($attempt_count).to eq(2)
+
+    # Verify workflow completed successfully
+    description = client.workflow_handle(workflow_id).describe
+    expect(description.status.name).to eq("COMPLETED")
+
+    # Verify workflow history shows activity retry events
+    history = client.workflow_handle(workflow_id).fetch_history
+    events = history.events
+
+    # Look for activity failure event (indicates retry occurred)
+    activity_failed_events = events.select { |e| e.type == :EVENT_TYPE_ACTIVITY_TASK_FAILED }
+    expect(activity_failed_events.size).to be >= 1
+
+    # Look for multiple activity started events (indicates retries)
+    activity_started_events = events.select { |e| e.type == :EVENT_TYPE_ACTIVITY_TASK_STARTED }
+    expect(activity_started_events.size).to be >= 2
   end
 
-  options
+  private
+
+  def start_worker
+    Thread.new do
+      worker = Temporalio::Worker.new(
+        client: client,
+        task_queue: "default",
+        workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
+        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
+      )
+      worker.run
+    end
+  end
+
+  def stop_worker(thread)
+    return unless thread&.alive?
+
+    thread.kill
+    thread.join(5)
+  end
+
+  def wait_for_result(expected)
+    Timeout.timeout(10) do
+      loop do
+        break if $test_result == expected
+        sleep 0.1
+      end
+    end
+  end
 end
 ```
 
-### Step 3: Verify Tests Pass
+### Step 4: Run Tests to Verify
 
-After fixing the adapter and workflow:
+After implementing the fixes:
 
-1. Run `bundle exec rspec spec/integration/enqueue_spec.rb` to verify the existing test passes
-2. Run `bundle exec rspec spec/integration/scheduled_jobs_spec.rb` to verify the new test passes
-3. Ensure both tests show proper workflow execution and timer events
-
-### Step 4: Address Any Additional Issues
-
-If there are other issues after fixing the retry policy bug, address them systematically:
-- Check if the Temporal SDK method is `retry_policy` or just `retry`
-- Verify the correct parameter names for RetryPolicy constructor
-- Check the Temporal Ruby SDK documentation if needed
+1. Run `bundle exec rubocop` to verify linting errors are fixed
+2. Run `bundle exec rspec spec/integration/retries_spec.rb` to verify the test passes
+3. Ensure the test properly demonstrates retry behavior with activity failures
 
 ---
 
-## Additional Context
+## Key Requirements to Remember
 
-- The test file structure in `spec/integration/scheduled_jobs_spec.rb` is correct
-- Both integration tests require the Temporal server to be running with the "test" namespace
-- The docker-compose.yml is present and the test namespace has been created
-- The fix should allow BOTH `enqueue_spec.rb` AND `scheduled_jobs_spec.rb` to pass
+- The job MUST fail exactly once (when `$attempt_count == 1`), then succeed on retry
+- The test MUST use global variables (`$attempt_count` and `$test_result`) because job instances are recreated on retry
+- The test MUST verify workflow history contains activity failure events
+- The test MUST verify the final attempt count is 2 (initial failure + successful retry)
+- The `wait: 1` configuration means 1 second between retries, keeping test execution fast
+- The test MUST be isolated (reset global variables in setup and cleanup)

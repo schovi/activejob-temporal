@@ -85,7 +85,14 @@ module ActiveJob
         end
 
         def set_idempotency_key
-          workflow_id = Temporalio::Activity.info&.workflow_id || "unknown-workflow"
+          workflow_id = if defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
+                         Temporalio::Activity::Context.current.info.workflow_id
+                       elsif Temporalio::Activity.respond_to?(:info)
+                         # For unit tests with stub
+                         Temporalio::Activity.info&.workflow_id || "unknown-workflow"
+                       else
+                         "unknown-workflow"
+                       end
           Thread.current[IDEMPOTENCY_KEY] = "#{workflow_id}/runner"
         end
 

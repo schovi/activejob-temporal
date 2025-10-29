@@ -67,23 +67,25 @@ module ActiveJob
       def enqueue_with_payload(job, payload)
         workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
         task_queue = ActiveJob::Temporal::Adapter.resolve_task_queue(job)
-        search_attributes = ActiveJob::Temporal::SearchAttributes.for(job)
         client = ActiveJob::Temporal.client
 
         options = {
           id: workflow_id,
           task_queue: task_queue,
-          id_conflict_policy: :reject,
-          search_attributes: search_attributes
+          id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL
         }
+
+        # Add search attributes if configured
+        if ActiveJob::Temporal.config.respond_to?(:enable_search_attributes) && ActiveJob::Temporal.config.enable_search_attributes
+          search_attributes = ActiveJob::Temporal::SearchAttributes.for(job)
+          options[:search_attributes] = search_attributes
+        end
 
         start_workflow(client, payload, options, job)
       end
 
       def build_payload(job, scheduled_at: nil)
-        payload = ActiveJob::Temporal::Payload.from_job(job, scheduled_at: scheduled_at)
-        payload[:retry_policy] = ActiveJob::Temporal::RetryMapper.for(job.class)
-        payload
+        ActiveJob::Temporal::Payload.from_job(job, scheduled_at: scheduled_at)
       end
 
       def start_workflow(client, payload, options, job)

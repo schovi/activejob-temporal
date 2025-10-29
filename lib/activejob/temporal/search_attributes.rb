@@ -6,15 +6,26 @@ module ActiveJob
       extend self
 
       def for(job)
-        attributes = {
-          ajClass: job.class.name,
-          ajQueue: job.queue_name || "default",
-          ajJobId: job.job_id,
-          ajEnqueuedAt: Time.now
-        }
+        # Create Temporal search attributes with typed keys
+        attributes = Temporalio::SearchAttributes.new
+
+        # Define keys with proper types
+        aj_class_key = Temporalio::SearchAttributes::Key.new("ajClass", Temporalio::SearchAttributes::IndexedValueType::KEYWORD)
+        aj_queue_key = Temporalio::SearchAttributes::Key.new("ajQueue", Temporalio::SearchAttributes::IndexedValueType::KEYWORD)
+        aj_job_id_key = Temporalio::SearchAttributes::Key.new("ajJobId", Temporalio::SearchAttributes::IndexedValueType::KEYWORD)
+        aj_enqueued_at_key = Temporalio::SearchAttributes::Key.new("ajEnqueuedAt", Temporalio::SearchAttributes::IndexedValueType::TIME)
+
+        # Set attribute values
+        attributes[aj_class_key] = job.class.name
+        attributes[aj_queue_key] = job.queue_name || "default"
+        attributes[aj_job_id_key] = job.job_id
+        attributes[aj_enqueued_at_key] = Time.now
 
         tenant_id = extract_tenant_id(job.arguments)
-        attributes[:ajTenantId] = tenant_id if tenant_id
+        if tenant_id
+          aj_tenant_id_key = Temporalio::SearchAttributes::Key.new("ajTenantId", Temporalio::SearchAttributes::IndexedValueType::INTEGER)
+          attributes[aj_tenant_id_key] = tenant_id
+        end
 
         attributes
       end
