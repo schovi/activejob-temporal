@@ -10,27 +10,23 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I5.T8",
+  "task_id": "I5.T9",
   "iteration_id": "I5",
   "iteration_goal": "Complete comprehensive documentation (README, API docs, migration guide), create example Rails app, finalize gemspec, prepare CHANGELOG, and ensure gem is ready for v0.1.0 release.",
-  "description": "(Optional but recommended) Create a GitHub Actions CI workflow in .github/workflows/ci.yml to automate testing and quality checks. The workflow should: (1) Trigger on push and pull_request events. (2) Run on multiple Ruby versions (3.2, 3.3). (3) Set up Ruby, install dependencies, run Rubocop, run tests, build gem. (4) Upload coverage report (optional). Ensure workflow runs successfully on GitHub. Add CI badge to README if configured. This task is optional for v0.1 but highly recommended for open-source projects.",
+  "description": "Create a git tag for the v0.1.0 release. Ensure all code is committed and pushed to the main branch. Create an annotated tag: `git tag -a v0.1.0 -m \"Release v0.1.0 - Initial release of activejob-temporal gem\"`. Push tag to remote: `git push origin v0.1.0`. If using GitHub, create a release from the tag with release notes copied from CHANGELOG.md (v0.1.0 section). Verify tag is visible on GitHub (or Git hosting platform). This marks the official v0.1.0 release in version control.",
   "agent_type_hint": "SetupAgent",
-  "inputs": "GitHub Actions documentation, Ruby CI workflow examples, project structure",
-  "target_files": [
-    ".github/workflows/ci.yml",
-    "README.md"
-  ],
+  "inputs": "Git tagging best practices, SemVer, CHANGELOG content",
+  "target_files": [],
   "input_files": [
-    "Gemfile",
-    "Rakefile",
-    "activejob-temporal.gemspec"
+    "CHANGELOG.md"
   ],
-  "deliverables": "Working GitHub Actions CI workflow (optional)",
-  "acceptance_criteria": ".github/workflows/ci.yml exists with all required jobs; Workflow triggers on push and pull_request; Workflow runs on Ruby 3.2 and 3.3 (matrix); Workflow runs bundle install, rubocop, rake spec, gem build; Workflow uploads coverage (optional); CI badge added to README (if workflow created); Manual test: Pushing to GitHub triggers workflow and it succeeds",
+  "deliverables": "Git tag `v0.1.0` created and pushed to remote",
+  "acceptance_criteria": "All code is committed and pushed to main branch; Annotated tag `v0.1.0` created locally: `git tag -a v0.1.0 -m \"Release v0.1.0 ...\"`; Tag pushed to remote: `git push origin v0.1.0`; Tag is visible in `git tag -l` and on GitHub (if applicable); GitHub release created from tag with CHANGELOG notes (if using GitHub)",
   "dependencies": [
-    "I5.T7"
+    "I5.T7",
+    "I5.T6"
   ],
-  "parallelizable": true,
+  "parallelizable": false,
   "done": false
 }
 ```
@@ -41,109 +37,90 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: ci-cd-strategy (from 03_Verification_and_Glossary.md)
+### Context: task-i5-t9 (from 02_Iteration_I5.md)
 
-**CI/CD Strategy**
+```markdown
+<!-- anchor: task-i5-t9 -->
+*   **Task 5.9: Tag v0.1.0 Release (Git)**
+    *   **Task ID:** `I5.T9`
+    *   **Description:** Create a git tag for the v0.1.0 release. Ensure all code is committed and pushed to the main branch. Create an annotated tag: `git tag -a v0.1.0 -m "Release v0.1.0 - Initial release of activejob-temporal gem"`. Push tag to remote: `git push origin v0.1.0`. If using GitHub, create a release from the tag with release notes copied from CHANGELOG.md (v0.1.0 section). Verify tag is visible on GitHub (or Git hosting platform). This marks the official v0.1.0 release in version control.
+    *   **Agent Type Hint:** `SetupAgent`
+    *   **Inputs:** Git tagging best practices, SemVer, CHANGELOG content
+    *   **Input Files:**
+        - `CHANGELOG.md`
+    *   **Target Files:** None (Git operation, creates tag in repository)
+    *   **Deliverables:** Git tag `v0.1.0` created and pushed to remote
+    *   **Acceptance Criteria:**
+        - All code is committed and pushed to main branch
+        - Annotated tag `v0.1.0` created locally: `git tag -a v0.1.0 -m "Release v0.1.0 ..."`
+        - Tag pushed to remote: `git push origin v0.1.0`
+        - Tag is visible in `git tag -l` and on GitHub (if applicable)
+        - GitHub release created from tag with CHANGELOG notes (if using GitHub)
+    *   **Dependencies:** I5.T7 (all quality checks must pass), I5.T6 (CHANGELOG must be complete)
+    *   **Parallelizable:** No (final release step)
+```
 
-The gem uses GitHub Actions for continuous integration and delivery (optional but recommended for v0.1).
+### Context: task-i5-t6 (from 02_Iteration_I5.md)
 
-**CI Pipeline:**
-1. **Trigger:** Push to main branch, pull requests
-2. **Matrix:** Ruby 3.2, 3.3
-3. **Steps:**
-   - Set up Ruby environment
-   - Install dependencies (`bundle install`)
-   - Run linter (`rake rubocop`)
-   - Run unit tests (`rake spec:unit`)
-   - Run integration tests (`rake spec:integration` with Temporal test server)
-   - Build gem (`gem build activejob-temporal.gemspec`)
-   - Upload coverage report to Codecov or similar (optional)
+```markdown
+<!-- anchor: task-i5-t6 -->
+*   **Task 5.6: Write CHANGELOG for v0.1.0**
+    *   **Task ID:** `I5.T6`
+    *   **Description:** Update `CHANGELOG.md` with detailed release notes for v0.1.0. Follow Keep a Changelog format (https://keepachangelog.com/). Include the following sections for v0.1.0: (1) **[0.1.0] - 2025-10-25** (use actual release date). (2) **Added**: List all new features: ActiveJob adapter, AjWorkflow, AjRunnerActivity, enqueue/enqueue_at support, retry_on/discard_on mapping, cancellation API, Search Attributes, worker bootstrap script, configuration module, payload serialization, comprehensive logging, OpenTelemetry tracing (optional), transactional enqueue, extensive test suite, documentation (README, YARD, migration guide), example Rails app. (3) **Changed**: None (initial release). (4) **Deprecated**: None. (5) **Removed**: None. (6) **Fixed**: None (initial release). (7) **Security**: Note payload size limit (250KB) to prevent DoS. Keep entries concise and user-focused (what changed for users, not internal implementation details). Add links to GitHub compare view if public repo.
+    *   **Agent Type Hint:** `DocumentationAgent`
+    *   **Inputs:** Keep a Changelog format, all features implemented in I1-I5, release date
+    *   **Input Files:**
+        - `CHANGELOG.md`
+    *   **Target Files:**
+        - `CHANGELOG.md` (updated with v0.1.0 entry)
+    *   **Deliverables:** Complete CHANGELOG with v0.1.0 release notes
+    *   **Acceptance Criteria:**
+        - `CHANGELOG.md` includes a `[0.1.0]` section with release date
+        - **Added** section lists all major features (adapter, workflow, activity, enqueue, retries, cancellation, search attributes, worker, docs, tests, examples)
+        - Entries are user-focused and concise
+        - CHANGELOG follows Keep a Changelog format
+        - Markdown is properly formatted
+    *   **Dependencies:** All features from I1-I5 (need complete feature list)
+    *   **Parallelizable:** Yes (can run in parallel with I5.T5)
+```
 
-**CD Pipeline (optional for v0.1):**
-- Triggered on git tag creation (`v*`)
-- Build and publish gem to RubyGems.org
+### Context: task-i5-t7 (from 02_Iteration_I5.md)
 
-**Quality Gates:**
-- All tests must pass
-- Rubocop must pass with zero offenses
-- Code coverage must be >= 90%
-
-**Badges:** Add CI status badge to README for visibility.
-
-### Context: code-quality-gates (from 03_Verification_and_Glossary.md)
-
-**Code Quality Gates**
-
-The following quality gates must pass before code can be merged to the main branch:
-
-1. **Rubocop:** Zero offenses
-   - Command: `rake rubocop`
-   - Configuration: `.rubocop.yml` with Ruby 3.2+ target, line length 120, custom excludes
-
-2. **Test Coverage:** >= 90%
-   - Tool: SimpleCov
-   - Coverage types: Line coverage and branch coverage
-   - Report format: HTML in `coverage/index.html`
-
-3. **YARD Documentation:** All public APIs documented
-   - Command: `rake yard`
-   - No undocumented methods or classes
-   - Generated docs in `doc/` directory
-
-4. **Dependency Scanning:** No known vulnerabilities
-   - Tool: `bundle audit` (optional but recommended)
-   - Run in CI to fail on high-severity CVEs
-
-5. **Payload Size Validation:** No payloads exceed `max_payload_size_kb`
-   - Enforced at runtime via `Payload` module
-   - Raises `ActiveJob::SerializationError` if exceeded
-
-**Pre-commit Hooks (optional):** Developers can use Git hooks to run Rubocop and tests locally before pushing.
-
-### Context: testing-levels (from 03_Verification_and_Glossary.md)
-
-**Testing Strategy**
-
-The gem employs a comprehensive testing strategy across multiple levels:
-
-1. **Unit Tests**
-   - Location: `spec/unit/`
-   - Focus: Individual classes and modules in isolation
-   - Mocking: External dependencies (Temporal client, Rails, ActiveRecord) are mocked/stubbed
-   - Coverage target: >= 90% for each module
-   - Run command: `rake spec:unit`
-
-2. **Integration Tests**
-   - Location: `spec/integration/`
-   - Focus: End-to-end flows with real Temporal test server
-   - Setup: Temporal test server started in `before(:suite)` hook
-   - Scenarios tested:
-     - Immediate job execution
-     - Scheduled job execution (sleep)
-     - Retry behavior (transient errors)
-     - Discard behavior (non-retryable errors)
-     - Cancellation with heartbeating
-     - Search attributes persistence
-   - Run command: `rake spec:integration`
-
-3. **Manual Testing**
-   - Location: `docs/worker_setup.md`, example Rails app
-   - Focus: Real-world usage scenarios, developer experience
-   - Checklist:
-     - Start Temporal server
-     - Configure adapter
-     - Enqueue job
-     - Start worker
-     - Verify execution in Temporal UI
-     - Cancel job
-     - Verify search attributes
-
-4. **Smoke Testing**
-   - Performed after gem build
-   - Steps:
-     - Install gem locally: `gem install activejob-temporal-0.1.0.gem`
-     - Require gem in irb: `require 'activejob-temporal'`
-     - Verify version: `ActiveJob::Temporal::VERSION`
+```markdown
+<!-- anchor: task-i5-t7 -->
+*   **Task 5.7: Run Final Quality Checks**
+    *   **Task ID:** `I5.T7`
+    *   **Description:** Perform final quality checks across the entire project before release. Run the following commands and ensure all pass: (1) `bundle install` (verify Gemfile.lock is up to date). (2) `rake rubocop` (zero offenses). (3) `rake spec` (all unit and integration tests pass). (4) `rake yard` (YARD docs generate without warnings). (5) `gem build activejob-temporal.gemspec` (gem builds successfully). (6) Review coverage report (>= 90% coverage). (7) Manual smoke tests: Install gem locally, run example Rails app, enqueue and execute jobs, verify worker runs, check Temporal UI for workflows. (8) Review all documentation (README, migration guide, API docs) for accuracy and completeness. (9) Check for any TODO comments or FIXMEs in code (resolve or document). (10) Verify LICENSE file is present and correct. Create a checklist in `docs/release_checklist.md` with all these items and mark as complete. Acceptance: All quality checks pass, checklist is complete.
+    *   **Agent Type Hint:** `BackendAgent`
+    *   **Inputs:** All project files, quality check commands, release best practices
+    *   **Input Files:**
+        - `Gemfile`
+        - `Rakefile`
+        - `activejob-temporal.gemspec`
+        - `README.md`
+        - `docs/migration_guide.md`
+        - All code in `lib/`, `spec/`, `bin/`
+    *   **Target Files:**
+        - `docs/release_checklist.md` (new checklist)
+        - `Gemfile.lock` (updated if needed)
+        - All files (final review and fixes)
+    *   **Deliverables:** Complete release checklist, all quality checks passing, gem ready for release
+    *   **Acceptance Criteria:**
+        - `docs/release_checklist.md` exists with all quality check items
+        - `bundle install` succeeds
+        - `rake rubocop` exits with status 0
+        - `rake spec` exits with status 0 (all tests pass)
+        - `rake yard` succeeds without warnings
+        - `gem build activejob-temporal.gemspec` succeeds
+        - Coverage report shows >= 90% coverage
+        - Manual smoke tests with example app succeed (jobs enqueue and execute)
+        - All documentation reviewed and accurate
+        - No unresolved TODO/FIXME comments in code
+        - LICENSE file present
+        - Checklist is marked complete
+    *   **Dependencies:** I5.T1, I5.T2, I5.T3, I5.T4, I5.T5, I5.T6 (all documentation and code must be finalized)
+    *   **Parallelizable:** No (final verification step, must run last)
+```
 
 ---
 
@@ -153,121 +130,122 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
-*   **File:** `Rakefile`
-    *   **Summary:** This file defines Rake tasks for the project, including `spec` (with `:unit` and `:integration` subtasks), `rubocop`, `yard`, and a `default` task that runs both rubocop and spec.
-    *   **Recommendation:** Your GitHub Actions workflow MUST use these exact rake tasks: `rake rubocop`, `rake spec:unit`, `rake spec:integration`, and `gem build activejob-temporal.gemspec`. These are the authoritative commands for the project.
-    *   **Note:** The `spec` task runs both unit and integration tests. For CI, you may want to run them separately to get better failure isolation.
+*   **File:** `CHANGELOG.md`
+    *   **Summary:** This file contains the complete v0.1.0 release notes in Keep a Changelog format. The release is dated 2025-10-29 and includes comprehensive Added and Security sections.
+    *   **Recommendation:** You MUST use the release notes from this file when creating the GitHub release. The file is already complete and properly formatted.
+
+*   **File:** `lib/activejob/temporal/version.rb`
+    *   **Summary:** Defines the VERSION constant as "0.1.0" in the ActiveJob::Temporal module.
+    *   **Recommendation:** This confirms the version number to use in your git tag. The version is already set correctly.
 
 *   **File:** `activejob-temporal.gemspec`
-    *   **Summary:** This file defines the gem specification including dependencies and metadata. It specifies Ruby >= 3.2 as the minimum required version.
-    *   **Recommendation:** Your CI matrix MUST test Ruby 3.2 and 3.3 as specified in the task. The gemspec already defines `spec.required_ruby_version = ">= 3.2"`, so these are the correct versions to test.
-    *   **Note:** Development dependencies include `rake`, `rspec`, `rubocop`, `simplecov`, and `yard`. These will be installed by `bundle install` in CI.
+    *   **Summary:** The gem specification file containing metadata, dependencies, and build configuration. Version is pulled from the version.rb file.
+    *   **Recommendation:** This confirms the gem is ready for release. The gemspec indicates the project homepage is at https://github.com/temporalio/activejob-temporal
 
-*   **File:** `.rubocop.yml`
-    *   **Summary:** This file configures Rubocop with Ruby 3.2 target, 120 character line length, and various custom rules. It excludes `tmp/`, `vendor/`, `pkg/`, and `examples/` directories.
-    *   **Recommendation:** The `rake rubocop` command will use this configuration automatically. No need to pass additional flags in CI.
-
-*   **File:** `spec/spec_helper.rb`
-    *   **Summary:** This file configures RSpec and SimpleCov. SimpleCov is set up with branch coverage enabled and result merging for separate test runs (unit + integration).
-    *   **Recommendation:** When running unit and integration tests separately in CI, SimpleCov will automatically merge the results. The coverage report will be generated in `coverage/index.html`.
-    *   **Note:** The `TEST_SUITE` environment variable is used to distinguish between unit and integration test runs for SimpleCov result merging.
-
-*   **File:** `README.md`
-    *   **Summary:** The comprehensive README already has placeholder badges at the top (lines 5-6): Gem Version and License badges. These are the correct location to add a CI badge.
-    *   **Recommendation:** If you create the CI workflow, you SHOULD add a GitHub Actions CI badge immediately after the existing badges on line 7. Use the standard format: `[![CI](https://github.com/temporalio/activejob-temporal/actions/workflows/ci.yml/badge.svg)](https://github.com/temporalio/activejob-temporal/actions/workflows/ci.yml)`
-    *   **Note:** The README mentions that the gem is "under active development" (line 8), which makes CI even more valuable for catching regressions.
+*   **File:** `docs/release_checklist.md`
+    *   **Summary:** A comprehensive release checklist showing all quality checks have been completed. Status shows "APPROVED" with all checkboxes marked complete. Date shows 2025-10-29.
+    *   **Recommendation:** This confirms that all prerequisites (I5.T7) have been satisfied. The gem has passed all quality checks and is ready for tagging.
 
 ### Implementation Tips & Notes
 
-*   **Tip:** For GitHub Actions Ruby setup, use the official `ruby/setup-ruby@v1` action. It has built-in caching for bundler dependencies, which will speed up CI runs.
+*   **Tip:** Before creating the tag, you MUST first commit the current outstanding change. Git status shows `.codemachine/template.json` has been modified but not staged. You should commit this file first with a message like "chore: update codemachine template configuration".
 
-*   **Tip:** The project uses SimpleCov with branch coverage enabled. The coverage report is generated in `coverage/` directory. You can optionally upload this to a service like Codecov or Coveralls, but this is marked as "optional" in the acceptance criteria.
+*   **Note:** Git remote is not currently configured (`git remote -v` returned no output). This means you are working with a local repository without a remote. You will need to handle this gracefully:
+    1. Create the annotated tag locally
+    2. Try to push to remote, but if no remote exists, document this fact
+    3. Skip the GitHub release creation if there's no remote configured
 
-*   **Tip:** For integration tests, the project requires a Temporal test server. Check if `spec/support/temporal_test_server.rb` handles this automatically or if the CI needs special setup. Based on the plan context, the test server should be started in RSpec's `before(:suite)` hook, so it should "just work" when running `rake spec:integration`.
+*   **Warning:** The current branch is "master" (confirmed by git status). Make sure all changes are committed before creating the tag, as the tag will point to the current HEAD commit.
 
-*   **Warning:** The `.github/` directory does NOT exist yet. You MUST create both the directory structure (`.github/workflows/`) and the `ci.yml` file from scratch.
+*   **Tip:** No existing tags exist in the repository (git tag -l returned empty). This will be the first tag created for the project.
 
-*   **Note:** The task is marked as "optional but recommended" in both the task description and acceptance criteria. However, since it's a good practice for open-source projects and will help catch issues early, you SHOULD implement it.
+*   **Important:** The CHANGELOG.md file shows the release date as 2025-10-29. Use this date consistently in the tag message and any release notes.
 
-*   **Note:** The workflow should trigger on both `push` and `pull_request` events. For `push`, you probably want to limit it to the main branch (or `master` if that's what the repo uses). For `pull_request`, it should run on all PRs.
+*   **Git Tagging Best Practice:** For an annotated tag with full release information, use this format:
+    ```bash
+    git tag -a v0.1.0 -m "Release v0.1.0 - Initial release of activejob-temporal gem
 
-*   **Note:** The gemspec homepage points to `https://github.com/temporalio/activejob-temporal`, so the CI badge URL should use this repository path.
+    First production-ready release of the activejob-temporal gem, providing
+    a Temporal-backed adapter for Rails ActiveJob.
 
-*   **Note:** Ruby 3.2 and 3.3 are the versions to test in the matrix. Don't add 3.1 or 3.4 unless explicitly requested.
+    See CHANGELOG.md for full release notes."
+    ```
 
-*   **Note:** The workflow should have clear step names and use proper GitHub Actions syntax. Follow GitHub Actions best practices for Ruby projects.
+*   **Error Handling:** If `git push origin v0.1.0` fails because there's no remote configured, you should:
+    1. Log this clearly in your output
+    2. Provide instructions for the user to add a remote if needed
+    3. Still mark the task as successful since the local tag was created (which is the core requirement)
 
-*   **Security Note:** When uploading coverage reports, ensure you don't expose any sensitive information. SimpleCov's HTML reports should be safe, but if you use a coverage service, use their official GitHub Action and follow their security guidelines.
+### CHANGELOG Content for Release Notes
 
-### Example CI Workflow Structure
+```markdown
+## [0.1.0] - 2025-10-29
 
-Here's a recommended structure for the CI workflow:
+### Added
+- ActiveJob adapter backed by Temporal workflows as a drop-in replacement for existing adapters
+- Immediate job execution via `perform_later`
+- Scheduled job execution with `set(wait:)` and `set(wait_until:)`
+- Automatic retry policy mapping from `retry_on` declarations with exponential backoff
+- Automatic discard policy handling from `discard_on` declarations
+- Job cancellation API via `ActiveJob::Temporal.cancel(JobClass, job_id)`
+- Search attributes for filtering and debugging jobs in Temporal UI (job class, queue, job ID, tenant ID, enqueue timestamp)
+- Transactional enqueue support with automatic deferral until database transaction commits
+- GlobalID serialization support for ActiveRecord models and other GlobalID-compatible objects
+- Configurable activity timeouts and retry policies (global and per-job)
+- Temporal worker executable (`bin/temporal-worker`) for running workers
+- Structured JSON logging for observability integration
+- Comprehensive documentation including README, API documentation (YARD), migration guide, and example Rails application
 
-```yaml
-name: CI
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
-
-jobs:
-  test:
-    name: Ruby ${{ matrix.ruby }} - ${{ matrix.test-suite }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        ruby: ['3.2', '3.3']
-        test-suite: ['unit', 'integration']
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Ruby ${{ matrix.ruby }}
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: ${{ matrix.ruby }}
-          bundler-cache: true
-
-      - name: Run Rubocop
-        run: bundle exec rake rubocop
-
-      - name: Run ${{ matrix.test-suite }} tests
-        run: bundle exec rake spec:${{ matrix.test-suite }}
-
-      - name: Build gem
-        run: gem build activejob-temporal.gemspec
-
-      # Optional: Upload coverage
-      - name: Upload coverage (optional)
-        if: matrix.test-suite == 'integration' && matrix.ruby == '3.3'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage/
+### Security
+- Payload size limit of 250KB enforced to prevent denial-of-service attacks from oversized job payloads
 ```
 
-**Note:** You may want to adjust this based on whether you want to run rubocop and gem build for every matrix combination or just once. The example above runs them for each combination for simplicity, but you could optimize by creating a separate job for linting.
+### Step-by-Step Execution Plan
 
-### Acceptance Criteria Checklist
+1. **Stage and commit outstanding changes:**
+   ```bash
+   git add .codemachine/template.json
+   git commit -m "chore: update codemachine template configuration"
+   ```
 
-Make sure your implementation satisfies all of these:
+2. **Verify current state:**
+   ```bash
+   git status  # Should show "nothing to commit, working tree clean"
+   git log --oneline -1  # Confirm latest commit
+   ```
 
-- [ ] `.github/workflows/ci.yml` exists with all required jobs
-- [ ] Workflow triggers on `push` and `pull_request` events
-- [ ] Workflow runs on Ruby 3.2 and 3.3 (matrix)
-- [ ] Workflow runs `bundle install` (via `ruby/setup-ruby` with `bundler-cache: true`)
-- [ ] Workflow runs `rubocop` (via `rake rubocop` or `bundle exec rake rubocop`)
-- [ ] Workflow runs tests (via `rake spec` or separate `rake spec:unit` and `rake spec:integration`)
-- [ ] Workflow runs `gem build activejob-temporal.gemspec`
-- [ ] Workflow uploads coverage report (optional, but nice to have)
-- [ ] CI badge added to README (after line 6, before line 8)
-- [ ] Manual test: Pushing to GitHub triggers workflow and it succeeds (this will happen after the workflow is merged)
+3. **Create annotated tag:**
+   ```bash
+   git tag -a v0.1.0 -m "Release v0.1.0 - Initial release of activejob-temporal gem
 
-### Final Notes
+   First production-ready release of the activejob-temporal gem, providing
+   a Temporal-backed adapter for Rails ActiveJob.
 
-This is an optional task, but implementing it will significantly improve the project's maintainability and give confidence to potential users that the gem is well-tested. Since all the required tasks (I5.T1-I5.T7) are complete, the gem is ready for CI setup.
+   See CHANGELOG.md for full release notes."
+   ```
 
-Good luck with the implementation!
+4. **Verify tag was created:**
+   ```bash
+   git tag -l  # Should show "v0.1.0"
+   git show v0.1.0  # Should display tag details and commit
+   ```
+
+5. **Attempt to push tag to remote:**
+   ```bash
+   git push origin v0.1.0 || echo "Note: No remote configured. Tag created locally. To push, first add a remote: git remote add origin <repository-url>"
+   ```
+
+6. **Output final status and instructions:**
+   - Confirm tag v0.1.0 was created successfully
+   - If no remote exists, provide clear instructions for adding one and pushing the tag
+   - Explain that GitHub release creation requires a remote repository and provide manual instructions
+
+### Acceptance Verification
+
+After completing the above steps, verify:
+- ✅ `.codemachine/template.json` changes are committed
+- ✅ Working directory is clean (no uncommitted changes)
+- ✅ Tag `v0.1.0` exists locally (`git tag -l` shows it)
+- ✅ Tag is annotated with proper message (`git show v0.1.0` displays message)
+- ⚠️  Tag push to remote (only if remote exists)
+- ℹ️  GitHub release (manual step required if remote exists)
