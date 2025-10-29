@@ -57,7 +57,7 @@
     "acceptance_criteria": "Example Rails app exists in examples/basic_rails_app/; bundle install works in example app (gem is loaded from local path); Temporal adapter is configured in initializers; Sample jobs exist: SimpleJob, ScheduledJob, RetryableJob, CancellableJob; Jobs controller exists with enqueue actions; Routes are configured for job enqueue endpoints; Example app README explains setup and usage; Manual test: Running example app with Temporal test server, all job types can be enqueued and execute successfully; Docker Compose file (if included) starts Temporal server successfully",
     "dependencies": ["I5.T1"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I5.T5",
