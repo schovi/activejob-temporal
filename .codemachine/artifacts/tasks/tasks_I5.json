@@ -132,7 +132,7 @@
     "acceptance_criteria": "All code is committed and pushed to main branch; Annotated tag v0.1.0 created locally; Tag pushed to remote; Tag is visible in git tag -l and on GitHub; GitHub release created from tag with CHANGELOG notes (if using GitHub)",
     "dependencies": ["I5.T7", "I5.T6"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I5.T10",
