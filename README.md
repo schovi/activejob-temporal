@@ -424,7 +424,11 @@ Migrating from Sidekiq, Resque, or other queue adapters is straightforward:
 6. **Drain the old queue** (if applicable) to ensure no jobs are lost during the transition
 7. **Monitor and verify** using Temporal UI and application logs
 
-**Note:** A detailed migration guide with side-by-side comparisons and edge case handling will be available in `docs/migration_guide.md` (coming in v0.1).
+**For detailed migration instructions, see the [Migration Guide](docs/migration_guide.md)**, which includes:
+- Dual-write migration strategy for zero-downtime cutover
+- Side-by-side code comparisons (Sidekiq → ActiveJob)
+- Common gotchas (payload size limits, idempotency, transaction safety)
+- Testing checklist and rollback procedures
 
 ## Contributing
 
