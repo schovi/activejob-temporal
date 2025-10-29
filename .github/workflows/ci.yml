@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  # Linting job - runs once for efficiency
+  lint:
+    name: Lint (Rubocop)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Run Rubocop
+        run: bundle exec rake rubocop
+
+  # Unit tests - runs on Ruby matrix
+  test-unit:
+    name: Unit Tests (Ruby ${{ matrix.ruby }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ['3.2', '3.3']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+
+      - name: Run unit tests
+        run: bundle exec rake spec:unit
+        env:
+          TEST_SUITE: unit
+
+      - name: Upload unit test coverage
+        if: matrix.ruby == '3.3'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-unit-ruby-${{ matrix.ruby }}
+          path: coverage/
+
+  # Integration tests - runs on Ruby matrix
+  test-integration:
+    name: Integration Tests (Ruby ${{ matrix.ruby }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ['3.2', '3.3']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+
+      - name: Run integration tests
+        run: bundle exec rake spec:integration
+        env:
+          TEST_SUITE: integration
+
+      - name: Upload integration test coverage
+        if: matrix.ruby == '3.3'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-integration-ruby-${{ matrix.ruby }}
+          path: coverage/
+
+  # Build gem - runs once to verify gem can be built
+  build:
+    name: Build Gem
+    runs-on: ubuntu-latest
+    needs: [lint, test-unit, test-integration]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Build gem
+        run: gem build activejob-temporal.gemspec
+
+      - name: Upload gem artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gem-package
+          path: activejob-temporal-*.gem

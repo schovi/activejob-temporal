@@ -10,37 +10,27 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I5.T7",
+  "task_id": "I5.T8",
   "iteration_id": "I5",
   "iteration_goal": "Complete comprehensive documentation (README, API docs, migration guide), create example Rails app, finalize gemspec, prepare CHANGELOG, and ensure gem is ready for v0.1.0 release.",
-  "description": "Perform final quality checks across the entire project before release. Run the following commands and ensure all pass: (1) bundle install, (2) rake rubocop (zero offenses), (3) rake spec (all tests pass), (4) rake yard (no warnings), (5) gem build (succeeds), (6) Review coverage report (>= 90%), (7) Manual smoke tests with example Rails app, (8) Review all documentation, (9) Check for TODO/FIXME comments, (10) Verify LICENSE file. Create a checklist in docs/release_checklist.md with all these items and mark as complete. Acceptance: All quality checks pass, checklist is complete.",
-  "agent_type_hint": "BackendAgent",
-  "inputs": "All project files, quality check commands, release best practices",
+  "description": "(Optional but recommended) Create a GitHub Actions CI workflow in .github/workflows/ci.yml to automate testing and quality checks. The workflow should: (1) Trigger on push and pull_request events. (2) Run on multiple Ruby versions (3.2, 3.3). (3) Set up Ruby, install dependencies, run Rubocop, run tests, build gem. (4) Upload coverage report (optional). Ensure workflow runs successfully on GitHub. Add CI badge to README if configured. This task is optional for v0.1 but highly recommended for open-source projects.",
+  "agent_type_hint": "SetupAgent",
+  "inputs": "GitHub Actions documentation, Ruby CI workflow examples, project structure",
   "target_files": [
-    "docs/release_checklist.md",
-    "Gemfile.lock"
+    ".github/workflows/ci.yml",
+    "README.md"
   ],
   "input_files": [
     "Gemfile",
     "Rakefile",
-    "activejob-temporal.gemspec",
-    "README.md",
-    "docs/migration_guide.md",
-    "lib/**/*",
-    "spec/**/*",
-    "bin/*"
+    "activejob-temporal.gemspec"
   ],
-  "deliverables": "Complete release checklist, all quality checks passing, gem ready for release",
-  "acceptance_criteria": "docs/release_checklist.md exists with all quality check items; bundle install succeeds; rake rubocop exits with status 0; rake spec exits with status 0; rake yard succeeds without warnings; gem build succeeds; Coverage report shows >= 90%; Manual smoke tests with example app succeed; All documentation reviewed and accurate; No unresolved TODO/FIXME comments; LICENSE file present; Checklist is marked complete",
+  "deliverables": "Working GitHub Actions CI workflow (optional)",
+  "acceptance_criteria": ".github/workflows/ci.yml exists with all required jobs; Workflow triggers on push and pull_request; Workflow runs on Ruby 3.2 and 3.3 (matrix); Workflow runs bundle install, rubocop, rake spec, gem build; Workflow uploads coverage (optional); CI badge added to README (if workflow created); Manual test: Pushing to GitHub triggers workflow and it succeeds",
   "dependencies": [
-    "I5.T1",
-    "I5.T2",
-    "I5.T3",
-    "I5.T4",
-    "I5.T5",
-    "I5.T6"
+    "I5.T7"
   ],
-  "parallelizable": false,
+  "parallelizable": true,
   "done": false
 }
 ```
@@ -51,213 +41,109 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: release-criteria (from 03_Verification_and_Glossary.md)
+### Context: ci-cd-strategy (from 03_Verification_and_Glossary.md)
 
-```markdown
-### 5.6. Release Criteria (v0.1.0 Go/No-Go)
+**CI/CD Strategy**
 
-**Functional Requirements (MUST PASS)**
+The gem uses GitHub Actions for continuous integration and delivery (optional but recommended for v0.1).
 
-- ✅ `perform_later` starts a Temporal workflow with expected IDs/metadata
-- ✅ `set(wait:)` delays execution using Workflow.sleep (no worker thread blocked)
-- ✅ `retry_on`/`discard_on` are honored (activity retries and non-retryable mapping)
-- ✅ Duplicate enqueue (same job_id) is rejected (no duplicate workflows)
-- ✅ `ActiveJob::Temporal.cancel(job_class, job_id)` cancels a running workflow
-- ✅ Search attributes (`ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`) are persisted
-- ✅ Works on Ruby 3.2+ and Rails 6.1+ with temporalio GA
+**CI Pipeline:**
+1. **Trigger:** Push to main branch, pull requests
+2. **Matrix:** Ruby 3.2, 3.3
+3. **Steps:**
+   - Set up Ruby environment
+   - Install dependencies (`bundle install`)
+   - Run linter (`rake rubocop`)
+   - Run unit tests (`rake spec:unit`)
+   - Run integration tests (`rake spec:integration` with Temporal test server)
+   - Build gem (`gem build activejob-temporal.gemspec`)
+   - Upload coverage report to Codecov or similar (optional)
 
-**Quality Requirements (MUST PASS)**
+**CD Pipeline (optional for v0.1):**
+- Triggered on git tag creation (`v*`)
+- Build and publish gem to RubyGems.org
 
-- ✅ All unit tests pass (`rake spec:unit` exits with status 0)
-- ✅ All integration tests pass (`rake spec:integration` exits with status 0)
-- ✅ Code coverage >= 90% (SimpleCov report)
-- ✅ Zero Rubocop offenses (`rake rubocop` exits with status 0)
-- ✅ YARD docs generate without warnings (`rake yard` exits with status 0)
-- ✅ Gem builds successfully (`gem build activejob-temporal.gemspec` succeeds)
-- ✅ Example Rails app runs and demonstrates all features
+**Quality Gates:**
+- All tests must pass
+- Rubocop must pass with zero offenses
+- Code coverage must be >= 90%
 
-**Documentation Requirements (MUST PASS)**
-
-- ✅ README is comprehensive (installation, quickstart, configuration, usage, limitations)
-- ✅ API documentation (YARD) covers all public classes and methods
-- ✅ Migration guide is complete (Sidekiq/Resque → Temporal)
-- ✅ CHANGELOG includes v0.1.0 release notes
-- ✅ Worker setup guide is documented
-
-**Security Requirements (MUST PASS)**
-
-- ✅ Payload size limit enforced (250KB max)
-- ✅ Safe serialization (only ActiveJob::Arguments-compatible types)
-- ✅ No secrets in logs or payloads
-- ✅ TLS support for Temporal connections (documented, not enforced)
-
-**Performance Requirements (SHOULD PASS, NOT BLOCKING)**
-
-- ⚠️ Enqueue latency < 100ms (median, on local Temporal)
-- ⚠️ Activity execution overhead < 50ms (excluding job logic)
-- ⚠️ Worker can handle >= 100 concurrent activities
-- Note: Performance is validated manually in I4; not a hard release blocker for v0.1
-
-**Known Limitations (Documented, ACCEPTABLE for v0.1)**
-
-- No Temporal Signals, Queries, or Updates
-- No child workflows or multi-activity orchestration
-- No Temporal Schedules API (recurring jobs)
-- No custom DLQ UI
-- No workflow versioning (all workers must run same gem version)
-- Cancellation requires manual heartbeating in job code (not automatic)
-
-**Release Checklist (docs/release_checklist.md)**
-
-All items in release checklist (I5.T7) must be marked complete before release.
-```
+**Badges:** Add CI status badge to README for visibility.
 
 ### Context: code-quality-gates (from 03_Verification_and_Glossary.md)
 
-```markdown
-### 5.3. Code Quality Gates
+**Code Quality Gates**
 
-**Rubocop (Linting & Style)**
+The following quality gates must pass before code can be merged to the main branch:
 
-- **Configuration**: `.rubocop.yml` with project-specific rules
-- **Enforcement**: CI fails on any offenses (zero-tolerance policy)
-- **Auto-Correction**: Run `rubocop -A` to auto-fix safe offenses
-- **Custom Rules**:
-  - Max line length: 120 characters (configurable)
-  - Max method complexity: 10 (cyclomatic complexity)
-  - Enforce Ruby 3.2+ syntax features
-- **Exclusions**: `spec/fixtures/` (sample jobs may intentionally violate style for testing)
+1. **Rubocop:** Zero offenses
+   - Command: `rake rubocop`
+   - Configuration: `.rubocop.yml` with Ruby 3.2+ target, line length 120, custom excludes
 
-**SimpleCov (Code Coverage)**
+2. **Test Coverage:** >= 90%
+   - Tool: SimpleCov
+   - Coverage types: Line coverage and branch coverage
+   - Report format: HTML in `coverage/index.html`
 
-- **Threshold**: >= 90% coverage (combined unit + integration)
-- **Enforcement**: CI fails if coverage drops below threshold
-- **Exclusions**: `spec/` directory (test code not counted in coverage)
-- **Reports**: HTML report in `coverage/index.html`, uploaded to Codecov (optional)
+3. **YARD Documentation:** All public APIs documented
+   - Command: `rake yard`
+   - No undocumented methods or classes
+   - Generated docs in `doc/` directory
 
-**YARD (API Documentation)**
+4. **Dependency Scanning:** No known vulnerabilities
+   - Tool: `bundle audit` (optional but recommended)
+   - Run in CI to fail on high-severity CVEs
 
-- **Requirement**: All public classes and methods must have YARD comments
-- **Enforcement**: `rake yard` must run without warnings
-- **Tags Required**: `@param`, `@return`, `@raise` (if applicable), `@example` (for key methods)
-- **Coverage**: Aim for 100% documentation coverage of public API
+5. **Payload Size Validation:** No payloads exceed `max_payload_size_kb`
+   - Enforced at runtime via `Payload` module
+   - Raises `ActiveJob::SerializationError` if exceeded
 
-**Dependency Security Scanning**
-
-- **Tool**: `bundler-audit` (scan for vulnerable dependencies)
-- **Frequency**: Run in CI on each push
-- **Action**: Fail build if high-severity vulnerabilities detected
-- **Command**: `bundle exec bundler-audit check --update`
-
-**Payload Size Validation**
-
-- **Enforcement**: Raise `ActiveJob::SerializationError` if payload > 250KB
-- **Testing**: Unit tests verify size limit enforcement
-- **Logging**: Warn at 100KB (before hard limit)
-
-**Non-Determinism Checks (Workflow)**
-
-- **Manual Review**: Code reviews must verify workflow code contains no I/O, randomness, or direct system time calls
-- **Allowed Operations**: `Workflow.now`, `Workflow.sleep`, `Workflow.execute_activity`
-- **Testing**: Replay workflow history in tests to catch non-determinism (Temporal SDK feature)
-```
+**Pre-commit Hooks (optional):** Developers can use Git hooks to run Rubocop and tests locally before pushing.
 
 ### Context: testing-levels (from 03_Verification_and_Glossary.md)
 
-```markdown
-### 5.1. Testing Levels
+**Testing Strategy**
 
-The activejob-temporal gem employs a comprehensive, multi-layered testing strategy to ensure correctness, reliability, and production readiness.
+The gem employs a comprehensive testing strategy across multiple levels:
 
-**Unit Testing (RSpec)**
+1. **Unit Tests**
+   - Location: `spec/unit/`
+   - Focus: Individual classes and modules in isolation
+   - Mocking: External dependencies (Temporal client, Rails, ActiveRecord) are mocked/stubbed
+   - Coverage target: >= 90% for each module
+   - Run command: `rake spec:unit`
 
-- **Scope**: Individual classes and modules in isolation
-- **Location**: `spec/unit/`
-- **Coverage Target**: >= 90% code coverage for each module
-- **Mocking Strategy**: Mock external dependencies (Temporal client, workflow/activity execution, job classes) to isolate logic
-- **Key Areas**:
-  - Configuration module: default values, configuration block, validation
-  - Payload serializer: round-trip serialization, GlobalID support, size limits, error handling
-  - Retry mapper: retry_on/discard_on translation, exception hierarchy handling
-  - Search attributes builder: metadata extraction, tenant handling
-  - Temporal client: memoization, connection error handling
-  - Adapter: enqueue/enqueue_at logic, workflow ID generation, task queue resolution
-  - Workflow: sleep logic (mocked), activity invocation (mocked)
-  - Activity: job instantiation, error mapping, idempotency key lifecycle
-  - Cancellation API: workflow handle retrieval, cancel call, error handling
-- **Tools**: RSpec 3.x, SimpleCov for coverage
+2. **Integration Tests**
+   - Location: `spec/integration/`
+   - Focus: End-to-end flows with real Temporal test server
+   - Setup: Temporal test server started in `before(:suite)` hook
+   - Scenarios tested:
+     - Immediate job execution
+     - Scheduled job execution (sleep)
+     - Retry behavior (transient errors)
+     - Discard behavior (non-retryable errors)
+     - Cancellation with heartbeating
+     - Search attributes persistence
+   - Run command: `rake spec:integration`
 
-**Integration Testing (RSpec with Temporal Test Server)**
+3. **Manual Testing**
+   - Location: `docs/worker_setup.md`, example Rails app
+   - Focus: Real-world usage scenarios, developer experience
+   - Checklist:
+     - Start Temporal server
+     - Configure adapter
+     - Enqueue job
+     - Start worker
+     - Verify execution in Temporal UI
+     - Cancel job
+     - Verify search attributes
 
-- **Scope**: End-to-end workflows with real Temporal server
-- **Location**: `spec/integration/`
-- **Environment**: Temporal test server (in-memory or Docker-based)
-- **Coverage Target**: >= 90% overall coverage (combined with unit tests)
-- **Key Scenarios**:
-  - **Immediate Job Execution**: Enqueue → Workflow → Activity → Job performs → Completion
-  - **Scheduled Job Execution**: Enqueue with `set(wait:)` → Workflow sleeps → Activity executes after delay
-  - **Retry Behavior**: Job fails with retryable exception → Temporal retries activity per policy → Eventual success
-  - **Discard Behavior**: Job fails with non-retryable exception → Workflow fails immediately without retry
-  - **Cancellation**: Enqueue → Job starts → Cancel called → Activity aborts via heartbeat → Workflow cancelled
-  - **Search Attributes**: Enqueue → Workflow completes → Query Temporal for attributes → Verify presence and values
-- **Tools**: RSpec 3.x, Temporal test server helper, SimpleCov
-
-**Manual Testing**
-
-- **Scope**: Worker deployment, example Rails app, real Temporal cluster interaction
-- **Location**: `examples/basic_rails_app/`, manual worker runs
-- **Key Scenarios**:
-  - Start Temporal test server (local)
-  - Run worker process with `bin/temporal-worker`
-  - Enqueue jobs from Rails console or example app
-  - Verify jobs execute successfully
-  - Inspect Temporal UI for workflows, history, search attributes
-  - Test cancellation from Rails console
-  - Test scheduled jobs (wait for execution)
-- **Documentation**: `docs/worker_setup.md`, example app README
-
-**Smoke Testing**
-
-- **Scope**: Gem installation and basic usage
-- **Key Checks**:
-  - `bundle install` succeeds
-  - `require 'activejob-temporal'` succeeds in irb
-  - Adapter can be configured: `Rails.application.config.active_job.queue_adapter = :temporal`
-  - Gem builds successfully: `gem build activejob-temporal.gemspec`
-  - Built gem installs locally: `gem install activejob-temporal-0.1.0.gem`
-```
-
-### Context: artifact-validation (from 03_Verification_and_Glossary.md)
-
-```markdown
-### 5.4. Artifact Validation
-
-**Diagram Validation**
-
-- **PlantUML Diagrams**: Render diagrams using PlantUML CLI or online editor (https://www.plantuml.com/plantuml/uml/)
-  - **Pass Criteria**: No syntax errors, diagrams render correctly, all components/relationships are visible
-- **Mermaid Diagrams**: Render diagrams using Mermaid live editor (https://mermaid.live)
-  - **Pass Criteria**: No syntax errors, ERD displays all entities and relationships
-
-**JSON Schema Validation**
-
-- **Payload Schema**: Validate `api/job_payload_schema.json` against JSON Schema Draft 07 meta-schema
-  - **Tool**: `json-schema` gem or online validator
-  - **Pass Criteria**: Schema is valid, includes all required fields (job_class, job_id, queue_name, arguments)
-
-**Markdown Linting**
-
-- **Tool**: `markdownlint` (optional but recommended)
-- **Files**: `README.md`, `CHANGELOG.md`, `docs/*.md`
-- **Pass Criteria**: No markdown syntax errors, consistent formatting
-- **CI Integration**: Run `markdownlint *.md docs/*.md` in CI
-
-**Gemspec Validation**
-
-- **Build Test**: `gem build activejob-temporal.gemspec` must succeed without errors or warnings
-- **Installation Test**: Install built gem locally and require it in irb: `require 'activejob-temporal'`
-- **Metadata Check**: Verify all required fields are present (name, version, authors, summary, license, etc.)
-```
+4. **Smoke Testing**
+   - Performed after gem build
+   - Steps:
+     - Install gem locally: `gem install activejob-temporal-0.1.0.gem`
+     - Require gem in irb: `require 'activejob-temporal'`
+     - Verify version: `ActiveJob::Temporal::VERSION`
 
 ---
 
@@ -268,97 +154,120 @@ The following analysis is based on my direct review of the current codebase. Use
 ### Relevant Existing Code
 
 *   **File:** `Rakefile`
-    *   **Summary:** This file defines all the rake tasks for the project, including test suites (unit and integration), rubocop linting, and YARD documentation generation.
-    *   **Recommendation:** You MUST use the rake tasks defined here for running quality checks. The tasks are: `rake rubocop` (linting), `rake spec` (all tests, combining unit and integration), `rake spec:unit` (unit tests only), `rake spec:integration` (integration tests only), and `rake yard` (API documentation).
-    *   **Note:** The default rake task runs both `rubocop` and `spec`, which is useful for comprehensive quality checks.
+    *   **Summary:** This file defines Rake tasks for the project, including `spec` (with `:unit` and `:integration` subtasks), `rubocop`, `yard`, and a `default` task that runs both rubocop and spec.
+    *   **Recommendation:** Your GitHub Actions workflow MUST use these exact rake tasks: `rake rubocop`, `rake spec:unit`, `rake spec:integration`, and `gem build activejob-temporal.gemspec`. These are the authoritative commands for the project.
+    *   **Note:** The `spec` task runs both unit and integration tests. For CI, you may want to run them separately to get better failure isolation.
 
 *   **File:** `activejob-temporal.gemspec`
-    *   **Summary:** This is the gem specification file that defines all gem metadata, dependencies, and file inclusions for packaging.
-    *   **Recommendation:** You SHOULD verify that the gemspec is correctly configured. Check that the version is `0.1.0` (defined in `lib/activejob/temporal/version.rb`), all required dependencies are present, and the file exclusions are correct (excludes `spec/`, `docs/`, `examples/`, etc.).
-    *   **Note:** The gemspec requires Ruby >= 3.2, ActiveJob >= 6.1, temporalio >= 1.0, and globalid >= 0.3. Development dependencies include rake, rspec, rubocop, simplecov, and yard.
-    *   **Tip:** The `gem build activejob-temporal.gemspec` command will use this file to create the `.gem` package.
+    *   **Summary:** This file defines the gem specification including dependencies and metadata. It specifies Ruby >= 3.2 as the minimum required version.
+    *   **Recommendation:** Your CI matrix MUST test Ruby 3.2 and 3.3 as specified in the task. The gemspec already defines `spec.required_ruby_version = ">= 3.2"`, so these are the correct versions to test.
+    *   **Note:** Development dependencies include `rake`, `rspec`, `rubocop`, `simplecov`, and `yard`. These will be installed by `bundle install` in CI.
+
+*   **File:** `.rubocop.yml`
+    *   **Summary:** This file configures Rubocop with Ruby 3.2 target, 120 character line length, and various custom rules. It excludes `tmp/`, `vendor/`, `pkg/`, and `examples/` directories.
+    *   **Recommendation:** The `rake rubocop` command will use this configuration automatically. No need to pass additional flags in CI.
+
+*   **File:** `spec/spec_helper.rb`
+    *   **Summary:** This file configures RSpec and SimpleCov. SimpleCov is set up with branch coverage enabled and result merging for separate test runs (unit + integration).
+    *   **Recommendation:** When running unit and integration tests separately in CI, SimpleCov will automatically merge the results. The coverage report will be generated in `coverage/index.html`.
+    *   **Note:** The `TEST_SUITE` environment variable is used to distinguish between unit and integration test runs for SimpleCov result merging.
 
 *   **File:** `README.md`
-    *   **Summary:** This is the main user-facing documentation that explains the gem's purpose, features, installation, configuration, and usage.
-    *   **Recommendation:** You MUST verify that the README is complete and accurate. It should cover all features listed in the release criteria, include clear installation instructions, and provide comprehensive configuration examples.
-    *   **Status:** Based on my scan, the README appears comprehensive with sections on introduction, features, installation, configuration, usage examples, and links to additional documentation.
-
-*   **File:** `CHANGELOG.md`
-    *   **Summary:** This file documents all notable changes to the project following the Keep a Changelog format.
-    *   **Recommendation:** You SHOULD verify that the CHANGELOG includes complete v0.1.0 release notes. The changelog already contains the v0.1.0 entry with release date 2025-10-29.
-    *   **Status:** The CHANGELOG appears complete with all major features listed in the "Added" section and a security note about payload size limits.
-
-*   **File:** `LICENSE`
-    *   **Summary:** This file contains the MIT license text for the project.
-    *   **Recommendation:** Verification of this file's existence is required per acceptance criteria.
-    *   **Status:** The LICENSE file exists and is present in the project root.
-
-*   **File:** `examples/basic_rails_app/README.md`
-    *   **Summary:** This is the documentation for the example Rails application that demonstrates all key features of the gem.
-    *   **Recommendation:** You SHOULD use this example app for manual smoke testing as specified in the task description. The README provides complete instructions for starting Temporal, registering search attributes, starting the worker, and testing all job types.
-    *   **Note:** The example app demonstrates SimpleJob, ScheduledJob, RetryableJob, and CancellableJob, covering all core features.
-
-*   **Directory:** `docs/`
-    *   **Summary:** Contains additional documentation including configuration reference, migration guide, worker setup guide, and architecture diagrams.
-    *   **Files Present:**
-        - `configuration_reference.md` (configuration options)
-        - `migration_guide.md` (migration from Sidekiq/Resque)
-        - `worker_setup.md` (worker deployment guide)
-        - `diagrams/` (PlantUML and Mermaid diagrams)
-    *   **Recommendation:** You SHOULD verify that all documentation files are present and accurate as part of the quality check.
+    *   **Summary:** The comprehensive README already has placeholder badges at the top (lines 5-6): Gem Version and License badges. These are the correct location to add a CI badge.
+    *   **Recommendation:** If you create the CI workflow, you SHOULD add a GitHub Actions CI badge immediately after the existing badges on line 7. Use the standard format: `[![CI](https://github.com/temporalio/activejob-temporal/actions/workflows/ci.yml/badge.svg)](https://github.com/temporalio/activejob-temporal/actions/workflows/ci.yml)`
+    *   **Note:** The README mentions that the gem is "under active development" (line 8), which makes CI even more valuable for catching regressions.
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The project uses SimpleCov for code coverage. Coverage reports are generated in `coverage/index.html` after running the test suite. You MUST verify that coverage is >= 90% as specified in the acceptance criteria.
+*   **Tip:** For GitHub Actions Ruby setup, use the official `ruby/setup-ruby@v1` action. It has built-in caching for bundler dependencies, which will speed up CI runs.
 
-*   **Tip:** Based on my scan of the `lib/` directory, I found NO TODO or FIXME comments in the codebase. This satisfies one of the acceptance criteria ("No unresolved TODO/FIXME comments").
+*   **Tip:** The project uses SimpleCov with branch coverage enabled. The coverage report is generated in `coverage/` directory. You can optionally upload this to a service like Codecov or Coveralls, but this is marked as "optional" in the acceptance criteria.
 
-*   **Note:** The Rakefile defines separate tasks for unit (`rake spec:unit`) and integration tests (`rake spec:integration`). The main `rake spec` task runs both. For the quality check, you should run `rake spec` to ensure all tests pass.
+*   **Tip:** For integration tests, the project requires a Temporal test server. Check if `spec/support/temporal_test_server.rb` handles this automatically or if the CI needs special setup. Based on the plan context, the test server should be started in RSpec's `before(:suite)` hook, so it should "just work" when running `rake spec:integration`.
 
-*   **Note:** All previous tasks (I5.T1 through I5.T6) are marked as complete, meaning all documentation, gemspec, CHANGELOG, and example app have been finalized. This task is the final verification step before release.
+*   **Warning:** The `.github/` directory does NOT exist yet. You MUST create both the directory structure (`.github/workflows/`) and the `ci.yml` file from scratch.
 
-*   **Warning:** The release criteria document specifies that manual smoke tests with the example Rails app must succeed. You MUST actually start the Temporal server, worker, and Rails app to verify end-to-end functionality. Simply checking that files exist is NOT sufficient.
+*   **Note:** The task is marked as "optional but recommended" in both the task description and acceptance criteria. However, since it's a good practice for open-source projects and will help catch issues early, you SHOULD implement it.
 
-*   **Tip:** For the release checklist (`docs/release_checklist.md`), you should create a comprehensive checklist with checkbox items (using Markdown `- [ ]` and `- [x]` syntax) for each quality check. As you perform each check, mark items as complete. The checklist should include all 10 items from the task description plus any additional checks from the release criteria document.
+*   **Note:** The workflow should trigger on both `push` and `pull_request` events. For `push`, you probably want to limit it to the main branch (or `master` if that's what the repo uses). For `pull_request`, it should run on all PRs.
 
-*   **Note:** The gemspec file excludes coverage reports, temporary files, and development artifacts from the gem package. This is correct and should not be modified.
+*   **Note:** The gemspec homepage points to `https://github.com/temporalio/activejob-temporal`, so the CI badge URL should use this repository path.
 
-*   **Tip:** The `.rubocop.yml` file in the project root defines the coding style rules. The acceptance criteria requires ZERO Rubocop offenses. If any offenses are found, you may need to fix them or update the configuration with justified exceptions.
+*   **Note:** Ruby 3.2 and 3.3 are the versions to test in the matrix. Don't add 3.1 or 3.4 unless explicitly requested.
 
-*   **Critical:** The task specifies creating `docs/release_checklist.md` as one of the target files. This file does NOT currently exist and MUST be created as part of this task. The checklist should be comprehensive and include all items from the acceptance criteria.
+*   **Note:** The workflow should have clear step names and use proper GitHub Actions syntax. Follow GitHub Actions best practices for Ruby projects.
 
-*   **Performance Note:** The release criteria mention performance requirements (enqueue latency < 100ms, activity overhead < 50ms, worker concurrency >= 100) but explicitly state these are "SHOULD PASS, NOT BLOCKING" for v0.1. You do NOT need to perform formal performance benchmarking for this task.
+*   **Security Note:** When uploading coverage reports, ensure you don't expose any sensitive information. SimpleCov's HTML reports should be safe, but if you use a coverage service, use their official GitHub Action and follow their security guidelines.
 
-*   **Security Note:** The release criteria require that payload size limits are enforced (250KB max). This has been implemented in previous iterations (I1.T5 - Payload module). You should verify through the test suite that this limit is enforced, but you do NOT need to write new tests for it.
+### Example CI Workflow Structure
 
----
+Here's a recommended structure for the CI workflow:
 
-## Execution Sequence
+```yaml
+name: CI
 
-Based on the task description and acceptance criteria, you should execute the following sequence:
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
 
-1. **Create the Release Checklist**: Create `docs/release_checklist.md` with all 10 quality check items from the task description PLUS additional checks from the release criteria (functional, quality, documentation, security requirements).
+jobs:
+  test:
+    name: Ruby ${{ matrix.ruby }} - ${{ matrix.test-suite }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ['3.2', '3.3']
+        test-suite: ['unit', 'integration']
 
-2. **Run `bundle install`**: Verify all dependencies install correctly without errors.
+    steps:
+      - uses: actions/checkout@v4
 
-3. **Run `rake rubocop`**: Verify zero offenses. If offenses are found, fix them or update `.rubocop.yml` with justified exceptions.
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
 
-4. **Run `rake spec`**: Verify all unit and integration tests pass with exit status 0.
+      - name: Run Rubocop
+        run: bundle exec rake rubocop
 
-5. **Review Coverage Report**: Check `coverage/index.html` and verify >= 90% coverage.
+      - name: Run ${{ matrix.test-suite }} tests
+        run: bundle exec rake spec:${{ matrix.test-suite }}
 
-6. **Run `rake yard`**: Verify YARD documentation generates without warnings.
+      - name: Build gem
+        run: gem build activejob-temporal.gemspec
 
-7. **Run `gem build activejob-temporal.gemspec`**: Verify gem builds successfully and creates the `.gem` file.
+      # Optional: Upload coverage
+      - name: Upload coverage (optional)
+        if: matrix.test-suite == 'integration' && matrix.ruby == '3.3'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+```
 
-8. **Manual Smoke Tests**: Start Temporal server, worker, and example Rails app. Test all job types (simple, scheduled, retryable, cancellable). Verify jobs execute correctly and appear in Temporal UI.
+**Note:** You may want to adjust this based on whether you want to run rubocop and gem build for every matrix combination or just once. The example above runs them for each combination for simplicity, but you could optimize by creating a separate job for linting.
 
-9. **Documentation Review**: Review README, CHANGELOG, migration guide, configuration reference, and example app README for accuracy and completeness.
+### Acceptance Criteria Checklist
 
-10. **Verify No TODO/FIXME Comments**: Already done - confirmed no TODO/FIXME comments exist in `lib/`.
+Make sure your implementation satisfies all of these:
 
-11. **Verify LICENSE File**: Already done - confirmed LICENSE file exists.
+- [ ] `.github/workflows/ci.yml` exists with all required jobs
+- [ ] Workflow triggers on `push` and `pull_request` events
+- [ ] Workflow runs on Ruby 3.2 and 3.3 (matrix)
+- [ ] Workflow runs `bundle install` (via `ruby/setup-ruby` with `bundler-cache: true`)
+- [ ] Workflow runs `rubocop` (via `rake rubocop` or `bundle exec rake rubocop`)
+- [ ] Workflow runs tests (via `rake spec` or separate `rake spec:unit` and `rake spec:integration`)
+- [ ] Workflow runs `gem build activejob-temporal.gemspec`
+- [ ] Workflow uploads coverage report (optional, but nice to have)
+- [ ] CI badge added to README (after line 6, before line 8)
+- [ ] Manual test: Pushing to GitHub triggers workflow and it succeeds (this will happen after the workflow is merged)
 
-12. **Mark Checklist as Complete**: Update `docs/release_checklist.md` to mark all items as complete (change `- [ ]` to `- [x]`).
+### Final Notes
 
-13. **Final Status**: Report that all quality checks have passed and the gem is ready for release.
+This is an optional task, but implementing it will significantly improve the project's maintainability and give confidence to potential users that the gem is well-tested. Since all the required tasks (I5.T1-I5.T7) are complete, the gem is ready for CI setup.
+
+Good luck with the implementation!

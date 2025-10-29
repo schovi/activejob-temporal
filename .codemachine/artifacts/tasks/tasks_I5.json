@@ -114,10 +114,10 @@
     "target_files": [".github/workflows/ci.yml", "README.md"],
     "input_files": ["Gemfile", "Rakefile", "activejob-temporal.gemspec"],
     "deliverables": "Working GitHub Actions CI workflow (optional)",
-    "acceptance_criteria": ".github/workflows/ci.yml exists with all required jobs; Workflow triggers on push and pull_request; Workflow runs on Ruby 3.2 and 3.3 (matrix); Workflow runs bundle install, rubocop, rake spec, gem build; Workflow uploads coverage (optional); CI badge added to README (if workflow created); Manual test: Pushing to GitHub triggers workflow and it succeeds",
+    "acceptance_criteria": ".github/workflows/ci.yml exists with all required jobs; Workflow triggers on push and pull_request; Workflow triggers on push and pull_request; Workflow runs on Ruby 3.2 and 3.3 (matrix); Workflow runs bundle install, rubocop, rake spec, gem build; Workflow uploads coverage (optional); CI badge added to README (if workflow created); Manual test: Pushing to GitHub triggers workflow and it succeeds",
     "dependencies": ["I5.T7"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I5.T9",

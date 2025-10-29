@@ -4,6 +4,7 @@
 
 [![Gem Version](https://badge.fury.io/rb/activejob-temporal.svg)](https://badge.fury.io/rb/activejob-temporal)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/temporalio/activejob-temporal/actions/workflows/ci.yml/badge.svg)](https://github.com/temporalio/activejob-temporal/actions/workflows/ci.yml)
 
 ⚠️ This gem is under active development. Expect rapid iteration and potential breaking changes until v1.0.0.
 
