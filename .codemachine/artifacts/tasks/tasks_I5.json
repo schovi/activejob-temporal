@@ -12,7 +12,7 @@
     "acceptance_criteria": "README.md exists and is ~300-500 lines; All required sections are present; Quick Start section provides complete, copy-paste-able setup instructions; Configuration section lists all 9 config options with descriptions, types, defaults; Code examples are correct and executable; Markdown is properly formatted and renders correctly on GitHub; No broken links (all referenced docs exist); README passes markdownlint (if configured)",
     "dependencies": ["I1.T3", "I4.T1"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I5.T2",
