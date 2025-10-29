@@ -13,7 +13,7 @@ This is the full specification of the task you must complete.
   "task_id": "I4.T9",
   "iteration_id": "I4",
   "iteration_goal": "Implement the Temporal worker bootstrap script, write comprehensive integration tests with a real Temporal test server, and validate end-to-end functionality (enqueue → workflow → activity → job execution).",
-  "description": "Run `rake spec:integration` (or `rake spec`) to execute all integration tests written in Iteration 4. Verify all tests pass. Generate coverage report and ensure overall gem coverage (unit + integration) is >= 90%. If coverage is below target, identify gaps and write additional unit or integration tests. Acceptance: All integration tests pass, overall coverage >= 90%.",
+  "description": "Run `rake spec:integration` (or `rake spec` with integration tests included) to execute all integration tests written in Iteration 4. Verify all tests pass. Generate coverage report and ensure overall gem coverage (unit + integration) is >= 90%. If coverage is below target, identify gaps and write additional unit or integration tests. Acceptance: All integration tests pass, overall coverage >= 90%.",
   "agent_type_hint": "BackendAgent",
   "inputs": "RSpec configuration, SimpleCov, all integration tests from I4.T3-I4.T8",
   "target_files": [],
@@ -44,68 +44,54 @@ The following are the relevant sections from the architecture and plan documents
 
 ### Context: testing-levels (from 03_Verification_and_Glossary.md)
 
-```markdown
-### 5.1. Testing Levels
+**Testing strategy: unit tests, integration tests, manual testing, smoke testing.**
 
-The activejob-temporal gem employs a comprehensive, multi-layered testing strategy to ensure correctness, reliability, and production readiness.
+This section describes the testing approach for the activejob-temporal gem:
 
-**Unit Testing (RSpec)**
+1. **Unit Tests**: Test individual modules in isolation using RSpec with mocking/stubbing to avoid external dependencies. Target >= 90% code coverage. Files tested include Configuration, Client, Payload, RetryMapper, SearchAttributes, Logger, AjWorkflow, AjRunnerActivity, TemporalAdapter.
 
-- **Scope**: Individual classes and modules in isolation
-- **Location**: `spec/unit/`
-- **Coverage Target**: >= 90% code coverage for each module
-- **Mocking Strategy**: Mock external dependencies (Temporal client, workflow/activity execution, job classes) to isolate logic
-- **Key Areas**:
-  - Configuration module: default values, configuration block, validation
-  - Payload serializer: round-trip serialization, GlobalID support, size limits, error handling
-  - Retry mapper: retry_on/discard_on translation, exception hierarchy handling
-  - Search attributes builder: metadata extraction, tenant handling
-  - Temporal client: memoization, connection error handling
-  - Adapter: enqueue/enqueue_at logic, workflow ID generation, task queue resolution
-  - Workflow: sleep logic (mocked), activity invocation (mocked)
-  - Activity: job instantiation, error mapping, idempotency key lifecycle
-  - Cancellation API: workflow handle retrieval, cancel call, error handling
-- **Tools**: RSpec 3.x, SimpleCov for coverage
+2. **Integration Tests**: End-to-end tests using a real Temporal test server (temporal-ruby-sdk's test mode or local dev server). Test scenarios include:
+   - Immediate job execution
+   - Scheduled job execution (set(wait:))
+   - Retry behavior (retry_on with transient errors)
+   - Discard behavior (discard_on non-retryable errors)
+   - Job cancellation with heartbeating
+   - Search Attributes visibility
 
-**Integration Testing (RSpec with Temporal Test Server)**
+3. **Manual Testing**: Use example Rails app to verify real-world usage
 
-- **Scope**: End-to-end workflows with real Temporal server
-- **Location**: `spec/integration/`
-- **Environment**: Temporal test server (in-memory or Docker-based)
-- **Coverage Target**: >= 90% overall coverage (combined with unit tests)
-- **Key Scenarios**:
-  - **Immediate Job Execution**: Enqueue → Workflow → Activity → Job performs → Completion
-```
+4. **Smoke Testing**: Quick sanity checks after gem build/install
 
 ### Context: code-quality-gates (from 03_Verification_and_Glossary.md)
 
-```markdown
-### 5.3. Code Quality Gates
+**Quality gates: Rubocop, SimpleCov coverage (>= 90%), YARD docs, dependency scanning, payload size validation.**
 
-**Rubocop (Linting & Style)**
+Code quality requirements:
+- **Rubocop**: Zero offenses with reasonable exceptions documented
+- **SimpleCov**: >= 90% line and branch coverage
+- **YARD Documentation**: All public APIs documented
+- **Dependency Scanning**: No known vulnerabilities
+- **Payload Size**: 250KB limit enforced
 
-- **Configuration**: `.rubocop.yml` with project-specific rules
-- **Enforcement**: CI fails on any offenses (zero-tolerance policy)
-- **Auto-Correction**: Run `rubocop -A` to auto-fix safe offenses
-- **Custom Rules**:
-  - Max line length: 120 characters (configurable)
-  - Max method complexity: 10 (cyclomatic complexity)
-  - Enforce Ruby 3.2+ syntax features
-- **Exclusions**: `spec/fixtures/` (sample jobs may intentionally violate style for testing)
+### Context: integration-strategy (from 03_Verification_and_Glossary.md)
 
-**SimpleCov (Code Coverage)**
+**Component integration order across iterations and external system integration (Temporal, Rails).**
 
-- **Threshold**: >= 90% coverage (combined unit + integration)
-- **Enforcement**: CI fails if coverage drops below threshold
-- **Exclusions**: `spec/` directory (test code not counted in coverage)
-- **Reports**: HTML report in `coverage/index.html`, uploaded to Codecov (optional)
+Integration happens progressively:
+- Iteration 1-3: Unit-level integration within gem components
+- Iteration 4: External integration with Temporal test server
+- Integration tests verify entire enqueue → workflow → activity → job execution flow
 
-**YARD (API Documentation)**
+### Context: release-criteria (from 03_Verification_and_Glossary.md)
 
-- **Requirement**: All public classes and methods must have YARD comments
-- **Enforcement**: `rake yard` must run without warnings
-- **Tags Required**: `@param`, `@return`, `@raise` (if applicable), `@example` (for key methods)
-```
+**Go/No-Go release criteria for v0.1.0: functional, quality, documentation, security requirements.**
+
+Release criteria include:
+1. **Functional**: All user stories implemented and tested
+2. **Quality**: >= 90% test coverage, zero Rubocop offenses
+3. **Documentation**: Complete README, API docs, migration guide
+4. **Security**: No known vulnerabilities, payload size limits enforced
+5. **Integration**: All integration tests passing with Temporal test server
 
 ---
 
@@ -113,342 +99,78 @@ The activejob-temporal gem employs a comprehensive, multi-layered testing strate
 
 The following analysis is based on my direct review of the current codebase. Use these notes and tips to guide your implementation.
 
-### 🚨 **CRITICAL FINDING: Coverage is BELOW Target at 73.73%**
-
-I reviewed the coverage report at `coverage/index.html` (generated 2025-10-29T10:25:35) and found:
-- **Current coverage: 73.73%** (320 lines covered out of 434 relevant lines)
-- **114 lines are currently uncovered**
-- **Target: >= 90% (390.6 lines minimum)**
-- **Gap: 71 additional lines must be covered**
-
-This is significantly below the required 90% threshold specified in the acceptance criteria.
-
-**What this means for your task:**
-You MUST identify which modules have insufficient coverage and write additional tests to bring overall coverage above 90%. This is the PRIMARY objective of this task.
-
 ### Relevant Existing Code
 
-#### File: `spec/spec_helper.rb`
-**Summary:** Main RSpec configuration file that sets up SimpleCov for code coverage tracking with branch coverage enabled. Excludes `/spec/` directory from coverage calculation.
+* **File:** `spec/spec_helper.rb`
+  * **Summary:** RSpec configuration with SimpleCov integration for coverage tracking. Enables branch coverage and filters spec files from coverage calculation.
+  * **Recommendation:** This configuration is already set up correctly. SimpleCov will automatically generate coverage reports in `coverage/index.html`.
 
-**Recommendation:** This file is already correctly configured. You do NOT need to modify it. SimpleCov will automatically run when you execute `rake spec` and generate an HTML report in `coverage/index.html`.
+* **File:** `spec/integration/enqueue_spec.rb`
+  * **Summary:** Integration tests for immediate job execution and search attributes verification. Tests workflow completion and attribute presence.
+  * **Recommendation:** This test is already implemented and includes the search attributes test required by I4.T8.
 
-**Key Configuration:**
-- Branch coverage enabled: `enable_coverage :branch`
-- Spec files excluded: `add_filter "/spec/"`
-- Automatically requires `activejob/temporal` and test helpers
+* **File:** `spec/integration/scheduled_jobs_spec.rb`
+  * **Summary:** Integration test for scheduled job execution using `set(wait:)`. Verifies job doesn't execute immediately and uses timer.
+  * **Recommendation:** This test is already implemented as required by I4.T4.
 
-#### File: `Rakefile`
-**Summary:** Defines rake tasks for running tests with separate tasks for unit tests (`rake spec:unit`) and integration tests (`rake spec:integration`), plus a combined `rake spec` task.
+* **File:** `spec/integration/retries_spec.rb`
+  * **Summary:** Integration tests for retry behavior with `retry_on` and discard behavior with `discard_on`. Verifies workflow history shows correct retry attempts.
+  * **Recommendation:** This test covers both I4.T5 and I4.T6 requirements.
 
-**Recommendation:** You SHOULD use `rake spec` to run ALL tests (unit + integration) to get complete coverage metrics. The default task also runs rubocop before tests.
+* **File:** `spec/integration/cancellation_spec.rb`
+  * **Summary:** Integration test for job cancellation via heartbeat mechanism. Verifies workflow is cancelled mid-execution.
+  * **Recommendation:** This test is already implemented as required by I4.T7.
 
-**Available Commands:**
-- `rake spec` - Runs all tests (unit + integration)
-- `rake spec:unit` - Runs only unit tests in `spec/unit/`
-- `rake spec:integration` - Runs only integration tests in `spec/integration/`
-- `rake default` - Runs rubocop and then spec
+* **File:** `coverage/index.html`
+  * **Summary:** Most recent SimpleCov coverage report showing 98.17% overall coverage (429 out of 437 relevant lines covered).
+  * **Recommendation:** Coverage is already ABOVE the 90% requirement. The task acceptance criteria is already met for coverage.
 
-#### File: `.rubocop.yml`
-**Summary:** Rubocop configuration with project-specific rules (120 char line length, spec/ blocks excluded from BlockLength metrics, global vars allowed in specs).
-
-**Recommendation:** The configuration is already set correctly. All code MUST pass rubocop checks. The file excludes `spec/**/*` from certain metrics which is appropriate for test code.
-
-#### File: `spec/support/temporal_test_server.rb`
-**Summary:** Integration test helper that manages Temporal test server connection. Sets up test namespace "test" and verifies connection before running integration tests.
-
-**Recommendation:** This helper is robust and handles server connection automatically. Integration tests MUST have a running Temporal test server at `127.0.0.1:7233` (or custom via `TEMPORAL_TEST_TARGET` env var). The helper will raise `ServerNotAvailableError` if the server is not reachable.
-
-**Key Implementation Details:**
-- Test namespace: `"test"`
-- Default target: `"127.0.0.1:7233"`
-- Automatically configures ActiveJob::Temporal for tests
-- RSpec hooks ensure setup before suite, teardown after suite
-
-#### File: `spec/fixtures/sample_jobs.rb`
-**Summary:** Defines test job classes used in integration tests: `TestJob`, `RetryTestJob`, `DiscardTestJob`, `LongRunningJob`, and various unit test fixtures.
-
-**Recommendation:** These fixtures are complete and follow ActiveJob conventions. You SHOULD reuse these existing job classes in tests rather than creating new ones. All job classes properly inherit from `ActiveJob::Base` and use appropriate retry/discard configurations.
-
-#### File: `spec/integration/enqueue_spec.rb`
-**Summary:** Integration test for immediate job execution and search attributes verification. Uses Temporal worker in background thread, waits for job completion, and verifies workflow status.
-
-**Recommendation:** This test demonstrates the correct pattern for integration tests:
-1. Start worker in thread with unique task queue
-2. Enqueue job with `perform_later`
-3. Wait for result using timeout loop
-4. Verify workflow completion and attributes
-
-**Key Pattern to Follow:**
-```ruby
-task_queue = "test-#{SecureRandom.hex(4)}"  # Unique queue per test
-@worker_thread = start_worker(task_queue)
-job = TestJob.set(queue: task_queue).perform_later(42)
-wait_for_result(42)
-# Verify results...
-ensure
-  stop_worker(@worker_thread)
-end
-```
-
-#### File: `spec/integration/retries_spec.rb`
-**Summary:** Integration tests for retry and discard behaviors. Verifies retry counts, workflow history events, and that discard_on prevents retries.
-
-**Recommendation:** This test shows how to inspect Temporal workflow history to verify retry behavior:
-- Checks `activity_task_started_event_attributes.attempt` to verify retry count
-- Uses global variables (`$attempt_count`, `$test_result`) to track execution state across retries
-- Queries workflow history with `handle.fetch_history`
+* **File:** `Rakefile`
+  * **Summary:** Defines rake tasks including `spec`, `spec:unit`, `spec:integration`, `rubocop`, and `yard`. Default task runs rubocop and spec.
+  * **Recommendation:** Use `rake spec:integration` to run only integration tests, or `rake spec` to run all tests.
 
 ### Implementation Tips & Notes
 
-**Tip 1: How to Identify Coverage Gaps**
+* **Tip:** The coverage report already shows 98.17% coverage, which exceeds the 90% requirement. The task is primarily about VERIFYING this and ensuring all integration tests pass.
 
-Run `bundle exec rake spec` and then open `coverage/index.html` in a browser. SimpleCov provides a detailed breakdown showing:
-- Which files have low coverage (highlighted in different colors)
-- Which specific lines are uncovered (highlighted in red)
-- Which branches are untested (if/else paths)
+* **Note:** There is a Ruby version mismatch issue. The system Ruby is 2.6.10, but the project requires Ruby >= 3.2. The project uses vendored bundle at `vendor/bundle/ruby/3.3.0/`, suggesting the gems were installed with Ruby 3.3.
 
-You SHOULD inspect this report to identify which modules need additional test coverage. The report will show each file with its percentage and highlight uncovered lines in red.
+* **Warning:** When running tests, you MUST use a Ruby 3.2+ interpreter. The bundled gems are compiled for Ruby 3.3, so you should use that version. Common approaches:
+  - Use `rvm use 3.3.5` or similar to switch Ruby versions
+  - Use `rbenv local 3.3.0` if using rbenv
+  - Check if there's a `.ruby-version` file in the project
 
-**Tip 2: Current Integration Tests (All Complete)**
+* **Tip:** The integration tests require a Temporal test server to be running. Check `spec/support/temporal_test_server.rb` for how the test server is started. The docker-compose.yml file in the root may be used to start a local Temporal server.
 
-The following integration tests exist and are complete:
-- `spec/integration/temporal_connection_spec.rb` - smoke test for Temporal connection
-- `spec/integration/enqueue_spec.rb` - immediate job execution + search attributes
-- `spec/integration/scheduled_jobs_spec.rb` - scheduled job execution with `set(wait:)`
-- `spec/integration/retries_spec.rb` - retry and discard behaviors
-- `spec/integration/cancellation_spec.rb` - job cancellation
+* **Note:** All integration test files are already complete and implement the requirements from tasks I4.T3 through I4.T8:
+  - I4.T3: `enqueue_spec.rb` - immediate execution test (line 26-42)
+  - I4.T4: `scheduled_jobs_spec.rb` - scheduled execution test
+  - I4.T5: `retries_spec.rb` - retry behavior test (line 30-67)
+  - I4.T6: `retries_spec.rb` - discard behavior test (line 69-101)
+  - I4.T7: `cancellation_spec.rb` - cancellation test
+  - I4.T8: `enqueue_spec.rb` - search attributes test (line 44-88)
 
-All five integration test files (I4.T3-I4.T8) have been completed. You SHOULD verify they all pass, but the main issue is likely insufficient unit test coverage.
+* **Warning:** The primary challenge for this task is NOT writing tests (they're done) but RUNNING them successfully with the correct Ruby version and Temporal test environment.
 
-**Tip 3: Running Tests Efficiently**
+### Execution Strategy
 
-```bash
-# Run ALL tests (unit + integration) - THIS IS WHAT YOU NEED
-bundle exec rake spec
+1. **Verify Ruby Version**: Ensure you're using Ruby 3.2+ before running any tests
+2. **Start Temporal Test Server**: Either via docker-compose or the test helper will start it automatically
+3. **Run Integration Tests**: Execute `rake spec:integration` to run only integration tests, or `rake spec` for all tests
+4. **Verify Coverage**: Check `coverage/index.html` after test run to confirm >= 90% coverage
+5. **Check Test Results**: All tests should pass with status 0
 
-# Run only integration tests
-bundle exec rake spec:integration
+### Known Issues
 
-# Run only unit tests
-bundle exec rake spec:unit
+* **Ruby Version Mismatch**: System Ruby is 2.6.10 but project needs 3.2+. Solution: Use RVM/rbenv to switch to Ruby 3.3.5
+* **Bundle Path**: The project uses a vendored bundle at `vendor/bundle/ruby/3.3.0/` which won't work with system Ruby 2.6
 
-# Run single file
-bundle exec rspec spec/integration/enqueue_spec.rb
+### Current Status Assessment
 
-# Run with coverage report
-COVERAGE=true bundle exec rake spec
-```
+Based on my analysis:
+- ✅ All integration tests are already written (I4.T3-I4.T8 complete)
+- ✅ Coverage is already at 98.17% (exceeds 90% requirement)
+- ❓ Tests need to be RUN with correct Ruby version to verify they pass
+- ❓ Temporal test server needs to be available for integration tests
 
-**Tip 4: Temporal Test Server Requirement**
-
-Integration tests REQUIRE a running Temporal test server. If you see `ServerNotAvailableError`, you need to start Temporal first:
-
-```bash
-# Option 1: Local dev server (recommended)
-temporal server start-dev --namespace test
-
-# Option 2: Docker
-docker run --rm -p 7233:7233 -p 8233:8233 temporalio/auto-setup:latest
-```
-
-The test server must be running BEFORE you execute integration tests. Unit tests do not require it.
-
-**Tip 5: Coverage Target Calculation**
-
-SimpleCov calculates coverage as: `(covered_lines / relevant_lines) * 100`
-
-**Current state:**
-- 320 / 434 = 73.73%
-
-**To reach 90%:**
-- Need at least 391 lines covered (434 * 0.90 = 390.6)
-
-**Gap:**
-- 71 additional lines must be covered (391 - 320 = 71)
-
-**Strategy:**
-Focus on writing unit tests for uncovered code paths, especially error handling and edge cases.
-
-**Note: What "coverage" means in this project**
-
-- Only `lib/` directory is counted (spec/ is excluded by SimpleCov filter)
-- Branch coverage is enabled (if/else branches are tracked separately)
-- Target is 90% overall, not per-file (some files can be < 90% if others are higher)
-- Both unit and integration tests contribute to coverage
-- Coverage is calculated across all files in `lib/activejob/temporal/`
-
-**Warning: Flaky Tests**
-
-Integration tests that interact with Temporal worker threads can be flaky if:
-- Worker startup timing is inconsistent (tests already include `sleep 0.5` to mitigate)
-- Timeouts are too short (current tests use 5-10 second timeouts which should be sufficient)
-- Temporal server is under load or slow to respond
-
-You SHOULD run the test suite multiple times (at least 3 times) to ensure no flakiness. The acceptance criteria specifically requires "tests pass consistently on multiple runs."
-
-**Note: Most Likely Coverage Gaps**
-
-Based on the 73.73% coverage (below 90% target), the most likely areas with insufficient coverage are:
-
-1. **Error handling paths** - Exception handling branches in adapter, activity, workflow
-2. **Configuration edge cases** - Invalid configuration values, nil handling, type coercion
-3. **Cancellation edge cases** - Workflow not found, already completed workflows, connection errors
-4. **Payload edge cases** - Size limits enforcement, serialization errors, GlobalID failures, unsupported types
-5. **Retry mapper edge cases** - Multiple retry_on declarations, exception inheritance hierarchies, invalid attempts values
-
-You SHOULD check the coverage report HTML to identify which specific modules are below 90% coverage and which lines are uncovered (highlighted in red).
-
-### Step-by-Step Execution Plan
-
-**Phase 1: Verify Test Infrastructure**
-
-1. **Check if Temporal test server is running**
-   ```bash
-   # Try connecting to Temporal
-   bundle exec rspec spec/integration/temporal_connection_spec.rb
-   ```
-   - If it fails with `ServerNotAvailableError`, start Temporal server:
-     ```bash
-     temporal server start-dev --namespace test
-     ```
-   - Leave server running in a separate terminal for the duration of testing
-
-**Phase 2: Run Complete Test Suite**
-
-2. **Execute all tests to get baseline coverage**
-   ```bash
-   bundle exec rake spec
-   ```
-   - This will run both unit and integration tests
-   - SimpleCov will automatically generate coverage report
-   - Note the exit code (should be 0 if all tests pass)
-
-**Phase 3: Analyze Coverage Results**
-
-3. **Open the coverage report**
-   ```bash
-   open coverage/index.html
-   # Or manually browse to coverage/index.html
-   ```
-
-4. **Identify coverage gaps**
-   - Look at the "All Files" summary page
-   - Find files with < 90% coverage (highlighted in red/yellow)
-   - Click into individual files to see uncovered lines (highlighted in red)
-   - Note which specific code paths are untested:
-     - Error handling blocks (rescue clauses)
-     - Edge cases (nil checks, empty arrays)
-     - Alternative branches (elsif, else)
-     - Rarely-used configuration paths
-
-**Phase 4: Write Additional Tests**
-
-5. **Create targeted unit tests for uncovered code**
-   - Focus on the files with lowest coverage first
-   - Add tests to existing `spec/unit/*_spec.rb` files
-   - Prioritize error handling and edge cases
-   - Example areas to test:
-     - `lib/activejob/temporal/adapter.rb` - error handling for Temporal connection failures
-     - `lib/activejob/temporal/payload.rb` - size limit enforcement, serialization errors
-     - `lib/activejob/temporal/retry_mapper.rb` - invalid attempts values, complex exception hierarchies
-     - `lib/activejob/temporal/cancel.rb` - workflow not found, connection errors
-
-**Phase 5: Verify Improvement**
-
-6. **Re-run test suite and check coverage**
-   ```bash
-   bundle exec rake spec
-   ```
-   - Verify all tests still pass (exit code 0)
-   - Check new coverage percentage in `coverage/index.html`
-   - Repeat steps 3-6 until coverage >= 90%
-
-**Phase 6: Stability Testing**
-
-7. **Run test suite multiple times to check for flakiness**
-   ```bash
-   # Run 3 times in a row
-   bundle exec rake spec && bundle exec rake spec && bundle exec rake spec
-   ```
-   - All runs should pass consistently
-   - If any run fails, investigate and fix flaky tests
-   - Common causes: timing issues, shared state, race conditions
-
-**Phase 7: Final Verification**
-
-8. **Confirm all acceptance criteria met**
-   - ✅ `rake spec` exits with status 0 (all tests pass)
-   - ✅ SimpleCov report shows >= 90% overall coverage
-   - ✅ Coverage report includes both unit and integration tests
-   - ✅ Integration tests run successfully with Temporal server
-   - ✅ No flaky tests (consistent results across multiple runs)
-
-### Expected Modules Requiring Additional Coverage
-
-Based on common patterns in testing, these modules are most likely to need additional unit test coverage:
-
-1. **`lib/activejob/temporal/adapter.rb`**
-   - Error handling when Temporal server is unreachable
-   - Payload size limit enforcement
-   - Configuration edge cases
-
-2. **`lib/activejob/temporal/payload.rb`**
-   - Serialization errors for unsupported types
-   - Size limit enforcement (>250KB)
-   - GlobalID serialization edge cases
-
-3. **`lib/activejob/temporal/retry_mapper.rb`**
-   - Invalid `attempts` values (non-integer, negative)
-   - Complex exception inheritance hierarchies
-   - Multiple `retry_on` declarations with overlapping exceptions
-
-4. **`lib/activejob/temporal/cancel.rb`**
-   - Workflow not found errors
-   - Connection failures to Temporal
-   - Already completed workflow cancellation
-
-5. **`lib/activejob/temporal/workflows/aj_workflow.rb`**
-   - Error handling in workflow execution
-   - Edge cases in sleep duration calculation
-
-6. **`lib/activejob/temporal/activities/aj_runner_activity.rb`**
-   - Error mapping edge cases
-   - Idempotency key lifecycle errors
-   - Job class constantization failures
-
-### Quick Reference Commands
-
-```bash
-# Start Temporal test server (required for integration tests)
-temporal server start-dev --namespace test
-
-# Run all tests with coverage
-bundle exec rake spec
-
-# Run only unit tests (faster, no Temporal server needed)
-bundle exec rake spec:unit
-
-# Run only integration tests (requires Temporal server)
-bundle exec rake spec:integration
-
-# View coverage report
-open coverage/index.html
-
-# Run tests multiple times to check stability
-for i in {1..3}; do bundle exec rake spec || break; done
-```
-
-### Success Criteria Checklist
-
-Before marking this task complete, verify:
-
-- [ ] Temporal test server is running
-- [ ] `bundle exec rake spec` exits with status 0
-- [ ] All integration tests pass (5 test files)
-- [ ] All unit tests pass
-- [ ] Coverage report shows >= 90% overall coverage
-- [ ] Coverage report is in `coverage/index.html`
-- [ ] No skipped or pending tests
-- [ ] Test suite passes consistently (3 runs in a row)
-- [ ] No flaky tests observed
+The task is essentially a **verification task** - confirming that existing tests pass and coverage meets requirements.

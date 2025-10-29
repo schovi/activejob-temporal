@@ -7,7 +7,30 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     %w[TEMPORAL_TLS_CERT TEMPORAL_TLS_KEY TEMPORAL_TLS_SERVER_NAME]
   end
 
+  around do |example|
+    # Save original configuration state before resetting
+    original_client = described_class.instance_variable_get(:@client)
+    original_config = described_class.instance_variable_get(:@config)
+    original_target = described_class.config&.target
+    original_namespace = described_class.config&.namespace
+    original_task_queue_prefix = described_class.config&.task_queue_prefix
+
+    example.run
+  ensure
+    # Restore original configuration state after test completes
+    described_class.instance_variable_set(:@client, original_client)
+    described_class.instance_variable_set(:@config, original_config)
+    if original_config
+      described_class.configure do |config|
+        config.target = original_target
+        config.namespace = original_namespace
+        config.task_queue_prefix = original_task_queue_prefix
+      end
+    end
+  end
+
   before do
+    # Reset instance variables and stub Temporal client for each test
     described_class.instance_variable_set(:@client, nil)
     described_class.instance_variable_set(:@config, nil)
     stub_const("Temporalio::Client", class_double("Temporalio::Client"))

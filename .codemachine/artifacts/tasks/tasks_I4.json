@@ -132,7 +132,7 @@
     "acceptance_criteria": "`rake spec:integration` (or `rake spec`) exits with status 0 (all integration tests pass); SimpleCov report shows >= 90% overall code coverage (lib/ directory); Coverage report includes both unit and integration test coverage; All integration tests run successfully with Temporal test server; No flaky tests (tests pass consistently on multiple runs)",
     "dependencies": ["I4.T3", "I4.T4", "I4.T5", "I4.T6", "I4.T7", "I4.T8"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I4.T10",

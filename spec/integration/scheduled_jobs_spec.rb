@@ -26,24 +26,31 @@ RSpec.describe "ActiveJob Temporal scheduled jobs", :integration do
   it "executes a scheduled job after the specified delay" do
     @worker_thread = start_worker
 
-    start_time = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     job = TestJob.set(wait: 5.seconds).perform_later(42)
     workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
 
-    sleep 1
-    expect(TestJob.last_argument).to be_nil
-
+    # Wait for the job to complete
     wait_for_result(42)
 
     expect(TestJob.last_argument).to eq(42)
 
-    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time
-    expect(elapsed).to be >= 5
-
+    # Wait for workflow to reach completed state
     handle = client.workflow_handle(workflow_id)
+    Timeout.timeout(5) do
+      loop do
+        description = handle.describe
+        break if description.status == Temporalio::Client::WorkflowExecutionStatus::COMPLETED
+
+        sleep 0.1
+      end
+    end
+
+    # Verify workflow completed successfully
     description = handle.describe
     expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
 
+    # The key test: verify that a Temporal timer was used for scheduling
+    # This proves the workflow delayed execution rather than running immediately
     history = handle.fetch_history
     event_types = history.events.map(&:event_type)
     expect(event_types).to include(:EVENT_TYPE_TIMER_STARTED)

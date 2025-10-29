@@ -6,17 +6,19 @@ require "rubocop/rake_task"
 require "yard"
 
 desc "Run the spec suite"
-RSpec::Core::RakeTask.new(:spec)
+task spec: %i[spec:unit spec:integration]
 
 namespace :spec do
   desc "Run unit specs"
   RSpec::Core::RakeTask.new(:unit) do |t|
     t.pattern = "spec/unit/**/*_spec.rb"
+    ENV["TEST_SUITE"] = "unit"
   end
 
   desc "Run integration specs"
   RSpec::Core::RakeTask.new(:integration) do |t|
     t.pattern = "spec/integration/**/*_spec.rb"
+    ENV["TEST_SUITE"] = "integration"
   end
 end
 

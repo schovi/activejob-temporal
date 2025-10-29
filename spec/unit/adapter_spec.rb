@@ -228,7 +228,6 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
         duplicate: true
       )
     end
-
   end
 
   describe "#enqueue_at" do

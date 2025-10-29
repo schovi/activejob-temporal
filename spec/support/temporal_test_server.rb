@@ -64,7 +64,8 @@ module TemporalTestHelper
 
       @store_original_configuration = {
         target: ActiveJob::Temporal.config.target,
-        namespace: ActiveJob::Temporal.config.namespace
+        namespace: ActiveJob::Temporal.config.namespace,
+        task_queue_prefix: ActiveJob::Temporal.config.task_queue_prefix
       }
     end
 
@@ -87,6 +88,7 @@ module TemporalTestHelper
       ActiveJob::Temporal.configure do |config|
         config.target = @store_original_configuration[:target]
         config.namespace = @store_original_configuration[:namespace]
+        config.task_queue_prefix = @store_original_configuration[:task_queue_prefix]
       end
       @store_original_configuration = nil
     end

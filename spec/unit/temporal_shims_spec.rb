@@ -97,11 +97,11 @@ RSpec.describe "Temporal shim definitions" do
 
     # Mock ShimJob to return retry policy from RetryMapper
     allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(ShimJob).and_return({
-      initial_interval: 30.0,
-      backoff_coefficient: 2.0,
-      maximum_attempts: 2,
-      non_retryable_error_types: []
-    })
+                                                                                        initial_interval: 30.0,
+                                                                                        backoff_coefficient: 2.0,
+                                                                                        maximum_attempts: 2,
+                                                                                        non_retryable_error_types: []
+                                                                                      })
 
     workflow.execute(payload)
     expect(sleep_durations).to contain_exactly(be_within(1e-6).of(30.0))

@@ -152,8 +152,9 @@ RSpec.describe "ActiveJob Temporal retry behavior", :integration do
         description = handle.describe
         status = description.status
         # Break when workflow reaches a terminal state
-        break if status == Temporalio::Client::WorkflowExecutionStatus::FAILED ||
-                 status == Temporalio::Client::WorkflowExecutionStatus::COMPLETED
+        if [Temporalio::Client::WorkflowExecutionStatus::FAILED, Temporalio::Client::WorkflowExecutionStatus::COMPLETED].include?(status)
+          break
+        end
 
         sleep 0.1
       end
