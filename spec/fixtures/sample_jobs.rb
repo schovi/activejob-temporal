@@ -96,3 +96,16 @@ class RetryTestJob < ActiveJob::Base
     $test_result = "success"
   end
 end
+
+class NonRetryableTestError < StandardError; end
+
+class DiscardTestJob < ActiveJob::Base
+  discard_on NonRetryableTestError
+
+  queue_as :default
+
+  def perform
+    $discard_test_executed = true
+    raise NonRetryableTestError, "This error should not be retried"
+  end
+end

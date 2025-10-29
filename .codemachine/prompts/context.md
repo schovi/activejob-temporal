@@ -10,12 +10,12 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I4.T5",
+  "task_id": "I4.T6",
   "iteration_id": "I4",
   "iteration_goal": "Implement the Temporal worker bootstrap script, write comprehensive integration tests with a real Temporal test server, and validate end-to-end functionality (enqueue → workflow → activity → job execution).",
-  "description": "Write integration test in `spec/integration/retries_spec.rb` that tests retry behavior for transient errors. Test flow: (1) Define a job that fails with `raise StandardError` on first execution, then succeeds on retry (use a counter: `$attempt_count ||= 0; $attempt_count += 1; raise StandardError if $attempt_count == 1; $test_result = 'success'`). (2) Configure job with `retry_on StandardError, wait: 1, attempts: 3`. (3) Enqueue job. (4) Start worker. (5) Wait for job to execute, fail, retry, and succeed. (6) Assert `$test_result == 'success'`. (7) Verify workflow history shows activity retry (check for activity failure + retry events). This test proves retry_on mapping works and Temporal retries activities.",
+  "description": "Write integration test in `spec/integration/retries_spec.rb` (same file, different test case) that tests discard_on behavior for non-retryable errors. Test flow: (1) Define a job that raises `FatalError` (custom exception class). (2) Configure job with `discard_on FatalError`. (3) Enqueue job. (4) Start worker. (5) Wait for job to execute and fail. (6) Verify job does NOT retry (workflow fails immediately). (7) Verify workflow history shows activity failed with non_retryable error. This test proves discard_on mapping works and errors are not retried.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "RSpec integration test patterns, Temporal test server, adapter, workflow, activity, retry mapper from I1.T6",
+  "inputs": "RSpec integration test patterns, Temporal test server, adapter, activity error mapping from I2.T3, retry mapper from I1.T6",
   "target_files": [
     "spec/integration/retries_spec.rb",
     "spec/fixtures/sample_jobs.rb"
@@ -28,8 +28,8 @@ This is the full specification of the task you must complete.
     "lib/activejob/temporal/retry_mapper.rb",
     "spec/fixtures/sample_jobs.rb"
   ],
-  "deliverables": "Passing integration test for retry behavior",
-  "acceptance_criteria": "Integration test defines a job that fails once then succeeds; Job uses `retry_on StandardError, wait: 1, attempts: 3`; Test enqueues job, starts worker; Test waits for job to fail, retry, and succeed (max 10 seconds); Test asserts final result is 'success'; Test queries workflow history for activity failure + retry events; `rake spec:integration` passes for retries_spec.rb; Test is isolated",
+  "deliverables": "Passing integration test for discard_on behavior",
+  "acceptance_criteria": "Integration test defines a job that raises FatalError; Job uses `discard_on FatalError`; Test enqueues job, starts worker; Test waits for job to fail (max 5 seconds); Test verifies job did NOT retry (workflow failed on first attempt); Test queries workflow history for activity failed with non_retryable ApplicationError; `rake spec:integration` passes for discard test case in retries_spec.rb; Test is isolated",
   "dependencies": [
     "I3.T1",
     "I2.T3",
@@ -47,68 +47,82 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: decision-retry-mapping (from 06_Rationale_and_Future.md)
+### Context: Non-Retryable Exceptions (discard_on) - Communication Flow (from 04_Behavior_and_Communication.md)
 
 ```markdown
-#### **Decision 4: Map retry_on/discard_on to Temporal RetryPolicy**
+**Non-Retryable Exceptions (`discard_on`):**
 
-**Choice:** Translate ActiveJob's `retry_on`/`discard_on` DSL to Temporal's activity `RetryPolicy` at enqueue time.
+If the exception is in the `discard_on` list:
 
-**Rationale:**
+~~~plantuml
+@startuml
+participant "AjRunnerActivity" as Activity
+participant "Job Class" as Job
+participant "Error Mapper" as ErrorMapper
+participant "Retry Mapper" as RetryMapper
+participant "Temporal Cluster" as Temporal
 
-- **Familiar API**: Rails developers use existing ActiveJob retry DSL; no Temporal-specific syntax
-- **Durable Retries**: Temporal manages retry backoff and state; survives worker crashes
-- **Exponential Backoff**: Temporal's built-in backoff prevents thundering herd on downstream services
+Activity -> Job : job.perform(42)
+Job --> Activity : raise PSP::FatalError
 
-**Trade-offs:**
+Activity -> ErrorMapper : map_exception(error, job_class)
+ErrorMapper -> RetryMapper : discard_exception?(SendInvoiceJob, error)
+RetryMapper --> ErrorMapper : true (in discard_on list)
 
-| Benefit | Cost |
-|---------|------|
-| No code changes for existing jobs | Mapping logic adds complexity (retry_mapper module) |
-| Temporal's retry is battle-tested | Cannot use Rails-specific retry features (e.g., callbacks) |
-| Retries survive worker crashes | Must restart activity from beginning (no partial retry) |
+ErrorMapper --> Activity : Raise ApplicationError(\n  message: "Fatal error",\n  non_retryable: true,\n  cause: error\n)
 
-**Alternatives Considered:**
+Activity --> Temporal : Activity failed (non-retryable)
+Temporal -> Temporal : Mark activity as Failed (no retry)
+Temporal -> Temporal : Workflow fails (activity failure bubbles up)
 
-1. **In-Activity Retry Logic**: Implement retries inside `AjRunnerActivity.execute`
-   - **Rejected**: Loses Temporal's durable retry state; harder to debug
-2. **No Retry Mapping**: Require jobs to use Temporal-specific retry syntax
-   - **Rejected**: Breaks ActiveJob compatibility; increases learning curve
-
-**Limitation**: If a job has multiple `retry_on` declarations, only the first matching exception is used (by ancestry order).
+@enduml
+~~~
 ```
 
-### Context: task-i4-t5 (from 02_Iteration_I4.md)
+**Key Flow Summary:**
+- When a job raises an exception that matches `discard_on`, the `AjRunnerActivity` queries `RetryMapper.discard_exception?(job_class, error)`
+- If it returns `true`, the activity re-raises the exception as `Temporalio::Activity::ApplicationError` with `non_retryable: true`
+- This signals to Temporal that the activity should NOT be retried
+- The workflow then fails immediately (activity failure bubbles up to workflow)
+
+### Context: Retry Policy Data Model (from 03_System_Structure_and_Data.md)
 
 ```markdown
-*   **Task 4.5: Write Integration Test - Retry Behavior**
-    *   **Task ID:** `I4.T5`
-    *   **Description:** Write integration test in `spec/integration/retries_spec.rb` that tests retry behavior for transient errors. Test flow: (1) Define a job that fails with `raise StandardError` on first execution, then succeeds on retry (use a counter: `$attempt_count ||= 0; $attempt_count += 1; raise StandardError if $attempt_count == 1; $test_result = 'success'`). (2) Configure job with `retry_on StandardError, wait: 1, attempts: 3`. (3) Enqueue job. (4) Start worker. (5) Wait for job to execute, fail, retry, and succeed. (6) Assert `$test_result == 'success'`. (7) Verify workflow history shows activity retry (check for activity failure + retry events). This test proves retry_on mapping works and Temporal retries activities.
-    *   **Agent Type Hint:** `BackendAgent`
-    *   **Inputs:** RSpec integration test patterns, Temporal test server, adapter, workflow, activity, retry mapper from I1.T6
-    *   **Input Files:**
-        - `spec/support/temporal_test_server.rb`
-        - `lib/activejob/temporal/adapter.rb`
-        - `lib/activejob/temporal/workflows/aj_workflow.rb`
-        - `lib/activejob/temporal/activities/aj_runner_activity.rb`
-        - `lib/activejob/temporal/retry_mapper.rb`
-        - `spec/fixtures/sample_jobs.rb` (update with RetryableJob)
-    *   **Target Files:**
-        - `spec/integration/retries_spec.rb`
-        - `spec/fixtures/sample_jobs.rb` (updated with RetryableJob)
-    *   **Deliverables:** Passing integration test for retry behavior
-    *   **Acceptance Criteria:**
-        - Integration test defines a job that fails once then succeeds
-        - Job uses `retry_on StandardError, wait: 1, attempts: 3`
-        - Test enqueues job, starts worker
-        - Test waits for job to fail, retry, and succeed (max 10 seconds)
-        - Test asserts final result is 'success'
-        - Test queries workflow history for activity failure + retry events
-        - `rake spec:integration` passes for retries_spec.rb
-        - Test is isolated
-    *   **Dependencies:** I3.T1 (Adapter), I2.T3 (AjRunnerActivity error handling), I1.T6 (RetryMapper), I4.T2 (Temporal test server)
-    *   **Parallelizable:** No (integration test, depends on I3 and I4.T2)
+**3. Retry Policy (Activity Configuration)**
+
+Derived from ActiveJob's `retry_on`/`discard_on` DSL and passed to `execute_activity`.
+
+| Field | Type | Source | Example |
+|-------|------|--------|---------|
+| `initial_interval` | Duration | `retry_on wait:` or config default | `30.seconds` |
+| `backoff_coefficient` | Float | Config default (2.0) | `2.0` |
+| `maximum_attempts` | Integer | `retry_on attempts:` or config default | `5` |
+| `non_retryable_error_types` | Array<String> | `discard_on` exception classes | `["PSP::FatalError"]` |
 ```
+
+**Key Insight:**
+- The `discard_on` declarations are converted to an array of exception class **names** (strings) in the `non_retryable_error_types` field
+- This array is passed to Temporal's `RetryPolicy` when the workflow starts the activity
+- When an activity raises an exception with `non_retryable: true`, Temporal does NOT retry it
+
+### Context: Component Error Mapping (from 03_System_Structure_and_Data.md)
+
+```markdown
+Container_Boundary(activity_boundary, "AjRunnerActivity") {
+  Component(job_instantiator, "JobInstantiator", "Ruby Method", "Deserializes payload, creates job instance")
+  Component(error_mapper, "ErrorMapper", "Ruby Module", "Maps discard_on → ApplicationError(non_retryable)")
+  Component(idempotency_key, "IdempotencyKeyProvider", "Ruby Module", "Sets Thread.current[:aj_temporal_idempotency_key]")
+}
+
+Component_Ext(retry_mapper_module, "Retry Mapper", "Ruby Module", "for(job_class), discard_exception?")
+
+Rel(error_mapper, retry_mapper_module, "Calls discard_exception?", "Ruby")
+```
+
+**Key Component:**
+- The `error_mapper` logic is built into `AjRunnerActivity.handle_exception` method
+- It calls `RetryMapper.discard_exception?(job_class, exception)` to determine if the exception should be discarded
+- If true, it raises `Temporalio::Activity::ApplicationError.new(..., non_retryable: true)`
 
 ---
 
@@ -118,120 +132,129 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
-*   **File:** `spec/integration/retries_spec.rb`
-    *   **Summary:** This file already exists and contains a basic test structure with setup/teardown logic for integration tests. It has one passing test case for retry behavior.
-    *   **Current Status:** The existing test case (`retries transient errors according to retry_on configuration`) already validates basic retry behavior with `RetryTestJob`. You need to ADD a NEW test case for discard_on behavior as specified in I4.T6.
-    *   **Recommendation:** You MUST use the existing test structure but ADD A NEW test case. The current test for retry behavior is already complete. The task I4.T5 appears to be already DONE based on the code analysis. You should VERIFY this by running the test.
+*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
+    *   **Summary:** This file contains the Temporal activity that executes ActiveJob jobs. It includes the critical `handle_exception` method (lines 99-109) which implements the error mapping logic for `discard_on` behavior.
+    *   **Recommendation:** You MUST understand the exact behavior of `handle_exception`. When `RetryMapper.discard_exception?(job_class, error)` returns `true`, the method raises `Temporalio::Activity::ApplicationError` with `non_retryable: true`. This is the core mechanism you are testing.
+    *   **Code Reference:** Lines 99-109 show the exact exception handling logic:
+        ```ruby
+        def handle_exception(job_class, error)
+          if job_class && RetryMapper.discard_exception?(job_class, error)
+            raise Temporalio::Activity::ApplicationError.new(
+              error.message,
+              non_retryable: true,
+              cause: error
+            )
+          end
 
-*   **File:** `spec/fixtures/sample_jobs.rb`
-    *   **Summary:** Contains sample job classes including `RetryTestJob` (lines 86-98) that implements the exact retry behavior described in the task requirements.
-    *   **Current Implementation:** `RetryTestJob` is configured with `retry_on StandardError, wait: 1, attempts: 3` and uses global variables `$attempt_count` and `$test_result` exactly as specified.
-    *   **Recommendation:** The `RetryTestJob` class ALREADY EXISTS and matches the task requirements. You should NOT create a new job class but verify the existing one works correctly.
+          raise error
+        end
+        ```
 
 *   **File:** `lib/activejob/temporal/retry_mapper.rb`
-    *   **Summary:** Implements the logic to map ActiveJob `retry_on`/`discard_on` declarations to Temporal RetryPolicy parameters.
-    *   **Key Methods:**
-        - `for(job_class, exception = nil)`: Returns hash with `:initial_interval`, `:backoff_coefficient`, `:maximum_attempts`, `:non_retryable_error_types`
-        - `discard_exception?(job_class, exception)`: Returns true if exception should not be retried
-    *   **Recommendation:** This module is fully implemented. The workflow uses `RetryMapper.for(job_class)` to build retry policies, and the activity uses `RetryMapper.discard_exception?` to check if errors should be discarded.
+    *   **Summary:** This module maps ActiveJob's `retry_on`/`discard_on` declarations to Temporal's `RetryPolicy`. The key method for this task is `discard_exception?(job_class, exception)` (lines 22-28).
+    *   **Recommendation:** Your test job MUST declare `discard_on FatalError` (or similar custom exception class). The RetryMapper will inspect the job class's rescue handlers and determine if the raised exception matches any `discard_on` declarations. The matching is done via inheritance check (line 156): `candidate_class <= handler_class`.
+    *   **Implementation Detail:** The `discard_exception?` method returns `true` if the exception or any of its ancestors match a `discard_on` declaration (lines 25-27).
 
-*   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
-    *   **Summary:** The workflow class that orchestrates job execution. It extracts retry policy from the job class and applies it to activity execution.
-    *   **Key Implementation:** Lines 47-61 show the workflow calls `RetryMapper.for(job_class)` to get retry policy hash, then converts it to `Temporalio::RetryPolicy` object in `build_retry_policy` method.
-    *   **Note:** The workflow converts `maximum_attempts` from RetryMapper to `max_attempts` for Temporal SDK (line 65).
-    *   **Recommendation:** This is fully implemented. Your test SHOULD verify that the retry policy is correctly applied during workflow execution.
+*   **File:** `spec/integration/retries_spec.rb`
+    *   **Summary:** This is the existing integration test file for retry behavior. It currently contains ONE test case for successful retry behavior (`RetryTestJob`). You MUST ADD a second test case to this same file.
+    *   **Recommendation:** Follow the exact same test structure: use `around` block for setup/teardown (lines 11-23), start a worker (line 26), enqueue job, wait for workflow failure, verify workflow status is FAILED (not COMPLETED), and check workflow history for non-retryable error evidence.
+    *   **Critical Pattern:** The existing test uses `wait_for_result("success")` and `wait_for_workflow_completion(workflow_id)`. For your test, you'll need a helper to wait for workflow FAILURE instead of completion. Consider a `wait_for_workflow_failure(workflow_id)` method that checks for `WorkflowExecutionStatus::FAILED` status.
 
-*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
-    *   **Summary:** The activity that executes the actual job logic and handles exceptions.
-    *   **Key Implementation:** Lines 72-76 show exception handling. If the job raises an error, `handle_exception` (lines 99-109) checks if it should be discarded using `RetryMapper.discard_exception?`. If yes, it raises `Temporalio::Activity::ApplicationError` with `non_retryable: true`.
-    *   **Recommendation:** This is fully implemented. Your test SHOULD verify that retryable exceptions (those not matching `discard_on`) are retried by Temporal's activity retry logic.
+*   **File:** `spec/fixtures/sample_jobs.rb`
+    *   **Summary:** This file contains sample job classes for testing. Several discard-related jobs already exist: `DiscardableJob` (lines 40-43), `DiscardOnlyJob` (lines 45-47), and exception classes `FatalJobError` and `DerivedFatalJobError` (lines 32-33).
+    *   **Recommendation:** You SHOULD create a new test job class specifically for this integration test. Name it `DiscardTestJob` or similar. It MUST inherit from `ActiveJob::Base`, declare `discard_on FatalJobError` (or create a new exception class like `NonRetryableTestError`), and raise that exception in its `perform` method. DO NOT reuse `DiscardableJob` as it has both `retry_on` and `discard_on` which could complicate the test.
+    *   **Example Pattern:**
+        ```ruby
+        class NonRetryableTestError < StandardError; end
+
+        class DiscardTestJob < ActiveJob::Base
+          discard_on NonRetryableTestError
+          queue_as :default
+
+          def perform
+            raise NonRetryableTestError, "This error should not be retried"
+          end
+        end
+        ```
 
 *   **File:** `spec/support/temporal_test_server.rb`
-    *   **Summary:** Provides `TemporalTestHelper` module for integration test setup. Configures test namespace, manages client connection, and verifies server availability.
-    *   **Usage:** Call `TemporalTestHelper.client` to get configured client. Setup/teardown is automatic via RSpec hooks.
-    *   **Recommendation:** You MUST use `TemporalTestHelper.client` instead of creating your own client instances. This ensures proper test configuration (namespace: "test").
+    *   **Summary:** Helper module that manages Temporal test server connection for integration tests. Provides `TemporalTestHelper.client` method.
+    *   **Recommendation:** You MUST use `TemporalTestHelper.client` to get the Temporal client for querying workflow status and history. This is already done correctly in the existing test (line 9).
 
-*   **File:** `spec/integration/enqueue_spec.rb`
-    *   **Summary:** Contains example integration test patterns including worker startup/shutdown logic.
-    *   **Key Patterns:** Shows how to start worker in background thread, wait for results using polling with timeout, stop worker gracefully.
-    *   **Recommendation:** You SHOULD follow the same patterns used in this file for worker management and result verification.
+*   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
+    *   **Summary:** The Temporal workflow that orchestrates job execution. It passes the `RetryPolicy` (with `non_retryable_error_types`) to the activity when calling `execute_activity` (lines 23-27).
+    *   **Note:** You don't need to modify this file. It's relevant because when your test job is enqueued, the workflow will automatically include the `non_retryable_error_types` from the `discard_on` declaration in the RetryPolicy passed to the activity.
 
 ### Implementation Tips & Notes
 
-*   **CRITICAL: Task Status Verification**
-    Based on my code review, the test case described in task I4.T5 ALREADY EXISTS in `spec/integration/retries_spec.rb` (lines 25-56). The test:
-    - ✅ Uses `RetryTestJob` with `retry_on StandardError, wait: 1, attempts: 3`
-    - ✅ Enqueues job and starts worker
-    - ✅ Waits for `$test_result == "success"` and `$attempt_count == 2`
-    - ✅ Verifies workflow completed successfully
-    - ✅ Checks workflow history for activity events
+*   **Tip #1: Workflow Status Check**
+    The key difference between this test and the retry test is the expected workflow status. The retry test expects `WorkflowExecutionStatus::COMPLETED`, but your test MUST verify `WorkflowExecutionStatus::FAILED`. Create a helper method similar to `wait_for_workflow_completion` but check for FAILED status instead.
 
-    **You MUST verify this by running the test first**: `bundle exec rspec spec/integration/retries_spec.rb:25`
-
-    If the test passes, task I4.T5 is ALREADY COMPLETE and you should mark it as `done: true`.
-
-*   **Worker Management Pattern**
-    The existing test uses a simple pattern:
+*   **Tip #2: Activity Attempt Count**
+    For the discard test, the activity should execute only ONCE (attempt 1), then fail with non-retryable error. You can verify this by checking the workflow history:
     ```ruby
-    Thread.new do
-      worker = Temporalio::Worker.new(
-        client: TemporalTestHelper.client,
-        task_queue: "default",
-        workflows: [AjWorkflow],
-        activities: [AjRunnerActivity]
-      )
-      worker.run
+    activity_started_event = history.events.find { |e| e.event_type == :EVENT_TYPE_ACTIVITY_TASK_STARTED }
+    expect(activity_started_event.activity_task_started_event_attributes.attempt).to eq(1)
+    ```
+
+*   **Tip #3: Workflow History Verification**
+    You MUST check the workflow history to prove the activity failed with a non-retryable error. Look for these event types:
+    - `:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED` - activity was scheduled
+    - `:EVENT_TYPE_ACTIVITY_TASK_STARTED` - activity execution began
+    - `:EVENT_TYPE_ACTIVITY_TASK_FAILED` - activity failed
+    - `:EVENT_TYPE_WORKFLOW_EXECUTION_FAILED` - workflow failed (due to activity failure)
+
+    The activity failed event will contain details about the non-retryable error.
+
+*   **Tip #4: Timeout Value**
+    Since the job should fail immediately (no retries), use a shorter timeout than the retry test. The acceptance criteria specifies "max 5 seconds" (vs 10 seconds for retry test). Adjust your `wait_for_workflow_failure` helper accordingly:
+    ```ruby
+    def wait_for_workflow_failure(workflow_id)
+      Timeout.timeout(5) do
+        loop do
+          handle = client.workflow_handle(workflow_id)
+          description = handle.describe
+          break if description.status == Temporalio::Client::WorkflowExecutionStatus::FAILED
+
+          sleep 0.1
+        end
+      end
     end
     ```
-    This is the correct approach. Do NOT attempt graceful shutdown with signals in integration tests—just use `thread.kill` in cleanup.
 
-*   **Global Variables Pattern**
-    The retry test uses `$attempt_count` and `$test_result` global variables to track execution across retries. This is intentional and necessary because:
-    - Each retry may run in a different worker thread/process in production
-    - Global state proves the same job instance was retried (not a new job)
-    - Alternative (database/file state) would be more complex for a test
+*   **Tip #5: Global Variable Management**
+    The existing test uses `$attempt_count` and `$test_result` global variables. For your test, you may NOT need these since you're verifying failure, not success. However, if you want to prove the job executed exactly once, you could use `$discard_test_executed = true` to verify the job's perform method was called. Reset it in the `around` block's ensure clause.
 
-    **You MUST reset these globals in test setup/teardown** to ensure test isolation (lines 14-15, 21-22).
+*   **Tip #6: Test Isolation**
+    The `around` block ensures proper cleanup. Make sure your test follows this pattern to avoid test pollution. The existing test already handles worker cleanup via `stop_worker(@worker_thread)` in the ensure block (line 20).
 
-*   **Workflow History Verification**
-    The existing test (lines 44-53) shows how to verify retry behavior in Temporal's workflow history:
-    ```ruby
-    history = handle.fetch_history
-    event_types = history.events.map(&:event_type)
-    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED)
-    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_COMPLETED)
-    ```
+*   **Warning: ApplicationError Details**
+    When querying the workflow history, the activity failed event will show the `ApplicationError` with `non_retryable: true`. Temporal SDK may represent this as a specific error type or attribute in the event. You may need to inspect the actual event structure in your test to verify the non-retryable flag. Refer to the Temporal Ruby SDK documentation for the exact event attribute structure.
 
-    **IMPORTANT NOTE:** The existing code has a comment (lines 45-47) explaining that Temporal Ruby SDK handles activity retries at the worker level, so intermediate failures may NOT appear as separate events in workflow history. The critical validation is that the job executed the correct number of times and eventually succeeded.
+*   **Note: Job Definition Location**
+    Add your new `DiscardTestJob` (or `NonRetryableTestJob`) to `spec/fixtures/sample_jobs.rb` at the end of the file, following the existing pattern. Ensure it's an `ActiveJob::Base` subclass, not a plain `ApplicationJob`, since `discard_on` is an ActiveJob feature.
 
-*   **Timeout and Polling Strategy**
-    The test uses `wait_for_result` helper (lines 79-87) with 10-second timeout and 0.1-second polling interval. This is appropriate for retry tests where:
-    - Initial execution: ~instant
-    - Failure and retry delay: 1 second (from `wait: 1`)
-    - Retry execution: ~instant
-    - Total expected time: ~1-2 seconds
-    - Timeout at 10 seconds provides safety margin
+### Test Structure Recommendation
 
-*   **Configuration Reference**
-    From `docs/configuration_reference.md`, the relevant retry configuration defaults are:
-    - `default_retry_initial_interval`: 30 seconds (but job overrides with `wait: 1`)
-    - `default_retry_backoff`: 2.0 (exponential)
-    - `default_retry_max_attempts`: 1 (but job overrides with `attempts: 3`)
+Based on the existing retry test, your discard test should follow this structure:
 
-    These defaults are ONLY used when a job does NOT specify `retry_on`. The test job DOES specify retry parameters, so it uses those values.
+1. **Test name:** `"discards non-retryable errors according to discard_on configuration"`
+2. **Setup:** Start worker, enqueue `DiscardTestJob`
+3. **Wait:** Call `wait_for_workflow_failure(workflow_id)` with 5-second timeout
+4. **Verify workflow status:** `expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::FAILED)`
+5. **Verify activity attempt count:** Should be 1 (no retries)
+6. **Verify workflow history:** Should include `EVENT_TYPE_ACTIVITY_TASK_FAILED` and `EVENT_TYPE_WORKFLOW_EXECUTION_FAILED`
+7. **Cleanup:** Stop worker in ensure block
 
-*   **Test Isolation**
-    The existing test properly ensures isolation with:
-    - `around` block that resets ActiveJob adapter and global state (lines 11-23)
-    - Worker cleanup in `ensure` block (lines 54-55)
-    - Separate test cases should NOT interfere with each other
+---
 
-    When adding future test cases (like I4.T6 for discard_on), follow this same pattern.
+## Summary
 
-### Warnings & Potential Issues
+You are implementing Task I4.T6: an integration test for `discard_on` behavior that proves non-retryable errors are NOT retried by Temporal. The test MUST:
+- Define a new job class with `discard_on FatalError` (or similar custom exception)
+- Enqueue the job and start a worker
+- Wait for the workflow to FAIL (not complete)
+- Verify the activity executed only once (no retries)
+- Check the workflow history for non-retryable error evidence
 
-*   **WARNING:** If you create duplicate test cases for I4.T5, you will have failing tests due to the existing implementation. Always check the current state of test files BEFORE writing new tests.
-
-*   **NOTE:** The next task (I4.T6) requires adding a DISCARD_ON test to this same file. That test should verify a job with `discard_on FatalError` does NOT retry when FatalError is raised.
-
-*   **TEMPORAL SDK REQUIREMENT:** Integration tests require a running Temporal test server. The test will skip with a clear error message if the server is not available (see `spec/support/temporal_test_server.rb:98-108`).
+All necessary infrastructure (test server helper, worker setup, existing test patterns) is already in place. You are ADDING a second test case to the existing `spec/integration/retries_spec.rb` file and potentially adding a new job class to `spec/fixtures/sample_jobs.rb`.

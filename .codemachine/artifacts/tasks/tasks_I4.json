@@ -87,7 +87,7 @@
     "acceptance_criteria": "Integration test defines a job that raises FatalError; Job uses `discard_on FatalError`; Test enqueues job, starts worker; Test waits for job to fail (max 5 seconds); Test verifies job did NOT retry (workflow failed on first attempt); Test queries workflow history for activity failed with non_retryable ApplicationError; `rake spec:integration` passes for discard test case in retries_spec.rb; Test is isolated",
     "dependencies": ["I3.T1", "I2.T3", "I1.T6", "I4.T2"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I4.T7",
