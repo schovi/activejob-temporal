@@ -26,7 +26,8 @@ module ActiveJob
                     :default_retry_max_attempts,
                     :logger,
                     :enable_tracing,
-                    :max_payload_size_kb
+                    :max_payload_size_kb,
+                    :enable_search_attributes
 
       attr_reader :default_activity_timeout, :default_retry_initial_interval
 
@@ -41,6 +42,7 @@ module ActiveJob
         @logger = default_logger
         @enable_tracing = true
         @max_payload_size_kb = 250
+        @enable_search_attributes = true
       end
 
       def default_activity_timeout=(value)
