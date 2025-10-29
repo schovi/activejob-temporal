@@ -87,7 +87,7 @@
     "acceptance_criteria": "CHANGELOG.md includes a [0.1.0] section with release date; Added section lists all major features; Entries are user-focused and concise; CHANGELOG follows Keep a Changelog format; Markdown is properly formatted",
     "dependencies": [],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I5.T7",

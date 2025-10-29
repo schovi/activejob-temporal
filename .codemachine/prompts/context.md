@@ -10,26 +10,22 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I5.T5",
+  "task_id": "I5.T6",
   "iteration_id": "I5",
   "iteration_goal": "Complete comprehensive documentation (README, API docs, migration guide), create example Rails app, finalize gemspec, prepare CHANGELOG, and ensure gem is ready for v0.1.0 release.",
-  "description": "Review and finalize activejob-temporal.gemspec with accurate metadata and dependencies. Ensure the gemspec includes: (1) Metadata (name, version 0.1.0, authors, email, homepage, summary, description, license). (2) Dependencies: Runtime (temporalio, activejob >= 6.1, globalid), Development (rspec, rubocop, simplecov, yard). (3) Files: Specify files to include in gem package, exclude test files and development artifacts. (4) Executables: List bin/temporal-worker. (5) Required Ruby Version: >= 3.2. Validate gemspec by running gem build activejob-temporal.gemspec. Install built gem locally and verify it works.",
-  "agent_type_hint": "SetupAgent",
-  "inputs": "Gemspec best practices, project metadata, dependency versions, file lists",
+  "description": "Update CHANGELOG.md with detailed release notes for v0.1.0. Follow Keep a Changelog format. Include the following sections for v0.1.0: (1) [0.1.0] - 2025-10-25 (use actual release date). (2) Added: List all new features. (3) Changed, Deprecated, Removed, Fixed: None (initial release). (4) Security: Note payload size limit (250KB) to prevent DoS. Keep entries concise and user-focused.",
+  "agent_type_hint": "DocumentationAgent",
+  "inputs": "Keep a Changelog format, all features implemented in I1-I5, release date",
   "target_files": [
-    "activejob-temporal.gemspec"
-  ],
-  "input_files": [
-    "activejob-temporal.gemspec",
-    "lib/activejob/temporal/version.rb",
-    "README.md",
-    "LICENSE",
     "CHANGELOG.md"
   ],
-  "deliverables": "Complete, valid gemspec ready for gem packaging",
-  "acceptance_criteria": "Gemspec includes all required metadata; Runtime dependencies are declared; Development dependencies are declared; Files list includes all necessary runtime files, excludes tests and dev artifacts; Executables includes temporal-worker; Required Ruby version is >= 3.2; gem build activejob-temporal.gemspec succeeds without errors; Built gem (.gem file) is created; Installing gem locally succeeds; Requiring gem in irb succeeds",
-  "dependencies": ["I1.T1", "I5.T1"],
-  "parallelizable": false,
+  "input_files": [
+    "CHANGELOG.md"
+  ],
+  "deliverables": "Complete CHANGELOG with v0.1.0 release notes",
+  "acceptance_criteria": "CHANGELOG.md includes a [0.1.0] section with release date; Added section lists all major features; Entries are user-focused and concise; CHANGELOG follows Keep a Changelog format; Markdown is properly formatted",
+  "dependencies": [],
+  "parallelizable": true,
   "done": false
 }
 ```
@@ -40,102 +36,59 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: gemspec (from activejob-temporal.gemspec)
+### Context: project-overview (from 01_Plan_Overview_and_Setup.md)
 
-```ruby
-# frozen_string_literal: true
+The task requires understanding what features were implemented. Based on the plan, v0.1.0 includes:
 
-require_relative "lib/activejob/temporal/version"
+**Core Functionality (Iteration 1):**
+- Project setup and gem structure
+- Configuration module with DSL (Temporal connection, timeouts, retries, logging)
+- Temporal client wrapper
+- Payload serialization/deserialization with size limits (250KB)
+- Retry policy mapper (retry_on/discard_on → RetryPolicy)
+- Search attributes builder
+- Structured JSON logging
 
-Gem::Specification.new do |spec|
-  spec.name = "activejob-temporal"
-  spec.version = ActiveJob::Temporal::VERSION
-  spec.authors = ["Temporal Technologies", "Ruby Community"]
-  spec.email = ["ruby@temporal.io"]
+**Workflow & Activity (Iteration 2):**
+- Temporal workflow (AjWorkflow) with durable sleep for scheduled jobs
+- Activity runner (AjRunnerActivity) that executes job logic
+- Workflow ID builder (deterministic, idempotent)
+- Task queue resolver
 
-  spec.summary = "Rails ActiveJob adapter backed by Temporal Workflows"
-  spec.description = <<~DESC
-    activejob-temporal bridges Rails ActiveJob with Temporal's durable execution engine.
-    It provides a drop-in ActiveJob adapter, Temporal workflows, and supporting tooling
-    so Rails apps gain fault-tolerant scheduling, retries, and observability with minimal changes.
-  DESC
-  spec.homepage = "https://github.com/temporalio/activejob-temporal"
-  spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.2"
+**ActiveJob Integration (Iteration 3):**
+- TemporalAdapter implementing ActiveJob adapter interface
+- Immediate job execution (enqueue)
+- Scheduled job execution (enqueue_at)
+- Transactional enqueue support
+- Job cancellation API
 
-  spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = spec.homepage
-  spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/main/CHANGELOG.md"
-  spec.metadata["rubygems_mfa_required"] = "true"
+**Worker & Testing (Iteration 4):**
+- Worker bootstrap script (bin/temporal-worker)
+- Integration tests with Temporal test server
+- End-to-end validation of all features
 
-  spec.files = Dir.chdir(__dir__) do
-    `git ls-files -z`.split("\x0").reject do |f|
-      f.start_with?("spec/", "docs/", "examples/", "tmp/", "tools/", ".codemachine/", ".github/") ||
-        f.match?(%r{^(\.|docker-compose\.yml|coverage/|Gemfile|Rakefile)})
-    end
-  end
-  spec.bindir = "bin"
-  spec.executables = ["temporal-worker"]
-  spec.require_paths = ["lib"]
+**Documentation (Iteration 5):**
+- Comprehensive README
+- YARD API documentation
+- Migration guide
+- Example Rails application
 
-  spec.add_dependency "activejob", ">= 6.1"
-  spec.add_dependency "globalid", ">= 0.3"
-  spec.add_dependency "temporalio", ">= 1.0"
+### Context: Keep a Changelog Format (from keepachangelog.com)
 
-  spec.add_development_dependency "rake", "~> 13.2"
-  spec.add_development_dependency "rspec", "~> 3.12"
-  spec.add_development_dependency "rubocop", "~> 1.50"
-  spec.add_development_dependency "simplecov", "~> 0.22"
-  spec.add_development_dependency "yard", "~> 0.9"
-end
-```
+Keep a Changelog is a standard format for changelogs. Key principles:
 
-### Context: version (from lib/activejob/temporal/version.rb)
+- Use "Added", "Changed", "Deprecated", "Removed", "Fixed", "Security" section headers
+- List items in past tense (e.g., "Added feature X")
+- Be user-focused and concise
+- Version headings format: `## [X.Y.Z] - YYYY-MM-DD`
+- Link versions at the bottom of the file
 
-```ruby
-# frozen_string_literal: true
+### Context: Semantic Versioning (referenced in CHANGELOG)
 
-module ActiveJob
-  module Temporal
-    VERSION = "0.1.0"
-  end
-end
-```
-
-### Context: task-i1-t1 (from 02_Iteration_I1.md)
-
-The initial gem structure was created in task I1.T1 with the following requirements:
-
-- Create gemspec file with metadata (name, version, authors, dependencies)
-- Include basic Gemfile for development dependencies (rspec, rubocop, simplecov, yard, temporalio, rails)
-- Gemspec declares dependencies: `temporalio`, `activejob` (>= 6.1), `globalid`
-- Gemspec declares development dependencies: `rspec`, `rubocop`, `simplecov`, `yard`
-- Standard files: README.md, CHANGELOG.md, LICENSE, .gitignore
-- Executable: bin/temporal-worker
-
-### Context: technology-stack-core (from 02_Architecture_Overview.md)
-
-Core technologies with version requirements:
-
-- **Ruby**: >= 3.2 (required for Temporal SDK and modern syntax)
-- **Rails**: >= 6.1 (ActiveJob 6.1+, required for `enqueue_after_transaction_commit?` feature)
-- **Temporal SDK for Ruby**: >= 1.0 (official Ruby SDK, provides workflow and activity APIs)
-- **GlobalID**: >= 0.3 (for serializing ActiveRecord models and other objects)
-
-Rationale: These version constraints ensure compatibility with modern Rails practices and Temporal's durable execution guarantees.
-
-### Context: technology-stack-dependencies (from 02_Architecture_Overview.md)
-
-Required gem dependencies:
-- `temporalio` (>= 1.0) — Official Temporal Ruby SDK
-- `activejob` (>= 6.1) — Rails background job framework
-- `globalid` (>= 0.3) — For object serialization
-
-Optional/Development dependencies:
-- `rspec` (~> 3.12) — Testing framework
-- `rubocop` (~> 1.50) — Linting and style enforcement
-- `simplecov` (~> 0.22) — Code coverage reporting
-- `yard` (~> 0.9) — API documentation generation
+This project adheres to Semantic Versioning (semver.org):
+- v0.1.0 is the initial release
+- Format: MAJOR.MINOR.PATCH
+- v0.x.x indicates pre-1.0 releases (API may change)
 
 ---
 
@@ -145,91 +98,136 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
-*   **File:** `activejob-temporal.gemspec`
-    *   **Summary:** This is the main gemspec file that defines the gem's metadata, dependencies, and package contents. The file is already well-structured and mostly complete.
-    *   **Current Status:** The gemspec is already in excellent shape. It includes:
-        - Correct metadata (name, version, authors, email, homepage, summary, description, license)
-        - Required Ruby version (>= 3.2)
-        - All runtime dependencies (activejob >= 6.1, globalid >= 0.3, temporalio >= 1.0)
-        - All development dependencies (rake, rspec, rubocop, simplecov, yard)
-        - Proper file exclusion patterns (excludes spec/, docs/, examples/, tmp/, tools/, .codemachine/, .github/, coverage/, Gemfile, Rakefile)
-        - Executable specification (bin/temporal-worker)
-        - Metadata URIs for RubyGems (homepage, source_code, changelog)
-        - MFA requirement flag
-    *   **Recommendation:** The gemspec is already complete and follows best practices. You should validate it by running `gem build` to ensure no issues.
+*   **File:** `CHANGELOG.md`
+    *   **Summary:** This file currently has a basic structure with "Unreleased" section and placeholder content ("Initial project setup"). It follows Keep a Changelog format and references Semantic Versioning.
+    *   **Current Content:**
+        ```markdown
+        # Changelog
 
-*   **File:** `lib/activejob/temporal/version.rb`
-    *   **Summary:** Defines the gem version constant (VERSION = "0.1.0")
-    *   **Recommendation:** Version is correctly set to 0.1.0 for the initial release. No changes needed.
+        All notable changes to this project will be documented in this file.
+
+        The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+        and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+        ## [Unreleased]
+
+        ### Added
+        - Initial project setup
+        ```
+    *   **Recommendation:** You MUST replace the "Unreleased" section with a proper "[0.1.0] - YYYY-MM-DD" section. Keep the header and format references intact (first 6 lines). Remove the Unreleased section entirely.
 
 *   **File:** `README.md`
-    *   **Summary:** Comprehensive user-facing documentation (466 lines) covering installation, quick start, configuration, features, usage examples, migration guide, and contributing guidelines.
-    *   **Recommendation:** This file is complete and well-written. It will be referenced during gem installation to help users get started.
+    *   **Summary:** This file contains comprehensive documentation of all implemented features in the "Features" section (lines 23-34), including:
+        - Immediate job execution with `perform_later`
+        - Scheduled execution with `set(wait:)` and `set(wait_until:)`
+        - Retry mapping from `retry_on` declarations
+        - Discard mapping from `discard_on` declarations
+        - Job cancellation via `ActiveJob::Temporal.cancel` API
+        - Search attributes for Temporal UI filtering
+        - Transactional enqueue support
+        - GlobalID serialization support
+        - Configurable timeouts and retries
+        - Structured JSON logging
+    *   **Recommendation:** You SHOULD use the features list from README as the primary source for your "Added" section in the CHANGELOG. Each bullet point in README represents a major feature to document.
 
-*   **File:** `CHANGELOG.md`
-    *   **Summary:** Changelog file following Keep a Changelog format. Currently shows only "Unreleased" section with "Initial project setup".
-    *   **Recommendation:** This file will need to be updated by task I5.T6 to include v0.1.0 release notes. For now, it's in the expected state.
+*   **File:** `lib/activejob/temporal/version.rb`
+    *   **Summary:** This file defines the VERSION constant as "0.1.0".
+    *   **Recommendation:** You MUST use "0.1.0" as the version number in the CHANGELOG heading.
 
-*   **File:** `LICENSE`
-    *   **Summary:** MIT License file with copyright (c) 2025 Temporal Technologies, Inc.
-    *   **Recommendation:** License is present and correctly formatted. No changes needed.
+*   **File:** `activejob-temporal.gemspec`
+    *   **Summary:** This file contains gem metadata including dependencies, requirements (Ruby >= 3.2, Rails >= 6.1), and description. It shows the gem is named "activejob-temporal" and provides an ActiveJob adapter backed by Temporal.
+    *   **Recommendation:** You can reference this for context on what the gem is and does.
 
-*   **File:** `bin/temporal-worker`
-    *   **Summary:** Executable worker script that bootstraps Temporal workers to process jobs.
-    *   **Recommendation:** This executable is correctly listed in the gemspec (`spec.executables = ["temporal-worker"]`). The script exists and is functional.
+*   **File:** `lib/activejob/temporal/payload.rb`
+    *   **Summary:** This file implements payload serialization with a 250KB size limit (referenced in the Security section requirement).
+    *   **Recommendation:** You MUST mention the 250KB payload size limit in the Security section as a safeguard against DoS attacks.
 
 ### Implementation Tips & Notes
 
-*   **Tip:** A gem file `activejob-temporal-0.1.0.gem` already exists in the project root (created Oct 29 14:21), which means someone has successfully built the gem before. This indicates the gemspec is likely valid.
+*   **Tip:** The Keep a Changelog format is already referenced in the current CHANGELOG.md file, so maintain consistency with that format (https://keepachangelog.com/en/1.0.0/).
 
-*   **Note:** The gemspec uses `git ls-files -z` to determine which files to include in the gem package. This approach is standard and ensures only committed files are packaged. The exclusion patterns are comprehensive and appropriate:
-    - Excludes test files (`spec/`)
-    - Excludes documentation source (`docs/`)
-    - Excludes examples (`examples/`)
-    - Excludes development artifacts (`tmp/`, `tools/`, `.codemachine/`, `.github/`, `coverage/`, `Gemfile`, `Rakefile`)
-    - Excludes dotfiles (`.gitignore`, `.rspec`, `.rubocop.yml`, etc.)
+*   **Note:** For the release date, use **2025-10-29** as the actual release date (today's date), not the example date from the task description (2025-10-25).
 
-*   **Warning:** When running `gem build`, you may encounter Ruby version or environment issues if using the system Ruby instead of the project's Ruby version (3.3.5 managed by RVM). The previous build attempts failed due to using the system Ruby (2.6) instead of the RVM Ruby. You MUST use the correct Ruby environment.
+*   **Tip:** The README.md Features section (lines 23-34) provides user-friendly descriptions of all features. You SHOULD adapt these descriptions for the CHANGELOG "Added" section, making them concise and action-oriented.
 
-*   **Tip:** To verify the gem works after building, you should:
-    1. Run `gem build activejob-temporal.gemspec` to build the gem (this will succeed if gemspec is valid)
-    2. Check that a `.gem` file is created
-    3. Optionally, install it locally with `gem install activejob-temporal-0.1.0.gem` to verify installation
-    4. Optionally, require it in an irb session to verify it loads correctly
+*   **Critical:** Since this is an **initial release** (v0.1.0), you should ONLY include "Added" and "Security" sections. Do NOT include "Changed", "Deprecated", "Removed", or "Fixed" sections as there was no prior release.
 
-*   **Note:** The gemspec metadata includes `"rubygems_mfa_required" => "true"`, which is a security best practice that requires multi-factor authentication for publishing the gem to RubyGems.org. This is appropriate for a production gem.
+*   **Security Note:** The task explicitly requires noting the 250KB payload size limit in the Security section. This is implemented in `lib/activejob/temporal/payload.rb` and is a safeguard against denial-of-service attacks from large payloads.
 
-*   **Critical:** The current gemspec is already complete and follows all best practices. Your primary task is to **validate** it works correctly by building the gem and verifying no errors occur. The gemspec itself does not need modifications.
+*   **Format Guidance:** Keep a Changelog format uses:
+    - `## [0.1.0] - YYYY-MM-DD` for version headings
+    - `### Added` for new features
+    - `### Security` for security-related items
+    - Bullet points (`-`) for individual items
+    - Past tense or present tense for items (Keep a Changelog uses present tense in examples, but past tense is also acceptable)
+    - Each item should be 1-2 lines maximum
 
-### Testing & Validation Strategy
+*   **Conciseness:** Keep entries brief (1-2 lines each). Focus on **user-visible features**, not internal implementation details. For example:
+    - ✅ Good: "Added support for scheduled job execution with `set(wait:)` and `set(wait_until:)`"
+    - ❌ Bad: "Implemented AjWorkflow class with durable sleep logic for scheduled jobs"
 
-1. **Build the gem**: Run `gem build activejob-temporal.gemspec` from the project root
-2. **Check for errors**: The build should complete without warnings or errors
-3. **Verify gem file created**: Check that `activejob-temporal-0.1.0.gem` exists
-4. **List gem contents** (optional): Run `gem spec activejob-temporal-0.1.0.gem --ruby` to inspect the built gem's metadata
-5. **Install locally** (optional but recommended): Run `gem install activejob-temporal-0.1.0.gem` to verify installation works
-6. **Test requiring** (optional but recommended): Start irb and run `require 'activejob-temporal'` to verify the gem loads
+*   **User-Focused:** Write from the perspective of what users can DO with the gem, not what technical components were implemented.
 
-### Files to Review Before Making Changes
+### Structure Recommendation
 
-Since the gemspec is already complete, you should:
-1. Read the gemspec file carefully to understand its current state
-2. Verify all referenced files exist (lib/activejob/temporal/version.rb, bin/temporal-worker, README.md, CHANGELOG.md, LICENSE)
-3. Run the validation steps above to ensure everything works
+Based on Keep a Changelog format and the task requirements, your CHANGELOG should follow this structure:
 
-### Success Criteria Checklist
+```markdown
+# Changelog
 
-Based on the acceptance criteria from the task specification:
+All notable changes to this project will be documented in this file.
 
-- [x] Gemspec includes all required metadata (already present)
-- [x] Runtime dependencies are declared (activejob, globalid, temporalio)
-- [x] Development dependencies are declared (rake, rspec, rubocop, simplecov, yard)
-- [x] Files list includes all necessary runtime files, excludes tests and dev artifacts
-- [x] Executables includes temporal-worker
-- [x] Required Ruby version is >= 3.2
-- [ ] `gem build activejob-temporal.gemspec` succeeds without errors (needs validation)
-- [ ] Built gem (.gem file) is created (needs validation - one already exists from previous build)
-- [ ] Installing gem locally succeeds (optional validation)
-- [ ] Requiring gem in irb succeeds (optional validation)
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Conclusion:** The gemspec is already complete. Your task is to validate it by building the gem and confirming it works correctly. The existing gem file from Oct 29 indicates it has been built successfully before, but you should rebuild it to confirm the current state is correct.
+## [0.1.0] - 2025-10-29
+
+### Added
+- [Feature 1]
+- [Feature 2]
+- [Feature 3]
+- ...
+
+### Security
+- [Payload size limit note]
+```
+
+### Features to Include in "Added" Section
+
+Based on README.md Features section and implemented functionality, include these items:
+
+1. **ActiveJob adapter integration**: Drop-in replacement for existing adapters, backed by Temporal workflows
+2. **Immediate job execution**: Support for `MyJob.perform_later(args)`
+3. **Scheduled job execution**: Support for `MyJob.set(wait:)` and `MyJob.set(wait_until:)`
+4. **Retry policy mapping**: Automatic translation of `retry_on` declarations to Temporal retry policies with exponential backoff
+5. **Discard policy mapping**: Automatic handling of `discard_on` declarations as non-retryable errors
+6. **Job cancellation API**: `ActiveJob::Temporal.cancel(JobClass, job_id)` for cancelling in-flight jobs
+7. **Search attributes**: Filter and debug jobs in Temporal UI using job class, queue, job ID, tenant ID, and enqueue timestamp
+8. **Transactional enqueue**: Automatic deferral of job enqueue until database transaction commits
+9. **GlobalID serialization**: Support for passing ActiveRecord models and other GlobalID-compatible objects as job arguments
+10. **Configurable timeouts and retries**: Global and per-job configuration for activity timeouts, retry intervals, and backoff
+11. **Temporal worker executable**: `bin/temporal-worker` script for running workers
+12. **Structured logging**: JSON-formatted logs for observability integration
+13. **Comprehensive documentation**: README, API docs (YARD), migration guide, and example Rails application
+
+### Security Note to Include
+
+The Security section should mention:
+- Payload size limit of 250KB enforced to prevent denial-of-service attacks from oversized job payloads
+
+### Writing Style Examples
+
+Good changelog entries:
+- "Added ActiveJob adapter backed by Temporal workflows"
+- "Added support for immediate job execution via `perform_later`"
+- "Added configurable activity timeouts and retry policies"
+- "Added `bin/temporal-worker` executable for running Temporal workers"
+
+Bad changelog entries (too technical):
+- "Implemented AjWorkflow class for workflow orchestration" ❌
+- "Created RetryMapper module to translate retry_on to RetryPolicy" ❌
+- "Built TemporalAdapter class implementing ActiveJob adapter interface" ❌
+
+---
+
+**Ready to code!** The Coder Agent should now have all the context needed to update CHANGELOG.md with proper v0.1.0 release notes following Keep a Changelog format, listing all user-facing features in a concise manner, and including the security note about payload size limits.
