@@ -10,28 +10,25 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I4.T7",
+  "task_id": "I4.T8",
   "iteration_id": "I4",
   "iteration_goal": "Implement the Temporal worker bootstrap script, write comprehensive integration tests with a real Temporal test server, and validate end-to-end functionality (enqueue → workflow → activity → job execution).",
-  "description": "Write integration test in `spec/integration/cancellation_spec.rb` that tests job cancellation. Test flow: (1) Define a long-running job that calls `Temporalio::Activity.heartbeat` periodically (e.g., `10.times { Temporalio::Activity.heartbeat; sleep 1 }`). (2) Enqueue job. (3) Start worker. (4) Wait for job to start executing (check workflow is running). (5) Call `ActiveJob::Temporal.cancel(TestJob, job_id)`. (6) Wait for workflow to be cancelled (max 5 seconds). (7) Verify workflow status is Cancelled. (8) Verify job did not complete (heartbeat loop interrupted). This test proves cancellation API works and activities can be aborted mid-execution via heartbeating.",
+  "description": "Write integration test in `spec/integration/enqueue_spec.rb` (same file, additional test) that verifies Search Attributes are attached to workflows. Test flow: (1) Enqueue a job (e.g., `TestJob.perform_later(42)`). (2) Start worker. (3) Wait for workflow to complete. (4) Query Temporal for the workflow using test client. (5) Verify workflow has Search Attributes: `ajClass == \"TestJob\"`, `ajQueue == \"default\"`, `ajJobId == job.job_id`, `ajEnqueuedAt` is a timestamp, `ajTenantId` is nil (or present if job has tenant context). This test proves Search Attributes builder works and attributes are persisted in Temporal.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "RSpec integration test patterns, Temporal test server, cancellation API from I3.T5, activity heartbeat documentation",
+  "inputs": "RSpec integration test patterns, Temporal test server, search attributes builder from I1.T7, Temporal search API documentation",
   "target_files": [
-    "spec/integration/cancellation_spec.rb",
-    "spec/fixtures/sample_jobs.rb"
+    "spec/integration/enqueue_spec.rb"
   ],
   "input_files": [
     "spec/support/temporal_test_server.rb",
-    "lib/activejob/temporal/cancel.rb",
-    "lib/activejob/temporal/workflows/aj_workflow.rb",
-    "lib/activejob/temporal/activities/aj_runner_activity.rb",
-    "spec/fixtures/sample_jobs.rb"
+    "lib/activejob/temporal/search_attributes.rb",
+    "lib/activejob/temporal/adapter.rb"
   ],
-  "deliverables": "Passing integration test for cancellation",
-  "acceptance_criteria": "Integration test defines a long-running job that heartbeats; Test enqueues job, starts worker; Test waits for workflow to start (query workflow status); Test calls `ActiveJob::Temporal.cancel(LongRunningJob, job_id)`; Test waits for workflow to be cancelled (max 5 seconds); Test verifies workflow status is Cancelled (query via test client); Test verifies job did not complete (heartbeat loop was interrupted, no final result); `rake spec:integration` passes for cancellation_spec.rb; Test is isolated",
+  "deliverables": "Passing integration test verifying Search Attributes",
+  "acceptance_criteria": "Integration test enqueues job, starts worker; Test waits for workflow to complete; Test queries workflow details using test client (`client.get_workflow_handle(workflow_id).describe`); Test verifies Search Attributes presence and values: `ajClass` == job class name, `ajQueue` == job queue name (or \"default\"), `ajJobId` == job.job_id, `ajEnqueuedAt` is a timestamp (Time object or ISO8601 string), `ajTenantId` is nil (or present if applicable); `rake spec:integration` passes for search attributes test in enqueue_spec.rb; Test is isolated",
   "dependencies": [
-    "I3.T5",
-    "I2.T3",
+    "I3.T1",
+    "I1.T7",
     "I4.T2"
   ],
   "parallelizable": false,
@@ -45,93 +42,104 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: Job Cancellation Flow (from 04_Behavior_and_Communication.md)
+### Context: data-entities (from 03_System_Structure_and_Data.md)
 
 ```markdown
-#### **Key Interaction Flow 4: Job Cancellation**
+#### **Key Data Entities**
 
-**Scenario**: User cancels an in-flight job via `ActiveJob::Temporal.cancel(job_id)`.
+**1. Job Payload (Workflow Input)**
 
-**Key Steps:**
+The serialized representation of an ActiveJob that is passed to `AjWorkflow.execute`.
 
-1. **User calls cancellation API**: `ActiveJob::Temporal.cancel(job_id)`
-2. **Build workflow ID**: Deterministic ID constructed from job class and job_id
-3. **Get workflow handle**: Temporal client retrieves handle to running workflow
-4. **Send cancellation**: gRPC `RequestCancelWorkflowExecution` call (non-blocking, returns immediately)
-5. **Temporal propagates signal**: Sends cancellation to workflow and any running activities
-6. **(If activity heartbeats)**: Activity receives `CancelledError`, can abort early
-7. **(If no heartbeat)**: Activity completes normally; workflow still marked as cancelled afterward
+| Field | Type | Description | Example |
+|-------|------|-------------|---------|
+| `job_class` | String | Fully-qualified class name | `"SendInvoiceJob"` |
+| `job_id` | String (UUID) | ActiveJob's unique identifier | `"a1b2c3d4-..."` |
+| `queue_name` | String | ActiveJob queue name | `"billing"` |
+| `arguments` | Array<Any> | Serialized job arguments (JSON-compatible) | `[42, {"key": "value"}]` |
+| `scheduled_at` | ISO8601 String (optional) | Scheduled execution timestamp | `"2025-10-25T12:00:00Z"` |
+| `executions` | Integer | Number of times job has been attempted | `0` (on first enqueue) |
+| `exception_executions` | Hash | Retry metadata (from ActiveJob) | `{}` |
 
-**Best Practice**: Jobs should call `Temporalio::Activity.heartbeat` periodically (e.g., every 30s) to enable prompt cancellation.
+**2. Workflow Metadata (Temporal Search Attributes)**
+
+Attached to the workflow on start, enabling queries in Temporal UI.
+
+| Attribute | Type | Purpose | Example |
+|-----------|------|---------|---------|
+| `ajClass` | Keyword | Job class name for filtering | `"SendInvoiceJob"` |
+| `ajQueue` | Keyword | Task queue/job queue | `"billing"` |
+| `ajJobId` | Keyword | ActiveJob job_id for correlation | `"a1b2c3d4-..."` |
+| `ajEnqueuedAt` | Datetime | Enqueue timestamp | `2025-10-25T12:00:00Z` |
+| `ajTenantId` | Keyword (optional) | Multi-tenancy support | `"tenant-123"` |
+
+**3. Retry Policy (Activity Configuration)**
+
+Derived from ActiveJob's `retry_on`/`discard_on` DSL and passed to `execute_activity`.
+
+| Field | Type | Source | Example |
+|-------|------|--------|---------|
+| `initial_interval` | Duration | `retry_on wait:` or config default | `30.seconds` |
+| `backoff_coefficient` | Float | Config default (2.0) | `2.0` |
+| `maximum_attempts` | Integer | `retry_on attempts:` or config default | `5` |
+| `non_retryable_error_types` | Array<String> | `discard_on` exception classes | `["PSP::FatalError"]` |
+
+**4. Configuration (Gem Settings)**
+
+Stored in `ActiveJob::Temporal.config` singleton.
+
+| Setting | Type | Default | Purpose |
+|---------|------|---------|---------|
+| `target` | String | `"127.0.0.1:7233"` | Temporal server address |
+| `namespace` | String | `"default"` | Temporal namespace |
+| `task_queue_prefix` | String (optional) | `nil` | Prefix for task queue names |
+| `default_activity_timeout` | Duration | `15.minutes` | Activity start_to_close_timeout |
+| `default_retry_initial_interval` | Duration | `30.seconds` | Retry initial delay |
+| `default_retry_backoff` | Float | `2.0` | Exponential backoff factor |
+| `default_retry_max_attempts` | Integer | `1` | Max retry attempts if no `retry_on` |
+| `logger` | Logger | `Rails.logger` | Logging destination |
+| `enable_tracing` | Boolean | `true` | OpenTelemetry tracing toggle |
 ```
 
-**Key Flow Summary:**
-- When a job is cancelled via `ActiveJob::Temporal.cancel(job_class, job_id)`, the cancellation API builds the workflow_id and sends a cancellation request
-- The cancellation is **best-effort**: it only interrupts activities that call `Temporalio::Activity.heartbeat`
-- Jobs must explicitly call `Temporalio::Activity.heartbeat` periodically (e.g., every 1 second in a loop) to enable prompt cancellation
-- When heartbeat is called and a cancellation has been requested, Temporal raises a `CancelledError` exception
-- The workflow status will eventually be `CANCELLED` regardless of whether the activity heartbeats, but heartbeating allows immediate interruption
+### Context: decision-search-attributes (from 06_Rationale_and_Future.md)
 
-### Context: Cancellation Sequence Diagram (from docs/diagrams/cancellation_sequence.puml)
+```markdown
+#### **Decision 5: Search Attributes for Visibility**
 
-```plantuml
-alt Activity heartbeating
-  Worker -> Activity: cancellation requested (signal)
-  Activity -> Temporal: Temporalio::Activity.heartbeat(details)
-  Temporal --> Activity: raises CancelledError
-  Activity -> Worker: abort job.perform and cleanup
-  Worker -> Temporal: report ActivityCancelled
-  Temporal --> Client: cancellation acknowledged
-else Activity not heartbeating
-  note right of Activity: Without heartbeat the activity may finish even after cancel signal
-  Activity --> Worker: completes work as normal
-  Worker -> Temporal: ActivityCompleted
-  Temporal -> Worker: workflow marked Cancelled after completion
-end
+**Choice:** Attach `ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`, `ajTenantId` as Search Attributes on workflow start.
 
-note over Activity, Temporal: Best-effort cancellation relies on jobs heartbeating periodically for prompt handling
+**Rationale:**
+
+- **Operational Queries**: Operators can filter workflows by job class, queue, or tenant in Temporal UI
+- **Debugging**: Easy to find specific jobs by ActiveJob job_id
+- **Monitoring**: Track job enqueue times, detect stale jobs
+
+**Trade-offs:**
+
+| Benefit | Cost |
+|---------|------|
+| Rich filtering in Temporal UI | Search Attributes must be pre-registered in Temporal schema |
+| Fast queries (indexed) | Limited to keyword/datetime types (no arbitrary JSON) |
+| Multi-tenant support (ajTenantId) | Requires Temporal cluster with Elasticsearch (for advanced search) |
+
+**Alternatives Considered:**
+
+1. **No Search Attributes**: Rely only on workflow history
+   - **Rejected**: Hard to find jobs without full workflow ID; poor operational experience
+2. **Custom Metadata Store**: Store job metadata in separate database
+   - **Rejected**: Adds complexity; duplicates Temporal's built-in visibility
+
+**Configuration Requirement**: Temporal cluster must have these Search Attributes registered:
+
+```bash
+tctl admin cluster add-search-attributes \
+  --name ajClass --type Keyword \
+  --name ajQueue --type Keyword \
+  --name ajJobId --type Keyword \
+  --name ajEnqueuedAt --type Datetime \
+  --name ajTenantId --type Keyword
 ```
-
-**Key Insight:**
-- The test MUST have two paths: one where the activity heartbeats (and gets interrupted), and one where it doesn't (and completes normally)
-- For this task, we're testing the **heartbeating path** where cancellation interrupts the job mid-execution
-- The diagram shows that when `Temporalio::Activity.heartbeat` is called, it will raise a `CancelledError` if cancellation was requested
-- This exception should propagate out of the job's perform method, causing the activity to fail with cancellation
-
-### Context: Cancellation API Implementation (from lib/activejob/temporal/cancel.rb)
-
-```ruby
-# Cancels a running Temporal workflow by sending a cancellation request.
-# This is a best-effort operation; if the workflow already completed or
-# does not exist, the error is logged and suppressed.
-#
-# @param job_class [Class] The ActiveJob class for the job to cancel.
-# @param job_id [String] Identifier of the job to cancel.
-#
-# @example Cancel a running job
-#   ActiveJob::Temporal.cancel(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
-def cancel(job_class, job_id)
-  workflow_id = build_workflow_id(job_class, job_id)
-  ActiveJob::Temporal.client.workflow_handle(workflow_id).cancel
-  log_cancellation_requested(job_class, job_id, workflow_id)
-rescue StandardError => e
-  return log_workflow_not_found(job_class, job_id, workflow_id, e) if workflow_not_found?(e)
-
-  raise
-end
-
-private
-
-def build_workflow_id(job_class, job_id)
-  "ajwf:#{job_class.name}:#{job_id}"
-end
 ```
-
-**Key Details:**
-- The cancellation API requires **both** `job_class` and `job_id` parameters (not just job_id)
-- It constructs the workflow_id using the format `"ajwf:#{job_class.name}:#{job_id}"`
-- The cancel method is best-effort and returns gracefully if the workflow is not found
-- In your test, you MUST call: `ActiveJob::Temporal.cancel(LongRunningJob, job.job_id)`
 
 ---
 
@@ -139,277 +147,223 @@ end
 
 The following analysis is based on my direct review of the current codebase. Use these notes and tips to guide your implementation.
 
+### ⚠️ **CRITICAL DISCOVERY: TEST ALREADY EXISTS**
+
+**File:** `spec/integration/enqueue_spec.rb` (lines 39-81)
+
+**Summary:** The integration test for Search Attributes verification **already exists** in the codebase. The test is named "attaches search attributes to workflows for filtering and debugging" and is fully implemented.
+
+**Current State:**
+- ✅ Test enqueues a job using `TestJob.perform_later(42)`
+- ✅ Test starts a worker and waits for job completion
+- ✅ Test queries workflow description using `client.workflow_handle(workflow_id).describe`
+- ✅ Test verifies all required Search Attributes:
+  - `ajClass` == "TestJob"
+  - `ajQueue` == "default"
+  - `ajJobId` == job.job_id
+  - `ajEnqueuedAt` is a Time object within 10 seconds of now
+  - `ajTenantId` is nil (since job argument is integer, not tenant object)
+
+**Recommendation:** This task appears to be **ALREADY COMPLETE**. The test exists and follows all acceptance criteria from the task specification.
+
 ### Relevant Existing Code
 
-*   **File:** `lib/activejob/temporal/cancel.rb`
-    *   **Summary:** This file implements the cancellation API that your test will invoke. The `cancel(job_class, job_id)` method sends a cancellation request to Temporal.
-    *   **Recommendation:** You MUST use the correct signature: `ActiveJob::Temporal.cancel(LongRunningJob, job.job_id)` (with job class, not just job_id).
-    *   **Critical Detail:** The cancel method is synchronous but **non-blocking** - it returns immediately after sending the cancellation request. You need to wait asynchronously for the workflow to actually reach the CANCELLED state.
+#### **File:** `lib/activejob/temporal/search_attributes.rb` (lines 1-43)
 
-*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
-    *   **Summary:** This file contains the activity that executes ActiveJob jobs. It does NOT currently include any heartbeat logic.
-    *   **Critical Finding:** The activity's `execute` method (lines 63-76) directly calls `job.perform(*args)` without any heartbeat mechanism. This means:
-        1. For cancellation to work, the **job itself** must call `Temporalio::Activity.heartbeat` inside its `perform` method
-        2. You cannot rely on the activity wrapper to heartbeat automatically
-    *   **Recommendation:** Your test job's `perform` method MUST explicitly call `Temporalio::Activity.heartbeat` in a loop. Example:
-        ```ruby
-        def perform
-          10.times do
-            Temporalio::Activity.heartbeat
-            sleep 1
-            $long_running_iterations += 1
-          end
-          $long_running_completed = true
-        end
-        ```
+**Summary:** This module builds Temporal Search Attributes from ActiveJob instances. It creates properly typed search attribute keys and values.
 
-*   **File:** `spec/integration/retries_spec.rb`
-    *   **Summary:** This is the existing integration test file for retry behavior. It demonstrates the standard test pattern you should follow.
-    *   **Recommendation:** Follow the exact same structure: use `around` block for setup/teardown (lines 12-26), start a worker with a unique task queue (line 30), enqueue job (line 34), wait for workflow state change, verify workflow status, check workflow history.
-    *   **Critical Pattern:** The test uses global variables (`$attempt_count`, `$test_result`) to track execution state. For your test, you should use similar global variables like `$long_running_iterations` and `$long_running_completed` to verify the job was interrupted mid-execution.
+**Key Implementation Details:**
+- Uses `Temporalio::SearchAttributes` and `Temporalio::SearchAttributes::Key` classes
+- Defines attribute types: `KEYWORD` for strings, `TIME` for timestamps, `INTEGER` for tenant IDs
+- Core attributes: `ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`
+- Optional `ajTenantId` extracted from first argument if it responds to `tenant_id`
+- Sets `ajEnqueuedAt` to `Time.now` at enqueue time
 
-*   **File:** `spec/integration/enqueue_spec.rb`
-    *   **Summary:** This file shows the basic worker setup and workflow status checking patterns.
-    *   **Recommendation:** Copy the `start_worker` and `stop_worker` helper methods (lines 41-58). These are the same pattern used in retries_spec.rb.
+**Note:** The implementation uses `IndexedValueType::INTEGER` for `ajTenantId`, but the architecture documents specify it should be a `Keyword` type. This may be a discrepancy to address.
 
-*   **File:** `spec/fixtures/sample_jobs.rb`
-    *   **Summary:** This file contains sample job classes for testing. It currently has NO long-running job that heartbeats.
-    *   **Recommendation:** You MUST create a new job class called `LongRunningJob` (or similar) at the end of this file. It should:
-        1. Inherit from `ActiveJob::Base`
-        2. Have a `queue_as :default` declaration
-        3. Implement a `perform` method that loops 10 times, calling `Temporalio::Activity.heartbeat` and `sleep 1` on each iteration
-        4. Set global variables to track progress: `$long_running_iterations` (counter) and `$long_running_completed` (boolean flag)
-    *   **Example Pattern:**
-        ```ruby
-        class LongRunningJob < ActiveJob::Base
-          queue_as :default
+#### **File:** `lib/activejob/temporal/adapter.rb` (lines 78-82)
 
-          def perform
-            $long_running_iterations = 0
-            10.times do
-              Temporalio::Activity.heartbeat
-              sleep 1
-              $long_running_iterations += 1
-            end
-            $long_running_completed = true
-          end
-        end
-        ```
+**Summary:** The TemporalAdapter conditionally attaches search attributes when enqueueing workflows.
 
-*   **File:** `spec/support/temporal_test_server.rb`
-    *   **Summary:** Helper module that manages Temporal test server connection for integration tests. Provides `TemporalTestHelper.client` method.
-    *   **Recommendation:** You MUST use `TemporalTestHelper.client` to get the Temporal client for querying workflow status. This is already done correctly in the existing tests.
+**Key Implementation Details:**
+- Search attributes are only added if `config.enable_search_attributes` is true
+- Uses `SearchAttributes.for(job)` to build the attributes
+- Passes attributes to workflow start via `options[:search_attributes]`
+
+**Recommendation:** The configuration flag `enable_search_attributes` is checked before adding search attributes. Ensure your test environment has this flag enabled (it defaults to `true` based on `lib/activejob/temporal.rb:45`).
+
+#### **File:** `spec/support/temporal_test_server.rb` (lines 1-122)
+
+**Summary:** This helper manages the Temporal test server connection for integration tests.
+
+**Key Implementation Details:**
+- Uses `TEST_NAMESPACE = "test"` for all integration tests
+- Provides `TemporalTestHelper.client` for accessing Temporal client
+- Automatically sets up and tears down test configuration in RSpec hooks
+- Validates connection by listing workflows on suite startup
+
+**Recommendation:** Your test MUST use `TemporalTestHelper.client` to get the properly configured test client, not `ActiveJob::Temporal.client` directly.
+
+#### **File:** `spec/fixtures/sample_jobs.rb` (lines 74-84)
+
+**Summary:** Defines `TestJob` class used in integration tests.
+
+**Key Implementation Details:**
+- `TestJob` stores its last executed argument in a class variable `@@last_argument`
+- Queues to `:default` queue
+- Simple `perform` method that just stores the argument
+
+**Recommendation:** Use `TestJob` for your search attributes test as it's the standard test job for integration tests.
 
 ### Implementation Tips & Notes
 
-*   **Tip #1: Workflow Status Polling**
-    Your test needs to wait for the workflow to reach the `CANCELLED` state. Create a helper method similar to `wait_for_workflow_completion` from retries_spec.rb but check for CANCELLED status:
-    ```ruby
-    def wait_for_workflow_cancellation(workflow_id)
-      Timeout.timeout(5) do
-        loop do
-          handle = client.workflow_handle(workflow_id)
-          description = handle.describe
-          status = description.status
-          break if status == Temporalio::Client::WorkflowExecutionStatus::CANCELLED ||
-                   status == Temporalio::Client::WorkflowExecutionStatus::COMPLETED
+#### **Tip 1: Test Already Exists - Verify It Passes**
 
-          sleep 0.1
-        end
-      end
-    end
-    ```
+The test you're asked to write already exists in `spec/integration/enqueue_spec.rb` starting at line 39. Your primary action should be to:
 
-*   **Tip #2: Wait for Workflow to Start**
-    Before calling cancel, you need to ensure the workflow has actually started and the activity is executing. Use a helper to poll until the workflow status is RUNNING:
-    ```ruby
-    def wait_for_workflow_running(workflow_id)
-      Timeout.timeout(5) do
-        loop do
-          handle = client.workflow_handle(workflow_id)
-          description = handle.describe
-          break if description.status == Temporalio::Client::WorkflowExecutionStatus::RUNNING
+1. **Run the test** to verify it passes: `bundle exec rspec spec/integration/enqueue_spec.rb:39`
+2. **If the test fails**, debug and fix the issues
+3. **If the test passes**, mark the task as complete and update the task status
 
-          sleep 0.1
-        end
-      end
-    end
-    ```
+#### **Tip 2: Understanding Temporal Search Attributes API**
 
-*   **Tip #3: Verify Job Was Interrupted**
-    After cancellation, verify the job did NOT complete by checking the global variables:
-    ```ruby
-    expect($long_running_completed).to eq(false)  # Job should NOT have completed
-    expect($long_running_iterations).to be < 10   # Job should have been interrupted mid-loop
-    expect($long_running_iterations).to be > 0    # Job should have started (at least 1 iteration)
-    ```
-
-*   **Tip #4: Test Timing**
-    The test flow should be:
-    1. Enqueue job
-    2. Start worker
-    3. Wait for workflow to reach RUNNING status (~1-2 seconds)
-    4. Call cancel
-    5. Wait for workflow to reach CANCELLED status (~1-3 seconds)
-    6. Verify status and incomplete execution
-
-    Total timeout should be ~5 seconds, as specified in acceptance criteria.
-
-*   **Tip #5: Global Variable Management**
-    Initialize and reset the global variables in the `around` block:
-    ```ruby
-    around do |example|
-      original_adapter = ActiveJob::Base.queue_adapter
-      ActiveJob::Base.queue_adapter = :temporal
-      $long_running_iterations = 0
-      $long_running_completed = false
-
-      example.run
-    ensure
-      ActiveJob::Base.queue_adapter = original_adapter
-      stop_worker(@worker_thread)
-      $long_running_iterations = 0
-      $long_running_completed = false
-    end
-    ```
-
-*   **Tip #6: Workflow History Verification (Optional Enhancement)**
-    While not strictly required by acceptance criteria, you may want to verify the workflow history shows activity cancellation:
-    ```ruby
-    history = handle.fetch_history
-    event_types = history.events.map(&:event_type)
-    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED)
-    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_STARTED)
-    # May include EVENT_TYPE_ACTIVITY_TASK_CANCELED or similar
-    expect(event_types).to include(:EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED)
-    ```
-
-*   **Warning: Heartbeat API Availability**
-    The `Temporalio::Activity.heartbeat` method is only available when code is running inside a real Temporal activity context. In unit tests with stubs, this would fail. However, since this is an integration test with a real Temporal test server and worker, the heartbeat API should be available. If you encounter issues, verify:
-    1. The worker is actually running (check thread is alive)
-    2. The activity is executing on the worker (not in the main test thread)
-
-*   **Warning: Exception Handling in Job**
-    The job's perform method should NOT catch the `Temporalio::Activity::CancelledError` exception (or whatever exception Temporal raises on heartbeat). Let it propagate naturally so the activity reports cancellation back to Temporal. If you catch and suppress it, the job will complete normally instead of being cancelled.
-
-*   **Note: Task Queue Isolation**
-    Like the retry test, use a unique task queue for each test run to avoid interference:
-    ```ruby
-    task_queue = "cancel-test-#{SecureRandom.hex(4)}"
-    @worker_thread = start_worker(task_queue)
-    job = LongRunningJob.set(queue: task_queue).perform_later
-    ```
-
-### Test Structure Recommendation
-
-Based on the existing retry test and cancellation requirements, your test should follow this structure:
+The Temporal Ruby SDK uses a typed key system for search attributes:
 
 ```ruby
-RSpec.describe "ActiveJob Temporal cancellation", :integration do
+# Create a typed key
+key = Temporalio::SearchAttributes::Key.new(
+  "ajClass",
+  Temporalio::SearchAttributes::IndexedValueType::KEYWORD
+)
+
+# Access attribute value from workflow description
+search_attrs = description.search_attributes
+value = search_attrs[key]  # Returns the value for that typed key
+```
+
+**Types available:**
+- `KEYWORD` - for string values (ajClass, ajQueue, ajJobId, ajTenantId)
+- `TIME` - for timestamp values (ajEnqueuedAt)
+- `INTEGER` - for numeric values (currently used for ajTenantId but may need to be Keyword per docs)
+
+#### **Tip 3: Test Pattern for Integration Tests**
+
+All integration tests in this project follow a consistent pattern:
+
+```ruby
+RSpec.describe "Feature description", :integration do
   let(:client) { TemporalTestHelper.client }
 
   around do |example|
+    # Save original adapter
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
-    $long_running_iterations = 0
-    $long_running_completed = false
+
+    # Clear test state
+    TestJob.last_argument = nil
 
     example.run
   ensure
+    # Restore original adapter
     ActiveJob::Base.queue_adapter = original_adapter
     stop_worker(@worker_thread)
-    $long_running_iterations = 0
-    $long_running_completed = false
+    TestJob.last_argument = nil
   end
 
-  it "cancels a long-running job via heartbeat mechanism" do
-    task_queue = "cancel-test-#{SecureRandom.hex(4)}"
-    @worker_thread = start_worker(task_queue)
-    sleep 0.5  # Give worker time to start
-
-    job = LongRunningJob.set(queue: task_queue).perform_later
+  it "tests specific behavior" do
+    # 1. Enqueue job
+    job = TestJob.perform_later(42)
     workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
 
-    # Wait for workflow to start executing
-    wait_for_workflow_running(workflow_id)
+    # 2. Start worker
+    @worker_thread = start_worker
 
-    # Cancel the job
-    ActiveJob::Temporal.cancel(LongRunningJob, job.job_id)
+    # 3. Wait for completion
+    wait_for_result(42)
 
-    # Wait for workflow to be cancelled
-    wait_for_workflow_cancellation(workflow_id)
+    # 4. Verify results
+    expect(TestJob.last_argument).to eq(42)
 
-    # Verify workflow status is CANCELLED
+    # 5. Query Temporal
     handle = client.workflow_handle(workflow_id)
     description = handle.describe
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::CANCELLED)
 
-    # Verify job did not complete (heartbeat loop was interrupted)
-    expect($long_running_completed).to eq(false)
-    expect($long_running_iterations).to be < 10  # Interrupted before 10 iterations
-    expect($long_running_iterations).to be > 0   # But started (at least 1 iteration)
-  end
-
-  private
-
-  def start_worker(task_queue)
-    @worker = Temporalio::Worker.new(
-      client: TemporalTestHelper.client,
-      task_queue: task_queue,
-      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-      activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-    )
-
-    Thread.new { @worker.run }
-  end
-
-  def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
-  end
-
-  def wait_for_workflow_running(workflow_id)
-    Timeout.timeout(5) do
-      loop do
-        handle = client.workflow_handle(workflow_id)
-        description = handle.describe
-        break if description.status == Temporalio::Client::WorkflowExecutionStatus::RUNNING
-
-        sleep 0.1
-      end
-    end
-  end
-
-  def wait_for_workflow_cancellation(workflow_id)
-    Timeout.timeout(5) do
-      loop do
-        handle = client.workflow_handle(workflow_id)
-        description = handle.describe
-        status = description.status
-        break if status == Temporalio::Client::WorkflowExecutionStatus::CANCELLED
-
-        sleep 0.1
-      end
-    end
+    # 6. Make assertions
+    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+  ensure
+    stop_worker(@worker_thread)
   end
 end
 ```
 
----
+#### **Tip 4: Handling Search Attributes Type Mismatch**
 
-## Summary
+The architecture documents specify `ajTenantId` should be a `Keyword` type, but the current implementation uses `INTEGER`. When writing or verifying tests:
 
-You are implementing Task I4.T7: an integration test for job cancellation that proves the cancellation API works and activities can be aborted mid-execution via heartbeating. The test MUST:
-1. **Create a new LongRunningJob** in `spec/fixtures/sample_jobs.rb` that loops 10 times, calling `Temporalio::Activity.heartbeat` and `sleep 1` on each iteration
-2. **Create a new test file** `spec/integration/cancellation_spec.rb` with the cancellation test
-3. **Enqueue the job** and start a worker
-4. **Wait for the workflow to start** executing (status = RUNNING)
-5. **Call the cancel API**: `ActiveJob::Temporal.cancel(LongRunningJob, job.job_id)`
-6. **Wait for cancellation** (workflow status becomes CANCELLED)
-7. **Verify the job was interrupted** mid-execution (global variable shows < 10 iterations, and completed flag is false)
+- **For nil values**: Both types will return `nil` when queried
+- **For present values**: Ensure the type matches what `SearchAttributes.for(job)` sets
+- **Current code uses**: `IndexedValueType::INTEGER` (line 26 of search_attributes.rb)
+- **Architecture specifies**: `Keyword` type
 
-The key insight is that cancellation is **best-effort** and relies on the job explicitly calling `Temporalio::Activity.heartbeat`. Without heartbeat calls, the cancellation signal is ignored until the activity completes. Your test proves that WITH heartbeating, cancellation interrupts the job promptly.
+This discrepancy should be noted but doesn't block the test from passing.
 
-All necessary infrastructure (test server helper, worker setup, cancel API) is already in place. You are creating TWO new files: the test file and adding a new job class to sample_jobs.rb.
+#### **Warning: Test Server Must Be Running**
+
+Integration tests require a live Temporal server. Before running tests:
+
+```bash
+# Option 1: Local dev server
+temporal server start-dev --namespace test
+
+# Option 2: Docker
+docker run --rm -p 7233:7233 -p 8233:8233 temporalio/auto-setup:latest
+```
+
+If the server is not running, tests will fail with a `TemporalTestHelper::ServerNotAvailableError`.
+
+#### **Note: Search Attributes Must Be Pre-registered**
+
+For search attributes to work in a real Temporal cluster, they must be pre-registered:
+
+```bash
+tctl admin cluster add-search-attributes \
+  --name ajClass --type Keyword \
+  --name ajQueue --type Keyword \
+  --name ajJobId --type Keyword \
+  --name ajEnqueuedAt --type Datetime \
+  --name ajTenantId --type Keyword
+```
+
+However, the test dev server (`temporal server start-dev`) automatically registers common search attribute types, so this should not block your tests.
+
+### Task Completion Strategy
+
+Given that the test already exists, your strategy should be:
+
+1. **Verify the existing test** in `spec/integration/enqueue_spec.rb:39-81`
+2. **Run the test** to ensure it passes:
+   ```bash
+   bundle exec rspec spec/integration/enqueue_spec.rb -e "attaches search attributes"
+   ```
+3. **If the test passes**: Mark task I4.T8 as complete and proceed to the next task
+4. **If the test fails**:
+   - Debug the failure
+   - Fix any issues in the implementation or test
+   - Ensure all acceptance criteria are met
+5. **Document any findings** about the type mismatch (INTEGER vs Keyword for ajTenantId)
+
+### Acceptance Criteria Verification Checklist
+
+✅ Integration test enqueues job → **CONFIRMED** (line 40)
+✅ Test starts worker → **CONFIRMED** (line 43)
+✅ Test waits for workflow to complete → **CONFIRMED** (line 45)
+✅ Test queries workflow details using `client.workflow_handle(workflow_id).describe` → **CONFIRMED** (lines 51-52)
+✅ Test verifies Search Attributes presence and values:
+  - `ajClass` == job class name → **CONFIRMED** (line 67)
+  - `ajQueue` == job queue name → **CONFIRMED** (line 68)
+  - `ajJobId` == job.job_id → **CONFIRMED** (line 69)
+  - `ajEnqueuedAt` is a timestamp → **CONFIRMED** (lines 72-74)
+  - `ajTenantId` is nil → **CONFIRMED** (lines 77-78)
+✅ Test is isolated → **CONFIRMED** (around block cleans up state)
+
+**All acceptance criteria are met by the existing test.**

@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "timeout"
+require "securerandom"
 require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
@@ -21,10 +22,12 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
   end
 
   it "executes an enqueued job immediately via Temporal" do
-    job = TestJob.perform_later(42)
-    workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
+    task_queue = "test-#{SecureRandom.hex(4)}"
+    @worker_thread = start_worker(task_queue)
+    sleep 0.5
 
-    @worker_thread = start_worker
+    job = TestJob.set(queue: task_queue).perform_later(42)
+    workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
 
     wait_for_result(42)
 
@@ -37,10 +40,12 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
   end
 
   it "attaches search attributes to workflows for filtering and debugging" do
-    job = TestJob.perform_later(42)
-    workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
+    task_queue = "test-#{SecureRandom.hex(4)}"
+    @worker_thread = start_worker(task_queue)
+    sleep 0.5
 
-    @worker_thread = start_worker
+    job = TestJob.set(queue: task_queue).perform_later(42)
+    workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
 
     wait_for_result(42)
 
@@ -65,7 +70,7 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
 
     # Verify search attributes
     expect(search_attrs[aj_class_key]).to eq("TestJob")
-    expect(search_attrs[aj_queue_key]).to eq("default")
+    expect(search_attrs[aj_queue_key]).to eq(task_queue)
     expect(search_attrs[aj_job_id_key]).to eq(job.job_id)
 
     # Verify ajEnqueuedAt is a recent timestamp
@@ -82,11 +87,11 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
 
   private
 
-  def start_worker
+  def start_worker(task_queue = "default")
     Thread.new do
       worker = Temporalio::Worker.new(
         client: TemporalTestHelper.client,
-        task_queue: "default",
+        task_queue: task_queue,
         workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
         activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
       )

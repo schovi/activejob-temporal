@@ -117,7 +117,7 @@
     "acceptance_criteria": "Integration test enqueues job, starts worker; Test waits for workflow to complete; Test queries workflow details using test client (`client.get_workflow_handle(workflow_id).describe`); Test verifies Search Attributes presence and values: `ajClass` == job class name, `ajQueue` == job queue name (or \"default\"), `ajJobId` == job.job_id, `ajEnqueuedAt` is a timestamp (Time object or ISO8601 string), `ajTenantId` is nil (or present if applicable); `rake spec:integration` passes for search attributes test in enqueue_spec.rb; Test is isolated",
     "dependencies": ["I3.T1", "I1.T7", "I4.T2"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I4.T9",
