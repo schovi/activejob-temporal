@@ -110,7 +110,7 @@
     "acceptance_criteria": "docs/adr/ folder exists; docs/adr/README.md exists explaining what ADRs are and how to create new ones; 001-structured-logging.md exists with sections: Title ('ADR 001: Structured JSON Logging'), Status (Accepted), Context (observability requirements), Decision (Logger module with JSON output), Consequences (pros/cons); 002-iso8601-timestamps.md exists documenting ISO8601 vs Unix timestamp decision; 003-adapter-helper-module.md exists documenting Adapter module extraction; 004-idempotency-keys.md exists documenting thread-local idempotency key design; Each ADR follows consistent format and is 100-200 lines; Each ADR includes code examples showing the implemented solution; ADRs are written in clear, technical language suitable for new maintainers; All Markdown files pass markdownlint (if configured)",
     "dependencies": [],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I6.T6",

@@ -1,17 +1,9 @@
 {
   "activeTemplate": "codemachine.workflow.js",
-  "lastUpdated": "2025-10-31T11:48:10.984Z",
-  "completedSteps": [
-    0,
-    1,
-    2,
-    3,
-    4,
-    8
-  ],
+  "lastUpdated": "2025-10-31T13:34:51.047Z",
+  "completedSteps": [],
   "notCompletedSteps": [
-    10,
-    11
+    10
   ],
   "resumeFromLastStep": true
 }

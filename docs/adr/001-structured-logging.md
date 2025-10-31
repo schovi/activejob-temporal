@@ -6,21 +6,9 @@ Accepted
 
 ## Context
 
-Production observability is a critical requirement for any background job processing system. When jobs fail, retry, or exhibit unexpected behavior, operators need to quickly diagnose issues across distributed systems. The ActiveJob::Temporal gem bridges Rails applications with Temporal workflows, creating a complex execution environment spanning multiple processes and potentially multiple hosts.
+Production observability is critical for background job processing systems. The ActiveJob::Temporal gem bridges Rails applications with Temporal workflows, creating a complex execution environment spanning multiple processes and potentially multiple hosts.
 
-Traditional plain-text logging presents several challenges in this context:
-
-1. **Parsing Difficulty**: Plain text logs like `"Enqueued SendInvoiceJob with ID abc123 to queue invoices"` require complex regular expressions to extract structured data like job IDs, queue names, and timestamps.
-
-2. **Inconsistent Format**: Without enforcement, different code paths may log similar events in different formats, making correlation difficult. For example, one developer might write `"Job abc123 enqueued"` while another writes `"Enqueued job: abc123"`.
-
-3. **Limited Tooling Integration**: Modern log aggregation tools (Elasticsearch, Splunk, Datadog, CloudWatch Insights) are optimized for structured JSON data with well-defined fields. Plain text requires custom parsing pipelines.
-
-4. **Missing Correlation IDs**: Temporal workflows span multiple activities and retries. Without consistent workflow_id and run_id fields in every log entry, tracing a single job's lifecycle becomes manually intensive.
-
-5. **Production Requirements**: The gem must support both development environments (where human-readable logs are preferred) and production systems (where machine-parseable JSON is essential for observability platforms).
-
-The logging strategy needed to balance human readability during development with production-grade observability requirements while maintaining backward compatibility with Rails' standard logging infrastructure.
+Traditional plain-text logging presents several challenges: parsing requires complex regular expressions, inconsistent formatting makes correlation difficult, modern log aggregation tools require custom pipelines for plain text, and missing correlation IDs make tracing Temporal workflows (spanning multiple activities and retries) manually intensive. The logging strategy needed to balance human readability with production-grade observability.
 
 ## Decision
 
@@ -122,18 +110,11 @@ This produces the following JSON output:
 
 ### Standard Events Catalog
 
-The gem defines a standard set of events documented in the operational architecture:
-
 | Event | Level | Key Attributes |
 |-------|-------|----------------|
-| `workflow.enqueued` | info | `workflow_id`, `run_id`, `job_class`, `queue`, `scheduled_at` |
-| `activity.started` | info | `workflow_id`, `activity_id`, `attempt` |
-| `activity.completed` | info | `workflow_id`, `duration_ms` |
-| `activity.failed` | error | `workflow_id`, `exception_class`, `exception_message`, `backtrace` |
-| `activity.retry` | warn | `workflow_id`, `attempt`, `next_retry_interval` |
-| `cancellation.requested` | warn | `workflow_id`, `reason` |
-| `payload.size_warning` | warn | `job_class`, `payload_size_kb`, `limit_kb` |
-| `serialization.error` | error | `job_class`, `exception_class`, `exception_message` |
+| `workflow.enqueued` | info | `workflow_id`, `run_id`, `job_class`, `queue` |
+| `activity.failed` | error | `workflow_id`, `exception_class`, `exception_message` |
+| `payload.size_warning` | warn | `job_class`, `payload_size_kb` |
 
 ## Consequences
 
@@ -156,15 +137,13 @@ The gem defines a standard set of events documented in the operational architect
 
 ### Negative
 
-- **Human Readability Trade-Off**: Raw JSON logs are harder to read than plain text when directly viewing log files without tooling. Developers need to use `jq` or similar tools for comfortable log browsing.
+- **Human Readability Trade-Off**: Raw JSON logs are harder to read than plain text. Developers need to use `jq` or similar tools for comfortable log browsing.
 
-- **Payload Size**: JSON formatting adds overhead compared to plain text (field names repeated in every entry). For high-throughput systems, this increases log storage costs slightly (~20-30% larger than equivalent plain text).
+- **Payload Size**: JSON formatting adds overhead (~20-30% larger than plain text). For high-throughput systems, this increases log storage costs.
 
-- **Requires JSON Parsing**: Downstream consumers must parse JSON, which adds minimal CPU overhead compared to text splitting but does require JSON support in log viewers.
+- **SemanticLogger Assumption**: Optimal integration assumes SemanticLogger is available. Projects not using SemanticLogger get serialized JSON strings rather than structured Hashes.
 
-- **SemanticLogger Assumption**: While the code gracefully falls back to standard Logger, optimal integration assumes SemanticLogger is available. Projects not using SemanticLogger get serialized JSON strings rather than structured Hashes in their log streams.
-
-- **Event Name Discipline**: The effectiveness of event-based logging depends on developers following consistent naming conventions. Without enforcement, event names can proliferate (e.g., `"job_enqueued"` vs `"job.enqueued"` vs `"enqueue_job"`).
+- **Event Name Discipline**: Effectiveness depends on developers following consistent naming conventions.
 
 ## Alternatives Considered
 
@@ -200,40 +179,9 @@ Rails.logger.info({ wf: workflow_id, jc: job_class, q: queue }.to_json)
 - Missing semantic information about *what happened* (event type).
 - Doesn't provide a clear API for developers; encourages ad-hoc Hash construction.
 
-### Alternative 3: Pluggable Logger Adapter Pattern
+### Alternative 3: OpenTelemetry Spans
 
-Create an adapter pattern allowing users to plug in different logging backends (JSON, plain text, custom):
-
-```ruby
-ActiveJob::Temporal.configure do |c|
-  c.logger_adapter = PlainTextLoggerAdapter.new
-end
-```
-
-**Why Not Chosen:**
-
-- Over-engineered for the current requirements—adds complexity without clear benefit.
-- Most production systems need JSON; providing multiple formats fragments the user base and testing matrix.
-- Users can already customize behavior by configuring a custom `config.logger` that implements `info`, `warn`, `error`.
-- If needed in the future, this could be added without breaking changes by introducing an adapter layer above the current implementation.
-
-### Alternative 4: OpenTelemetry Spans
-
-Use OpenTelemetry's span-based logging instead of discrete log events:
-
-```ruby
-OpenTelemetry.tracer_provider.tracer('activejob-temporal').in_span('job.enqueue') do |span|
-  span.set_attribute('job_class', job_class)
-  # ...
-end
-```
-
-**Why Not Chosen:**
-
-- Requires OpenTelemetry SDK dependency, which is heavy (~2MB) and not universally adopted.
-- Span-based telemetry is complementary to logging, not a replacement—users may want both.
-- OpenTelemetry is better suited for distributed tracing of workflow execution than discrete operational events like "payload too large" or "cancellation requested".
-- Could be added as an optional integration later without replacing the core logging system.
+Use OpenTelemetry's span-based logging instead of discrete log events. **Why Not Chosen:** Requires OpenTelemetry SDK dependency (~2MB) not universally adopted, span-based telemetry is complementary to logging (not a replacement), and better suited for distributed tracing than discrete operational events.
 
 ## References
 

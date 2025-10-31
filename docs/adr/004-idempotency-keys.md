@@ -8,45 +8,9 @@ Accepted
 
 Background jobs frequently interact with external APIs that require idempotency guarantees: payment processors (Stripe, Braintree), third-party services (Twilio, SendGrid), and REST APIs. These systems use idempotency keys to ensure that duplicate requests (due to retries or network failures) do not cause duplicate side effects (charging a customer twice, sending duplicate notifications, etc.).
 
-### The Retry Challenge
+Temporal automatically retries activities on transient failures. Without idempotency keys, a payment API timeout that occurs after processing but before response delivery causes duplicate charges on retry. Idempotency keys enable APIs to deduplicate requests and return original results.
 
-Temporal automatically retries activities on transient failures. Consider this scenario:
-
-1. **Attempt 1**: Job calls payment API with network timeout after 5 seconds. Payment is processed but response is lost.
-2. **Attempt 2**: Temporal retries the activity. Job calls payment API again with the same data.
-3. **Result**: Customer is charged twice.
-
-The solution is idempotency keys: unique tokens that APIs use to deduplicate requests. If a request with the same idempotency key is received twice, the API returns the original result without re-executing the operation.
-
-### Requirements for ActiveJob Integration
-
-1. **Uniqueness per Job Execution**: Each job execution needs a unique idempotency key. However, all retries of the *same* job execution must use the *same* key.
-
-2. **Accessibility in Job Code**: Jobs must be able to read the idempotency key inside their `perform` method without changing ActiveJob's method signature.
-
-3. **No API Changes**: The solution cannot require modifying ActiveJob's API. We cannot add parameters to `perform` or require jobs to inherit from a custom base class.
-
-4. **Thread Safety**: Temporal workers execute multiple activities concurrently in the same Ruby process. Keys for different jobs must not interfere with each other.
-
-5. **Deterministic and Recoverable**: If an activity execution fails and restarts on a different worker machine, the idempotency key must be the same. This ensures external API idempotency works across worker failures.
-
-6. **Optional Usage**: Not all jobs need idempotency keys. The mechanism should be available but not mandatory.
-
-### The Design Space
-
-Several approaches could provide idempotency keys to jobs:
-
-1. **Pass as Argument**: Add an idempotency key parameter to the job's `perform` method—**violates "no API changes" requirement**.
-
-2. **Instance Variable**: Set `@idempotency_key` on the job instance—**not accessible in job code without coupling to the gem**.
-
-3. **Global Variable**: Use a global variable like `$idempotency_key`—**not thread-safe; values would collide across concurrent activities**.
-
-4. **Thread-Local Storage**: Use `Thread.current[:key]` to store keys per execution thread—**thread-safe, accessible, no API changes**.
-
-5. **Context Object**: Pass a context object with job metadata—**requires changing ActiveJob's internal execution flow, complex**.
-
-Thread-local storage emerged as the only approach satisfying all requirements.
+Requirements: unique key per job execution but same key across retries, accessible in job code without changing ActiveJob's API, no `perform` signature changes, thread safety (concurrent activities must not interfere), deterministic keys across worker failures, optional usage. Thread-local storage (`Thread.current[:key]`) is the only approach satisfying all requirements (vs. arguments violating API contract, instance variables requiring coupling, global variables lacking thread safety, context objects adding complexity).
 
 ## Decision
 
@@ -79,36 +43,7 @@ ensure
 end
 ```
 
-The `set_idempotency_key` method retrieves the workflow ID from Temporal's activity context and constructs the key:
-
-```ruby
-# lib/activejob/temporal/activities/aj_runner_activity.rb (lines 84-85, 132-142)
-
-# Thread-local key for storing the idempotency token.
-IDEMPOTENCY_KEY = :aj_temporal_idempotency_key
-
-def set_idempotency_key
-  workflow_id = if defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
-                  Temporalio::Activity::Context.current.info.workflow_id
-                elsif Temporalio::Activity.respond_to?(:info)
-                  # For unit tests with stub
-                  Temporalio::Activity.info&.workflow_id || "unknown-workflow"
-                else
-                  "unknown-workflow"
-                end
-  Thread.current[IDEMPOTENCY_KEY] = "#{workflow_id}/runner"
-end
-```
-
-**Key Components:**
-
-1. **Deterministic Base**: The workflow ID (`ajwf:SendInvoiceJob:abc-123`) is deterministic per job and persists across retries.
-
-2. **Namespace Suffix**: The `/runner` suffix namespaces the key within the workflow. If future features add other activities with separate keys, they could use `/validator` or `/notifier`.
-
-3. **Thread Safety**: `Thread.current[]` isolates keys per execution thread. Concurrent activities in the same worker process have separate keys.
-
-4. **Cleanup**: The `ensure` block clears the key after job execution, preventing leakage to thread pool reuse.
+The key is constructed from Temporal's workflow ID with `/runner` suffix: `Thread.current[:aj_temporal_idempotency_key] = "#{workflow_id}/runner"`. Workflow ID (`ajwf:SendInvoiceJob:abc-123`) is deterministic per job and persists across retries. Thread-local storage isolates keys per execution thread. The `ensure` block clears keys after execution to prevent thread pool leakage.
 
 #### Accessing the Idempotency Key in Jobs
 
@@ -129,222 +64,46 @@ class CreatePaymentJob < ApplicationJob
 end
 ```
 
-**Example Values:**
-
-```ruby
-# For a job enqueued as:
-CreatePaymentJob.perform_later(123, 5000)
-
-# The idempotency key would be:
-"ajwf:CreatePaymentJob:5a3e8f1b-2c9d-4e7f-8b0a-1d2c3e4f5a6b/runner"
-#  ^^^^^^^^^^^^^^^^^^ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ ^^^^^^^
-#  Workflow ID base   Job ID (UUID)                       Namespace suffix
-```
-
-**Retry Behavior:**
-
-If the job fails and Temporal retries the activity:
-
-- **Same Workflow Execution**: The workflow ID remains identical across retries.
-- **Same Idempotency Key**: The reconstructed key is identical to the first attempt.
-- **API Deduplication**: External APIs receive the same idempotency key and return the original result.
-
-### Workflow Lifecycle
-
-```
-1. Temporal starts workflow "ajwf:CreatePaymentJob:abc-123"
-2. Workflow starts activity (AjRunnerActivity)
-3. Activity sets Thread.current[:aj_temporal_idempotency_key] = "ajwf:CreatePaymentJob:abc-123/runner"
-4. Activity calls job.perform(123, 5000)
-   └─> Job code reads Thread.current[:aj_temporal_idempotency_key]
-   └─> Job calls Stripe API with idempotency_key: "ajwf:CreatePaymentJob:abc-123/runner"
-5. Activity clears Thread.current[:aj_temporal_idempotency_key] = nil
-```
-
-**On Retry (if step 4 fails):**
-
-```
-1. Temporal retries the activity in the SAME workflow
-2. Activity sets Thread.current[:aj_temporal_idempotency_key] = "ajwf:CreatePaymentJob:abc-123/runner" (SAME KEY)
-3. Activity calls job.perform(123, 5000)
-   └─> Job calls Stripe API with idempotency_key: "ajwf:CreatePaymentJob:abc-123/runner" (SAME KEY)
-   └─> Stripe recognizes duplicate request and returns original result
-```
+For `CreatePaymentJob.perform_later(123, 5000)`, the key is `"ajwf:CreatePaymentJob:5a3e8f1b-2c9d-4e7f-8b0a-1d2c3e4f5a6b/runner"`. On retry, the workflow ID remains identical, producing the same key. External APIs receive the same idempotency key and return the original result, preventing duplicate charges.
 
 ## Consequences
 
 ### Positive
 
-- **Zero API Changes**: Jobs access idempotency keys without modifying `perform` signatures. Existing ActiveJob code works unchanged.
-
-- **Thread Safety**: Concurrent activities in a multi-threaded worker process have isolated keys. No risk of key collision or race conditions.
-
-- **Deterministic Keys Across Retries**: The workflow ID-based approach ensures retries use the same key, enabling true idempotency with external APIs.
-
-- **Cross-Worker Recovery**: If an activity fails and restarts on a different worker machine, the workflow ID is retrieved from Temporal's activity context, producing the same key.
-
-- **Simple Access Pattern**: Reading `Thread.current[:aj_temporal_idempotency_key]` is straightforward and requires no gem-specific APIs.
-
-- **Optional Usage**: Jobs that don't need idempotency simply ignore the key. There's no performance penalty or complexity for jobs that don't use it.
-
-- **Standardized Key Format**: The `<workflow_id>/runner` format is consistent and debuggable. Developers can identify which workflow a key belongs to by inspection.
+- **Zero API Changes**: Jobs access keys without modifying `perform` signatures.
+- **Thread Safety**: Concurrent activities have isolated keys, no collisions.
+- **Deterministic Keys Across Retries**: Workflow ID-based approach ensures retries use same key.
+- **Cross-Worker Recovery**: Activity restarts on different machines produce same key.
+- **Simple Access Pattern**: `Thread.current[:aj_temporal_idempotency_key]` requires no gem-specific APIs.
+- **Optional Usage**: No performance penalty for jobs not using idempotency.
+- **Standardized Format**: `<workflow_id>/runner` format is consistent and debuggable.
 
 ### Negative
 
 - **Thread-Local Coupling**: Jobs must understand that idempotency keys are stored in thread-local storage. This is less explicit than a parameter or instance variable.
 
-- **Documentation Dependency**: Developers need to know that `Thread.current[:aj_temporal_idempotency_key]` exists and how to use it. This information is not self-documenting in the job's method signature.
-
-- **Testing Complexity**: Tests that verify idempotency key usage must mock or stub the activity execution context:
-  ```ruby
-  # In job specs:
-  before do
-    Thread.current[:aj_temporal_idempotency_key] = "test-key"
-  end
-
-  after do
-    Thread.current[:aj_temporal_idempotency_key] = nil
-  end
-  ```
-
-- **Limited to Thread-Per-Execution Model**: The approach assumes one activity execution per thread. If Temporal's Ruby SDK ever switches to a fiber-based or async execution model, thread-local storage would break.
-
-  However, as of 2025, the Temporalio Ruby SDK uses thread-based activity execution, making this assumption safe.
-
-- **Namespace Suffix Overhead**: The `/runner` suffix adds 7 characters to every key. While this is negligible for most APIs (Stripe accepts up to 255 characters), extremely length-constrained APIs might find this wasteful.
-
-- **No Built-In Key Validation**: The gem doesn't validate whether external APIs successfully use the idempotency key. If a job passes a nil key or an API ignores it, the gem cannot detect this failure mode.
-
-### Neutral
-
-- **External API Dependency**: Idempotency only works if the external API supports idempotency keys. APIs without this feature cannot benefit from this mechanism (though they wouldn't break—they'd simply ignore the key).
+- **Documentation Dependency**: Developers must know `Thread.current[:aj_temporal_idempotency_key]` exists (not self-documenting).
+- **Testing Complexity**: Tests must manually set/clear thread-local keys.
+- **Thread-Per-Execution Assumption**: Breaks if Ruby SDK switches to fiber-based execution (safe as of 2025).
+- **No Built-In Validation**: Gem cannot detect if APIs ignore nil keys.
 
 ## Alternatives Considered
 
 ### Alternative 1: Pass Idempotency Key as Job Argument
 
-Modify the `perform` signature to include an idempotency key parameter:
-
-```ruby
-class CreatePaymentJob < ApplicationJob
-  def perform(user_id, amount_cents, idempotency_key:)
-    StripeClient.create_charge(
-      amount: amount_cents,
-      idempotency_key: idempotency_key
-    )
-  end
-end
-
-# Adapter injects key when calling perform:
-job.perform(*args, idempotency_key: "ajwf:CreatePaymentJob:abc-123/runner")
-```
-
-**Why Not Chosen:**
-
-- **Breaks ActiveJob API Contract**: ActiveJob specifies that `perform` receives the same arguments passed to `perform_later`. Injecting additional arguments breaks this contract.
-
-- **Compatibility Issues**: Existing jobs would need to update their `perform` signatures, making migration difficult.
-
-- **Test Friction**: Job specs would need to provide the idempotency key argument, even if the job doesn't use it.
+Add `idempotency_key:` parameter to `perform`. **Why Not Chosen:** Breaks ActiveJob API contract (`perform` should receive same args as `perform_later`), requires updating existing job signatures, adds test friction.
 
 ### Alternative 2: Store in Job Instance Variable
 
-Set an instance variable on the job object before calling `perform`:
+Set `@idempotency_key` on job instance before calling `perform`. **Why Not Chosen:** Undocumented magic (invisible source of instance variable), tight coupling to gem, verbose test setup.
 
-```ruby
-job = job_class.new
-job.instance_variable_set(:@idempotency_key, "ajwf:CreatePaymentJob:abc-123/runner")
-job.perform(*args)
+### Alternative 3: Context Object with Dynamic Binding
 
-# In job code:
-class CreatePaymentJob < ApplicationJob
-  def perform(user_id, amount_cents)
-    idempotency_key = @idempotency_key
-    # ...
-  end
-end
-```
+Introduce context object via fiber-local storage. **Why Not Chosen:** Implementation complexity (context stack, edge cases), fiber-local storage incompatible with thread-based execution, adds abstraction without clear benefit, documentation burden.
 
-**Why Not Chosen:**
+### Alternative 4: Auto-Inject via Job Instrumentation
 
-- **Undocumented Magic**: Instance variables set externally are invisible to developers reading the job code. There's no indication where `@idempotency_key` comes from.
-
-- **Coupling to Gem**: Jobs would need to "know" that the activejob-temporal gem sets this variable, creating tight coupling.
-
-- **Testing Difficulty**: Specs would need to set the instance variable manually, making tests verbose.
-
-### Alternative 3: Global Variable
-
-Use a global variable to store the current idempotency key:
-
-```ruby
-$current_idempotency_key = "ajwf:CreatePaymentJob:abc-123/runner"
-job.perform(*args)
-
-# In job code:
-class CreatePaymentJob < ApplicationJob
-  def perform(user_id, amount_cents)
-    idempotency_key = $current_idempotency_key
-    # ...
-  end
-end
-```
-
-**Why Not Chosen:**
-
-- **Not Thread-Safe**: Global variables are shared across all threads. Concurrent activity executions would overwrite each other's keys:
-  ```ruby
-  # Thread 1 (Job A):
-  $current_idempotency_key = "key-A"
-  # Thread 2 (Job B) interrupts:
-  $current_idempotency_key = "key-B" # Overwrites key-A!
-  # Thread 1 continues:
-  api.call(idempotency_key: $current_idempotency_key) # Uses wrong key-B!
-  ```
-
-- **Namespace Pollution**: Global variables are considered bad practice in Ruby and pollute the global namespace.
-
-### Alternative 4: Context Object with Dynamic Binding
-
-Introduce a context object passed through Ruby's fiber-local storage or block parameters:
-
-```ruby
-class CreatePaymentJob < ApplicationJob
-  def perform(user_id, amount_cents)
-    context = ActiveJob::Temporal.current_context
-    idempotency_key = context.idempotency_key
-    # ...
-  end
-end
-```
-
-**Why Not Chosen:**
-
-- **Implementation Complexity**: Requires maintaining a context stack and handling edge cases (nested jobs, exceptions, thread boundaries).
-
-- **Fiber-Local Storage Limitations**: Ruby's fiber-local storage (`Fiber[]`) doesn't work with thread-based execution models.
-
-- **Overhead**: Adds a layer of abstraction that provides no clear benefit over `Thread.current[]`.
-
-- **Documentation Burden**: Developers need to learn the context API instead of the standard `Thread.current` pattern.
-
-### Alternative 5: Auto-Inject via Job Instrumentation
-
-Use ActiveSupport::Notifications to instrument job execution and inject the key via callbacks:
-
-```ruby
-ActiveSupport::Notifications.subscribe("perform.active_job") do |event|
-  Thread.current[:aj_temporal_idempotency_key] = derive_key_from(event)
-end
-```
-
-**Why Not Chosen:**
-
-- **Timing Issues**: Instrumentation hooks fire *around* job execution, not *before* it. There's no guarantee the key is set before `perform` runs.
-
-- **Compatibility Risk**: ActiveSupport::Notifications is designed for observability, not execution flow control. Relying on it for critical functionality is fragile.
-
-- **Still Requires Thread-Local Storage**: The key would still need to be stored in `Thread.current[]`, so this approach adds complexity without eliminating the thread-local dependency.
+Use `ActiveSupport::Notifications` to inject keys via callbacks. **Why Not Chosen:** Timing issues (hooks fire around execution, not before), compatibility risk (observability tool used for flow control), still requires thread-local storage (adds complexity without eliminating dependency).
 
 ## References
 
