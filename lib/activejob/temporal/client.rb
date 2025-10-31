@@ -64,6 +64,7 @@ module ActiveJob
       # @return [Temporalio::Client] Connected Temporal client
       #
       # @raise [ActiveJob::Temporal::Error] if connection fails (includes target, namespace, and error message)
+      # @raise [OpenSSL::SSL::SSLError] if TLS certificate validation fails
       #
       # @example Basic usage
       #   config = ActiveJob::Temporal::Configuration.new

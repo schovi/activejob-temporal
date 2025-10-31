@@ -35,7 +35,8 @@ module ActiveJob
     #   }
     #
     # @see https://docs.temporal.io/retry-policies Temporal Retry Policies
-    # @see https://edgeguides.rubyonrails.org/active_job_basics.html#retrying-or-discarding-failed-jobs ActiveJob Retry Guide
+    # @see https://edgeguides.rubyonrails.org/active_job_basics.html#retrying-or-discarding-failed-jobs
+    #   ActiveJob Retry Guide
     module RetryMapper
       module_function
 

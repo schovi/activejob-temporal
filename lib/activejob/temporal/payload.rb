@@ -106,6 +106,7 @@ module ActiveJob
       # @return [Array] Deserialized arguments array ready for job.perform(*args)
       #
       # @raise [ActiveJob::SerializationError] if deserialization fails
+      # @raise [GlobalID::RecordNotFound] if a GlobalID reference points to a deleted record
       #
       # @example Deserialize arguments
       #   payload = { arguments: [{"_aj_serialized"=>"..."}] }
