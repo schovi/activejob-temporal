@@ -14,7 +14,14 @@ module ActiveJob
     #
     # @note Payload Size Limit
     #   Temporal enforces a maximum payload size (configurable via `max_payload_size_kb`,
-    #   default 250 KB). Large payloads will raise a SerializationError.
+    #   default 250 KB). Large payloads will raise a SerializationError with a human-readable
+    #   message indicating the actual size and the limit. Consider passing database IDs or
+    #   S3 keys instead of large objects.
+    #
+    # @note GlobalID Serialization
+    #   ActiveRecord models are automatically serialized using GlobalID. This requires the
+    #   model to exist in the database at enqueue time and still exist at execution time.
+    #   If the record is deleted, deserialization will fail.
     #
     # @example Payload structure
     #   {
@@ -26,6 +33,8 @@ module ActiveJob
     #     exception_executions: {},
     #     scheduled_at: "2025-10-29T12:00:00Z" # optional
     #   }
+    #
+    # @see https://edgeapi.rubyonrails.org/classes/ActiveJob/Arguments.html ActiveJob Arguments Serialization
     module Payload
       extend self
 
@@ -44,7 +53,7 @@ module ActiveJob
       #   - :scheduled_at [String] ISO8601 timestamp (optional)
       #
       # @raise [ActiveJob::SerializationError] if arguments cannot be serialized
-      # @raise [ActiveJob::SerializationError] if payload exceeds max_payload_size_kb
+      # @raise [ActiveJob::SerializationError] if payload exceeds max_payload_size_kb (includes actual size in message)
       # @raise [ArgumentError] if scheduled_at is not convertible to Time
       #
       # @example Basic job payload
@@ -56,6 +65,20 @@ module ActiveJob
       #   job = MyJob.new
       #   payload = Payload.from_job(job, scheduled_at: 1.hour.from_now)
       #   # => { ..., scheduled_at: "2025-10-29T13:00:00Z" }
+      #
+      # @example Handling payload size errors
+      #   begin
+      #     MyJob.perform_later(large_object)
+      #   rescue ActiveJob::SerializationError => e
+      #     Rails.logger.error("Payload too large: #{e.message}")
+      #     # Recommendation: Pass ID instead of full object
+      #     MyJob.perform_later(large_object.id)
+      #   end
+      #
+      # @example GlobalID serialization (ActiveRecord models)
+      #   user = User.find(123)
+      #   MyJob.perform_later(user)  # Serializes as GlobalID
+      #   # Payload contains: { "_aj_globalid" => "gid://app/User/123" }
       def from_job(job, scheduled_at: nil)
         payload = {
           job_class: job.class.name,

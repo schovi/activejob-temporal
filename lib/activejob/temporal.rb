@@ -37,11 +37,39 @@ module ActiveJob
   #     end
   #   end
   #
+  # @example Complete configuration with error handling
+  #   begin
+  #     ActiveJob::Temporal.configure do |config|
+  #       config.target = "temporal.example.com:7233"
+  #       config.namespace = "production"
+  #       config.default_activity_timeout = 10.minutes
+  #       config.max_payload_size_kb = 250
+  #     end
+  #     ActiveJob::Temporal.config.validate!
+  #   rescue ActiveJob::Temporal::ConfigurationError => e
+  #     Rails.logger.error("Temporal configuration invalid: #{e.message}")
+  #     raise
+  #   end
+  #
   # @see https://github.com/temporalio/sdk-ruby Temporal Ruby SDK
   module Temporal
+    # Base error class for all activejob-temporal errors.
     class Error < StandardError; end
+
+    # Raised when configuration is invalid.
+    #
+    # @see Configuration#validate!
     class ConfigurationError < Error; end
+
+    # Raised when attempting to cancel a job that does not exist.
+    #
+    # @see Cancel.cancel
     class WorkflowNotFoundError < Error; end
+
+    # Raised when Temporal cluster is unreachable.
+    #
+    # @see Client.build
+    # @see Cancel.cancel
     class TemporalConnectionError < Error; end
 
     # Configuration object for the activejob-temporal gem.
@@ -250,7 +278,11 @@ module ActiveJob
       # - TEMPORAL_TLS_SERVER_NAME: TLS server name
       #
       # @return [Temporalio::Client] the connected Temporal client
-      # @raise [ActiveJob::Temporal::Error] if connection fails
+      # @raise [ActiveJob::Temporal::Error] if connection fails due to network or authentication issues
+      # @raise [ActiveJob::Temporal::TemporalConnectionError] if Temporal cluster is unreachable
+      # @example Get the client
+      #   client = ActiveJob::Temporal.client
+      #   client.list_workflows(query: "ajQueue='default'")
       # @see Client.build
       def client
         @client ||= Client.build(config)
@@ -259,14 +291,24 @@ module ActiveJob
       # Cancels a running or scheduled job by job ID.
       #
       # This method terminates the Temporal workflow associated with the job.
-      # It will cancel the workflow regardless of its current state (running, scheduled, or paused).
+      # Cancellation is asynchronous and best-effort: the job will stop only if
+      # it is actively heartbeating. See Cancel module documentation for details.
       #
       # @param job_class [Class] the ActiveJob class (used to determine task queue)
       # @param job_id [String] the unique job identifier
-      # @return [void]
-      # @raise [ActiveJob::Temporal::Error] if cancellation fails
+      # @return [Boolean, nil] false if workflow already completed, nil if cancellation requested
+      # @raise [ActiveJob::Temporal::WorkflowNotFoundError] if job never existed or already removed from history
+      # @raise [ActiveJob::Temporal::TemporalConnectionError] if Temporal cluster is unreachable
       # @example Cancel a scheduled job
       #   ActiveJob::Temporal.cancel(MyJob, "job-123-abc")
+      # @example Handle cancellation outcomes
+      #   result = ActiveJob::Temporal.cancel(MyJob, "abc-123")
+      #   case result
+      #   when false
+      #     puts "Job already completed"
+      #   when nil
+      #     puts "Cancellation requested"
+      #   end
       # @see Cancel.cancel
       def cancel(job_class, job_id)
         Cancel.cancel(job_class, job_id)

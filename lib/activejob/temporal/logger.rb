@@ -16,12 +16,27 @@ module ActiveJob
     # - timestamp: ISO8601 UTC timestamp
     # - Custom attributes (Hash)
     #
+    # @note SemanticLogger Detection
+    #   If the SemanticLogger constant is defined, log entries are passed directly as hashes
+    #   to SemanticLogger (which handles JSON formatting). Otherwise, the module JSON-stringifies
+    #   the payload before passing it to the configured Ruby Logger instance.
+    #
     # @example Basic logging
     #   Logger.info("job.enqueued", job_id: "123", queue: "default")
     #   # => { "event": "job.enqueued", "timestamp": "2025-10-29T12:00:00Z", "job_id": "123", "queue": "default" }
     #
     # @example Error logging
     #   Logger.error("job.failed", job_id: "123", error: "NetworkError")
+    #
+    # @example With SemanticLogger
+    #   # If SemanticLogger is available, structured hash is passed directly
+    #   Logger.info("workflow.started", workflow_id: "wf-123")
+    #   # SemanticLogger formats as structured JSON
+    #
+    # @example Without SemanticLogger
+    #   # Falls back to JSON.generate before calling logger.info
+    #   Logger.info("workflow.started", workflow_id: "wf-123")
+    #   # => '{"event":"workflow.started","timestamp":"2025-10-31T12:00:00Z","workflow_id":"wf-123"}'
     module Logger
       extend self
 
@@ -30,6 +45,8 @@ module ActiveJob
       # @param event_name [String, Symbol] Name of the event (e.g., "job.enqueued")
       # @param attributes [Hash] Additional structured data to include in log entry
       # @return [void]
+      # @raise [ArgumentError] if event_name is not a String or Symbol
+      # @raise [ArgumentError] if attributes is not a Hash
       # @example
       #   Logger.log_event("workflow.started", workflow_id: "wf-123", job_class: "MyJob")
       def log_event(event_name, attributes = {})
@@ -41,6 +58,8 @@ module ActiveJob
       # @param event_name [String, Symbol] Name of the event
       # @param attributes [Hash] Additional structured data
       # @return [void]
+      # @raise [ArgumentError] if event_name is not a String or Symbol
+      # @raise [ArgumentError] if attributes is not a Hash
       # @example
       #   Logger.info("job.completed", job_id: "123", duration_ms: 1500)
       def info(event_name, attributes = {})
@@ -52,6 +71,8 @@ module ActiveJob
       # @param event_name [String, Symbol] Name of the event
       # @param attributes [Hash] Additional structured data
       # @return [void]
+      # @raise [ArgumentError] if event_name is not a String or Symbol
+      # @raise [ArgumentError] if attributes is not a Hash
       # @example
       #   Logger.warn("job.retry", job_id: "123", attempt: 2, error: "Timeout")
       def warn(event_name, attributes = {})
@@ -63,6 +84,8 @@ module ActiveJob
       # @param event_name [String, Symbol] Name of the event
       # @param attributes [Hash] Additional structured data
       # @return [void]
+      # @raise [ArgumentError] if event_name is not a String or Symbol
+      # @raise [ArgumentError] if attributes is not a Hash
       # @example
       #   Logger.error("job.failed", job_id: "123", error_class: "RuntimeError", message: "Boom")
       def error(event_name, attributes = {})

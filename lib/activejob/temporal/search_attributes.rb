@@ -8,10 +8,21 @@ module ActiveJob
     # workflows in the Temporal UI and via the Temporal API. Attributes include job class,
     # queue name, job ID, enqueued timestamp, and optionally tenant ID.
     #
-    # @note Search Attribute Registration
+    # @note Pre-Registration Required
     #   Search attributes MUST be pre-registered in the Temporal cluster with the correct
     #   type (KEYWORD, TIME, INTEGER, etc.) before use. Unregistered attributes will cause
-    #   workflow start failures.
+    #   workflow start failures. Use the Temporal CLI to register attributes:
+    #
+    #     tctl admin cluster add-search-attributes --name ajClass --type Keyword
+    #     tctl admin cluster add-search-attributes --name ajQueue --type Keyword
+    #     tctl admin cluster add-search-attributes --name ajJobId --type Keyword
+    #     tctl admin cluster add-search-attributes --name ajEnqueuedAt --type Datetime
+    #     tctl admin cluster add-search-attributes --name ajTenantId --type Int
+    #
+    # @note Tenant ID Extraction
+    #   The module automatically extracts tenant_id from the first job argument if it
+    #   responds to the `tenant_id` method. This supports multi-tenant architectures
+    #   where jobs operate on tenant-specific data.
     #
     # @example Created attributes
     #   - ajClass: KEYWORD (job class name)
@@ -19,6 +30,16 @@ module ActiveJob
     #   - ajJobId: KEYWORD (unique job ID)
     #   - ajEnqueuedAt: TIME (enqueue timestamp)
     #   - ajTenantId: INTEGER (optional, if first argument responds to :tenant_id)
+    #
+    # @example Querying with search attributes (Temporal CLI)
+    #   # Find all jobs in the "mailers" queue
+    #   tctl workflow list --query "ajQueue='mailers'"
+    #
+    #   # Find specific job by ID
+    #   tctl workflow list --query "ajJobId='abc-123'"
+    #
+    #   # Find all tenant jobs enqueued today
+    #   tctl workflow list --query "ajTenantId=42 AND ajEnqueuedAt > '2025-10-31T00:00:00Z'"
     #
     # @see https://docs.temporal.io/visibility Search Attributes documentation
     module SearchAttributes
@@ -34,20 +55,28 @@ module ActiveJob
       #
       # @return [Temporalio::SearchAttributes] Typed search attributes for Temporal
       #
+      # @raise [Temporalio::Error::WorkflowUpdateFailedError] if attributes are not pre-registered in Temporal
+      #
       # @example Basic usage
       #   job = MyJob.new
       #   attributes = SearchAttributes.for(job)
       #   # attributes contains ajClass, ajQueue, ajJobId, ajEnqueuedAt
       #
-      # @example With tenant ID
+      # @example With tenant ID (automatic extraction)
       #   class TenantJob < ApplicationJob
       #     def perform(tenant)
       #       # tenant.tenant_id is extracted automatically
       #     end
       #   end
+      #   tenant = Tenant.find(42)
       #   job = TenantJob.new(tenant)
       #   attributes = SearchAttributes.for(job)
-      #   # attributes also contains ajTenantId
+      #   # attributes also contains ajTenantId: 42
+      #
+      # @example Without tenant ID
+      #   job = MyJob.new("plain_string_arg")
+      #   attributes = SearchAttributes.for(job)
+      #   # attributes does NOT contain ajTenantId (first arg doesn't respond to tenant_id)
       def for(job)
         # Create Temporal search attributes with typed keys
         attributes = Temporalio::SearchAttributes.new

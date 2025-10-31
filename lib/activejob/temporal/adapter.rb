@@ -14,15 +14,27 @@ module ActiveJob
       # Builds deterministic workflow ID used for Temporal workflows.
       #
       # Creates a unique, reproducible workflow ID from the job class and job ID.
-      # This enables idempotent enqueuing (duplicate enqueue calls with same job_id
-      # will be rejected by Temporal with FAIL conflict policy).
+      # This enables idempotent enqueuing: duplicate enqueue calls with the same job_id
+      # will be rejected by Temporal's FAIL conflict policy (returning nil, not raising).
       #
       # @param job [ActiveJob::Base] ActiveJob instance being enqueued
       # @return [String] Workflow ID in format "ajwf:<ClassName>:<job_id>"
-      # @example
+      #
+      # @note Idempotency Guarantee
+      #   The workflow ID format ensures that jobs with the same job_id will never
+      #   execute twice. This is critical for preventing duplicate processing in
+      #   distributed systems.
+      #
+      # @example Basic usage
       #   job = MyJob.new
       #   job.job_id # => "abc-123"
       #   build_workflow_id(job) # => "ajwf:MyJob:abc-123"
+      #
+      # @example Duplicate enqueue (returns nil, not error)
+      #   MyJob.set(job_id: "unique-id").perform_later("arg")  # First enqueue succeeds
+      #   MyJob.set(job_id: "unique-id").perform_later("arg")  # Second enqueue returns nil
+      #
+      # @see TemporalAdapter#enqueue
       def build_workflow_id(job)
         "ajwf:#{job.class.name}:#{job.job_id}"
       end
@@ -87,12 +99,30 @@ module ActiveJob
       #
       # @param job [ActiveJob::Base] the job instance provided by ActiveJob
       # @return [Object, nil] workflow run handle (if provided by Temporal SDK), or nil if duplicate
-      # @raise [ActiveJob::SerializationError] when payload serialization fails
-      # @raise [ActiveJob::EnqueueError] when the Temporal client cannot start the workflow
-      # @example
+      #
+      # @raise [ActiveJob::SerializationError] if payload serialization fails or exceeds max_payload_size_kb
+      # @raise [ActiveJob::EnqueueError] if the Temporal client cannot start the workflow
+      # @raise [ActiveJob::Temporal::ConfigurationError] if configuration is invalid
+      #
+      # @note FAIL Conflict Policy
+      #   Duplicate job_id values return nil rather than raising an error. This is
+      #   Temporal's FAIL conflict policy in action.
+      #
+      # @example Basic usage
       #   adapter = TemporalAdapter.new
       #   job = MyJob.new("arg1", "arg2")
       #   adapter.enqueue(job)
+      #
+      # @example Handling serialization errors
+      #   begin
+      #     MyJob.perform_later(huge_object)
+      #   rescue ActiveJob::SerializationError => e
+      #     Rails.logger.error("Payload too large: #{e.message}")
+      #     MyJob.perform_later(huge_object.id)  # Pass ID instead
+      #   end
+      #
+      # @see #enqueue_at
+      # @see https://docs.temporal.io/workflows#workflow-id-reuse-policy Temporal Workflow ID Policies
       def enqueue(job)
         payload = build_payload(job)
         enqueue_with_payload(job, payload)
@@ -106,12 +136,25 @@ module ActiveJob
       # @param job [ActiveJob::Base] the job instance provided by ActiveJob
       # @param timestamp [Integer, Float] UNIX timestamp when the job should be executed
       # @return [Object, nil] workflow run handle (if provided by Temporal SDK), or nil if duplicate
-      # @raise [ActiveJob::SerializationError] when payload serialization fails
-      # @raise [ActiveJob::EnqueueError] when the Temporal client cannot start the workflow
-      # @example
+      #
+      # @raise [ActiveJob::SerializationError] if payload serialization fails or exceeds max_payload_size_kb
+      # @raise [ActiveJob::EnqueueError] if the Temporal client cannot start the workflow
+      # @raise [ActiveJob::Temporal::ConfigurationError] if configuration is invalid
+      #
+      # @note Non-Blocking Sleep
+      #   The workflow uses Temporal's durable timer mechanism, so scheduled jobs
+      #   do not consume worker resources while waiting.
+      #
+      # @example Basic usage
       #   adapter = TemporalAdapter.new
       #   job = MyJob.new("arg")
       #   adapter.enqueue_at(job, 1.hour.from_now.to_i)
+      #
+      # @example Scheduling with ActiveJob DSL
+      #   MyJob.set(wait: 1.hour).perform_later("arg")
+      #
+      # @see #enqueue
+      # @see Workflows::AjWorkflow#sleep_until
       def enqueue_at(job, timestamp)
         scheduled_time = Time.at(timestamp)
         payload = build_payload(job, scheduled_at: scheduled_time)

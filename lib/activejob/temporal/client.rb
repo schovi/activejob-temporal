@@ -15,9 +15,13 @@ module ActiveJob
     # with optional TLS configuration. TLS options can be provided via configuration
     # attributes or environment variables.
     #
+    # @note TLS Configuration Precedence
+    #   If both `config.tls` and environment variables are present, `config.tls` takes
+    #   precedence. Environment variables are only used if `config.tls` is nil.
+    #
     # @note Environment Variables
-    #   - TEMPORAL_TLS_CERT: TLS certificate (PEM format)
-    #   - TEMPORAL_TLS_KEY: TLS private key (PEM format)
+    #   - TEMPORAL_TLS_CERT: TLS certificate (PEM format, full content)
+    #   - TEMPORAL_TLS_KEY: TLS private key (PEM format, full content)
     #   - TEMPORAL_TLS_SERVER_NAME: TLS server name for verification
     #
     # @example Basic connection
@@ -27,7 +31,18 @@ module ActiveJob
     # @example TLS via environment variables
     #   ENV["TEMPORAL_TLS_CERT"] = File.read("cert.pem")
     #   ENV["TEMPORAL_TLS_KEY"] = File.read("key.pem")
+    #   ENV["TEMPORAL_TLS_SERVER_NAME"] = "temporal.example.com"
     #   client = Client.build(config)
+    #
+    # @example TLS via configuration object
+    #   ActiveJob::Temporal.configure do |config|
+    #     config.tls = {
+    #       certificate: File.read("cert.pem"),
+    #       private_key: File.read("key.pem"),
+    #       server_name: "temporal.example.com"
+    #     }
+    #   end
+    #   client = ActiveJob::Temporal.client
     module Client
       # Environment variable name for TLS certificate
       TLS_CERT_ENV = "TEMPORAL_TLS_CERT"

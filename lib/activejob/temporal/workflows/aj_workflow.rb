@@ -35,37 +35,63 @@ module ActiveJob
       #   This workflow MUST remain deterministic. It contains no I/O operations,
       #   no random number generation, no system time calls (only `Workflow.now`),
       #   and no direct method calls to external services. All side effects occur
-      #   in the activity layer.
+      #   in the activity layer. Temporal replays workflow code on every restart,
+      #   so non-deterministic changes will cause workflow execution errors.
+      #
+      # @note Non-Blocking Sleep
+      #   The `Workflow.sleep` method uses Temporal's durable timer mechanism. This means
+      #   scheduled jobs do not consume worker resources while waiting. The workflow is
+      #   persisted, and Temporal wakes it up at the scheduled time.
       #
       # @example Workflow execution flow
       #   1. Extract scheduled_at timestamp from payload
-      #   2. If scheduled_at is in the future, sleep until that time
+      #   2. If scheduled_at is in the future, sleep until that time (non-blocking)
       #   3. Execute AjRunnerActivity with the payload and retry policy
       #   4. Return activity result
+      #
+      # @example Replay behavior
+      #   # If a worker crashes during step 3, Temporal will replay the workflow:
+      #   # - Step 1: Re-reads scheduled_at (deterministic)
+      #   # - Step 2: Skips sleep (already elapsed, replayed from history)
+      #   # - Step 3: Continues from last checkpoint
+      #
+      # @see https://docs.temporal.io/workflows#deterministic-constraints Temporal Determinism Guide
+      # @see https://docs.temporal.io/workflows#timers Temporal Durable Timers
       class AjWorkflow < Temporalio::Workflow::Definition
         # Executes the workflow: optionally sleeps until scheduled time, then runs the activity.
         #
         # @param payload [Hash] Job payload containing execution metadata
-        # @option payload [String] :job_class Fully-qualified job class name
-        # @option payload [String] :job_id Unique job identifier
-        # @option payload [String] :queue_name Target queue name
-        # @option payload [Array] :arguments Serialized job arguments
+        # @option payload [String] :job_class Fully-qualified job class name (required)
+        # @option payload [String] :job_id Unique job identifier (required)
+        # @option payload [String] :queue_name Target queue name (required)
+        # @option payload [Array] :arguments Serialized job arguments (required)
         # @option payload [String] :scheduled_at ISO8601 timestamp for delayed execution (optional)
         # @option payload [Integer] :executions Current execution count (default: 0)
         # @option payload [Hash] :exception_executions Exception execution counts (default: {})
         #
         # @return [Object, nil] Result from the activity execution
         #
+        # @raise [NameError] if job_class cannot be constantized
+        # @raise [Temporalio::Error::ActivityError] if activity execution fails (propagates from activity)
+        # @raise [Temporalio::Error::TimeoutError] if activity exceeds start_to_close_timeout
+        #
+        # @note Durable Timers
+        #   If scheduled_at is in the future, the workflow creates a durable timer.
+        #   The timer persists across worker restarts and does not block worker threads.
+        #
         # @example Immediate execution
         #   execute({ job_class: "MyJob", job_id: "123", arguments: ["arg1"] })
         #
-        # @example Scheduled execution
+        # @example Scheduled execution (non-blocking sleep)
         #   execute({
         #     job_class: "MyJob",
         #     job_id: "123",
-        #     scheduled_at: "2025-10-29T12:00:00Z",
+        #     scheduled_at: "2025-10-31T12:00:00Z",
         #     arguments: []
         #   })
+        #   # Workflow sleeps until scheduled time without consuming worker resources
+        #
+        # @see Activities::AjRunnerActivity#execute
         def execute(payload)
           scheduled_time = extract_scheduled_time(payload)
           sleep_until(scheduled_time) if scheduled_time

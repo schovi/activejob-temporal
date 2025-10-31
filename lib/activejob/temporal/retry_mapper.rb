@@ -12,9 +12,19 @@ module ActiveJob
     # - Retry attempt limits
     # - Non-retryable error types (from discard_on)
     #
+    # The mapper uses Ruby's internal `rescue_handlers` mechanism to extract retry
+    # configuration at runtime, ensuring compatibility with ActiveJob's DSL.
+    #
     # @note Algorithmic Wait Values
-    #   If `retry_on` uses a Proc or Symbol for `:wait`, it falls back to the configured
-    #   `default_retry_initial_interval` because Temporal only accepts numeric intervals.
+    #   If `retry_on` uses a Proc or Symbol for `:wait` (e.g., `:exponentially_longer`),
+    #   it falls back to the configured `default_retry_initial_interval` because Temporal
+    #   only accepts static numeric intervals. Temporal's built-in exponential backoff
+    #   (via `backoff_coefficient`) is used instead.
+    #
+    # @note Multiple retry_on Declarations
+    #   If a job class has multiple `retry_on` declarations, the first matching handler
+    #   (based on exception type) is used. Handlers are evaluated in reverse order of
+    #   declaration (last declared = first matched).
     #
     # @example Retry policy structure
     #   {
@@ -23,6 +33,9 @@ module ActiveJob
     #     maximum_attempts: 5,                 # max retry count (0 = unlimited)
     #     non_retryable_error_types: ["MyError::ClassName"]
     #   }
+    #
+    # @see https://docs.temporal.io/retry-policies Temporal Retry Policies
+    # @see https://edgeguides.rubyonrails.org/active_job_basics.html#retrying-or-discarding-failed-jobs ActiveJob Retry Guide
     module RetryMapper
       module_function
 
@@ -41,6 +54,8 @@ module ActiveJob
       #   - :maximum_attempts [Integer] Max retry attempts (0 = unlimited)
       #   - :non_retryable_error_types [Array<String>] Exception class names to not retry
       #
+      # @raise [TypeError] if attempts value cannot be converted to Integer
+      #
       # @example Basic retry policy
       #   class MyJob < ApplicationJob
       #     retry_on StandardError, wait: 5.seconds, attempts: 3
@@ -54,6 +69,22 @@ module ActiveJob
       #   end
       #   RetryMapper.for(MyJob)
       #   # => { ..., maximum_attempts: 0 }
+      #
+      # @example Multiple retry_on declarations (precedence)
+      #   class MyJob < ApplicationJob
+      #     retry_on StandardError, wait: 10.seconds, attempts: 5
+      #     retry_on Timeout::Error, wait: 1.second, attempts: 10
+      #   end
+      #   RetryMapper.for(MyJob, Timeout::Error.new)
+      #   # => { initial_interval: 1.0, maximum_attempts: 10, ... }
+      #
+      # @example With discard_on (non-retryable errors)
+      #   class MyJob < ApplicationJob
+      #     retry_on StandardError, wait: 5.seconds, attempts: 3
+      #     discard_on ActiveRecord::RecordNotFound
+      #   end
+      #   RetryMapper.for(MyJob)
+      #   # => { ..., non_retryable_error_types: ["ActiveRecord::RecordNotFound"] }
       def for(job_class, exception = nil)
         config = ActiveJob::Temporal.config
         retry_entry = select_retry_entry(job_class, exception)
