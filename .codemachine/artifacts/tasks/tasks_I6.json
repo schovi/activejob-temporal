@@ -226,7 +226,7 @@
     "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses) on all files in lib/activejob/temporal/; All auto-correctable offenses are fixed with `rubocop -a`; Manual fixes applied for: method complexity (extract helpers), long lines (break appropriately), missing docs (ensure YARD present); All new files have `# frozen_string_literal: true` at top; If `.rubocop.yml` is updated, changes documented with comments explaining rationale (e.g., '# Allow 150-line validation methods due to comprehensive error checking'); No rubocop:disable comments without explanation; Code maintains readability after Rubocop fixes (no awkward line breaks just to satisfy line length)",
     "dependencies": ["I6.T1", "I6.T2", "I6.T3", "I6.T4", "I6.T7", "I6.T8"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I6.T10",
