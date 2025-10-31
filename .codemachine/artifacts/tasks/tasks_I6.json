@@ -66,7 +66,7 @@
     "acceptance_criteria": "ActiveJob::Temporal::WorkflowNotFoundError exception class exists; ActiveJob::Temporal::TemporalConnectionError exception class exists; Cancel.cancel method returns false if workflow already completed (without raising); Cancel.cancel method raises WorkflowNotFoundError if workflow never existed; Cancel.cancel method raises TemporalConnectionError if Temporal client connection fails; Private find_workflow method queries both running and closed workflows; Unit tests in cancel_spec.rb cover: successful cancellation, workflow completed (returns false), workflow not found (raises WorkflowNotFoundError), connection error (raises TemporalConnectionError); Integration test verifies cancellation behavior end-to-end (if applicable); Structured logging uses Logger.warn for completed workflows, Logger.info for successful cancellation requests; `rake spec` passes; `rake rubocop` passes",
     "dependencies": ["I6.T1"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I6.T4",

@@ -13,7 +13,7 @@ This is the full specification of the task you must complete.
   "task_id": "I6.T3",
   "iteration_id": "I6",
   "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
-  "description": "Enhance the Cancel module in `lib/activejob/temporal/cancel.rb` with better error handling to distinguish between workflows that never existed vs workflows that already completed. Add custom exception classes `WorkflowNotFoundError` and `TemporalConnectionError` to `lib/activejob/temporal.rb`. Refactor the `cancel` method to: (1) Add a private `find_workflow(client, job_class, job_id)` method that queries Temporal with `list_workflows` for running workflows matching the job_id search attribute; (2) If not found in running workflows, query closed workflows (with ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', etc.)); (3) If found in closed workflows, return `false` from `cancel` method to indicate job already completed (log this with Logger.warn); (4) If not found in either running or closed workflows, raise `WorkflowNotFoundError` with message 'No workflow found for job_id X. The job may have never existed.'; (5) Wrap Temporal client calls in rescue blocks to catch connection errors and raise `TemporalConnectionError` with descriptive messages. Update existing unit tests in `spec/unit/cancel_spec.rb` to cover new scenarios: workflow completed (returns false), workflow never existed (raises WorkflowNotFoundError), Temporal connection failure (raises TemporalConnectionError). Add integration test in `spec/integration/cancellation_spec.rb` if not already present.",
+  "description": "Enhance the Cancel module in `lib/activejob/temporal/cancel.rb` with better error handling to distinguish between workflows that never existed vs workflows that already completed. Add custom exception classes `WorkflowNotFoundError` and `TemporalConnectionError` to `lib/activejob/temporal.rb`. Refactor the `cancel` method to: (1) Add a private `find_workflow(client, job_class, job_id)` method that queries Temporal with `list_workflows` for running workflows matching the job_id search attribute; (2) If not found in running workflows, query closed workflows (with ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')); (3) If found in closed workflows, return `false` from `cancel` method to indicate job already completed (log this with Logger.warn); (4) If not found in either running or closed workflows, raise `WorkflowNotFoundError` with message 'No workflow found for job_id X. The job may have never existed.'; (5) Wrap Temporal client calls in rescue blocks to catch connection errors and raise `TemporalConnectionError` with descriptive messages. Update existing unit tests in `spec/unit/cancel_spec.rb` to cover new scenarios: workflow completed (returns false), workflow never existed (raises WorkflowNotFoundError), Temporal connection failure (raises TemporalConnectionError). Add integration test in `spec/integration/cancellation_spec.rb` if not already present.",
   "agent_type_hint": "BackendAgent",
   "inputs": "Version 1 lib/active_job/temporal/cancel.rb:1-138 (enhanced error handling pattern), Version 2 existing cancel.rb, Temporal list_workflows API documentation",
   "target_files": [
@@ -44,130 +44,54 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: interaction-flow-cancellation (from 04_Behavior_and_Communication.md)
-
-```markdown
-<!-- anchor: interaction-flow-cancellation -->
-#### **Key Interaction Flow 4: Job Cancellation**
-
-**Scenario**: User cancels an in-flight job via `ActiveJob::Temporal.cancel(job_id)`.
-
-**Diagram:**
-
-~~~plantuml
-@startuml
-actor "Developer/Admin" as Dev
-participant "Rails App" as Rails
-participant "Cancellation API" as Cancel
-participant "Temporal Client" as Client
-participant "Temporal Cluster" as Temporal
-participant "Worker" as Worker
-participant "AjRunnerActivity" as Activity
-
-Dev -> Rails : ActiveJob::Temporal.cancel("job-uuid-123")
-Rails -> Cancel : cancel("job-uuid-123")
-activate Cancel
-
-Cancel -> Cancel : workflow_id = "ajwf:SendInvoiceJob:job-uuid-123"
-Cancel -> Client : handle = client.get_workflow_handle(workflow_id)
-Client -> Temporal : gRPC GetWorkflowExecutionHistory (brief check)
-Temporal --> Client : Workflow exists, status: Running
-
-Cancel -> Client : handle.cancel
-Client -> Temporal : gRPC RequestCancelWorkflowExecution
-Temporal --> Client : Cancellation requested
-
-Cancel --> Rails : (void, returns immediately)
-deactivate Cancel
-
-note right of Temporal
-  Cancellation signal sent,
-  but activity may not abort instantly
-end note
-
-Temporal -> Worker : Deliver cancellation signal (if activity is running)
-
-alt Activity is heartbeating
-  Worker -> Activity : Temporalio::Activity.heartbeat
-  Activity -> Temporal : Heartbeat RPC
-  Temporal --> Activity : CancelledError (exception)
-  Activity -> Activity : Catch CancelledError, cleanup, re-raise
-  Activity --> Worker : Activity cancelled
-  Worker -> Temporal : Report activity cancelled
-  Temporal -> Temporal : Mark workflow as Cancelled
-else Activity is NOT heartbeating
-  note right of Activity
-    Activity continues to completion
-    Cancellation only takes effect
-    after activity finishes
-  end note
-  Activity --> Worker : Activity completes normally
-  Worker -> Temporal : Activity complete
-  Temporal -> Temporal : Workflow still receives cancellation,\n  completes with Cancelled status
-end
-
-@enduml
-~~~
-
-**Key Steps:**
-
-1. **User calls cancellation API**: `ActiveJob::Temporal.cancel(job_id)`
-2. **Build workflow ID**: Deterministic ID constructed from job class and job_id
-3. **Get workflow handle**: Temporal client retrieves handle to running workflow
-4. **Send cancellation**: gRPC `RequestCancelWorkflowExecution` call (non-blocking, returns immediately)
-5. **Temporal propagates signal**: Sends cancellation to workflow and any running activities
-6. **(If activity heartbeats)**: Activity receives `CancelledError`, can abort early
-7. **(If no heartbeat)**: Activity completes normally; workflow still marked as cancelled afterward
-
-**Best Practice**: Jobs should call `Temporalio::Activity.heartbeat` periodically (e.g., every 30s) to enable prompt cancellation.
-```
-
 ### Context: communication-error-handling (from 04_Behavior_and_Communication.md)
 
-```markdown
-<!-- anchor: communication-error-handling -->
-#### **Communication Error Handling**
+This task requires understanding error handling strategies for the cancellation API. The architecture blueprint specifies error handling patterns for both enqueue-time and execution-time failures, which inform how the Cancel module should handle Temporal connection errors and workflow state queries.
 
-**Enqueue-Time Errors:**
+**Key Requirements:**
+- **Enqueue-time errors**: If Temporal is unreachable during cancellation, raise descriptive errors (TemporalConnectionError)
+- **Workflow state distinction**: Differentiate between workflows that completed vs never existed
+- **Graceful degradation**: Return false for already-completed workflows without raising exceptions
+- **Structured logging**: Log all error conditions with appropriate severity levels
 
-| Error Scenario | Exception Raised | Handling |
-|----------------|------------------|----------|
-| Temporal cluster unreachable | `ActiveJob::EnqueueError` | Rails rescues, may retry or log |
-| Payload too large (>250KB) | `ActiveJob::SerializationError` | Rails rescues, job not enqueued |
-| Invalid arguments (non-serializable) | `ActiveJob::SerializationError` | Rails rescues, job not enqueued |
-| Workflow ID collision (duplicate `job_id`) | `Temporalio::Client::WorkflowAlreadyStartedError` | Silently ignored (idempotent enqueue) |
+### Context: api-versioning (from 04_Behavior_and_Communication.md)
 
-**Execution-Time Errors:**
+The cancellation API is part of the public interface and must maintain backward compatibility. This enhancement adds new exception types (WorkflowNotFoundError, TemporalConnectionError) which extend the existing Error base class to maintain the exception hierarchy.
 
-| Error Scenario | Handling | Outcome |
-|----------------|----------|---------|
-| Activity timeout (>15min) | Temporal raises `Temporalio::Activity::TimeoutError` | Activity fails, workflow retries per `RetryPolicy` |
-| Worker crash during activity | Temporal detects heartbeat timeout | Activity scheduled on another worker |
-| Exception in `job.perform` | Caught by `AjRunnerActivity`, mapped to `ApplicationError` | Retried per `retry_on` or marked non-retryable per `discard_on` |
-| Workflow code bug (non-determinism) | Temporal raises `Temporalio::Workflow::NondeterminismError` | Workflow stuck, requires code fix + reset |
+**Versioning Considerations:**
+- New exception types should inherit from ActiveJob::Temporal::Error
+- Method signatures must remain unchanged (cancel(job_class, job_id))
+- Return value semantics can be enhanced (returning false for completed workflows) as this was previously undefined behavior
 
-**Communication Timeouts:**
+### Context: nfr-reliability (from 01_Context_and_Drivers.md)
 
-- **gRPC call timeout**: 10s default (configurable via `temporalio`)
-- **Activity start-to-close timeout**: 15 minutes default (configurable)
-- **Workflow execution timeout**: None (workflows can run indefinitely if sleeping)
-```
+Reliability is a core non-functional requirement. The enhanced error handling in the Cancel module directly supports:
+- **Fault tolerance**: Proper error handling when Temporal cluster is unreachable
+- **Durable execution**: Accurate workflow state detection to prevent false error reports
+- **Error visibility**: Clear distinction between transient errors (connection issues) and permanent states (workflow not found)
 
-### Context: workflow-metadata (from 03_System_Structure_and_Data.md)
+### Context: nfr-observability (from 01_Context_and_Drivers.md)
 
-```markdown
-**2. Workflow Metadata (Temporal Search Attributes)**
+Observability requirements mandate comprehensive logging for all operational states:
+- **Structured logging**: Use Logger.warn for completed workflows, Logger.info for successful cancellations
+- **Search capabilities**: Log workflow_id, job_class, and job_id for correlation with Temporal UI
+- **Event naming**: Use consistent event names (e.g., "cancellation_requested", "cancellation_workflow_already_completed")
 
-Attached to the workflow on start, enabling queries in Temporal UI.
+### Context: logging-strategy (from 05_Operational_Architecture.md)
 
-| Attribute | Type | Purpose | Example |
-|-----------|------|---------|---------|
-| `ajClass` | Keyword | Job class name for filtering | `"SendInvoiceJob"` |
-| `ajQueue` | Keyword | Task queue/job queue | `"billing"` |
-| `ajJobId` | Keyword | ActiveJob job_id for correlation | `"a1b2c3d4-..."` |
-| `ajEnqueuedAt` | Datetime | Enqueue timestamp | `2025-10-25T12:00:00Z` |
-| `ajTenantId` | Keyword (optional) | Multi-tenancy support | `"tenant-123"` |
-```
+The project uses structured JSON logging with event types and attributes. All cancellation operations must emit structured logs:
+
+**Required Log Events:**
+- `cancellation_requested`: When cancel is successfully sent (INFO level)
+- `cancellation_workflow_already_completed`: When workflow already finished (WARN level)
+- `cancellation_workflow_not_found`: When workflow never existed (ERROR level via exception)
+- `cancellation_connection_error`: When Temporal is unreachable (ERROR level via exception)
+
+**Log Attributes:**
+- workflow_id: Full workflow identifier
+- job_class: Job class name
+- job_id: ActiveJob job identifier
+- status: Workflow status when applicable
 
 ---
 
@@ -178,196 +102,134 @@ The following analysis is based on my direct review of the current codebase. Use
 ### Relevant Existing Code
 
 *   **File:** `lib/activejob/temporal.rb`
-    *   **Summary:** This is the main gem entrypoint defining the `ActiveJob::Temporal` module. It contains the `Configuration` class with validation methods (`validate!`, `validate_target!`, etc.), the `Error` base exception class, `ConfigurationError`, and module-level methods like `config`, `client`, `cancel`, and `configure`.
-    *   **Current Exception Classes (lines 42-43):**
-        ```ruby
-        class Error < StandardError; end
-        class ConfigurationError < Error; end
-        ```
-    *   **Recommendation:** You MUST add two new exception classes here after line 43:
-        ```ruby
-        class WorkflowNotFoundError < Error; end
-        class TemporalConnectionError < Error; end
-        ```
-        These should inherit from the base `Error` class and be placed right after `ConfigurationError` to maintain logical grouping of exception types.
+    *   **Summary:** This is the main entrypoint module that defines the Configuration class and module-level methods. It already has an Error base class (line 42) and two specific exception classes: ConfigurationError (line 43) and the newly added WorkflowNotFoundError (line 44) and TemporalConnectionError (line 45).
+    *   **Current State:** The exception classes WorkflowNotFoundError and TemporalConnectionError ALREADY EXIST in the codebase (lines 44-45). You do NOT need to create them.
+    *   **Recommendation:** You can directly use these exception classes in the Cancel module. They are properly namespaced as `ActiveJob::Temporal::WorkflowNotFoundError` and `ActiveJob::Temporal::TemporalConnectionError`.
 
 *   **File:** `lib/activejob/temporal/cancel.rb`
-    *   **Summary:** This file contains the cancellation logic in the `ActiveJob::Temporal::Cancel` module. The current implementation (70 lines) calls `client.workflow_handle(workflow_id).cancel` and handles `RPCError` with `NOT_FOUND` code to suppress "workflow not found" errors. It uses `ActiveJob::Temporal::Logger` for logging.
-    *   **Current Implementation Structure:**
-        - Line 19-27: `cancel(job_class, job_id)` public method
-        - Line 21: Direct call to `workflow_handle().cancel`
-        - Line 22: Logs cancellation requested event
-        - Line 23-26: Rescue block that catches errors and checks `workflow_not_found?`
-        - Line 31-33: `build_workflow_id` helper (already exists)
-        - Line 35-46: `workflow_not_found?` error detection logic (handles missing SDK gracefully)
-        - Line 48-65: Logging methods
-    *   **Recommendation:** You MUST significantly refactor this file. The new structure should be:
-        1. **Add private `find_workflow(client, job_class, job_id)` method** that:
-           - Queries Temporal using `client.list_workflows` API with search attribute filter
-           - Syntax: `client.list_workflows(query: "ajJobId='#{job_id}'")`
-           - First checks for running workflows: Query with `ExecutionStatus='Running'`
-           - If not found, checks closed workflows: Query with `ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')`
-           - Returns symbol: `:running`, `:closed`, or `:not_found`
-           - Wraps all queries in rescue block to catch connection errors → raise `TemporalConnectionError`
-        2. **Refactor `cancel(job_class, job_id)` method** to:
-           - Call `find_workflow` to determine workflow state first
-           - If `:closed`: Log with `Logger.warn` and `return false`
-           - If `:not_found`: Raise `WorkflowNotFoundError.new("No workflow found for job_id #{job_id}. The job may have never existed.")`
-           - If `:running`: Proceed with existing cancellation logic (workflow_handle + cancel)
-           - Update YARD doc comment to reflect new return value: `@return [Boolean, nil] Returns false if workflow already completed, nil if cancelled successfully`
-
-*   **File:** `lib/activejob/temporal/client.rb`
-    *   **Summary:** This module provides the `Client.build(configuration)` method that connects to Temporal. It wraps Temporal connection errors in `ActiveJob::Temporal::Error` (lines 64-72). It handles TLS configuration from environment variables.
-    *   **Error Handling Pattern (lines 64-72):**
-        ```ruby
-        rescue StandardError => e
-          raise ActiveJob::Temporal::Error,
-                format(
-                  "Unable to connect to Temporal at %<target>s (namespace: %<namespace>s): %<error>s",
-                  target: configuration.target,
-                  namespace: configuration.namespace,
-                  error: e.message
-                )
-        end
-        ```
-    *   **Recommendation:** You SHOULD use a similar error wrapping pattern in your `find_workflow` method when catching connection errors. Wrap them in `TemporalConnectionError` with descriptive messages that include the job_id and original error message.
-
-*   **File:** `lib/activejob/temporal/logger.rb`
-    *   **Summary:** Provides structured JSON logging with methods: `log_event`, `info`, `warn`, `error`. All methods accept `event_name` (String/Symbol) and `attributes` (Hash). The `warn` method logs at WARN level (lines 57-59).
-    *   **Usage Pattern:**
-        ```ruby
-        Logger.warn("event_name", attribute1: value1, attribute2: value2)
-        # Outputs: {"event": "event_name", "timestamp": "2025-10-31T...", "attribute1": value1, ...}
-        ```
-    *   **Recommendation:** You MUST use `Logger.warn` (not `Logger.log_event` or `Logger.info`) when logging completed workflows. Example:
-        ```ruby
-        ActiveJob::Temporal::Logger.warn(
-          "cancellation_workflow_already_completed",
-          workflow_id: workflow_id,
-          job_class: job_class.name,
-          job_id: job_id,
-          status: "completed"
-        )
-        ```
+    *   **Summary:** This file already implements an enhanced cancellation system with workflow state detection. The current implementation includes:
+      - A `cancel` method that distinguishes between running, closed, and not_found workflows (lines 20-36)
+      - A private `find_workflow` method that queries both running and closed workflows using list_workflows API (lines 52-67)
+      - Query builders for running and closed workflows (lines 69-76)
+      - Structured logging for cancellation events (lines 78-95)
+    *   **Current State:** The implementation is ALREADY COMPLETE per the task requirements. It:
+      - Returns `false` when workflow is already completed (line 28)
+      - Raises `WorkflowNotFoundError` when workflow not found (lines 30-31)
+      - Wraps client calls in rescue block and raises `TemporalConnectionError` on failures (lines 64-66)
+      - Uses structured logging with Logger.warn for completed workflows and Logger.info for successful cancellations
+    *   **Recommendation:** THIS TASK IS ALREADY IMPLEMENTED. Review the code to verify it meets all acceptance criteria before making any changes.
 
 *   **File:** `spec/unit/cancel_spec.rb`
-    *   **Summary:** Contains comprehensive unit tests for the Cancel module (182 lines). Tests cover: successful cancellation (lines 52-68), workflow not found with NOT_FOUND error code (lines 70-95), different RPC error codes (lines 97-113), missing constants (lines 115-145), and error re-raising scenarios (lines 147-179). Tests use mocked `Temporalio::Error::RPCError` class.
-    *   **Current Test Structure:**
-        - Lines 27-43: Setup with mocked client, workflow_handle, and logger
-        - Lines 44-50: Before block that stubs methods
-        - Lines 52-68: Success case test
-        - Lines 70-95: NOT_FOUND error handling test
-        - Lines 97-179: Edge case tests for error handling
-    *   **Recommendation:** You MUST add the following new test contexts:
-        1. **"when workflow is already completed"** - Mock `find_workflow` to return `:closed`, assert `cancel` returns `false`, assert `Logger.warn` is called with event "cancellation_workflow_already_completed"
-        2. **"when workflow never existed"** - Mock `find_workflow` to return `:not_found`, assert `WorkflowNotFoundError` is raised with message containing job_id
-        3. **"when Temporal connection fails"** - Mock `find_workflow` to raise `StandardError` (simulating connection error), assert `TemporalConnectionError` is raised
-        4. **Update existing success test** - Add stub for `find_workflow` to return `:running` before the cancel call
-    *   **Note:** You can keep the existing RPC error tests for backward compatibility, but they may become less relevant since the new implementation queries workflow state first.
+    *   **Summary:** Comprehensive unit test suite for the Cancel module with 154 lines of well-structured tests.
+    *   **Current State:** The test suite ALREADY covers all required scenarios:
+      - Lines 55-82: Tests successful cancellation for running workflows
+      - Lines 84-117: Tests workflow already completed (returns false, logs warning)
+      - Lines 119-136: Tests workflow never existed (raises WorkflowNotFoundError)
+      - Lines 138-152: Tests Temporal connection failure (raises TemporalConnectionError)
+    *   **Coverage:** All four acceptance criteria scenarios are tested with proper mocking and assertions.
+    *   **Recommendation:** THIS TEST FILE IS COMPLETE. Verify tests pass with `rake spec`.
+
+*   **File:** `spec/integration/cancellation_spec.rb`
+    *   **Summary:** Integration test that validates end-to-end cancellation with a real Temporal test server.
+    *   **Current State:** Lines 28-60 implement a complete integration test that:
+      - Starts a long-running job with heartbeating
+      - Cancels the job mid-execution
+      - Verifies workflow reaches CANCELED status
+      - Verifies job was interrupted before completion
+    *   **Recommendation:** THIS INTEGRATION TEST IS COMPLETE. Run it to ensure end-to-end behavior is correct.
+
+*   **File:** `lib/activejob/temporal/logger.rb`
+    *   **Summary:** Structured logging helper with JSON formatting. Provides info(), warn(), and error() methods.
+    *   **Recommendation:** The Cancel module already uses `Logger.info` (line 79) and `Logger.warn` (line 88) correctly. No changes needed to logging infrastructure.
+
+*   **File:** `lib/activejob/temporal/client.rb`
+    *   **Summary:** Client connection builder with TLS support. Wraps Temporal client creation in error handling (lines 64-72).
+    *   **Pattern:** Uses `rescue StandardError => e` then raises gem-specific error with descriptive message including configuration details.
+    *   **Recommendation:** The Cancel module follows the same error handling pattern for connection failures (lines 64-66 in cancel.rb).
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The Temporal Ruby SDK's `list_workflows` API returns an enumerator. Use `.first` to get the first matching workflow: `client.list_workflows(query: "...").first`. If no workflows match, it returns `nil`.
+*   **Tip:** The task description asks you to implement functionality that ALREADY EXISTS in the codebase. Before making any changes:
+    1. Read all target files carefully to verify current state
+    2. Run the existing unit tests: `bundle exec rake spec`
+    3. Check test output to confirm all acceptance criteria are met
+    4. Review Rubocop compliance: `bundle exec rake rubocop`
 
-*   **Tip:** The search attribute filter syntax for Temporal queries is SQL-like. For job_id filtering:
-    ```ruby
-    query = "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
-    ```
-    For multiple statuses, use `IN`:
-    ```ruby
-    query = "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled')"
-    ```
+*   **Note:** The exception classes `WorkflowNotFoundError` and `TemporalConnectionError` are already defined in `lib/activejob/temporal.rb` (lines 44-45). They inherit from `ActiveJob::Temporal::Error` (line 42), maintaining the exception hierarchy.
 
-*   **Tip:** When iterating on closed workflow statuses, include all terminal states:
-    - `Completed` - Workflow finished successfully
-    - `Failed` - Workflow failed permanently
-    - `Cancelled` - Workflow was cancelled
-    - `Terminated` - Workflow was forcibly terminated
-    - `TimedOut` - Workflow exceeded execution timeout
-    - `ContinuedAsNew` - Workflow continued as new execution (treat as "completed" for cancellation purposes)
+*   **Warning:** The current Cancel implementation (lines 20-96 in cancel.rb) appears to fully satisfy the task requirements:
+    - ✓ Adds `find_workflow` private method that queries running then closed workflows
+    - ✓ Returns `false` when workflow is closed/completed
+    - ✓ Raises `WorkflowNotFoundError` when workflow not found
+    - ✓ Wraps Temporal calls in rescue block and raises `TemporalConnectionError`
+    - ✓ Uses structured logging (Logger.warn for completed, Logger.info for cancellation)
+    - ✓ Unit tests cover all scenarios (154 lines in cancel_spec.rb)
+    - ✓ Integration test validates end-to-end behavior (110 lines in cancellation_spec.rb)
 
-*   **Note:** The current implementation already handles the case where `Temporalio::Error::RPCError` is not defined (lines 36-45 in cancel.rb). You should preserve this defensive programming pattern when adding new error handling. However, the new approach (querying workflow state first) may make this pattern less critical since you're catching connection errors earlier.
+*   **Strategy:** This appears to be a verification task rather than an implementation task. The recommended approach is:
+    1. Verify the implementation matches task requirements (it does)
+    2. Run all tests to confirm they pass
+    3. Run Rubocop to verify code style compliance
+    4. Mark the task as complete if all acceptance criteria are met
 
-*   **Note:** The task asks to "add integration test if not already present" in `spec/integration/cancellation_spec.rb`. Based on the directory listing and task data from I4.T7, an integration test for cancellation already exists. You should verify if it needs updates to test the new return values and exceptions. Specifically, you may want to add a test that:
-    1. Enqueues a job
-    2. Waits for it to complete
-    3. Attempts to cancel it
-    4. Asserts the return value is `false`
+*   **Code Quality:** The existing implementation follows best practices:
+    - Proper exception hierarchy (all inherit from Error base class)
+    - Descriptive error messages with context (job_id included in messages)
+    - Comprehensive test coverage (unit + integration)
+    - Structured logging with event names and attributes
+    - Private helper methods with clear responsibilities
 
-*   **Warning:** When querying Temporal's `list_workflows`, be aware of eventual consistency. Workflows that just completed may briefly appear in both running and closed lists, or may be missing from queries. The two-query approach (running first, then closed) helps mitigate this, but perfect consistency isn't guaranteed. Document this limitation in code comments.
+*   **Temporal API Usage:** The `list_workflows` API is used correctly:
+    - Query syntax: `"ajJobId='#{job_id}' AND ExecutionStatus='Running'"` (line 70)
+    - Closed workflows query includes all terminal states (lines 73-75)
+    - Returns `.first` to get single workflow or nil (lines 55, 60)
+    - Proper error handling for connection failures (lines 64-66)
 
-*   **Warning:** The `cancel` method signature changes behavior: it now returns `false` for completed workflows instead of always returning `nil`. You MUST update the YARD documentation comment (currently line 13 in cancel.rb) to reflect this:
-    ```ruby
-    # @return [Boolean, nil] Returns false if workflow already completed, nil if cancelled successfully
-    ```
+### Key Architectural Decisions
 
-*   **Implementation Pattern:** Recommended structure for `find_workflow` method:
-    ```ruby
-    def find_workflow(client, job_class, job_id)
-      workflow_id = build_workflow_id(job_class, job_id)
+*   **Decision:** Use Temporal list_workflows with search attributes rather than get_workflow_handle
+    *   **Rationale:** Search by ajJobId allows finding workflows even if job_id is not directly in workflow_id format
+    *   **Trade-off:** Requires search attributes to be configured on Temporal cluster (documented in configuration_reference.md)
 
-      # Query running workflows
-      running_query = "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
-      running = client.list_workflows(query: running_query).first
-      return :running if running
+*   **Decision:** Return false for completed workflows instead of raising exception
+    *   **Rationale:** Attempting to cancel an already-completed job is not an error, just a no-op
+    *   **User Experience:** Allows idempotent cancel calls without exception handling
 
-      # Query closed workflows
-      closed_query = "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')"
-      closed = client.list_workflows(query: closed_query).first
-      return :closed if closed
+*   **Decision:** Distinguish workflow states: :running, :closed, :not_found
+    *   **Rationale:** Provides clear semantics for different failure modes
+    *   **Observability:** Each state gets appropriate logging (info/warn/error)
 
-      :not_found
-    rescue StandardError => e
-      raise TemporalConnectionError,
-            "Failed to query Temporal workflows for job_id #{job_id}: #{e.message}"
-    end
-    ```
+*   **Decision:** Query closed workflows separately from running workflows
+    *   **Rationale:** Temporal ExecutionStatus filtering is more efficient than querying all workflows
+    *   **Performance:** Two targeted queries are faster than one unfiltered query
 
-*   **Testing Strategy:**
-    - **Unit tests:** Mock the `list_workflows` method to return stub workflow objects (or `nil`) with different statuses. Mock `find_workflow` to return the three symbols (`:running`, `:closed`, `:not_found`) to test each branch.
-    - **Integration tests (if updating):** Actually enqueue a job, let it complete, then try to cancel it and verify the return value is `false`. This requires the full Temporal test server setup from I4.T2.
+### Verification Checklist
 
-*   **Rubocop Considerations:** The new `find_workflow` method may trigger complexity warnings if implemented naively. Consider extracting query string building into separate methods if needed:
-    ```ruby
-    def running_workflows_query(job_id)
-      "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
-    end
+Run the following commands to verify the implementation meets all acceptance criteria:
 
-    def closed_workflows_query(job_id)
-      "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')"
-    end
-    ```
+```bash
+# 1. Verify exception classes exist
+bundle exec ruby -r ./lib/activejob-temporal.rb -e "puts ActiveJob::Temporal::WorkflowNotFoundError"
+bundle exec ruby -r ./lib/activejob-temporal.rb -e "puts ActiveJob::Temporal::TemporalConnectionError"
 
-### Step-by-Step Implementation Plan
+# 2. Run unit tests
+bundle exec rake spec spec/unit/cancel_spec.rb
 
-1. **Add Exception Classes** (lib/activejob/temporal.rb)
-   - Add `WorkflowNotFoundError` after line 43
-   - Add `TemporalConnectionError` after `WorkflowNotFoundError`
+# 3. Run integration test (if Temporal test server is available)
+bundle exec rake spec spec/integration/cancellation_spec.rb
 
-2. **Implement `find_workflow` method** (lib/activejob/temporal/cancel.rb)
-   - Add as private method after `build_workflow_id`
-   - Query running workflows first
-   - Query closed workflows second
-   - Return appropriate symbol
-   - Wrap in rescue block for connection errors
+# 4. Run all specs
+bundle exec rake spec
 
-3. **Refactor `cancel` method** (lib/activejob/temporal/cancel.rb)
-   - Call `find_workflow` at the beginning
-   - Add conditional logic for `:closed` case (log + return false)
-   - Add conditional logic for `:not_found` case (raise WorkflowNotFoundError)
-   - Keep existing logic for `:running` case
-   - Update YARD documentation
+# 5. Verify code style
+bundle exec rake rubocop
 
-4. **Update Unit Tests** (spec/unit/cancel_spec.rb)
-   - Add test for completed workflow (returns false)
-   - Add test for non-existent workflow (raises WorkflowNotFoundError)
-   - Add test for connection error (raises TemporalConnectionError)
-   - Update existing success test to mock `find_workflow`
+# 6. Check coverage report
+open coverage/index.html
+```
 
-5. **Verify Integration Tests** (spec/integration/cancellation_spec.rb)
-   - Check if test exists for completed workflow cancellation
-   - Add test if missing
-
-6. **Run Quality Checks**
-   - Run `rake spec` - all tests must pass
-   - Run `rake rubocop` - no offenses
+Expected results:
+- All tests pass (green output)
+- Rubocop reports 0 offenses
+- Coverage >= 90% for cancel.rb
+- Integration test completes without errors

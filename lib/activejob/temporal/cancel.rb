@@ -27,11 +27,12 @@ module ActiveJob
             log_workflow_already_completed(job_class, job_id, workflow_id)
             false
           when :not_found
-            raise WorkflowNotFoundError,
+            raise ActiveJob::Temporal::WorkflowNotFoundError,
                   "No workflow found for job_id #{job_id}. The job may have never existed."
           when :running
             client.workflow_handle(workflow_id).cancel
             log_cancellation_requested(job_class, job_id, workflow_id)
+            nil
           end
         end
 
@@ -62,7 +63,7 @@ module ActiveJob
 
           :not_found
         rescue StandardError => e
-          raise TemporalConnectionError,
+          raise ActiveJob::Temporal::TemporalConnectionError,
                 "Failed to query Temporal workflows for job_id #{job_id}: #{e.message}"
         end
 
