@@ -121,6 +121,23 @@ module ActiveJob
       #     MyJob.perform_later(huge_object.id)  # Pass ID instead
       #   end
       #
+      # @example Handling configuration errors
+      #   begin
+      #     MyJob.perform_later("arg")
+      #   rescue ActiveJob::Temporal::ConfigurationError => e
+      #     # Configuration validation failed
+      #     Rails.logger.fatal("Invalid Temporal configuration: #{e.message}")
+      #   end
+      #
+      # @example Handling enqueue errors (cluster unreachable)
+      #   begin
+      #     MyJob.perform_later("arg")
+      #   rescue ActiveJob::EnqueueError => e
+      #     # Temporal cluster is down or network issue
+      #     Rails.logger.error("Cannot enqueue job: #{e.message}")
+      #     # Consider queuing to fallback system or retrying later
+      #   end
+      #
       # @see #enqueue_at
       # @see https://docs.temporal.io/workflows#workflow-id-reuse-policy Temporal Workflow ID Policies
       def enqueue(job)
@@ -153,6 +170,14 @@ module ActiveJob
       # @example Scheduling with ActiveJob DSL
       #   MyJob.set(wait: 1.hour).perform_later("arg")
       #
+      # @example Scheduling with wait_until
+      #   MyJob.set(wait_until: Date.tomorrow.noon).perform_later("arg")
+      #
+      # @example Far-future scheduling (durable timer benefits)
+      #   # Schedule a job 30 days in the future
+      #   MyJob.set(wait: 30.days).perform_later("reminder", user_id: 123)
+      #   # The workflow sleeps for 30 days without consuming resources
+      #
       # @see #enqueue
       # @see Workflows::AjWorkflow#sleep_until
       def enqueue_at(job, timestamp)
@@ -175,12 +200,21 @@ module ActiveJob
       #     MyJob.perform_later(user) # Deferred until commit
       #     raise ActiveRecord::Rollback # Job is NOT enqueued
       #   end
+      #
+      # @example Ensuring job runs after DB commit
+      #   ActiveRecord::Base.transaction do
+      #     order = Order.create!(amount: 100)
+      #     PaymentJob.perform_later(order.id)
+      #     # Job will not start until transaction commits successfully
+      #   end
       def enqueue_after_transaction_commit?
         true
       end
 
       private
 
+      # Enqueues a workflow with the given payload and options.
+      # @api private
       def enqueue_with_payload(job, payload)
         workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
         task_queue = ActiveJob::Temporal::Adapter.resolve_task_queue(job)
@@ -201,10 +235,14 @@ module ActiveJob
         start_workflow(client, payload, options, job)
       end
 
+      # Builds a payload hash from a job instance.
+      # @api private
       def build_payload(job, scheduled_at: nil)
         ActiveJob::Temporal::Payload.from_job(job, scheduled_at: scheduled_at)
       end
 
+      # Starts the Temporal workflow with the given options.
+      # @api private
       def start_workflow(client, payload, options, job)
         workflow_class = ActiveJob::Temporal::Workflows::AjWorkflow
         handle = client.start_workflow(workflow_class, payload, **options)
@@ -221,12 +259,16 @@ module ActiveJob
         raise ActiveJob::EnqueueError, build_enqueue_error_message(job, e)
       end
 
+      # Checks if error indicates workflow was already started (duplicate job_id).
+      # @api private
       def workflow_already_started?(error)
         return false unless defined?(Temporalio::Client::WorkflowAlreadyStartedError)
 
         error.is_a?(Temporalio::Client::WorkflowAlreadyStartedError)
       end
 
+      # Logs enqueue event with structured metadata.
+      # @api private
       def log_enqueued(job, workflow_id, task_queue, duplicate:, scheduled_at: nil)
         attributes = {
           workflow_id: workflow_id,
@@ -241,6 +283,8 @@ module ActiveJob
         ActiveJob::Temporal::Logger.log_event("workflow_enqueued", **attributes)
       end
 
+      # Logs enqueue event using options hash and payload.
+      # @api private
       def log_enqueued_with_options(job, options, payload, duplicate:)
         log_enqueued(
           job,
@@ -251,6 +295,8 @@ module ActiveJob
         )
       end
 
+      # Builds error message for enqueue failures.
+      # @api private
       def build_enqueue_error_message(job, error)
         format(
           "Failed to enqueue job %<job_class>s (%<job_id>s): %<error>s",

@@ -56,6 +56,9 @@ module ActiveJob
       # @return [Temporalio::SearchAttributes] Typed search attributes for Temporal
       #
       # @raise [Temporalio::Error::WorkflowUpdateFailedError] if attributes are not pre-registered in Temporal
+      # @raise [ArgumentError] if job is nil
+      # @raise [TypeError] if job does not respond to required methods
+      # @raise [NameError] if Temporalio::SearchAttributes is not defined
       #
       # @example Basic usage
       #   job = MyJob.new
@@ -92,6 +95,8 @@ module ActiveJob
 
       private
 
+      # Sets core search attributes (ajClass, ajQueue, ajJobId, ajEnqueuedAt).
+      # @api private
       def set_core_attributes(attributes, job)
         aj_class_key = create_key("ajClass", :KEYWORD)
         aj_queue_key = create_key("ajQueue", :KEYWORD)
@@ -104,6 +109,8 @@ module ActiveJob
         attributes[aj_enqueued_at_key] = Time.now
       end
 
+      # Adds tenant ID attribute if first argument responds to tenant_id.
+      # @api private
       def add_tenant_attribute(attributes, job)
         tenant_id = extract_tenant_id(job.arguments)
         return unless tenant_id
@@ -112,11 +119,15 @@ module ActiveJob
         attributes[aj_tenant_id_key] = tenant_id
       end
 
+      # Creates a typed Temporal search attribute key.
+      # @api private
       def create_key(name, type)
         type_constant = Temporalio::SearchAttributes::IndexedValueType.const_get(type)
         Temporalio::SearchAttributes::Key.new(name, type_constant)
       end
 
+      # Extracts tenant_id from first argument if it responds to tenant_id method.
+      # @api private
       def extract_tenant_id(arguments)
         first_argument = arguments&.first
         return unless first_argument.respond_to?(:tenant_id)

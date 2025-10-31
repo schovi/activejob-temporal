@@ -166,7 +166,7 @@
     "acceptance_criteria": "All public methods have complete YARD docs with @param, @return, and @raise annotations; Complex methods (Adapter.build_workflow_id, Payload.from_job, RetryMapper.for) have @example blocks with realistic usage; Workflow and activity files have @note sections documenting determinism and idempotency requirements; Cancel module documents best-effort semantics with @note; Payload module documents size limits with @note; All exception-raising methods list exceptions in @raise annotations; Module-level docs (using `# Module description` before `module`) explain purpose and design; Running `yard doc` generates documentation without errors or warnings; Generated docs in `doc/` folder are readable and well-formatted; At least 20 new @example blocks added across all files; At least 30 new @raise annotations added; At least 10 new @note sections added",
     "dependencies": ["I6.T1", "I6.T3", "I6.T4"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I6.T8",

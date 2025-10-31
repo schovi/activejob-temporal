@@ -162,6 +162,8 @@ module ActiveJob
 
         private
 
+        # Constantizes job class from payload string.
+        # @api private
         def constantize_job_class(payload)
           job_class_name = payload[:job_class] || payload["job_class"]
           raise ArgumentError, "payload missing job_class" unless job_class_name
@@ -169,6 +171,8 @@ module ActiveJob
           job_class_name.constantize
         end
 
+        # Sets thread-local idempotency key from workflow ID.
+        # @api private
         def set_idempotency_key
           workflow_id = if defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
                           Temporalio::Activity::Context.current.info.workflow_id
@@ -181,6 +185,8 @@ module ActiveJob
           Thread.current[IDEMPOTENCY_KEY] = "#{workflow_id}/runner"
         end
 
+        # Handles exceptions by checking discard_on declarations.
+        # @api private
         def handle_exception(job_class, error)
           if job_class && RetryMapper.discard_exception?(job_class, error)
             raise Temporalio::Activity::ApplicationError.new(

@@ -55,6 +55,9 @@ module ActiveJob
       # @raise [ActiveJob::SerializationError] if arguments cannot be serialized
       # @raise [ActiveJob::SerializationError] if payload exceeds max_payload_size_kb (includes actual size in message)
       # @raise [ArgumentError] if scheduled_at is not convertible to Time
+      # @raise [ArgumentError] if job is nil
+      # @raise [NoMethodError] if job does not respond to required attributes
+      # @raise [JSON::GeneratorError] if payload cannot be JSON-serialized
       #
       # @example Basic job payload
       #   job = MyJob.new
@@ -79,6 +82,25 @@ module ActiveJob
       #   user = User.find(123)
       #   MyJob.perform_later(user)  # Serializes as GlobalID
       #   # Payload contains: { "_aj_globalid" => "gid://app/User/123" }
+      #
+      # @example Non-serializable object error
+      #   begin
+      #     MyJob.perform_later(File.open("/tmp/file.txt"))
+      #   rescue ActiveJob::SerializationError => e
+      #     # => "Unsupported argument type: File"
+      #     Rails.logger.error(e.message)
+      #   end
+      #
+      # @note Record Lifecycle Caveat
+      #   When using GlobalID serialization for ActiveRecord models, the record MUST
+      #   exist in the database at both enqueue time AND execution time. If the record
+      #   is deleted before the job executes, deserialization will fail with
+      #   ActiveRecord::RecordNotFound.
+      #
+      # @note Payload Size Optimization
+      #   To reduce payload size, prefer passing database IDs instead of full ActiveRecord
+      #   objects. For example, pass user.id instead of user. This is especially important
+      #   for jobs with large argument lists or complex nested objects.
       def from_job(job, scheduled_at: nil)
         payload = {
           job_class: job.class.name,
@@ -112,6 +134,15 @@ module ActiveJob
       #   payload = { arguments: [{"_aj_serialized"=>"..."}] }
       #   args = Payload.deserialize_args(payload)
       #   # => [actual_ruby_object]
+      #
+      # @example GlobalID deserialization with deleted record
+      #   begin
+      #     payload = { arguments: [{"_aj_globalid"=>"gid://app/User/999"}] }
+      #     args = Payload.deserialize_args(payload)
+      #   rescue ActiveRecord::RecordNotFound => e
+      #     # Record was deleted between enqueue and execution
+      #     Rails.logger.warn("Job argument no longer exists: #{e.message}")
+      #   end
       def deserialize_args(payload)
         serialized_args = payload[:arguments] || payload["arguments"]
         ActiveJob::Arguments.deserialize(serialized_args)
@@ -121,12 +152,16 @@ module ActiveJob
 
       private
 
+      # Serializes job arguments using ActiveJob's built-in serializer.
+      # @api private
       def serialize_arguments(arguments)
         ActiveJob::Arguments.serialize(arguments)
       rescue StandardError => e
         raise ActiveJob::SerializationError, e.message
       end
 
+      # Converts a value to ISO8601 timestamp string.
+      # @api private
       def iso8601_timestamp(value)
         return value if value.is_a?(String) && valid_iso8601?(value)
 
@@ -140,6 +175,8 @@ module ActiveJob
         timestamp.iso8601
       end
 
+      # Validates payload size against configured maximum.
+      # @api private
       def enforce_payload_size!(payload)
         json = JSON.generate(payload)
         max_size_kb = ActiveJob::Temporal.config.max_payload_size_kb || 250
@@ -156,6 +193,8 @@ module ActiveJob
         raise ActiveJob::SerializationError, message
       end
 
+      # Checks if a string is valid ISO8601 format.
+      # @api private
       def valid_iso8601?(value)
         Time.iso8601(value)
         true

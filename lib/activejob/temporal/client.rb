@@ -65,12 +65,32 @@ module ActiveJob
       #
       # @raise [ActiveJob::Temporal::Error] if connection fails (includes target, namespace, and error message)
       # @raise [OpenSSL::SSL::SSLError] if TLS certificate validation fails
+      # @raise [OpenSSL::PKey::RSAError] if TLS private key is invalid
+      # @raise [OpenSSL::X509::CertificateError] if TLS certificate is malformed
+      # @raise [SocketError] if target hostname cannot be resolved
+      # @raise [Errno::ECONNREFUSED] if target port is not accepting connections
+      # @raise [Errno::ETIMEDOUT] if connection times out
       #
       # @example Basic usage
       #   config = ActiveJob::Temporal::Configuration.new
       #   config.target = "temporal.example.com:7233"
       #   config.namespace = "production"
       #   client = Client.build(config)
+      #
+      # @example With TLS via environment variables
+      #   ENV["TEMPORAL_TLS_CERT"] = File.read("client.pem")
+      #   ENV["TEMPORAL_TLS_KEY"] = File.read("client-key.pem")
+      #   ENV["TEMPORAL_TLS_SERVER_NAME"] = "temporal.prod.example.com"
+      #   client = Client.build(config)
+      #   # Client will connect using mutual TLS
+      #
+      # @example Handling connection failures
+      #   begin
+      #     client = Client.build(config)
+      #   rescue ActiveJob::Temporal::Error => e
+      #     Rails.logger.fatal("Cannot connect to Temporal: #{e.message}")
+      #     # Fall back to different adapter or alert operations team
+      #   end
       def build(configuration)
         Temporalio::Client.connect(
           configuration.target,
@@ -87,6 +107,8 @@ module ActiveJob
               )
       end
 
+      # Builds connection keyword arguments (including TLS options).
+      # @api private
       def connection_kwargs(configuration)
         tls = tls_options(configuration)
         return {} unless tls
@@ -95,6 +117,8 @@ module ActiveJob
       end
       private_class_method :connection_kwargs
 
+      # Extracts TLS options from config or environment variables.
+      # @api private
       def tls_options(configuration)
         return configuration.tls if configuration.respond_to?(:tls) && configuration.tls
 

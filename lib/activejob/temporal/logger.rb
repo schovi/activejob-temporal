@@ -47,8 +47,16 @@ module ActiveJob
       # @return [void]
       # @raise [ArgumentError] if event_name is not a String or Symbol
       # @raise [ArgumentError] if attributes is not a Hash
+      # @raise [NoMethodError] if logger is not configured
       # @example
       #   Logger.log_event("workflow.started", workflow_id: "wf-123", job_class: "MyJob")
+      #
+      # @example With complex attributes
+      #   Logger.log_event("job.completed", {
+      #     job_id: "abc-123",
+      #     duration_ms: 1500,
+      #     result: { success: true, records_processed: 100 }
+      #   })
       def log_event(event_name, attributes = {})
         log(:info, event_name, attributes)
       end
@@ -60,6 +68,7 @@ module ActiveJob
       # @return [void]
       # @raise [ArgumentError] if event_name is not a String or Symbol
       # @raise [ArgumentError] if attributes is not a Hash
+      # @raise [NoMethodError] if logger is not configured
       # @example
       #   Logger.info("job.completed", job_id: "123", duration_ms: 1500)
       def info(event_name, attributes = {})
@@ -73,6 +82,7 @@ module ActiveJob
       # @return [void]
       # @raise [ArgumentError] if event_name is not a String or Symbol
       # @raise [ArgumentError] if attributes is not a Hash
+      # @raise [NoMethodError] if logger is not configured
       # @example
       #   Logger.warn("job.retry", job_id: "123", attempt: 2, error: "Timeout")
       def warn(event_name, attributes = {})
@@ -86,6 +96,7 @@ module ActiveJob
       # @return [void]
       # @raise [ArgumentError] if event_name is not a String or Symbol
       # @raise [ArgumentError] if attributes is not a Hash
+      # @raise [NoMethodError] if logger is not configured
       # @example
       #   Logger.error("job.failed", job_id: "123", error_class: "RuntimeError", message: "Boom")
       def error(event_name, attributes = {})
@@ -94,6 +105,8 @@ module ActiveJob
 
       private
 
+      # Internal logging method that handles all log levels.
+      # @api private
       def log(level, event_name, attributes)
         validate_event!(event_name)
         attributes = normalize_attributes(attributes)
@@ -109,14 +122,20 @@ module ActiveJob
         end
       end
 
+      # Builds structured log payload with event and timestamp.
+      # @api private
       def build_payload(event_name, attributes)
         { event: event_name, timestamp: current_timestamp }.merge(attributes)
       end
 
+      # Returns current UTC timestamp in ISO8601 format.
+      # @api private
       def current_timestamp
         Time.now.utc.iso8601
       end
 
+      # Normalizes attributes to a hash.
+      # @api private
       def normalize_attributes(attributes)
         case attributes
         when nil then {}
@@ -126,12 +145,16 @@ module ActiveJob
         end
       end
 
+      # Validates event_name is a String or Symbol.
+      # @api private
       def validate_event!(event_name)
         return if event_name.is_a?(String) || event_name.is_a?(Symbol)
 
         raise ArgumentError, "event_name must be a String or Symbol"
       end
 
+      # Checks if SemanticLogger is available.
+      # @api private
       def semantic_logger_available?
         defined?(SemanticLogger)
       end

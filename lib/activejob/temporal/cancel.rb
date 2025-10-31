@@ -82,6 +82,8 @@ module ActiveJob
 
         private
 
+        # Builds deterministic workflow ID from job class and job ID.
+        # @api private
         def build_workflow_id(job_class, job_id)
           "ajwf:#{job_class.name}:#{job_id}"
         end
@@ -111,15 +113,21 @@ module ActiveJob
                 "Failed to query Temporal workflows for job_id #{job_id}: #{e.message}"
         end
 
+        # Builds Temporal query for running workflows by job_id.
+        # @api private
         def running_workflows_query(job_id)
           "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
         end
 
+        # Builds Temporal query for closed workflows by job_id.
+        # @api private
         def closed_workflows_query(job_id)
           "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', " \
             "'Terminated', 'TimedOut', 'ContinuedAsNew')"
         end
 
+        # Logs cancellation request event.
+        # @api private
         def log_cancellation_requested(job_class, job_id, workflow_id)
           ActiveJob::Temporal::Logger.info(
             "cancellation_requested",
@@ -129,6 +137,8 @@ module ActiveJob
           )
         end
 
+        # Logs event when attempting to cancel an already-completed workflow.
+        # @api private
         def log_workflow_already_completed(job_class, job_id, workflow_id)
           ActiveJob::Temporal::Logger.warn(
             "cancellation_workflow_already_completed",

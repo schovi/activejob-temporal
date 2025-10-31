@@ -77,6 +77,17 @@ module ActiveJob
     # Holds connection settings, timeouts, retry policies, and operational flags.
     # Use {ActiveJob::Temporal.configure} to set configuration values.
     #
+    # @note Thread Safety
+    #   The configuration object is NOT thread-safe for modification. All configuration
+    #   changes should be completed during application initialization before workers start.
+    #   Reading configuration is thread-safe.
+    #
+    # @note Environment Variable Defaults
+    #   Several configuration values can be set via environment variables:
+    #   TEMPORAL_TARGET, TEMPORAL_NAMESPACE, TEMPORAL_TASK_QUEUE_PREFIX,
+    #   TEMPORAL_MAX_PAYLOAD_SIZE_KB, TEMPORAL_TLS_CERT, TEMPORAL_TLS_KEY,
+    #   TEMPORAL_TLS_SERVER_NAME. Configuration attributes take precedence over env vars.
+    #
     # @example
     #   ActiveJob::Temporal.configure do |config|
     #     config.target = "temporal.example.com:7233"
@@ -140,7 +151,8 @@ module ActiveJob
       # Sets the default activity timeout with validation.
       #
       # @param value [Numeric, ActiveSupport::Duration] Timeout duration
-      # @raise [ArgumentError] if value is not a duration or not positive
+      # @raise [ArgumentError] if value is not a duration
+      # @raise [ArgumentError] if value is not positive
       # @return [Numeric, ActiveSupport::Duration] the validated value
       def default_activity_timeout=(value)
         @default_activity_timeout = ensure_positive_duration!(value, :default_activity_timeout)
@@ -149,7 +161,8 @@ module ActiveJob
       # Sets the default retry initial interval with validation.
       #
       # @param value [Numeric, ActiveSupport::Duration] Initial retry interval
-      # @raise [ArgumentError] if value is not a duration or not positive
+      # @raise [ArgumentError] if value is not a duration
+      # @raise [ArgumentError] if value is not positive
       # @return [Numeric, ActiveSupport::Duration] the validated value
       def default_retry_initial_interval=(value)
         @default_retry_initial_interval = ensure_positive_duration!(value, :default_retry_initial_interval)
@@ -163,13 +176,29 @@ module ActiveJob
       # performance overhead.
       #
       # @return [void]
-      # @raise [ConfigurationError] if any configuration setting is invalid
+      # @raise [ConfigurationError] if target is not in host:port format
+      # @raise [ConfigurationError] if namespace contains invalid characters
+      # @raise [ConfigurationError] if default_activity_timeout is not positive
+      # @raise [ConfigurationError] if default_retry_initial_interval is not positive
+      # @raise [ConfigurationError] if default_retry_backoff is less than 1.0
+      # @raise [ConfigurationError] if default_retry_max_attempts is negative
+      # @raise [ConfigurationError] if max_payload_size_kb exceeds 2GB limit
+      # @raise [ConfigurationError] if max_payload_size_kb is not positive
       # @example Validate configuration after setup
       #   ActiveJob::Temporal.configure do |config|
       #     config.target = "temporal.example.com:7233"
       #     config.namespace = "production"
       #   end
       #   ActiveJob::Temporal.config.validate!
+      #
+      # @example Handling validation errors
+      #   begin
+      #     ActiveJob::Temporal.config.target = "invalid-format"
+      #     ActiveJob::Temporal.config.validate!
+      #   rescue ActiveJob::Temporal::ConfigurationError => e
+      #     puts "Configuration invalid: #{e.message}"
+      #     # => "target must match host:port format..."
+      #   end
       def validate!
         validate_target!
         validate_namespace!
@@ -181,6 +210,8 @@ module ActiveJob
 
       private
 
+      # Ensures a value is a positive duration.
+      # @api private
       def ensure_positive_duration!(value, attribute_name)
         raise ArgumentError, "#{attribute_name} must be a duration" unless value.respond_to?(:to_f)
 
@@ -190,6 +221,8 @@ module ActiveJob
         value
       end
 
+      # Validates target host:port format.
+      # @api private
       def validate_target!
         target_regex = /^[\w.-]+:\d{1,5}$/
         return if target&.match?(target_regex)
@@ -198,6 +231,8 @@ module ActiveJob
               "target must match host:port format (e.g., 'localhost:7233'), got: #{target.inspect}"
       end
 
+      # Validates namespace format (alphanumeric, hyphens, underscores).
+      # @api private
       def validate_namespace!
         namespace_regex = /^[\w-]+$/
         return if namespace&.match?(namespace_regex)
@@ -206,11 +241,15 @@ module ActiveJob
               "namespace must contain only alphanumeric characters, hyphens, and underscores, got: #{namespace.inspect}"
       end
 
+      # Validates all timeout configuration values.
+      # @api private
       def validate_timeouts!
         validate_positive_duration_value!(@default_activity_timeout, "default_activity_timeout")
         validate_positive_duration_value!(@default_retry_initial_interval, "default_retry_initial_interval")
       end
 
+      # Validates that a value is a positive duration.
+      # @api private
       def validate_positive_duration_value!(value, attribute_name)
         # Check if it's a proper duration-like object (Numeric or ActiveSupport::Duration)
         unless value.is_a?(Numeric) || value.is_a?(ActiveSupport::Duration)
@@ -223,6 +262,8 @@ module ActiveJob
         raise ConfigurationError, "#{attribute_name} must be positive, got: #{seconds}"
       end
 
+      # Validates retry backoff and max attempts configuration.
+      # @api private
       def validate_retry_settings!
         if default_retry_backoff < 1.0
           raise ConfigurationError,
@@ -235,6 +276,8 @@ module ActiveJob
               "default_retry_max_attempts must be >= 0, got: #{default_retry_max_attempts}"
       end
 
+      # Validates max_payload_size_kb is within allowed range.
+      # @api private
       def validate_payload_size!
         max_allowed_kb = 2_097_152 # 2 GB in KB
         if max_payload_size_kb > max_allowed_kb
@@ -248,6 +291,8 @@ module ActiveJob
               "max_payload_size_kb must be positive, got: #{max_payload_size_kb}"
       end
 
+      # Returns default logger (Rails.logger or stdout).
+      # @api private
       def default_logger
         if defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger
           Rails.logger
@@ -280,9 +325,23 @@ module ActiveJob
       # @return [Temporalio::Client] the connected Temporal client
       # @raise [ActiveJob::Temporal::Error] if connection fails due to network or authentication issues
       # @raise [ActiveJob::Temporal::TemporalConnectionError] if Temporal cluster is unreachable
+      # @raise [Errno::ECONNREFUSED] if Temporal cluster is not accepting connections
+      # @raise [SocketError] if Temporal hostname cannot be resolved
+      # @raise [OpenSSL::SSL::SSLError] if TLS configuration is invalid
       # @example Get the client
       #   client = ActiveJob::Temporal.client
       #   client.list_workflows(query: "ajQueue='default'")
+      #
+      # @example Using client for workflow queries
+      #   client = ActiveJob::Temporal.client
+      #   workflows = client.list_workflows(query: "ajClass='MyJob'")
+      #   workflows.each { |wf| puts wf.id }
+      #
+      # @example Accessing workflow handles
+      #   client = ActiveJob::Temporal.client
+      #   handle = client.workflow_handle("ajwf:MyJob:abc-123")
+      #   result = handle.result
+      #
       # @see Client.build
       def client
         @client ||= Client.build(config)
@@ -309,6 +368,19 @@ module ActiveJob
       #   when nil
       #     puts "Cancellation requested"
       #   end
+      #
+      # @example Cancel with error handling
+      #   begin
+      #     ActiveJob::Temporal.cancel(MyJob, "unknown-id")
+      #   rescue ActiveJob::Temporal::WorkflowNotFoundError
+      #     puts "Job does not exist"
+      #   end
+      #
+      # @note Cancellation Requires Heartbeating
+      #   For jobs to respond to cancellation, they must check for cancellation by heartbeating
+      #   or polling Temporalio::Activity::Context.current.cancelled?. Without heartbeating,
+      #   long-running activities will complete before they detect the cancellation signal.
+      #
       # @see Cancel.cancel
       def cancel(job_class, job_id)
         Cancel.cancel(job_class, job_id)
@@ -322,12 +394,35 @@ module ActiveJob
       # @yield [config] Gives the configuration object to the block
       # @yieldparam config [Configuration] the configuration to modify
       # @return [Configuration] the configuration object
-      # @example
+      # @example Basic configuration
       #   ActiveJob::Temporal.configure do |config|
       #     config.target = "temporal.example.com:7233"
       #     config.namespace = "production"
       #     config.default_activity_timeout = 10.minutes
       #   end
+      #
+      # @example Configuration with TLS
+      #   ActiveJob::Temporal.configure do |config|
+      #     config.target = "temporal.example.com:7233"
+      #     config.namespace = "production"
+      #     config.tls = {
+      #       certificate: File.read("client.pem"),
+      #       private_key: File.read("client-key.pem"),
+      #       server_name: "temporal.example.com"
+      #     }
+      #   end
+      #
+      # @example Configuration for development
+      #   ActiveJob::Temporal.configure do |config|
+      #     config.target = "localhost:7233"
+      #     config.namespace = "default"
+      #     config.enable_search_attributes = false
+      #     config.max_payload_size_kb = 500
+      #   end
+      #
+      # @example Getting config without block
+      #   config = ActiveJob::Temporal.configure
+      #   puts config.target  # => "127.0.0.1:7233"
       def configure
         return config unless block_given?
 

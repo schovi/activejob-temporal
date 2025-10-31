@@ -91,6 +91,17 @@ module ActiveJob
         #   })
         #   # Workflow sleeps until scheduled time without consuming worker resources
         #
+        # @example Replay behavior on worker restart
+        #   # Initial execution: Workflow sleeps for 1 hour
+        #   # Worker crashes after 30 minutes
+        #   # Workflow is replayed: Sleep is skipped (already elapsed), activity executes immediately
+        #
+        # @note Durable Timer Guarantees
+        #   Temporal's durable timers persist across worker restarts and cluster outages.
+        #   Even if all workers are down, the scheduled job will execute once workers
+        #   are back online. The timer is stored in Temporal's event history, making it
+        #   highly reliable for long-term scheduling.
+        #
         # @see Activities::AjRunnerActivity#execute
         def execute(payload)
           scheduled_time = extract_scheduled_time(payload)
@@ -105,6 +116,8 @@ module ActiveJob
 
         private
 
+        # Extracts scheduled execution time from payload.
+        # @api private
         def extract_scheduled_time(payload)
           timestamp = payload[:scheduled_at] || payload["scheduled_at"]
           return unless timestamp
@@ -112,6 +125,8 @@ module ActiveJob
           Time.iso8601(timestamp)
         end
 
+        # Sleeps until target time using Temporal's durable timer.
+        # @api private
         def sleep_until(target_time)
           now = Temporalio::Workflow.now
           delay = target_time - now
@@ -120,6 +135,8 @@ module ActiveJob
           Temporalio::Workflow.sleep(delay)
         end
 
+        # Builds activity execution options with retry policy.
+        # @api private
         def activity_options(payload)
           options = {
             start_to_close_timeout: ActiveJob::Temporal.config.default_activity_timeout
@@ -136,6 +153,8 @@ module ActiveJob
           options
         end
 
+        # Builds Temporalio::RetryPolicy from hash.
+        # @api private
         def build_retry_policy(hash)
           # RetryMapper returns maximum_attempts, but Temporalio::RetryPolicy expects max_attempts
           max_attempts_value = hash[:maximum_attempts] || hash["maximum_attempts"]

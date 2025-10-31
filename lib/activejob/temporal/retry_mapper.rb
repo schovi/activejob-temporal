@@ -26,6 +26,21 @@ module ActiveJob
     #   (based on exception type) is used. Handlers are evaluated in reverse order of
     #   declaration (last declared = first matched).
     #
+    # @note Exponential Backoff
+    #   Temporal automatically applies exponential backoff using backoff_coefficient.
+    #   For example, with initial_interval=30s and backoff_coefficient=2.0, retries occur
+    #   at 30s, 60s, 120s, 240s intervals (exponentially increasing).
+    #
+    # @note Unlimited Retries
+    #   Setting attempts: :unlimited translates to maximum_attempts: 0 in Temporal,
+    #   which means the activity will retry indefinitely until it succeeds or is cancelled.
+    #   Use this carefully to avoid infinite retry loops.
+    #
+    # @note Exception Inheritance
+    #   Exception matching respects inheritance. A retry_on StandardError declaration
+    #   will match all StandardError subclasses (RuntimeError, ArgumentError, etc.).
+    #   More specific exceptions should be declared last to take precedence.
+    #
     # @example Retry policy structure
     #   {
     #     initial_interval: 30.0,              # seconds (Float)
@@ -86,6 +101,20 @@ module ActiveJob
       #   end
       #   RetryMapper.for(MyJob)
       #   # => { ..., non_retryable_error_types: ["ActiveRecord::RecordNotFound"] }
+      #
+      # @example Algorithmic wait (falls back to default)
+      #   class MyJob < ApplicationJob
+      #     retry_on NetworkError, wait: :exponentially_longer, attempts: 5
+      #   end
+      #   RetryMapper.for(MyJob)
+      #   # => { initial_interval: 30.0, backoff_coefficient: 2.0, maximum_attempts: 5, ... }
+      #   # (Uses config.default_retry_initial_interval because :exponentially_longer is not a static value)
+      #
+      # @note Precedence of Multiple retry_on Declarations
+      #   When a job class has multiple retry_on declarations, ActiveJob's rescue_handlers
+      #   are evaluated in reverse order (last declared = first matched). If you provide an
+      #   exception argument, the first matching handler is used. Without an exception, the
+      #   first handler in the list is used.
       def for(job_class, exception = nil)
         config = ActiveJob::Temporal.config
         retry_entry = select_retry_entry(job_class, exception)
@@ -125,6 +154,8 @@ module ActiveJob
 
       # -- helpers ----------------------------------------------------------------
 
+      # Selects the matching retry handler entry for the given exception.
+      # @api private
       def select_retry_entry(job_class, exception)
         handlers = retry_handlers(job_class)
         return nil if handlers.empty?
@@ -135,6 +166,8 @@ module ActiveJob
       end
       private_class_method :select_retry_entry
 
+      # Extracts retry handler entries from job class's rescue_handlers.
+      # @api private
       def retry_handlers(job_class)
         handler_entries(job_class) do |handler|
           next unless handler.respond_to?(:binding)
@@ -151,6 +184,8 @@ module ActiveJob
       end
       private_class_method :retry_handlers
 
+      # Extracts discard handler entries from job class's rescue_handlers.
+      # @api private
       def discard_handlers(job_class)
         handler_entries(job_class) do |handler|
           next unless handler.respond_to?(:binding)
@@ -163,6 +198,8 @@ module ActiveJob
       end
       private_class_method :discard_handlers
 
+      # Generic handler entry extractor (used by retry_handlers and discard_handlers).
+      # @api private
       def handler_entries(job_class)
         return [] unless job_class
         return [] unless job_class.respond_to?(:rescue_handlers)
@@ -184,16 +221,22 @@ module ActiveJob
       end
       private_class_method :handler_entries
 
+      # Checks if a binding represents a retry handler (has :attempts local variable).
+      # @api private
       def retry_handler_binding?(binding)
         binding&.local_variable_defined?(:attempts)
       end
       private_class_method :retry_handler_binding?
 
+      # Checks if a binding represents a discard handler (has :report but not :attempts).
+      # @api private
       def discard_handler_binding?(binding)
         binding&.local_variable_defined?(:report) && !binding.local_variable_defined?(:attempts)
       end
       private_class_method :discard_handler_binding?
 
+      # Constantizes exception class from symbol/string/module.
+      # @api private
       def constantize_handler_class(job_class, class_or_name)
         case class_or_name
         when Module
@@ -206,6 +249,8 @@ module ActiveJob
       end
       private_class_method :constantize_handler_class
 
+      # Extracts initial interval from retry_on wait value.
+      # @api private
       def interval_from(value, config)
         # Temporal only accepts numeric intervals, so algorithmic waits (Proc/Symbol)
         # fall back to the configured default for now.
@@ -218,6 +263,8 @@ module ActiveJob
       end
       private_class_method :interval_from
 
+      # Extracts maximum attempts from retry_on attempts value.
+      # @api private
       def attempts_from(value, config)
         case value
         when nil
@@ -232,6 +279,8 @@ module ActiveJob
       end
       private_class_method :attempts_from
 
+      # Extracts exception class names from discard handlers.
+      # @api private
       def discard_exception_names(job_class)
         discard_handlers(job_class).each_with_object([]) do |handler, names|
           next unless handler[:exception]
@@ -245,6 +294,8 @@ module ActiveJob
       end
       private_class_method :discard_exception_names
 
+      # Checks if handler_class handles the given exception.
+      # @api private
       def handles_exception?(handler_class, exception)
         return false unless handler_class && exception
 
