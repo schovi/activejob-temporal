@@ -89,7 +89,7 @@
     "acceptance_criteria": "Payload module has private `validate_size!(payload)` method; `validate_size!` calculates JSON byte size and compares against config.max_payload_size_kb * 1024; `validate_size!` raises ActiveJob::SerializationError if payload exceeds limit; Error message includes actual size and max size in human-readable format (KB); `from_job` method calls `validate_size!` before returning payload; Validation is skipped if max_payload_size_kb is nil or zero; Unit tests cover: payload under limit (no error), payload at limit (no error), payload over limit (raises SerializationError), error message format verification; docs/configuration_reference.md includes section on payload size limits with guidance: 'If you encounter payload size errors, consider passing database IDs instead of full objects, or use ActiveStorage for large files.'; `rake spec` passes; `rake rubocop` passes",
     "dependencies": ["I6.T2"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I6.T5",

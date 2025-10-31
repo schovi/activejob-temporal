@@ -10,29 +10,23 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I6.T3",
+  "task_id": "I6.T5",
   "iteration_id": "I6",
   "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
-  "description": "Enhance the Cancel module in `lib/activejob/temporal/cancel.rb` with better error handling to distinguish between workflows that never existed vs workflows that already completed. Add custom exception classes `WorkflowNotFoundError` and `TemporalConnectionError` to `lib/activejob/temporal.rb`. Refactor the `cancel` method to: (1) Add a private `find_workflow(client, job_class, job_id)` method that queries Temporal with `list_workflows` for running workflows matching the job_id search attribute; (2) If not found in running workflows, query closed workflows (with ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')); (3) If found in closed workflows, return `false` from `cancel` method to indicate job already completed (log this with Logger.warn); (4) If not found in either running or closed workflows, raise `WorkflowNotFoundError` with message 'No workflow found for job_id X. The job may have never existed.'; (5) Wrap Temporal client calls in rescue blocks to catch connection errors and raise `TemporalConnectionError` with descriptive messages. Update existing unit tests in `spec/unit/cancel_spec.rb` to cover new scenarios: workflow completed (returns false), workflow never existed (raises WorkflowNotFoundError), Temporal connection failure (raises TemporalConnectionError). Add integration test in `spec/integration/cancellation_spec.rb` if not already present.",
-  "agent_type_hint": "BackendAgent",
-  "inputs": "Version 1 lib/active_job/temporal/cancel.rb:1-138 (enhanced error handling pattern), Version 2 existing cancel.rb, Temporal list_workflows API documentation",
+  "description": "Create Architecture Decision Records (ADR) documentation structure in `docs/adr/` folder. Use standard ADR format with sections: Title, Status (Accepted/Proposed/Deprecated), Context, Decision, Consequences. Create the following ADRs: (1) `001-structured-logging.md` - Document decision to use structured JSON logging with event names instead of plain text logs, context: observability requirements for production systems, decision: implement Logger module with JSON output and event-based semantics, consequences: better integration with log aggregation tools but requires JSON parsing; (2) `002-iso8601-timestamps.md` - Document decision to use ISO8601 timestamp format for scheduled_at instead of Unix timestamps, context: readability and timezone handling, decision: use Time.iso8601 parsing in workflows, consequences: human-readable but slightly larger payload; (3) `003-adapter-helper-module.md` - Document decision to extract workflow ID building and task queue resolution into separate Adapter helper module instead of inline in queue adapter, context: code organization and reusability, decision: create Adapter module with build_workflow_id and resolve_task_queue methods, consequences: better separation of concerns and testability; (4) `004-idempotency-keys.md` - Document decision to provide thread-local idempotency keys in activity execution, context: enabling idempotent external API calls, decision: set Thread.current[:aj_temporal_idempotency_key] in AjRunnerActivity, consequences: jobs can use idempotency keys for safe retries but must handle thread-local access. Each ADR should be 100-200 lines with detailed context, alternatives considered, and specific code examples.",
+  "agent_type_hint": "DocumentationAgent",
+  "inputs": "Version 1 docs/adr/ (structure reference), Version 2 architecture decisions, ADR template format (https://github.com/joelparkerhenderson/architecture-decision-record)",
   "target_files": [
-    "lib/activejob/temporal.rb",
-    "lib/activejob/temporal/cancel.rb",
-    "spec/unit/cancel_spec.rb",
-    "spec/integration/cancellation_spec.rb"
+    "docs/adr/001-structured-logging.md",
+    "docs/adr/002-iso8601-timestamps.md",
+    "docs/adr/003-adapter-helper-module.md",
+    "docs/adr/004-idempotency-keys.md",
+    "docs/adr/README.md"
   ],
-  "input_files": [
-    "lib/activejob/temporal.rb",
-    "lib/activejob/temporal/cancel.rb",
-    "spec/unit/cancel_spec.rb",
-    "spec/integration/cancellation_spec.rb"
-  ],
-  "deliverables": "Enhanced Cancel module with better error handling, new exception types, comprehensive tests",
-  "acceptance_criteria": "ActiveJob::Temporal::WorkflowNotFoundError exception class exists; ActiveJob::Temporal::TemporalConnectionError exception class exists; Cancel.cancel method returns false if workflow already completed (without raising); Cancel.cancel method raises WorkflowNotFoundError if workflow never existed; Cancel.cancel method raises TemporalConnectionError if Temporal client connection fails; Private find_workflow method queries both running and closed workflows; Unit tests in cancel_spec.rb cover: successful cancellation, workflow completed (returns false), workflow not found (raises WorkflowNotFoundError), connection error (raises TemporalConnectionError); Integration test verifies cancellation behavior end-to-end (if applicable); Structured logging uses Logger.warn for completed workflows, Logger.info for successful cancellation requests; `rake spec` passes; `rake rubocop` passes",
-  "dependencies": [
-    "I6.T1"
-  ],
+  "input_files": [],
+  "deliverables": "ADR folder with 4 detailed architecture decision records and README explaining the ADR process",
+  "acceptance_criteria": "docs/adr/ folder exists; docs/adr/README.md exists explaining what ADRs are and how to create new ones; 001-structured-logging.md exists with sections: Title ('ADR 001: Structured JSON Logging'), Status (Accepted), Context (observability requirements), Decision (Logger module with JSON output), Consequences (pros/cons); 002-iso8601-timestamps.md exists documenting ISO8601 vs Unix timestamp decision; 003-adapter-helper-module.md exists documenting Adapter module extraction; 004-idempotency-keys.md exists documenting thread-local idempotency key design; Each ADR follows consistent format and is 100-200 lines; Each ADR includes code examples showing the implemented solution; ADRs are written in clear, technical language suitable for new maintainers; All Markdown files pass markdownlint (if configured)",
+  "dependencies": [],
   "parallelizable": true,
   "done": false
 }
@@ -44,54 +38,64 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: communication-error-handling (from 04_Behavior_and_Communication.md)
-
-This task requires understanding error handling strategies for the cancellation API. The architecture blueprint specifies error handling patterns for both enqueue-time and execution-time failures, which inform how the Cancel module should handle Temporal connection errors and workflow state queries.
-
-**Key Requirements:**
-- **Enqueue-time errors**: If Temporal is unreachable during cancellation, raise descriptive errors (TemporalConnectionError)
-- **Workflow state distinction**: Differentiate between workflows that completed vs never existed
-- **Graceful degradation**: Return false for already-completed workflows without raising exceptions
-- **Structured logging**: Log all error conditions with appropriate severity levels
-
-### Context: api-versioning (from 04_Behavior_and_Communication.md)
-
-The cancellation API is part of the public interface and must maintain backward compatibility. This enhancement adds new exception types (WorkflowNotFoundError, TemporalConnectionError) which extend the existing Error base class to maintain the exception hierarchy.
-
-**Versioning Considerations:**
-- New exception types should inherit from ActiveJob::Temporal::Error
-- Method signatures must remain unchanged (cancel(job_class, job_id))
-- Return value semantics can be enhanced (returning false for completed workflows) as this was previously undefined behavior
-
-### Context: nfr-reliability (from 01_Context_and_Drivers.md)
-
-Reliability is a core non-functional requirement. The enhanced error handling in the Cancel module directly supports:
-- **Fault tolerance**: Proper error handling when Temporal cluster is unreachable
-- **Durable execution**: Accurate workflow state detection to prevent false error reports
-- **Error visibility**: Clear distinction between transient errors (connection issues) and permanent states (workflow not found)
-
-### Context: nfr-observability (from 01_Context_and_Drivers.md)
-
-Observability requirements mandate comprehensive logging for all operational states:
-- **Structured logging**: Use Logger.warn for completed workflows, Logger.info for successful cancellations
-- **Search capabilities**: Log workflow_id, job_class, and job_id for correlation with Temporal UI
-- **Event naming**: Use consistent event names (e.g., "cancellation_requested", "cancellation_workflow_already_completed")
-
 ### Context: logging-strategy (from 05_Operational_Architecture.md)
 
-The project uses structured JSON logging with event types and attributes. All cancellation operations must emit structured logs:
+```markdown
+##### **Logging Strategy**
 
-**Required Log Events:**
-- `cancellation_requested`: When cancel is successfully sent (INFO level)
-- `cancellation_workflow_already_completed`: When workflow already finished (WARN level)
-- `cancellation_workflow_not_found`: When workflow never existed (ERROR level via exception)
-- `cancellation_connection_error`: When Temporal is unreachable (ERROR level via exception)
+**Structured Logging (JSON Format)**
 
-**Log Attributes:**
-- workflow_id: Full workflow identifier
-- job_class: Job class name
-- job_id: ActiveJob job identifier
-- status: Workflow status when applicable
+The gem emits structured logs to `Rails.logger` (configurable via `ActiveJob::Temporal.config.logger`).
+
+**Log Events & Attributes:**
+
+| Event | Level | Attributes | Example |
+|-------|-------|------------|---------|
+| **Workflow Enqueued** | `info` | `workflow_id`, `run_id`, `job_class`, `job_id`, `queue`, `scheduled_at` (optional) | `{"event": "workflow_enqueued", "workflow_id": "ajwf:SendInvoiceJob:abc123", ...}` |
+| **Activity Started** | `info` | `workflow_id`, `run_id`, `activity_id`, `job_class`, `attempt` | `{"event": "activity_started", "attempt": 1, ...}` |
+| **Activity Completed** | `info` | `workflow_id`, `duration_ms`, `job_class` | `{"event": "activity_completed", "duration_ms": 1234, ...}` |
+| **Activity Failed** | `error` | `workflow_id`, `attempt`, `exception_class`, `exception_message`, `backtrace` (first 5 lines) | `{"event": "activity_failed", "exception_class": "PSP::TransientError", ...}` |
+| **Activity Retry** | `warn` | `workflow_id`, `attempt`, `next_retry_interval`, `exception_class` | `{"event": "activity_retry", "attempt": 2, "next_retry_interval": 60, ...}` |
+| **Cancellation Requested** | `warn` | `workflow_id`, `job_id`, `reason` (optional) | `{"event": "cancellation_requested", ...}` |
+| **Cancellation Acknowledged** | `info` | `workflow_id`, `activity_id` | `{"event": "cancellation_acknowledged", ...}` |
+| **Payload Size Warning** | `warn` | `job_class`, `payload_size_kb`, `limit_kb` | `{"event": "payload_size_warning", "payload_size_kb": 200, ...}` |
+| **Serialization Error** | `error` | `job_class`, `job_id`, `exception_class`, `exception_message` | `{"event": "serialization_error", ...}` |
+
+**Logger Configuration:**
+
+```ruby
+# config/initializers/activejob_temporal.rb
+ActiveJob::Temporal.configure do |c|
+  c.logger = SemanticLogger['ActiveJobTemporal'] # or Rails.logger
+end
+```
+
+**Best Practices:**
+
+- **Include Correlation IDs**: Always log `workflow_id` and `run_id` for traceability
+- **Redact Sensitive Data**: Do not log job arguments directly (may contain PII); log argument count or types only
+- **Use Semantic Logger**: Recommended for JSON output + tagging support
+```
+
+### Context: Data Model - Scheduled Execution (from 03_System_Structure_and_Data.md)
+
+The architecture specifies that `scheduled_at` is stored as an **ISO8601 String** format:
+
+- Format: `"2025-10-25T12:00:00Z"`
+- Used in payload serialization
+- Parsed in workflow with `Time.iso8601(timestamp)`
+
+### Context: Observability Requirements (from 05_Operational_Architecture.md)
+
+```markdown
+##### **Payload Security**
+
+**2. Payload Size Limits**
+
+- **Default Limit**: 250KB per job payload
+- **Rationale**: Prevent DoS attacks via large payloads; respect Temporal's 2MB history limit
+- **Enforcement**: Check payload size after serialization, raise `SerializationError` if exceeded
+```
 
 ---
 
@@ -101,135 +105,143 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Relevant Existing Code
 
-*   **File:** `lib/activejob/temporal.rb`
-    *   **Summary:** This is the main entrypoint module that defines the Configuration class and module-level methods. It already has an Error base class (line 42) and two specific exception classes: ConfigurationError (line 43) and the newly added WorkflowNotFoundError (line 44) and TemporalConnectionError (line 45).
-    *   **Current State:** The exception classes WorkflowNotFoundError and TemporalConnectionError ALREADY EXIST in the codebase (lines 44-45). You do NOT need to create them.
-    *   **Recommendation:** You can directly use these exception classes in the Cancel module. They are properly namespaced as `ActiveJob::Temporal::WorkflowNotFoundError` and `ActiveJob::Temporal::TemporalConnectionError`.
-
-*   **File:** `lib/activejob/temporal/cancel.rb`
-    *   **Summary:** This file already implements an enhanced cancellation system with workflow state detection. The current implementation includes:
-      - A `cancel` method that distinguishes between running, closed, and not_found workflows (lines 20-36)
-      - A private `find_workflow` method that queries both running and closed workflows using list_workflows API (lines 52-67)
-      - Query builders for running and closed workflows (lines 69-76)
-      - Structured logging for cancellation events (lines 78-95)
-    *   **Current State:** The implementation is ALREADY COMPLETE per the task requirements. It:
-      - Returns `false` when workflow is already completed (line 28)
-      - Raises `WorkflowNotFoundError` when workflow not found (lines 30-31)
-      - Wraps client calls in rescue block and raises `TemporalConnectionError` on failures (lines 64-66)
-      - Uses structured logging with Logger.warn for completed workflows and Logger.info for successful cancellations
-    *   **Recommendation:** THIS TASK IS ALREADY IMPLEMENTED. Review the code to verify it meets all acceptance criteria before making any changes.
-
-*   **File:** `spec/unit/cancel_spec.rb`
-    *   **Summary:** Comprehensive unit test suite for the Cancel module with 154 lines of well-structured tests.
-    *   **Current State:** The test suite ALREADY covers all required scenarios:
-      - Lines 55-82: Tests successful cancellation for running workflows
-      - Lines 84-117: Tests workflow already completed (returns false, logs warning)
-      - Lines 119-136: Tests workflow never existed (raises WorkflowNotFoundError)
-      - Lines 138-152: Tests Temporal connection failure (raises TemporalConnectionError)
-    *   **Coverage:** All four acceptance criteria scenarios are tested with proper mocking and assertions.
-    *   **Recommendation:** THIS TEST FILE IS COMPLETE. Verify tests pass with `rake spec`.
-
-*   **File:** `spec/integration/cancellation_spec.rb`
-    *   **Summary:** Integration test that validates end-to-end cancellation with a real Temporal test server.
-    *   **Current State:** Lines 28-60 implement a complete integration test that:
-      - Starts a long-running job with heartbeating
-      - Cancels the job mid-execution
-      - Verifies workflow reaches CANCELED status
-      - Verifies job was interrupted before completion
-    *   **Recommendation:** THIS INTEGRATION TEST IS COMPLETE. Run it to ensure end-to-end behavior is correct.
-
 *   **File:** `lib/activejob/temporal/logger.rb`
-    *   **Summary:** Structured logging helper with JSON formatting. Provides info(), warn(), and error() methods.
-    *   **Recommendation:** The Cancel module already uses `Logger.info` (line 79) and `Logger.warn` (line 88) correctly. No changes needed to logging infrastructure.
+    *   **Summary:** This file implements the structured JSON logging system with event-based semantics. It provides `Logger.info()`, `Logger.warn()`, `Logger.error()` methods that accept event names (e.g., "job.enqueued") and structured attributes. All logs include `event`, `timestamp` (ISO8601), and custom attributes.
+    *   **Recommendation:** You MUST reference this implementation in ADR 001. Extract code examples from lines 35-48 (the public API methods) and lines 74-95 (the internal JSON payload building logic) to demonstrate the design decision.
+    *   **Key Design Pattern:** The logger uses `build_payload(event_name, attributes)` to create a hash with `{ event: ..., timestamp: current_timestamp }.merge(attributes)` structure, then serializes to JSON for standard Ruby Logger or passes directly to SemanticLogger.
 
-*   **File:** `lib/activejob/temporal/client.rb`
-    *   **Summary:** Client connection builder with TLS support. Wraps Temporal client creation in error handling (lines 64-72).
-    *   **Pattern:** Uses `rescue StandardError => e` then raises gem-specific error with descriptive message including configuration details.
-    *   **Recommendation:** The Cancel module follows the same error handling pattern for connection failures (lines 64-66 in cancel.rb).
+*   **File:** `lib/activejob/temporal/workflows/aj_workflow.rb`
+    *   **Summary:** This workflow implementation demonstrates the ISO8601 timestamp parsing design. The `extract_scheduled_time(payload)` method (lines 82-87) extracts the `scheduled_at` field and parses it with `Time.iso8601(timestamp)`. The workflow then uses `Temporalio::Workflow.sleep(delay)` for durable scheduling.
+    *   **Recommendation:** You MUST reference this in ADR 002. Show the `extract_scheduled_time` method as the concrete implementation of the ISO8601 decision. Contrast this with what a Unix timestamp approach would look like (e.g., `Time.at(timestamp)`).
+    *   **Key Design Pattern:** Using `Time.iso8601()` for parsing and `Time.now.utc.iso8601` for serialization ensures human-readable, timezone-aware timestamps.
+
+*   **File:** `lib/activejob/temporal/adapter.rb`
+    *   **Summary:** This file contains the Adapter helper module (lines 11-53) with two critical methods: `build_workflow_id(job)` and `resolve_task_queue(job)`. These were extracted into a separate module instead of being inline in the TemporalAdapter class (lines 85-219).
+    *   **Recommendation:** You MUST reference this in ADR 003. Explain the separation of concerns: the `Adapter` module provides stateless, testable helper functions that the `TemporalAdapter` class uses. This allows independent unit testing of workflow ID generation without needing to instantiate the full adapter.
+    *   **Key Design Pattern:** Module-level functions (`module_function`) for stateless utilities, called as `ActiveJob::Temporal::Adapter.build_workflow_id(job)`. This avoids instance state and enables easy mocking in tests.
+
+*   **File:** `lib/activejob/temporal/activities/aj_runner_activity.rb`
+    *   **Summary:** This activity implementation sets and clears the thread-local idempotency key. The key logic is in `set_idempotency_key` (lines 132-142) which sets `Thread.current[:aj_temporal_idempotency_key] = "#{workflow_id}/runner"` before job execution, and clears it in the `ensure` block (line 120).
+    *   **Recommendation:** You MUST reference this in ADR 004. Extract the idempotency key pattern and explain why it uses thread-local storage (activities may run concurrently in the same process). Show the full lifecycle: set → execute → ensure clear.
+    *   **Key Design Pattern:** Thread-local storage with a constant `IDEMPOTENCY_KEY = :aj_temporal_idempotency_key` (line 85) ensures no key collisions. The workflow ID is used as the base for the key, making it unique per job execution.
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The task description asks you to implement functionality that ALREADY EXISTS in the codebase. Before making any changes:
-    1. Read all target files carefully to verify current state
-    2. Run the existing unit tests: `bundle exec rake spec`
-    3. Check test output to confirm all acceptance criteria are met
-    4. Review Rubocop compliance: `bundle exec rake rubocop`
+*   **Tip:** The ADR format is well-documented at https://github.com/joelparkerhenderson/architecture-decision-record. The standard structure is:
+    1. **Title:** Short, descriptive (e.g., "ADR 001: Structured JSON Logging")
+    2. **Status:** Accepted/Proposed/Deprecated/Superseded
+    3. **Context:** The issue or problem being addressed (2-3 paragraphs)
+    4. **Decision:** What was decided (1-2 paragraphs + code examples)
+    5. **Consequences:** Positive and negative outcomes (bulleted lists)
+    6. **Alternatives Considered:** (Optional but valuable) What other approaches were evaluated
 
-*   **Note:** The exception classes `WorkflowNotFoundError` and `TemporalConnectionError` are already defined in `lib/activejob/temporal.rb` (lines 44-45). They inherit from `ActiveJob::Temporal::Error` (line 42), maintaining the exception hierarchy.
+*   **Tip:** Each ADR should be 100-200 lines. Use code fences (```) liberally to show concrete implementations. ADRs are most valuable when they include:
+    - **Before/After examples** showing the old and new approach
+    - **Trade-offs** explaining why one approach was chosen over alternatives
+    - **Links** to external resources (Temporal docs, Ruby stdlib docs, etc.)
 
-*   **Warning:** The current Cancel implementation (lines 20-96 in cancel.rb) appears to fully satisfy the task requirements:
-    - ✓ Adds `find_workflow` private method that queries running then closed workflows
-    - ✓ Returns `false` when workflow is closed/completed
-    - ✓ Raises `WorkflowNotFoundError` when workflow not found
-    - ✓ Wraps Temporal calls in rescue block and raises `TemporalConnectionError`
-    - ✓ Uses structured logging (Logger.warn for completed, Logger.info for cancellation)
-    - ✓ Unit tests cover all scenarios (154 lines in cancel_spec.rb)
-    - ✓ Integration test validates end-to-end behavior (110 lines in cancellation_spec.rb)
+*   **Note:** The `docs/adr/README.md` should explain:
+    - What ADRs are and why they're valuable (architectural memory)
+    - How to create a new ADR (copy template, increment number, fill sections)
+    - How to supersede an old ADR (reference in the "Superseded by" section)
+    - Link to the ADR template repository for more information
 
-*   **Strategy:** This appears to be a verification task rather than an implementation task. The recommended approach is:
-    1. Verify the implementation matches task requirements (it does)
-    2. Run all tests to confirm they pass
-    3. Run Rubocop to verify code style compliance
-    4. Mark the task as complete if all acceptance criteria are met
+*   **Note:** For ADR 001 (Structured Logging), compare the event-based JSON approach against:
+    - Plain text logging: `logger.info "Enqueued job MyJob with ID 123"` (harder to parse)
+    - Tag-based logging: Using Rails tagged logging with brackets (less structured)
+    - Explain why the `{ event: ..., timestamp: ..., ...attrs }` structure is better for log aggregation tools (Elasticsearch, Splunk, Datadog)
 
-*   **Code Quality:** The existing implementation follows best practices:
-    - Proper exception hierarchy (all inherit from Error base class)
-    - Descriptive error messages with context (job_id included in messages)
-    - Comprehensive test coverage (unit + integration)
-    - Structured logging with event names and attributes
-    - Private helper methods with clear responsibilities
+*   **Note:** For ADR 002 (ISO8601 Timestamps), compare against:
+    - Unix timestamps (integers): More compact but less readable, timezone ambiguity
+    - Ruby Time objects: Can't be serialized to JSON directly
+    - Explain the trade-off: ISO8601 adds ~10-15 bytes per timestamp but gains human readability and explicit timezone info (always UTC with 'Z' suffix)
 
-*   **Temporal API Usage:** The `list_workflows` API is used correctly:
-    - Query syntax: `"ajJobId='#{job_id}' AND ExecutionStatus='Running'"` (line 70)
-    - Closed workflows query includes all terminal states (lines 73-75)
-    - Returns `.first` to get single workflow or nil (lines 55, 60)
-    - Proper error handling for connection failures (lines 64-66)
+*   **Note:** For ADR 003 (Adapter Helper Module), explain:
+    - **Before:** If methods were inline in TemporalAdapter, they'd be instance methods tied to adapter lifecycle
+    - **After:** Module-level functions can be called without instantiating an adapter, enabling better unit testing
+    - **Alternative Considered:** Could have been a separate class (`WorkflowIdBuilder`, `TaskQueueResolver`), but that felt over-engineered for 2 simple methods
 
-### Key Architectural Decisions
+*   **Note:** For ADR 004 (Idempotency Keys), explain:
+    - **Context:** Jobs may call external APIs that need idempotency tokens (e.g., Stripe, payment processors)
+    - **Why Thread-Local:** Workers run multiple activities concurrently in the same process; thread-local ensures isolation
+    - **Access Pattern:** Jobs can read `Thread.current[:aj_temporal_idempotency_key]` in their `perform` method to get the key
+    - **Alternative Considered:** Passing as an argument to `perform` would require changing ActiveJob's API, which we want to avoid
 
-*   **Decision:** Use Temporal list_workflows with search attributes rather than get_workflow_handle
-    *   **Rationale:** Search by ajJobId allows finding workflows even if job_id is not directly in workflow_id format
-    *   **Trade-off:** Requires search attributes to be configured on Temporal cluster (documented in configuration_reference.md)
+*   **Warning:** The task specifies the `docs/adr/` folder does NOT currently exist in Version 2 (I confirmed this). You MUST create it. The Version 1 repository has an empty `docs/adr/` folder, so there are no existing ADRs to reference—you are creating the first ADRs for this project.
 
-*   **Decision:** Return false for completed workflows instead of raising exception
-    *   **Rationale:** Attempting to cancel an already-completed job is not an error, just a no-op
-    *   **User Experience:** Allows idempotent cancel calls without exception handling
+*   **Important:** The acceptance criteria specify each ADR should be "100-200 lines" and include "code examples showing the implemented solution." Ensure you extract actual code snippets from the implementation files I've analyzed above. Don't write pseudocode—use the real, working code from the current codebase.
 
-*   **Decision:** Distinguish workflow states: :running, :closed, :not_found
-    *   **Rationale:** Provides clear semantics for different failure modes
-    *   **Observability:** Each state gets appropriate logging (info/warn/error)
+*   **Quality Check:** After creating the ADRs, they should answer these questions for a new maintainer:
+    - Why was structured logging chosen over plain text?
+    - Why ISO8601 instead of Unix timestamps?
+    - Why split Adapter helpers into a module instead of keeping them inline?
+    - Why use thread-local storage for idempotency keys?
 
-*   **Decision:** Query closed workflows separately from running workflows
-    *   **Rationale:** Temporal ExecutionStatus filtering is more efficient than querying all workflows
-    *   **Performance:** Two targeted queries are faster than one unfiltered query
+    If a reader can't answer these questions after reading your ADRs, they need more detail.
 
-### Verification Checklist
+### Directory Structure Notes
 
-Run the following commands to verify the implementation meets all acceptance criteria:
+- Current state: `docs/` folder exists with `configuration_reference.md`, `migration_guide.md`, `worker_setup.md`, `diagrams/` subfolder
+- Required: Create new `docs/adr/` subfolder with 5 files total (README.md + 4 ADRs)
+- Naming convention: Use zero-padded numbers (001, 002, 003, 004) for ordering
+- File extension: Use `.md` (Markdown) for all ADRs
 
-```bash
-# 1. Verify exception classes exist
-bundle exec ruby -r ./lib/activejob-temporal.rb -e "puts ActiveJob::Temporal::WorkflowNotFoundError"
-bundle exec ruby -r ./lib/activejob-temporal.rb -e "puts ActiveJob::Temporal::TemporalConnectionError"
+### Standard ADR Template Structure
 
-# 2. Run unit tests
-bundle exec rake spec spec/unit/cancel_spec.rb
+```markdown
+# ADR XXX: [Title]
 
-# 3. Run integration test (if Temporal test server is available)
-bundle exec rake spec spec/integration/cancellation_spec.rb
+## Status
 
-# 4. Run all specs
-bundle exec rake spec
+[Accepted/Proposed/Deprecated/Superseded by ADR-YYY]
 
-# 5. Verify code style
-bundle exec rake rubocop
+## Context
 
-# 6. Check coverage report
-open coverage/index.html
+[2-3 paragraphs describing the problem, constraints, requirements]
+
+## Decision
+
+[1-2 paragraphs describing what was decided]
+
+[Code examples showing the implementation]
+
+## Consequences
+
+### Positive
+
+- [Benefit 1]
+- [Benefit 2]
+
+### Negative
+
+- [Drawback 1]
+- [Drawback 2]
+
+## Alternatives Considered
+
+### [Alternative 1]
+
+[Why it was not chosen]
+
+### [Alternative 2]
+
+[Why it was not chosen]
 ```
 
-Expected results:
-- All tests pass (green output)
-- Rubocop reports 0 offenses
-- Coverage >= 90% for cancel.rb
-- Integration test completes without errors
+---
+
+## Final Checklist for Coder Agent
+
+Before marking this task complete, ensure:
+
+1. ✅ `docs/adr/` directory created
+2. ✅ `docs/adr/README.md` exists with ADR process explanation
+3. ✅ `docs/adr/001-structured-logging.md` exists with all required sections
+4. ✅ `docs/adr/002-iso8601-timestamps.md` exists with all required sections
+5. ✅ `docs/adr/003-adapter-helper-module.md` exists with all required sections
+6. ✅ `docs/adr/004-idempotency-keys.md` exists with all required sections
+7. ✅ Each ADR is 100-200 lines long
+8. ✅ Each ADR includes concrete code examples from the actual implementation
+9. ✅ All ADRs use consistent formatting (Status, Context, Decision, Consequences, Alternatives)
+10. ✅ ADRs are written in clear, technical language suitable for new maintainers
+11. ✅ All Markdown files use proper formatting (headings, code fences, bullet lists)
