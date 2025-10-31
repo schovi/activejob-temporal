@@ -606,4 +606,40 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
     end
   end
+
+  describe "Exception classes" do
+    it "ConfigurationError inherits from Error" do
+      expect(ActiveJob::Temporal::ConfigurationError).to be < ActiveJob::Temporal::Error
+    end
+
+    it "WorkflowNotFoundError inherits from Error" do
+      expect(ActiveJob::Temporal::WorkflowNotFoundError).to be < ActiveJob::Temporal::Error
+    end
+
+    it "TemporalConnectionError inherits from Error" do
+      expect(ActiveJob::Temporal::TemporalConnectionError).to be < ActiveJob::Temporal::Error
+    end
+
+    it "Error inherits from StandardError" do
+      expect(ActiveJob::Temporal::Error).to be < StandardError
+    end
+
+    it "raises and catches ConfigurationError correctly" do
+      expect {
+        raise ActiveJob::Temporal::ConfigurationError, "test error"
+      }.to raise_error(ActiveJob::Temporal::ConfigurationError, "test error")
+    end
+
+    it "raises and catches WorkflowNotFoundError correctly" do
+      expect {
+        raise ActiveJob::Temporal::WorkflowNotFoundError, "workflow not found"
+      }.to raise_error(ActiveJob::Temporal::WorkflowNotFoundError, "workflow not found")
+    end
+
+    it "raises and catches TemporalConnectionError correctly" do
+      expect {
+        raise ActiveJob::Temporal::TemporalConnectionError, "connection failed"
+      }.to raise_error(ActiveJob::Temporal::TemporalConnectionError, "connection failed")
+    end
+  end
 end

@@ -253,6 +253,6 @@
     "acceptance_criteria": "`rake spec` exits with status 0 (all tests pass); SimpleCov report shows >= 90% coverage for: lib/activejob/temporal.rb (Configuration class and exception classes), lib/activejob/temporal/cancel.rb (enhanced cancel logic), lib/activejob/temporal/payload.rb (size validation); Coverage report generated in `coverage/index.html`; No skipped or pending tests (all tests implemented); Test suite includes: 15+ new tests for configuration validation (one per validation method, one for validate!, edge cases), 10+ new tests for cancel enhancements (find_workflow, error handling, return values), 5+ new tests for payload size validation (under limit, at limit, over limit, skip validation, error message format); All edge cases covered: nil values, boundary conditions, exception hierarchies; Test descriptions are clear and follow consistent naming (e.g., 'raises ConfigurationError when target is invalid', 'returns false when workflow already completed'); Running `rake spec` completes in reasonable time (< 30 seconds for unit tests)",
     "dependencies": ["I6.T1", "I6.T2", "I6.T3", "I6.T4", "I6.T8", "I6.T9"],
     "parallelizable": false,
-    "done": false
+    "done": true
   }
 ]
