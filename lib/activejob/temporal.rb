@@ -73,6 +73,8 @@ module ActiveJob
       #   @return [Integer] Maximum job payload size in kilobytes (default: 250)
       # @!attribute [rw] enable_search_attributes
       #   @return [Boolean] Enable Temporal search attributes for job metadata (default: true)
+      # @!attribute [rw] identity
+      #   @return [String, nil] Optional worker identity for observability (default: nil)
       attr_accessor :target,
                     :namespace,
                     :task_queue_prefix,
@@ -81,7 +83,8 @@ module ActiveJob
                     :logger,
                     :enable_tracing,
                     :max_payload_size_kb,
-                    :enable_search_attributes
+                    :enable_search_attributes,
+                    :identity
 
       # @!attribute [r] default_activity_timeout
       #   @return [ActiveSupport::Duration] Timeout for activity execution (default: 15 minutes)
@@ -90,17 +93,18 @@ module ActiveJob
       attr_reader :default_activity_timeout, :default_retry_initial_interval
 
       def initialize
-        @target = "127.0.0.1:7233"
-        @namespace = "default"
-        @task_queue_prefix = nil
+        @target = ENV['TEMPORAL_TARGET'] || "127.0.0.1:7233"
+        @namespace = ENV['TEMPORAL_NAMESPACE'] || "default"
+        @task_queue_prefix = ENV['TEMPORAL_TASK_QUEUE_PREFIX']
         self.default_activity_timeout = 15.minutes
         self.default_retry_initial_interval = 30.seconds
         @default_retry_backoff = 2.0
         @default_retry_max_attempts = 1
         @logger = default_logger
         @enable_tracing = true
-        @max_payload_size_kb = 250
+        @max_payload_size_kb = (ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB']&.to_i || 250)
         @enable_search_attributes = true
+        @identity = nil
       end
 
       # Sets the default activity timeout with validation.

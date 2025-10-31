@@ -16,6 +16,20 @@
 | `logger` | `Logger` | `Rails.logger` (if available) or `Logger.new($stdout)` | Destination for adapter log output. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
+| `identity` | String or `nil` | `nil` | Optional worker identity string for observability and debugging. Useful in multi-worker deployments. |
+
+## Environment Variables
+
+Configuration can also be set via environment variables for 12-factor app compliance. Environment variables take precedence over default values but are overridden by explicit configuration in initializers.
+
+| Environment Variable | Configuration Attribute | Type | Default if Not Set |
+| --- | --- | --- | --- |
+| `TEMPORAL_TARGET` | `target` | String | `"127.0.0.1:7233"` |
+| `TEMPORAL_NAMESPACE` | `namespace` | String | `"default"` |
+| `TEMPORAL_TASK_QUEUE_PREFIX` | `task_queue_prefix` | String | `nil` |
+| `TEMPORAL_MAX_PAYLOAD_SIZE_KB` | `max_payload_size_kb` | Integer | `250` |
+
+**Example:** Setting `TEMPORAL_TARGET=temporal.production.com:7233` before your Rails app boots will configure the adapter to connect to that Temporal server, unless you override it in an initializer.
 
 ## Usage Examples
 

@@ -10,23 +10,25 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I6.T1",
+  "task_id": "I6.T2",
   "iteration_id": "I6",
   "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
-  "description": "Add comprehensive configuration validation to the Configuration class in `lib/activejob/temporal.rb`. Implement a public `validate!` method that calls private validation methods: `validate_target!` (ensure host:port format with regex `/^[\\w.-]+:\\d{1,5}$/`), `validate_namespace!` (ensure alphanumeric/hyphen/underscore only with regex `/^[\\w-]+$/`), `validate_timeouts!` (ensure positive durations for default_activity_timeout and default_retry_initial_interval), `validate_retry_settings!` (ensure default_retry_backoff >= 1.0, default_retry_max_attempts >= 0), `validate_payload_size!` (ensure max_payload_size_kb between 0 and 2097152 bytes / 2MB). Each validation method should raise `ActiveJob::Temporal::ConfigurationError` with descriptive messages on failure. Add the ConfigurationError exception class to the main module. The validate! method should be documented as optional (users can call it explicitly) but NOT automatically called on every config access (to avoid performance overhead). Write comprehensive unit tests in `spec/unit/configuration_spec.rb` covering: valid configurations pass, invalid target format raises error, invalid namespace raises error, negative/zero timeouts raise errors, invalid retry settings raise errors, oversized payload limit raises error.",
+  "description": "Add optional configuration attributes to the Configuration class for production flexibility: `identity` (worker identity string for observability, default: nil), `max_payload_size_kb` (explicit payload size limit in kilobytes, default: 250). Optionally add environment variable defaults for 12-factor app compliance by reading from ENV in the initialize method: `target` from ENV['TEMPORAL_TARGET'] || '127.0.0.1:7233', `namespace` from ENV['TEMPORAL_NAMESPACE'] || 'default', `task_queue_prefix` from ENV['TEMPORAL_TASK_QUEUE_PREFIX'] || nil, `max_payload_size_kb` from ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB'] || 250. Document these new options in existing `docs/configuration_reference.md` with descriptions, types, defaults, usage examples, and environment variable mappings. Update unit tests to verify new attributes are accessible and environment variable precedence works correctly.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "Version 1 lib/active_job/temporal/configuration.rb:68-148, existing Configuration class in Version 2",
+  "inputs": "Version 1 lib/active_job/temporal/configuration.rb:32-65 (env var patterns), Version 2 existing Configuration class, docs/configuration_reference.md",
   "target_files": [
     "lib/activejob/temporal.rb",
+    "docs/configuration_reference.md",
     "spec/unit/configuration_spec.rb"
   ],
   "input_files": [
     "lib/activejob/temporal.rb",
+    "docs/configuration_reference.md",
     "spec/unit/configuration_spec.rb"
   ],
-  "deliverables": "Configuration class with validate! method, ConfigurationError exception class, comprehensive validation tests",
-  "acceptance_criteria": "ActiveJob::Temporal::ConfigurationError exception class exists; Configuration class has public `validate!` method; Calling `validate!` on valid config does not raise; Calling `validate!` on config with invalid target (e.g., 'badformat') raises ConfigurationError with message matching 'target must match'; Calling `validate!` on config with invalid namespace (e.g., 'has spaces') raises ConfigurationError; Calling `validate!` on config with negative timeout raises ConfigurationError; Calling `validate!` on config with backoff < 1.0 raises ConfigurationError; Calling `validate!` on config with max_payload_size_kb > 2097152 raises ConfigurationError; Unit tests in configuration_spec.rb cover all validation scenarios with descriptive test names; `rake spec` passes; `rake rubocop` passes",
-  "dependencies": [],
+  "deliverables": "Enhanced Configuration class with identity and max_payload_size_kb attributes, environment variable support, updated documentation",
+  "acceptance_criteria": "Configuration class has `identity` attr_accessor (default: nil); Configuration class has `max_payload_size_kb` attr_accessor (default: 250); Configuration initialize reads from ENV['TEMPORAL_TARGET'], ENV['TEMPORAL_NAMESPACE'], ENV['TEMPORAL_TASK_QUEUE_PREFIX'], ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB'] with appropriate defaults; Setting ENV['TEMPORAL_TARGET']='custom:9999' before config creation sets config.target to 'custom:9999'; docs/configuration_reference.md includes new section documenting `identity` and `max_payload_size_kb` with types, defaults, usage examples; docs/configuration_reference.md includes table mapping environment variables to config attributes; Unit tests verify: default values, environment variable precedence, attribute read/write; `rake spec` passes; `rake rubocop` passes",
+  "dependencies": ["I6.T1"],
   "parallelizable": false,
   "done": false
 }
@@ -38,108 +40,123 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: nfr-security (from 01_Context_and_Drivers.md)
+### Context: nfr-observability (from 01_Context_and_Drivers.md)
 
 ```markdown
-<!-- anchor: nfr-security -->
-#### 2.2.6. Security
+## Observability
 
-**Requirement**: Prevent accidental exposure of secrets, resist malicious payloads, and support secure Temporal cluster connections.
-
-**Architectural Impact**:
-- Payload size limit (default 250KB, configurable) to prevent memory exhaustion
-- No direct Ruby object serialization (Marshal/Oj unsafe modes disabled)
-- ActiveJob::Arguments enforces safe serialization (primitives, GlobalID)
-- TLS support for Temporal client connection (via `temporalio` gem config)
-- Secrets (Temporal API keys, mTLS certs) loaded from environment variables, not committed to code
-- Input validation: job class must inherit from `ApplicationJob`, arguments must be serializable
-
-**Targets**:
-- Zero known CVEs in `temporalio` gem dependency
-- No plaintext secrets in logs or Temporal payloads
-- Support Temporal Cloud mTLS authentication (documented in README)
+- **Logging**: All adapter operations (enqueue, cancellation, errors) must emit structured logs (JSON format recommended) to Rails' configured logger
+- **Metrics**: Adapter should expose metrics about job enqueue rates, workflow execution counts, and failure rates (optional for v0.1, but architecture should allow future instrumentation)
+- **Tracing**: Integration with OpenTelemetry distributed tracing is highly desirable for production deployments
+- **Search and Filter**: Jobs must be searchable in Temporal UI by job class, queue name, job ID, enqueue time, and (optionally) tenant ID
 ```
 
-### Context: nfr-usability (from 01_Context_and_Drivers.md)
+### Context: technological-constraints (from 01_Context_and_Drivers.md)
 
 ```markdown
-<!-- anchor: nfr-usability -->
-#### 2.2.7. Usability (Developer Experience)
+## Technological Constraints
 
-**Requirement**: Minimal learning curve for Rails developers familiar with ActiveJob.
+- **Ruby Version**: Gem must support Ruby >= 3.2 (to align with Temporal Ruby SDK requirements and modern Rails versions)
+- **Rails Version**: ActiveJob integration requires Rails >= 6.1 (first version with `enqueue_after_transaction_commit?` support)
+- **Temporal Ruby SDK**: Must use the official `temporalio` gem (currently in GA as of late 2024)
+- **Serialization**: Job arguments must be serializable by ActiveJob's serializer (supports GlobalID, JSON-compatible types, custom serializers)
+- **No C Extensions**: Prefer pure Ruby implementation where possible to maximize portability
+```
 
-**Architectural Impact**:
-- Zero changes to job class code (standard `ApplicationJob` inheritance)
-- Single-line adapter configuration: `config.active_job.queue_adapter = :temporal`
-- Sensible defaults for all configuration options (work out-of-box with local Temporal dev server)
-- Clear error messages for common mistakes (connection failures, serialization errors, missing worker)
-- README with quick start, examples, and migration notes from Sidekiq/Resque
+### Context: deployment-constraints (from 01_Context_and_Drivers.md)
 
-**Targets**:
-- Time to first successful job: <15 minutes (including Temporal dev server setup)
-- Zero breaking changes between patch versions (semver compliance)
-- Issue resolution time: <48 hours for critical bugs
+```markdown
+## Deployment Constraints
+
+- **Worker Deployment**: Users must run a separate worker process (using `Temporalio::Worker`) alongside their Rails application. This worker polls Temporal for tasks and executes activities in a long-running Ruby process
+- **Temporal Server Access**: Workers and Rails application servers must have network access to a Temporal cluster (on-premises or Temporal Cloud)
+- **No Database Polling**: Unlike traditional queue adapters (e.g., Delayed Job, Que), this adapter does NOT poll a database—Temporal handles all workflow state persistence
+- **Transaction Boundaries**: Job enqueue must respect Rails transaction boundaries (deferred enqueue after commit via `enqueue_after_transaction_commit?`)
 ```
 
 ### Context: design-preferences (from 01_Context_and_Drivers.md)
 
 ```markdown
-<!-- anchor: design-preferences -->
-#### 2.3.4. Design Preferences
+## Design Preferences
 
-1. **Explicit Over Implicit**:
-   - **Preference**: Configuration should be explicit (no "magic" auto-discovery of Temporal connection).
-   - **Impact**: Require `ActiveJob::Temporal.configure` block in initializer (no environment-based fallbacks beyond documented ENV vars).
-
-2. **Fail Fast**:
-   - **Preference**: Raise errors eagerly (connection failures, serialization errors) rather than silently degrading.
-   - **Impact**: `enqueue` raises `ActiveJob::EnqueueError` if Temporal client cannot start workflow (caller must handle).
-
-3. **Minimize Dependencies**:
-   - **Preference**: Zero runtime dependencies beyond `temporalio` and Rails.
-   - **Impact**: No gems like `dry-rb`, `hanami-utils`; implement retry mapping and serialization inline.
-
-4. **Rails-Native Patterns**:
-   - **Preference**: Use Rails conventions (e.g., `Rails.logger`, `Rails.env`, `config/initializers`).
-   - **Impact**: Logging uses `Rails.logger` by default; configuration merges with Rails config system.
+- **Explicitness Over Magic**: Favor explicit configuration and clear method signatures over implicit behavior or "convention over configuration"
+- **Fail-Fast**: Prefer early validation errors (e.g., invalid configuration) over runtime surprises
+- **Rails Conventions**: Where applicable, follow Rails idioms (e.g., use Rails logger, respect ActiveJob callbacks, integrate with Rails test helpers)
+- **Minimal Dependencies**: Keep runtime dependencies minimal—only require gems that are strictly necessary for core functionality
 ```
 
-### Context: data-model-overview - Configuration Settings (from 03_System_Structure_and_Data.md)
+### Context: technology-stack (from 01_Plan_Overview_and_Setup.md)
 
 ```markdown
-**4. Configuration (Gem Settings)**
+## Technology Stack
 
-Stored in `ActiveJob::Temporal.config` singleton.
+### Core Technologies
+- **Ruby**: >= 3.2 (matches Temporal SDK requirement, supports modern syntax and performance)
+- **Rails**: >= 6.1 (first version with `enqueue_after_transaction_commit?` support; tested up to Rails 7.x)
+- **Temporal Ruby SDK**: `temporalio` gem (GA version; wraps Temporal's gRPC API with Ruby workflow/activity DSL)
 
-| Setting | Type | Default | Purpose |
-|---------|------|---------|---------|
-| `target` | String | `"127.0.0.1:7233"` | Temporal server address |
-| `namespace` | String | `"default"` | Temporal namespace |
-| `task_queue_prefix` | String (optional) | `nil` | Prefix for task queue names |
-| `default_activity_timeout` | Duration | `15.minutes` | Activity start_to_close_timeout |
-| `default_retry_initial_interval` | Duration | `30.seconds` | Retry initial delay |
-| `default_retry_backoff` | Float | `2.0` | Exponential backoff factor |
-| `default_retry_max_attempts` | Integer | `1` | Max retry attempts if no `retry_on` |
-| `logger` | Logger | `Rails.logger` | Logging destination |
-| `enable_tracing` | Boolean | `true` | OpenTelemetry tracing toggle |
+### Dependencies
+- **Required**:
+  - `activejob` (>= 6.1) — for ActiveJob adapter interface
+  - `globalid` — for serializing ActiveRecord models and other GlobalID-compatible objects
+  - `temporalio` — Temporal Ruby SDK
+- **Optional**:
+  - `semantic_logger` — for structured JSON logging (falls back to stdlib Logger if unavailable)
+  - `opentelemetry-sdk` — for distributed tracing (if `enable_tracing` is true)
+
+### Serialization Formats
+- **Job Payloads**: JSON (via `ActiveJob::Arguments.serialize/deserialize`)
+- **Workflow Metadata**: Temporal Search Attributes (keywords, datetime, integers)
+- **Retry Policies**: Temporal `RetryPolicy` hash (converted from ActiveJob `retry_on`/`discard_on` DSL)
 ```
 
-### Context: task-i1-t3 - Original Configuration Implementation (from 02_Iteration_I1.md)
+### Context: data-model-overview (from 01_Plan_Overview_and_Setup.md)
 
 ```markdown
-<!-- anchor: task-i1-t3 -->
-*   **Task 1.3: Implement Configuration Module**
-    *   **Task ID:** `I1.T3`
-    *   **Description:** Create the `ActiveJob::Temporal` configuration module in `lib/activejob/temporal.rb` with a configuration DSL. Implement a `Config` class with attributes: `target` (default: "127.0.0.1:7233"), `namespace` (default: "default"), `task_queue_prefix` (default: nil), `default_activity_timeout` (default: 15.minutes), `default_retry_initial_interval` (default: 30.seconds), `default_retry_backoff` (default: 2.0), `default_retry_max_attempts` (default: 1), `logger` (default: Rails.logger if Rails defined, else Logger.new(STDOUT)), `enable_tracing` (default: true). Provide `ActiveJob::Temporal.configure { |config| ... }` block method and `ActiveJob::Temporal.config` accessor (memoized singleton). Write unit tests in `spec/unit/configuration_spec.rb` covering: default values, configuration block usage, accessor methods, validation (e.g., timeout must be positive). Document configuration options in `docs/configuration_reference.md` with descriptions, types, defaults, and examples.
-    *   **Acceptance Criteria:**
-        - `ActiveJob::Temporal.configure { |c| c.target = "localhost:7233" }` sets configuration
-        - `ActiveJob::Temporal.config.target` returns configured value
-        - Default values are applied when configuration block not called
-        - All configuration attributes are readable and writable
-        - Unit tests cover all configuration attributes and edge cases (nil values, invalid types)
-        - `rake spec` passes for configuration_spec.rb
-        - `docs/configuration_reference.md` lists all 9 configuration options with descriptions, types, defaults, and usage examples
-        - Documentation is in Markdown format and passes `markdownlint` (if linter configured)
+## Data Model Overview
+
+The adapter does not persist job state to a local database. All state is stored in Temporal's internal database. The logical data model for jobs includes:
+
+1. **Job Payload** (Temporal Workflow Input):
+   - `job_class`: String (e.g., "SendInvoiceJob")
+   - `job_id`: String (UUID generated by ActiveJob)
+   - `queue_name`: String (e.g., "billing")
+   - `arguments`: Array (serialized via ActiveJob::Arguments)
+   - `scheduled_at`: ISO8601 timestamp (optional, for scheduled jobs)
+   - `executions`: Integer (retry count; incremented by activity retries)
+   - `exception_executions`: Hash (for tracking which exceptions caused retries)
+
+2. **Workflow Metadata** (Temporal Search Attributes):
+   - `ajClass`: Keyword (job class name for filtering)
+   - `ajQueue`: Keyword (queue name)
+   - `ajJobId`: Keyword (job ID for correlation)
+   - `ajEnqueuedAt`: Datetime (enqueue timestamp)
+   - `ajTenantId`: Keyword (optional, extracted from job args if present)
+
+3. **Retry Policy** (Temporal RetryPolicy):
+   - `initial_interval`: Duration (from `retry_on wait:` or config default)
+   - `backoff_coefficient`: Float (default 2.0)
+   - `maximum_attempts`: Integer (from `retry_on attempts:` or config default)
+   - `non_retryable_error_types`: Array of exception class names (from `discard_on`)
+
+4. **Configuration Settings** (Ruby Config Object):
+   - `target`: String (Temporal server host:port)
+   - `namespace`: String (Temporal namespace)
+   - `task_queue_prefix`: String (optional prefix for task queues)
+   - `default_activity_timeout`: Duration
+   - `default_retry_initial_interval`: Duration
+   - `default_retry_backoff`: Float
+   - `default_retry_max_attempts`: Integer
+   - `logger`: Logger instance
+   - `enable_tracing`: Boolean
+```
+
+### Context: task-i1-t3 (from 02_Iteration_I1.md)
+
+```markdown
+## Task I1.T3: Implement Configuration Module
+
+Create the `ActiveJob::Temporal` configuration module in `lib/activejob/temporal.rb` with a configuration DSL. Implement a `Config` class with attributes: `target` (default: "127.0.0.1:7233"), `namespace` (default: "default"), `task_queue_prefix` (default: nil), `default_activity_timeout` (default: 15.minutes), `default_retry_initial_interval` (default: 30.seconds), `default_retry_backoff` (default: 2.0), `default_retry_max_attempts` (default: 1), `logger` (default: Rails.logger if Rails defined, else Logger.new(STDOUT)), `enable_tracing` (default: true). Provide `ActiveJob::Temporal.configure { |config| ... }` block method and `ActiveJob::Temporal.config` accessor (memoized singleton). Write unit tests in `spec/unit/configuration_spec.rb` covering: default values, configuration block usage, accessor methods, validation (e.g., timeout must be positive). Document configuration options in `docs/configuration_reference.md` with descriptions, types, defaults, and examples.
 ```
 
 ---
@@ -151,207 +168,236 @@ The following analysis is based on my direct review of the current codebase. Use
 ### Relevant Existing Code
 
 *   **File:** `lib/activejob/temporal.rb`
-    *   **Summary:** This file contains the main module structure with the `Configuration` class already implemented. The Configuration class has all 9 configuration attributes with getters/setters, and it already has basic validation for positive durations in the `default_activity_timeout=` and `default_retry_initial_interval=` setter methods. It uses a private helper method `ensure_positive_duration!` for this validation.
+    *   **Summary:** This is the main gem entry point. It contains the `ActiveJob::Temporal` module with the `Configuration` class (lines 57-224). The Configuration class already has comprehensive validation via the `validate!` method (lines 139-146), which calls private validation methods. Note that `max_payload_size_kb` already exists as an attr_accessor (line 83) with a default of 250 (line 102).
     *   **Current State:**
-        - The base exception class `ActiveJob::Temporal::Error < StandardError` already exists at line 42
-        - Configuration attributes: `target`, `namespace`, `task_queue_prefix`, `default_retry_backoff`, `default_retry_max_attempts`, `logger`, `enable_tracing`, `max_payload_size_kb`, `enable_search_attributes`
-        - Duration attributes with special setters: `default_activity_timeout`, `default_retry_initial_interval`
-        - The class follows YARD documentation conventions with extensive inline comments
-    *   **Recommendation:** You MUST add the new `ConfigurationError` exception class as a subclass of the existing `ActiveJob::Temporal::Error`. You MUST implement the `validate!` public method in the Configuration class that calls private validation methods. You SHOULD follow the existing pattern of private helper methods (like `ensure_positive_duration!`) for validation logic. You MUST ensure `validate!` is NOT called automatically in the config accessor to avoid performance overhead.
-
-*   **File:** `spec/unit/configuration_spec.rb`
-    *   **Summary:** This file contains comprehensive unit tests for the Configuration class with 156 lines of test coverage. It already tests default values, configuration block usage, accessor methods, and basic validation for timeout setters.
-    *   **Current Test Coverage:**
-        - Tests for `ActiveJob::Temporal.config` memoization
-        - Tests for `ActiveJob::Temporal.configure` block
-        - Tests for all default values
-        - Tests for logger fallback behavior
-        - Tests for nil task_queue_prefix handling
-        - Tests for positive duration validation in setters (lines 126-155)
-    *   **Recommendation:** You MUST add a new describe block for the `validate!` method. You SHOULD organize tests by validation method (validate_target!, validate_namespace!, etc.) with nested contexts for valid/invalid cases. You MUST use descriptive test names following the existing pattern (e.g., "raises when duration is zero or negative"). You SHOULD test each validation rule independently with clear error message expectations.
-
-*   **File:** `.rubocop.yml`
-    *   **Summary:** The project uses Rubocop with specific style rules: max line length 120, method length max 20 lines, double-quoted strings enforced, frozen_string_literal required.
-    *   **Recommendation:** You MUST ensure all new code follows these rules. Since validation methods may be complex, you SHOULD keep each private validation method focused and under 20 lines. If the `validate!` method becomes too long, you SHOULD extract private helper methods. All files MUST start with `# frozen_string_literal: true`.
-
-*   **File:** `lib/activejob/temporal/logger.rb`
-    *   **Summary:** This module provides structured JSON logging with event names. It has methods `log_event`, `info`, `warn`, `error` that accept an event name and attributes hash.
-    *   **Recommendation:** You DO NOT need to log validation errors since validation failures raise exceptions that will be caught by the caller. The existing error message pattern in ArgumentError is sufficient for validation failures.
-
-*   **File:** `lib/activejob/temporal/cancel.rb`
-    *   **Summary:** This module demonstrates the project's error handling patterns. It uses StandardError rescue blocks, checks specific error types, and uses the Logger module for warnings.
-    *   **Recommendation:** You SHOULD follow this pattern for error handling: create specific exception classes, provide descriptive error messages, and handle edge cases gracefully.
+        - Lines 76-84: Attributes defined with `attr_accessor` for simple values
+        - Lines 92-104: The `initialize` method sets hardcoded defaults
+        - Line 83: `max_payload_size_kb` already exists as an attr_accessor
+        - Line 102: Default value `@max_payload_size_kb = 250` is already set
+    *   **Recommendation:** You MUST add the `identity` attribute following the same pattern as existing attributes (add to `attr_accessor` list). For environment variable support, you MUST modify the `initialize` method (lines 92-104) to read from ENV with fallbacks to hardcoded defaults. The existing code pattern uses `@variable = value` for simple assignments. Follow this exact style.
+    *   **CRITICAL WARNING:** The `max_payload_size_kb` attribute ALREADY EXISTS (line 83, line 102). The task description asks to add it, but it's already there! You should focus ONLY on:
+        1. Adding the `identity` attribute
+        2. Adding environment variable support for ALL applicable config attributes (including the existing `max_payload_size_kb`)
+        3. You MUST NOT duplicate the `max_payload_size_kb` declaration
 
 *   **File:** `docs/configuration_reference.md`
-    *   **Summary:** This file documents all configuration options in a table format with type, default, and description. It includes usage examples and notes about validation.
-    *   **Current State:** Line 43 mentions "Duration settings must be positive values" with a note about ArgumentError
-    *   **Recommendation:** You DO NOT need to update this file for this task. The documentation already mentions validation behavior. Future tasks may enhance this documentation with information about the new `validate!` method.
+    *   **Summary:** This file documents all configuration options in a table format (lines 7-18). It also includes usage examples and a Search Attributes section.
+    *   **Current State:**
+        - Lines 7-18: Configuration options table with 9 rows
+        - Line 18: `max_payload_size_kb` is already documented
+        - Lines 22-35: Usage examples section
+        - Lines 45-74: Search Attributes section
+    *   **Recommendation:** You MUST add:
+        1. A new row in the configuration table for `identity` attribute (insert alphabetically or at the end)
+        2. A NEW section called "Environment Variables" between the configuration table and the usage examples (after line 18, before line 20)
+        3. This new section must contain a table mapping ENV variable names to configuration attributes
+    *   **Tip:** The file already mentions `max_payload_size_kb` on line 18. You do NOT need to modify that row, but you MUST document the ENV variable for it in the new "Environment Variables" section.
+
+*   **File:** `spec/unit/configuration_spec.rb`
+    *   **Summary:** This file contains comprehensive unit tests for the Configuration class. It follows RSpec conventions with nested `describe` blocks and uses `subject(:configuration) { described_class.new }` pattern (line 65). Tests are well-organized by concern (defaults, validation, etc.).
+    *   **Current State:**
+        - Lines 6-8: `before` hook that resets `@config` instance variable for isolation
+        - Lines 67-99: Tests for default values
+        - Lines 157-407: Comprehensive validation tests from I6.T1
+    *   **Recommendation:** You MUST add:
+        1. A test in the "defaults" section for the `identity` attribute (should be nil)
+        2. A NEW describe block `describe "environment variable support"` after the defaults section
+        3. Tests for each ENV variable override (target, namespace, task_queue_prefix, max_payload_size_kb)
+        4. Tests verifying that ENV values override hardcoded defaults
+        5. Tests verifying that missing ENV variables use hardcoded defaults
+    *   **Tip:** For environment variable tests, you MUST use RSpec mocking to stub ENV values BEFORE creating a new Configuration instance. Use this pattern:
+        ```ruby
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with('TEMPORAL_TARGET').and_return('custom:9999')
+        config = described_class.new
+        expect(config.target).to eq('custom:9999')
+        ```
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The existing `ensure_positive_duration!` method (lines 125-132) provides a good pattern for validation methods. Each validation method should:
-    1. Check the specific validation rule
-    2. Raise `ActiveJob::Temporal::ConfigurationError` with a descriptive message on failure
-    3. Be named with a `!` suffix to indicate it may raise an exception
-
-*   **Tip:** For regex validation patterns, use the Ruby `=~` operator or `String#match?` method. Example:
+*   **CRITICAL:** The task mentions "optionally add environment variable defaults". This wording is misleading—the acceptance criteria EXPLICITLY requires ENV variable support. You MUST implement it, not make it optional.
+*   **Note:** The `identity` attribute is described as "worker identity string for observability". This should be a simple String attribute with default `nil`. It's used for identifying which worker process is executing jobs in observability systems. No validation is mentioned in the task, so simple `attr_accessor` is sufficient.
+*   **Note:** For environment variable support in the `initialize` method, the standard Ruby pattern is: `@target = ENV['TEMPORAL_TARGET'] || '127.0.0.1:7233'`. However, for the numeric `max_payload_size_kb`, you'll need to handle the conversion properly. The safest approach is:
     ```ruby
-    def validate_target!
-      return if target =~ /^\w[\w.-]*:\d{1,5}$/
-      raise ConfigurationError, "target must match host:port format (e.g., 'localhost:7233'), got: #{target.inspect}"
-    end
+    @max_payload_size_kb = (ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB']&.to_i || 250)
     ```
+    This uses safe navigation operator `&.` to avoid calling `to_i` on nil, then uses `|| 250` as fallback.
+*   **Warning:** The existing `validate!` method (added in I6.T1) already validates `max_payload_size_kb` in the `validate_payload_size!` method (lines 204-215). You do NOT need to add any validation for the new `identity` attribute (no validation requirements mentioned). The existing validation will continue to work with ENV-sourced values.
+*   **Note:** The existing test file has 408+ lines and is well-structured. Your new tests should follow the same style: descriptive test names using `it "does something specific"` format, proper use of `expect` syntax, and organized into logical `describe`/`context` blocks.
+*   **Important:** The acceptance criteria states "docs/configuration_reference.md includes table mapping environment variables to config attributes". This means you need to create a NEW table (not modify the existing configuration options table) that shows the mapping between ENV variable names and config attribute names.
+*   **Style Note:** The existing code uses `# frozen_string_literal: true` as the first line. All test mocking should use RSpec's built-in stubbing, not modify the actual ENV hash (which could cause test pollution).
 
-*   **Tip:** The payload size validation should convert KB to bytes (multiply by 1024) and check the upper limit of 2097152 KB (2 GB). The lower limit should be 0 or 1 (you should decide based on whether 0 KB makes sense).
+### Environment Variable Testing Strategy
 
-*   **Note:** The `validate!` method must be PUBLIC and should call all private validation methods. It should NOT return a value (implicit nil is fine). Example structure:
-    ```ruby
-    def validate!
-      validate_target!
-      validate_namespace!
-      validate_timeouts!
-      validate_retry_settings!
-      validate_payload_size!
-      nil
-    end
-    ```
+You MUST test the following scenarios:
 
-*   **Note:** The task description specifies exact regex patterns:
-    - Target: `/^[\w.-]+:\d{1,5}$/` (matches alphanumeric, dots, hyphens, colon, port number 1-5 digits)
-    - Namespace: `/^[\w-]+$/` (matches alphanumeric, hyphens, underscores)
-    You MUST use these exact patterns or improve them if they have obvious issues (e.g., the target regex should allow at least one character before the colon).
+1. **Default behavior (no ENV vars set):** Configuration uses hardcoded defaults
+2. **ENV override for target:** Setting `ENV['TEMPORAL_TARGET']` overrides default
+3. **ENV override for namespace:** Setting `ENV['TEMPORAL_NAMESPACE']` overrides default
+4. **ENV override for task_queue_prefix:** Setting `ENV['TEMPORAL_TASK_QUEUE_PREFIX']` overrides default (from nil to a value)
+5. **ENV override for max_payload_size_kb:** Setting `ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB']` overrides default (must convert string to integer)
+6. **Multiple ENV vars:** Setting multiple ENV vars simultaneously works correctly
+7. **Empty string ENV values:** Verify behavior when ENV var is set to empty string (should it use default or empty string?)
 
-*   **Warning:** The Configuration class already validates timeouts in their setter methods (lines 110-121). Your `validate_timeouts!` method should validate that the CURRENT values are positive, not just rely on the setters. This is important because someone could bypass setters or the internal state could be corrupted.
+For testing ENV variables in RSpec, use this pattern:
+```ruby
+describe "environment variable support" do
+  before do
+    # Reset the @config instance variable to force new instance creation
+    ActiveJob::Temporal.instance_variable_set(:@config, nil)
+  end
 
-*   **Warning:** The `validate_retry_settings!` method must check TWO attributes: `default_retry_backoff >= 1.0` AND `default_retry_max_attempts >= 0`. These are separate validations that should both be checked in one method.
+  it "reads target from TEMPORAL_TARGET environment variable" do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with('TEMPORAL_TARGET').and_return('custom:9999')
 
-*   **Testing Strategy:** You MUST test each validation method comprehensively:
-    1. **Valid configurations pass:** Create a config with all valid values and call `validate!` - should not raise
-    2. **Invalid target:** Test various invalid formats (no port, invalid characters, negative port)
-    3. **Invalid namespace:** Test with spaces, special characters, empty string
-    4. **Invalid timeouts:** Test zero and negative values for both timeout attributes
-    5. **Invalid retry backoff:** Test backoff < 1.0 (e.g., 0.5, 0, -1)
-    6. **Invalid max attempts:** Test negative values
-    7. **Invalid payload size:** Test > 2097152 KB and optionally test negative values
-    8. **Error messages:** Verify error messages are descriptive and include the invalid value
+    config = described_class.new
+    expect(config.target).to eq('custom:9999')
+  end
 
-*   **Code Style:** Follow the existing patterns in the Configuration class:
-    - Use YARD documentation comments for all public methods
-    - Use `attr_accessor`/`attr_reader` for simple attributes
-    - Group related methods together (all validation methods should be private and grouped)
-    - Use consistent naming: validation methods end with `!`, predicates with `?`
-    - Keep methods focused and under 20 lines (Rubocop limit)
+  it "uses default when TEMPORAL_TARGET is not set" do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with('TEMPORAL_TARGET').and_return(nil)
 
-### Exception Design Pattern
+    config = described_class.new
+    expect(config.target).to eq('127.0.0.1:7233')
+  end
 
-Based on the existing code structure:
+  it "converts TEMPORAL_MAX_PAYLOAD_SIZE_KB to integer" do
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with('TEMPORAL_MAX_PAYLOAD_SIZE_KB').and_return('512')
 
-1. **Add ConfigurationError as a subclass of Error:**
-   ```ruby
-   class Error < StandardError; end
-   class ConfigurationError < Error; end
+    config = described_class.new
+    expect(config.max_payload_size_kb).to eq(512)
+  end
+end
+```
+
+This approach is cleaner than stubbing the ENV constant and allows you to test individual ENV variables without affecting others.
+
+### Documentation Requirements
+
+The acceptance criteria requires TWO distinct documentation additions:
+
+1. **Identity attribute documentation in existing table**: Add a new row to the configuration options table (lines 7-18) for the `identity` attribute:
+   ```markdown
+   | `identity` | String or `nil` | `nil` | Optional worker identity string for observability and debugging. Useful in multi-worker deployments. |
    ```
 
-2. **Place it in the ActiveJob::Temporal module** (after the Error class definition at line 42)
+2. **New Environment Variables section**: Create a NEW section with a NEW table showing ENV var names → config attribute mappings. This section should be inserted AFTER line 18 (after the configuration table) and BEFORE line 20 (before "Usage Examples"). Example format:
+   ```markdown
+   ## Environment Variables
 
-3. **Use it consistently in all validation methods:**
-   ```ruby
-   raise ConfigurationError, "descriptive message with context"
+   Configuration can also be set via environment variables for 12-factor app compliance. Environment variables take precedence over default values but are overridden by explicit configuration in initializers.
+
+   | Environment Variable | Configuration Attribute | Type | Default if Not Set |
+   | --- | --- | --- | --- |
+   | `TEMPORAL_TARGET` | `target` | String | `"127.0.0.1:7233"` |
+   | `TEMPORAL_NAMESPACE` | `namespace` | String | `"default"` |
+   | `TEMPORAL_TASK_QUEUE_PREFIX` | `task_queue_prefix` | String | `nil` |
+   | `TEMPORAL_MAX_PAYLOAD_SIZE_KB` | `max_payload_size_kb` | Integer | `250` |
+
+   **Example:** Setting `TEMPORAL_TARGET=temporal.production.com:7233` before your Rails app boots will configure the adapter to connect to that Temporal server, unless you override it in an initializer.
    ```
 
-### Test Organization Pattern
+### Code Changes Required
 
-Based on existing test structure in `spec/unit/configuration_spec.rb`:
+#### 1. lib/activejob/temporal.rb
 
-1. **Add a new describe block for #validate! at the end of the Configuration tests:**
-   ```ruby
-   describe "#validate!" do
-     context "with valid configuration" do
-       it "does not raise any errors" do
-         expect { configuration.validate! }.not_to raise_error
-       end
-     end
+**Line 76-84 modification:** Add `identity` to the `attr_accessor` list (alphabetically after `enable_search_attributes` or at the end):
+```ruby
+attr_accessor :target,
+              :namespace,
+              :task_queue_prefix,
+              :default_retry_backoff,
+              :default_retry_max_attempts,
+              :logger,
+              :enable_tracing,
+              :max_payload_size_kb,
+              :enable_search_attributes,
+              :identity
+```
 
-     context "when target is invalid" do
-       it "raises ConfigurationError for missing port" do
-         configuration.target = "localhost"
-         expect { configuration.validate! }.to raise_error(
-           ActiveJob::Temporal::ConfigurationError,
-           /target must match/
-         )
-       end
-       # More invalid target tests...
-     end
+**Lines 92-104 modification:** Update the `initialize` method to read from ENV:
+```ruby
+def initialize
+  @target = ENV['TEMPORAL_TARGET'] || '127.0.0.1:7233'
+  @namespace = ENV['TEMPORAL_NAMESPACE'] || 'default'
+  @task_queue_prefix = ENV['TEMPORAL_TASK_QUEUE_PREFIX']
+  self.default_activity_timeout = 15.minutes
+  self.default_retry_initial_interval = 30.seconds
+  @default_retry_backoff = 2.0
+  @default_retry_max_attempts = 1
+  @logger = default_logger
+  @enable_tracing = true
+  @max_payload_size_kb = (ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB']&.to_i || 250)
+  @enable_search_attributes = true
+  @identity = nil
+end
+```
 
-     context "when namespace is invalid" do
-       # Namespace validation tests...
-     end
+**YARD documentation:** Add documentation for the new `identity` attribute in the attr_accessor YARD comment block (around lines 58-75). Add this line:
+```ruby
+# @!attribute [rw] identity
+#   @return [String, nil] Optional worker identity for observability (default: nil)
+```
 
-     # Continue for each validation method...
-   end
-   ```
+#### 2. spec/unit/configuration_spec.rb
 
-2. **Use descriptive context blocks and test names** following the existing pattern
+**In the "defaults" section (after line 98):** Add test for identity default:
+```ruby
+it "sets identity to nil by default" do
+  expect(configuration.identity).to be_nil
+end
+```
 
-3. **Test both the positive case (no error) and negative cases (specific errors)** for each validation rule
+**After the "defaults" section (after line 99):** Add a new describe block for environment variable support with comprehensive tests for all ENV variables.
 
-### Key Constraints from Rubocop
+#### 3. docs/configuration_reference.md
 
-- **Max line length: 120 characters** - Break long error messages across lines if needed
-- **Max method length: 20 lines** - Keep each validation method focused
-- **Frozen string literal: Required** - File already has this
-- **Double quotes: Enforced** - Use "strings" not 'strings'
+**After line 18:** Add new row to configuration table for `identity` attribute.
 
-### Performance Consideration
-
-The task explicitly states: "The validate! method should be documented as optional (users can call it explicitly) but NOT automatically called on every config access (to avoid performance overhead)."
-
-This means:
-- Do NOT call `validate!` in the Configuration initializer
-- Do NOT call `validate!` in attribute setters
-- Do NOT call `validate!` in the `config` class method
-- Users must explicitly call `ActiveJob::Temporal.config.validate!` if they want validation
-- Document this in YARD comments on the `validate!` method
+**After line 18 (new section):** Add "Environment Variables" section with table mapping ENV vars to config attributes, including an example.
 
 ### Acceptance Criteria Checklist
 
 You MUST ensure all of these criteria are met:
 
-- [ ] `ActiveJob::Temporal::ConfigurationError` exception class exists as a subclass of `Error`
-- [ ] Configuration class has public `validate!` method with YARD documentation
-- [ ] Calling `validate!` on valid config does not raise any errors
-- [ ] Invalid target format (e.g., 'badformat', 'host', ':7233') raises ConfigurationError with message matching 'target must match'
-- [ ] Invalid namespace (e.g., 'has spaces', 'special!chars') raises ConfigurationError
-- [ ] Negative timeout raises ConfigurationError
-- [ ] Zero timeout raises ConfigurationError
-- [ ] Backoff < 1.0 (e.g., 0.5, 0, -1) raises ConfigurationError
-- [ ] max_payload_size_kb > 2097152 raises ConfigurationError
-- [ ] Unit tests cover ALL validation scenarios with descriptive test names
+- [ ] Configuration class has `identity` attr_accessor with default nil
+- [ ] `identity` is added to the attr_accessor list in lib/activejob/temporal.rb
+- [ ] Configuration initialize reads from ENV['TEMPORAL_TARGET'] with fallback to '127.0.0.1:7233'
+- [ ] Configuration initialize reads from ENV['TEMPORAL_NAMESPACE'] with fallback to 'default'
+- [ ] Configuration initialize reads from ENV['TEMPORAL_TASK_QUEUE_PREFIX'] with fallback to nil
+- [ ] Configuration initialize reads from ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB'] and converts to integer with fallback to 250
+- [ ] Setting ENV['TEMPORAL_TARGET']='custom:9999' before config creation sets config.target to 'custom:9999'
+- [ ] docs/configuration_reference.md includes `identity` in configuration options table
+- [ ] docs/configuration_reference.md includes NEW "Environment Variables" section
+- [ ] Environment Variables section includes table mapping 4 ENV vars to config attributes
+- [ ] Unit tests verify `identity` default value is nil
+- [ ] Unit tests verify ENV variable precedence for target
+- [ ] Unit tests verify ENV variable precedence for namespace
+- [ ] Unit tests verify ENV variable precedence for task_queue_prefix
+- [ ] Unit tests verify ENV variable precedence for max_payload_size_kb (with string-to-integer conversion)
+- [ ] Unit tests verify fallback to defaults when ENV vars not set
+- [ ] All tests use proper RSpec mocking (allow(ENV).to receive...)
 - [ ] `rake spec` passes without errors
 - [ ] `rake rubocop` passes without offenses
-- [ ] All new code has `# frozen_string_literal: true` header
-- [ ] All methods have YARD documentation
-- [ ] Test names follow existing pattern ("raises when...", "does not raise when...")
 
-### Files to Modify
+### Common Pitfalls to Avoid
 
-1. **lib/activejob/temporal.rb:**
-   - Add `ConfigurationError` class after line 42
-   - Add public `validate!` method to Configuration class
-   - Add private validation methods: `validate_target!`, `validate_namespace!`, `validate_timeouts!`, `validate_retry_settings!`, `validate_payload_size!`
-   - Add YARD documentation for all new methods
+1. **Do NOT duplicate max_payload_size_kb:** This attribute already exists. Only add ENV variable support for it.
+2. **Do NOT modify the existing configuration table for ENV vars:** Create a separate "Environment Variables" section.
+3. **Do NOT forget string-to-integer conversion for max_payload_size_kb:** ENV vars are always strings.
+4. **Do NOT forget to reset @config in tests:** Each test must create a fresh Configuration instance to test ENV behavior.
+5. **Do NOT use actual ENV hash manipulation in tests:** Use RSpec stubs to avoid test pollution.
+6. **Do NOT add validation for identity:** No validation requirements mentioned in the task.
+7. **Do NOT call validate! automatically:** The existing I6.T1 implementation correctly requires explicit validation calls.
 
-2. **spec/unit/configuration_spec.rb:**
-   - Add comprehensive tests for `validate!` method
-   - Test each validation rule independently
-   - Test valid configurations pass
-   - Test invalid configurations raise with correct error messages
-   - Ensure all edge cases are covered
+### Integration with I6.T1
 
-### Final Notes
+This task builds on I6.T1, which added the `validate!` method. Your implementation must:
+- Work seamlessly with the existing validation (ENV-sourced values should be validated when `validate!` is called)
+- Not break any existing tests from I6.T1
+- Follow the same code style and documentation patterns established in I6.T1
 
-- This task is iteration I6.T1, the first task in Iteration 6, which focuses on "robust validation, better error handling"
-- The validation implementation will be used by subsequent tasks (I6.T2 adds more config attributes, I6.T3-I6.T4 enhance other modules)
-- Your implementation should be thorough and production-ready, as it forms the foundation for configuration safety
-- Clear error messages are critical - users should immediately understand what's wrong and how to fix it
-- Follow the "Fail Fast" design preference: validation errors should be explicit and raised immediately when validate! is called
+The existing validation will automatically validate ENV-sourced values when users call `config.validate!`, so no changes to validation logic are needed for this task.
