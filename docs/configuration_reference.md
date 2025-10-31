@@ -86,3 +86,90 @@ ajQueue = "billing" AND ajTenantId = "tenant-456"
 ```
 
 Use the enqueue timestamp to identify stale jobs, e.g., `ajEnqueuedAt < "2025-01-01T00:00:00Z"`.
+
+## Payload Size Limits
+
+Temporal enforces limits on payload sizes to ensure efficient workflow execution and prevent network/storage overhead. `ActiveJob::Temporal` validates serialized job payloads before sending them to Temporal and raises an `ActiveJob::SerializationError` if the limit is exceeded.
+
+### Configuration
+
+The `max_payload_size_kb` configuration option (default: `250` KB) controls the maximum allowed size for serialized job arguments. When a job's serialized payload exceeds this limit, the adapter immediately raises an error rather than attempting to enqueue the workflow.
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.max_payload_size_kb = 512  # Increase to 512 KB (use cautiously)
+end
+```
+
+You can also set this via the `TEMPORAL_MAX_PAYLOAD_SIZE_KB` environment variable.
+
+### Handling Large Payloads
+
+If you encounter payload size errors, consider these strategies to reduce payload size:
+
+1. **Pass database IDs instead of full objects**
+
+   Instead of serializing entire ActiveRecord models or large data structures, pass only the record ID and fetch the object inside the job:
+
+   ```ruby
+   # Bad: Passing large object
+   ProcessReportJob.perform_later(report)
+
+   # Good: Pass ID and fetch inside job
+   ProcessReportJob.perform_later(report.id)
+
+   # In your job:
+   class ProcessReportJob < ApplicationJob
+     def perform(report_id)
+       report = Report.find(report_id)
+       # Process the report...
+     end
+   end
+   ```
+
+2. **Use ActiveStorage for large files**
+
+   For file processing jobs, attach files to ActiveStorage and pass blob IDs rather than raw file contents:
+
+   ```ruby
+   # Bad: Passing file data directly
+   ProcessImageJob.perform_later(image_data)
+
+   # Good: Use ActiveStorage
+   blob = ActiveStorage::Blob.create_and_upload!(
+     io: File.open(image_path),
+     filename: "image.jpg"
+   )
+   ProcessImageJob.perform_later(blob.id)
+   ```
+
+3. **Store large data externally**
+
+   For complex data structures, consider storing them in Redis, S3, or your database, then pass only the reference key:
+
+   ```ruby
+   # Store large data
+   key = SecureRandom.uuid
+   Redis.current.setex("job:data:#{key}", 1.hour, large_data.to_json)
+
+   # Pass only the key
+   ProcessDataJob.perform_later(key)
+   ```
+
+4. **Increase the limit (use cautiously)**
+
+   If you have sufficient Temporal capacity and genuinely need larger payloads, you can increase `max_payload_size_kb`. However, be aware that:
+   - Temporal has a hard limit of ~2 MB for workflow payloads
+   - Large payloads impact Temporal server performance and network efficiency
+   - The default 250 KB is recommended for most use cases
+
+### Error Message Format
+
+When a payload exceeds the configured limit, you'll receive a detailed error message:
+
+```
+ActiveJob::SerializationError: Job payload size (350.5 KB) exceeds maximum allowed size (250 KB).
+Consider reducing argument size or using references (e.g., database IDs).
+```
+
+This error is raised immediately when calling `perform_later`, before the job reaches Temporal, allowing you to catch and handle oversized payloads early in your application logic.

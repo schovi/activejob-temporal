@@ -118,12 +118,18 @@ module ActiveJob
 
       def enforce_payload_size!(payload)
         json = JSON.generate(payload)
-        size_limit_bytes = (ActiveJob::Temporal.config.max_payload_size_kb || 250) * 1024
+        max_size_kb = ActiveJob::Temporal.config.max_payload_size_kb || 250
+        size_limit_bytes = max_size_kb * 1024
         return if json.bytesize <= size_limit_bytes
 
-        raise ActiveJob::SerializationError,
-              format("Payload size %<size>d bytes exceeds limit of %<limit>d bytes",
-                     size: json.bytesize, limit: size_limit_bytes)
+        actual_size_kb = (json.bytesize / 1024.0).round(1)
+        message = format(
+          "Job payload size (%<actual>.1f KB) exceeds maximum allowed size (%<max>d KB). " \
+          "Consider reducing argument size or using references (e.g., database IDs).",
+          actual: actual_size_kb,
+          max: max_size_kb
+        )
+        raise ActiveJob::SerializationError, message
       end
 
       def valid_iso8601?(value)

@@ -76,6 +76,30 @@ RSpec.describe ActiveJob::Temporal::Payload do
         .to raise_error(ArgumentError, /convertible to Time/)
     end
 
+    it "accepts payload under size limit" do
+      small_job = SimpleJob.new(%w[small data])
+
+      ActiveJob::Temporal.configure do |config|
+        config.max_payload_size_kb = 250
+      end
+
+      expect { described_class.from_job(small_job) }.not_to raise_error
+    end
+
+    it "accepts payload at exactly the size limit" do
+      # Create a payload that's approximately 250 KB when serialized
+      # Account for JSON overhead (job_class, job_id, etc.)
+      large_argument = "x" * ((250 * 1024) - 500) # Leave room for metadata
+      big_job = SimpleJob.new([large_argument])
+
+      ActiveJob::Temporal.configure do |config|
+        config.max_payload_size_kb = 250
+      end
+
+      # This should not raise since we're at or just under the limit
+      expect { described_class.from_job(big_job) }.not_to raise_error
+    end
+
     it "raises when serialized payload exceeds configured size limit" do
       large_argument = "x" * 2048
       big_job = SimpleJob.new([large_argument])
@@ -85,7 +109,22 @@ RSpec.describe ActiveJob::Temporal::Payload do
       end
 
       expect { described_class.from_job(big_job) }
-        .to raise_error(ActiveJob::SerializationError, /exceeds limit/)
+        .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+    end
+
+    it "raises with descriptive error message including KB sizes and guidance" do
+      large_argument = "x" * 2048
+      big_job = SimpleJob.new([large_argument])
+
+      ActiveJob::Temporal.configure do |config|
+        config.max_payload_size_kb = 1
+      end
+
+      expect { described_class.from_job(big_job) }
+        .to raise_error(ActiveJob::SerializationError) do |error|
+          expect(error.message).to match(/Job payload size \(\d+\.\d+ KB\) exceeds maximum allowed size \(1 KB\)/)
+          expect(error.message).to include("Consider reducing argument size or using references (e.g., database IDs)")
+        end
     end
 
     it "raises when arguments contain non-serializable objects" do
