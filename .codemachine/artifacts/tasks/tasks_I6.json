@@ -1,0 +1,258 @@
+[
+  {
+    "task_id": "I6.T1",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Add comprehensive configuration validation to the Configuration class in `lib/activejob/temporal.rb`. Implement a public `validate!` method that calls private validation methods: `validate_target!` (ensure host:port format with regex `/^[\\w.-]+:\\d{1,5}$/`), `validate_namespace!` (ensure alphanumeric/hyphen/underscore only with regex `/^[\\w-]+$/`), `validate_timeouts!` (ensure positive durations for default_activity_timeout and default_retry_initial_interval), `validate_retry_settings!` (ensure default_retry_backoff >= 1.0, default_retry_max_attempts >= 0), `validate_payload_size!` (ensure max_payload_size_kb between 0 and 2097152 bytes / 2MB). Each validation method should raise `ActiveJob::Temporal::ConfigurationError` with descriptive messages on failure. Add the ConfigurationError exception class to the main module. The validate! method should be documented as optional (users can call it explicitly) but NOT automatically called on every config access (to avoid performance overhead). Write comprehensive unit tests in `spec/unit/configuration_spec.rb` covering: valid configurations pass, invalid target format raises error, invalid namespace raises error, negative/zero timeouts raise errors, invalid retry settings raise errors, oversized payload limit raises error.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Version 1 lib/active_job/temporal/configuration.rb:68-148, existing Configuration class in Version 2",
+    "target_files": [
+      "lib/activejob/temporal.rb",
+      "spec/unit/configuration_spec.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal.rb",
+      "spec/unit/configuration_spec.rb"
+    ],
+    "deliverables": "Configuration class with validate! method, ConfigurationError exception class, comprehensive validation tests",
+    "acceptance_criteria": "ActiveJob::Temporal::ConfigurationError exception class exists; Configuration class has public `validate!` method; Calling `validate!` on valid config does not raise; Calling `validate!` on config with invalid target (e.g., 'badformat') raises ConfigurationError with message matching 'target must match'; Calling `validate!` on config with invalid namespace (e.g., 'has spaces') raises ConfigurationError; Calling `validate!` on config with negative timeout raises ConfigurationError; Calling `validate!` on config with backoff < 1.0 raises ConfigurationError; Calling `validate!` on config with max_payload_size_kb > 2097152 raises ConfigurationError; Unit tests in configuration_spec.rb cover all validation scenarios with descriptive test names; `rake spec` passes; `rake rubocop` passes",
+    "dependencies": [],
+    "parallelizable": false,
+    "done": true
+  },
+  {
+    "task_id": "I6.T2",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Add optional configuration attributes to the Configuration class for production flexibility: `identity` (worker identity string for observability, default: nil), `max_payload_size_kb` (explicit payload size limit in kilobytes, default: 250). Optionally add environment variable defaults for 12-factor app compliance by reading from ENV in the initialize method: `target` from ENV['TEMPORAL_TARGET'] || '127.0.0.1:7233', `namespace` from ENV['TEMPORAL_NAMESPACE'] || 'default', `task_queue_prefix` from ENV['TEMPORAL_TASK_QUEUE_PREFIX'] || nil, `max_payload_size_kb` from ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB'] || 250. Document these new options in existing `docs/configuration_reference.md` with descriptions, types, defaults, usage examples, and environment variable mappings. Update unit tests to verify new attributes are accessible and environment variable precedence works correctly.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Version 1 lib/active_job/temporal/configuration.rb:32-65 (env var patterns), Version 2 existing Configuration class, docs/configuration_reference.md",
+    "target_files": [
+      "lib/activejob/temporal.rb",
+      "docs/configuration_reference.md",
+      "spec/unit/configuration_spec.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal.rb",
+      "docs/configuration_reference.md",
+      "spec/unit/configuration_spec.rb"
+    ],
+    "deliverables": "Enhanced Configuration class with identity and max_payload_size_kb attributes, environment variable support, updated documentation",
+    "acceptance_criteria": "Configuration class has `identity` attr_accessor (default: nil); Configuration class has `max_payload_size_kb` attr_accessor (default: 250); Configuration initialize reads from ENV['TEMPORAL_TARGET'], ENV['TEMPORAL_NAMESPACE'], ENV['TEMPORAL_TASK_QUEUE_PREFIX'], ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB'] with appropriate defaults; Setting ENV['TEMPORAL_TARGET']='custom:9999' before config creation sets config.target to 'custom:9999'; docs/configuration_reference.md includes new section documenting `identity` and `max_payload_size_kb` with types, defaults, usage examples; docs/configuration_reference.md includes table mapping environment variables to config attributes; Unit tests verify: default values, environment variable precedence, attribute read/write; `rake spec` passes; `rake rubocop` passes",
+    "dependencies": ["I6.T1"],
+    "parallelizable": false,
+    "done": false
+  },
+  {
+    "task_id": "I6.T3",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Enhance the Cancel module in `lib/activejob/temporal/cancel.rb` with better error handling to distinguish between workflows that never existed vs workflows that already completed. Add custom exception classes `WorkflowNotFoundError` and `TemporalConnectionError` to `lib/activejob/temporal.rb`. Refactor the `cancel` method to: (1) Add a private `find_workflow(client, job_class, job_id)` method that queries Temporal with `list_workflows` for running workflows matching the job_id search attribute; (2) If not found in running workflows, query closed workflows (with ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', etc.)); (3) If found in closed workflows, return `false` from `cancel` method to indicate job already completed (log this with Logger.warn); (4) If not found in either running or closed workflows, raise `WorkflowNotFoundError` with message 'No workflow found for job_id X. The job may have never existed.'; (5) Wrap Temporal client calls in rescue blocks to catch connection errors and raise `TemporalConnectionError` with descriptive messages. Update existing unit tests in `spec/unit/cancel_spec.rb` to cover new scenarios: workflow completed (returns false), workflow never existed (raises WorkflowNotFoundError), Temporal connection failure (raises TemporalConnectionError). Add integration test in `spec/integration/cancellation_spec.rb` if not already present.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Version 1 lib/active_job/temporal/cancel.rb:1-138 (enhanced error handling pattern), Version 2 existing cancel.rb, Temporal list_workflows API documentation",
+    "target_files": [
+      "lib/activejob/temporal.rb",
+      "lib/activejob/temporal/cancel.rb",
+      "spec/unit/cancel_spec.rb",
+      "spec/integration/cancellation_spec.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal.rb",
+      "lib/activejob/temporal/cancel.rb",
+      "spec/unit/cancel_spec.rb",
+      "spec/integration/cancellation_spec.rb"
+    ],
+    "deliverables": "Enhanced Cancel module with better error handling, new exception types, comprehensive tests",
+    "acceptance_criteria": "ActiveJob::Temporal::WorkflowNotFoundError exception class exists; ActiveJob::Temporal::TemporalConnectionError exception class exists; Cancel.cancel method returns false if workflow already completed (without raising); Cancel.cancel method raises WorkflowNotFoundError if workflow never existed; Cancel.cancel method raises TemporalConnectionError if Temporal client connection fails; Private find_workflow method queries both running and closed workflows; Unit tests in cancel_spec.rb cover: successful cancellation, workflow completed (returns false), workflow not found (raises WorkflowNotFoundError), connection error (raises TemporalConnectionError); Integration test verifies cancellation behavior end-to-end (if applicable); Structured logging uses Logger.warn for completed workflows, Logger.info for successful cancellation requests; `rake spec` passes; `rake rubocop` passes",
+    "dependencies": ["I6.T1"],
+    "parallelizable": true,
+    "done": false
+  },
+  {
+    "task_id": "I6.T4",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Add payload size validation to the Payload module in `lib/activejob/temporal/payload.rb`. Implement a private `validate_size!(payload)` method that: (1) Serializes the payload hash to JSON using `JSON.generate(payload)`; (2) Calculates byte size with `json_payload.bytesize`; (3) Compares against `ActiveJob::Temporal.config.max_payload_size_kb * 1024` (convert KB to bytes); (4) Raises `ActiveJob::SerializationError` with descriptive message if payload exceeds limit, message should include actual size and max size in KB (e.g., 'Job payload size (350 KB) exceeds maximum allowed size (250 KB). Consider reducing argument size or using references (e.g., database IDs).'); (5) Call `validate_size!(payload)` at the end of `from_job` method before returning the payload. Write unit tests in `spec/unit/payload_spec.rb` covering: small payload passes validation, payload at exactly 250KB passes, payload over 250KB raises SerializationError with correct message, error message includes actual and max sizes. Ensure validation is skipped if `max_payload_size_kb` is nil or zero (for backwards compatibility). Document payload size limits in README.md or docs/configuration_reference.md with guidance on how to handle large payloads (use database references instead of passing large objects).",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Version 1 lib/active_job/temporal/payload.rb:52-75 (validate_size! pattern), Version 2 existing payload.rb, ActiveJob::SerializationError documentation",
+    "target_files": [
+      "lib/activejob/temporal/payload.rb",
+      "spec/unit/payload_spec.rb",
+      "docs/configuration_reference.md"
+    ],
+    "input_files": [
+      "lib/activejob/temporal/payload.rb",
+      "spec/unit/payload_spec.rb",
+      "docs/configuration_reference.md"
+    ],
+    "deliverables": "Payload module with size validation, comprehensive tests, documentation on handling large payloads",
+    "acceptance_criteria": "Payload module has private `validate_size!(payload)` method; `validate_size!` calculates JSON byte size and compares against config.max_payload_size_kb * 1024; `validate_size!` raises ActiveJob::SerializationError if payload exceeds limit; Error message includes actual size and max size in human-readable format (KB); `from_job` method calls `validate_size!` before returning payload; Validation is skipped if max_payload_size_kb is nil or zero; Unit tests cover: payload under limit (no error), payload at limit (no error), payload over limit (raises SerializationError), error message format verification; docs/configuration_reference.md includes section on payload size limits with guidance: 'If you encounter payload size errors, consider passing database IDs instead of full objects, or use ActiveStorage for large files.'; `rake spec` passes; `rake rubocop` passes",
+    "dependencies": ["I6.T2"],
+    "parallelizable": true,
+    "done": false
+  },
+  {
+    "task_id": "I6.T5",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Create Architecture Decision Records (ADR) documentation structure in `docs/adr/` folder. Use standard ADR format with sections: Title, Status (Accepted/Proposed/Deprecated), Context, Decision, Consequences. Create the following ADRs: (1) `001-structured-logging.md` - Document decision to use structured JSON logging with event names instead of plain text logs, context: observability requirements for production systems, decision: implement Logger module with JSON output and event-based semantics, consequences: better integration with log aggregation tools but requires JSON parsing; (2) `002-iso8601-timestamps.md` - Document decision to use ISO8601 timestamp format for scheduled_at instead of Unix timestamps, context: readability and timezone handling, decision: use Time.iso8601 parsing in workflows, consequences: human-readable but slightly larger payload; (3) `003-adapter-helper-module.md` - Document decision to extract workflow ID building and task queue resolution into separate Adapter helper module instead of inline in queue adapter, context: code organization and reusability, decision: create Adapter module with build_workflow_id and resolve_task_queue methods, consequences: better separation of concerns and testability; (4) `004-idempotency-keys.md` - Document decision to provide thread-local idempotency keys in activity execution, context: enabling idempotent external API calls, decision: set Thread.current[:aj_temporal_idempotency_key] in AjRunnerActivity, consequences: jobs can use idempotency keys for safe retries but must handle thread-local access. Each ADR should be 100-200 lines with detailed context, alternatives considered, and specific code examples.",
+    "agent_type_hint": "DocumentationAgent",
+    "inputs": "Version 1 docs/adr/ (structure reference), Version 2 architecture decisions, ADR template format (https://github.com/joelparkerhenderson/architecture-decision-record)",
+    "target_files": [
+      "docs/adr/001-structured-logging.md",
+      "docs/adr/002-iso8601-timestamps.md",
+      "docs/adr/003-adapter-helper-module.md",
+      "docs/adr/004-idempotency-keys.md",
+      "docs/adr/README.md"
+    ],
+    "input_files": [],
+    "deliverables": "ADR folder with 4 detailed architecture decision records and README explaining the ADR process",
+    "acceptance_criteria": "docs/adr/ folder exists; docs/adr/README.md exists explaining what ADRs are and how to create new ones; 001-structured-logging.md exists with sections: Title ('ADR 001: Structured JSON Logging'), Status (Accepted), Context (observability requirements), Decision (Logger module with JSON output), Consequences (pros/cons); 002-iso8601-timestamps.md exists documenting ISO8601 vs Unix timestamp decision; 003-adapter-helper-module.md exists documenting Adapter module extraction; 004-idempotency-keys.md exists documenting thread-local idempotency key design; Each ADR follows consistent format and is 100-200 lines; Each ADR includes code examples showing the implemented solution; ADRs are written in clear, technical language suitable for new maintainers; All Markdown files pass markdownlint (if configured)",
+    "dependencies": [],
+    "parallelizable": true,
+    "done": false
+  },
+  {
+    "task_id": "I6.T6",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Create comprehensive configuration schema documentation in `docs/config_schema.yaml` following YAML schema format. Document all configuration options with: attribute name, type (String, Integer, Float, Boolean, Duration, Logger), default value, validation rules (e.g., 'Must match host:port format', 'Must be positive', 'Must be >= 1.0'), description (1-2 sentences), environment variable mapping (e.g., TEMPORAL_TARGET), usage examples. Include sections: Connection Settings (target, namespace, identity), Timing Settings (default_activity_timeout, default_retry_initial_interval), Retry Settings (default_retry_backoff, default_retry_max_attempts), Operational Settings (task_queue_prefix, logger, enable_tracing, max_payload_size_kb, enable_search_attributes). Add schema metadata: schema_version, last_updated, contact. Include practical examples section showing common configurations: development (local Temporal), production (Temporal Cloud with TLS), high-throughput (custom timeouts and retries). Reference this schema from `docs/configuration_reference.md` as the canonical source of truth for all configuration options.",
+    "agent_type_hint": "DocumentationAgent",
+    "inputs": "Version 1 docs/config_schema.yaml (structure reference), Version 2 Configuration class attributes, YAML schema best practices",
+    "target_files": [
+      "docs/config_schema.yaml",
+      "docs/configuration_reference.md"
+    ],
+    "input_files": [
+      "lib/activejob/temporal.rb",
+      "docs/configuration_reference.md"
+    ],
+    "deliverables": "Complete configuration schema YAML file, updated configuration reference documentation",
+    "acceptance_criteria": "docs/config_schema.yaml exists with valid YAML syntax; Schema documents all 11+ configuration attributes: target, namespace, identity, task_queue_prefix, default_activity_timeout, default_retry_initial_interval, default_retry_backoff, default_retry_max_attempts, logger, enable_tracing, max_payload_size_kb, enable_search_attributes; Each attribute has: name, type, default, validation_rules (array), description, env_var_name, example; Schema includes metadata section: schema_version (1.0), last_updated (ISO date), contact (email or URL); Schema includes examples section with 3+ complete configuration examples (development, production, custom); docs/configuration_reference.md references config_schema.yaml as canonical source; YAML file validates against YAML 1.2 spec; All referenced environment variables match those in Configuration class",
+    "dependencies": ["I6.T2"],
+    "parallelizable": true,
+    "done": false
+  },
+  {
+    "task_id": "I6.T7",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Enhance inline YARD documentation across all implementation files to match the comprehensiveness of Version 1 while maintaining Version 2's clarity. Focus on: (1) Add `@raise` annotations for all exception types that can be raised by each method (e.g., `@raise [ActiveJob::Temporal::ConfigurationError] if configuration is invalid`); (2) Add `@example` blocks for complex methods showing realistic usage with input and output (e.g., Adapter.build_workflow_id, Payload.from_job with scheduled_at, RetryMapper.for with retry_on); (3) Add `@note` sections for important behaviors and caveats (e.g., 'Workflow determinism: This workflow MUST remain deterministic', 'Idempotency: Activities may be re-executed on transient failures', 'Best-effort cancellation: Cancellation is asynchronous'); (4) Add `@see` references to related methods and Temporal SDK documentation URLs; (5) Ensure all public methods have complete YARD docs (summary, params, return, raises, examples); (6) Add module/class-level documentation explaining purpose and design patterns. Target files: `lib/activejob/temporal/adapter.rb` (document workflow ID format, conflict policy), `lib/activejob/temporal/cancel.rb` (document best-effort semantics, query strategies), `lib/activejob/temporal/payload.rb` (document size limits, serialization caveats), `lib/activejob/temporal/workflows/aj_workflow.rb` (document determinism requirements), `lib/activejob/temporal/activities/aj_runner_activity.rb` (document idempotency, exception handling). Generate YARD documentation with `yard doc` and verify it builds without warnings.",
+    "agent_type_hint": "DocumentationAgent",
+    "inputs": "Version 1 inline YARD documentation patterns (extensive @param, @return, @raise, @example annotations), Version 2 existing code, YARD documentation guide",
+    "target_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "lib/activejob/temporal/cancel.rb",
+      "lib/activejob/temporal/payload.rb",
+      "lib/activejob/temporal/retry_mapper.rb",
+      "lib/activejob/temporal/search_attributes.rb",
+      "lib/activejob/temporal/workflows/aj_workflow.rb",
+      "lib/activejob/temporal/activities/aj_runner_activity.rb",
+      "lib/activejob/temporal/client.rb",
+      "lib/activejob/temporal/logger.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal/adapter.rb",
+      "lib/activejob/temporal/cancel.rb",
+      "lib/activejob/temporal/payload.rb",
+      "lib/activejob/temporal/retry_mapper.rb",
+      "lib/activejob/temporal/search_attributes.rb",
+      "lib/activejob/temporal/workflows/aj_workflow.rb",
+      "lib/activejob/temporal/activities/aj_runner_activity.rb",
+      "lib/activejob/temporal/client.rb",
+      "lib/activejob/temporal/logger.rb"
+    ],
+    "deliverables": "Comprehensive YARD documentation for all public APIs, generated YARD docs without warnings",
+    "acceptance_criteria": "All public methods have complete YARD docs with @param, @return, and @raise annotations; Complex methods (Adapter.build_workflow_id, Payload.from_job, RetryMapper.for) have @example blocks with realistic usage; Workflow and activity files have @note sections documenting determinism and idempotency requirements; Cancel module documents best-effort semantics with @note; Payload module documents size limits with @note; All exception-raising methods list exceptions in @raise annotations; Module-level docs (using `# Module description` before `module`) explain purpose and design; Running `yard doc` generates documentation without errors or warnings; Generated docs in `doc/` folder are readable and well-formatted; At least 20 new @example blocks added across all files; At least 30 new @raise annotations added; At least 10 new @note sections added",
+    "dependencies": ["I6.T1", "I6.T3", "I6.T4"],
+    "parallelizable": true,
+    "done": false
+  },
+  {
+    "task_id": "I6.T8",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Add optional worker performance tuning configuration attributes to the Configuration class: `max_concurrent_activities` (default: 100, type: Integer, description: 'Maximum number of activities that can execute concurrently per worker process'), `max_concurrent_workflow_tasks` (default: 100, type: Integer, description: 'Maximum number of workflow tasks that can execute concurrently per worker process'). These settings are intended for advanced users tuning worker performance in high-throughput scenarios. Add validation in `validate!` method to ensure both are positive integers. Document these options in `docs/config_schema.yaml` and `docs/configuration_reference.md` with a 'Production Tuning' section explaining: when to adjust these settings (high job volume, resource constraints), trade-offs (higher concurrency uses more memory), recommended starting values (100 for most cases, increase to 200-500 for high-throughput). Add environment variable support: ENV['TEMPORAL_MAX_CONCURRENT_ACTIVITIES'] and ENV['TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS']. Write unit tests in `spec/unit/configuration_spec.rb` covering: default values, custom values, environment variable precedence, validation (negative values raise error). Note: These settings are used by the Temporal worker process, not the adapter itself, so document that they should be passed to `Temporalio::Worker.new` in worker setup scripts (update `docs/worker_setup.md` if it exists).",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Version 1 lib/active_job/temporal/configuration.rb:59-61 (max_concurrent_* settings), Temporal Ruby SDK Worker documentation, Version 2 Configuration class",
+    "target_files": [
+      "lib/activejob/temporal.rb",
+      "docs/config_schema.yaml",
+      "docs/configuration_reference.md",
+      "docs/worker_setup.md",
+      "spec/unit/configuration_spec.rb"
+    ],
+    "input_files": [
+      "lib/activejob/temporal.rb",
+      "docs/config_schema.yaml",
+      "docs/configuration_reference.md",
+      "docs/worker_setup.md",
+      "spec/unit/configuration_spec.rb"
+    ],
+    "deliverables": "Worker performance configuration attributes, validation, comprehensive documentation, unit tests",
+    "acceptance_criteria": "Configuration class has `max_concurrent_activities` attr_accessor (default: 100); Configuration class has `max_concurrent_workflow_tasks` attr_accessor (default: 100); `validate!` method checks both are positive integers, raises ConfigurationError if not; ENV['TEMPORAL_MAX_CONCURRENT_ACTIVITIES'] and ENV['TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS'] are read in initialize with defaults; docs/config_schema.yaml includes both attributes with type, default, validation rules, description, env var mapping; docs/configuration_reference.md includes 'Production Tuning' section documenting both settings with usage guidance: 'Increase to 200-500 for high-throughput scenarios with sufficient memory. Monitor worker memory usage when increasing.'; docs/worker_setup.md (if exists) includes example of passing these settings to Temporalio::Worker.new (e.g., `max_concurrent_activities: config.max_concurrent_activities`); Unit tests cover: default values (both 100), custom values work, environment variables override defaults, negative values raise ConfigurationError, zero values raise ConfigurationError; `rake spec` passes; `rake rubocop` passes",
+    "dependencies": ["I6.T1", "I6.T2", "I6.T6"],
+    "parallelizable": true,
+    "done": false
+  },
+  {
+    "task_id": "I6.T9",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Run `rake rubocop` on all code modified in Iteration 6 to ensure Ruby style compliance. Fix any Rubocop offenses (style violations, complexity warnings, line length, etc.) in all lib/ and spec/ files touched by I6.T1-I6.T8. Common issues to address: (1) Long methods (extract private helper methods if needed); (2) High cyclomatic complexity (simplify conditionals, extract logic); (3) Long lines (break at 120 characters or use configured limit); (4) Missing frozen_string_literal comments (add to top of new files); (5) Documentation cops (ensure all public methods have YARD docs - already covered in I6.T7). If necessary, update `.rubocop.yml` with reasonable exceptions (e.g., allow slightly longer methods for validation logic, disable specific cops with inline comments if justified). Commit Rubocop fixes separately from feature commits for clean git history. Acceptance: `rake rubocop` passes with zero offenses on all modified files.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "Rubocop configuration (`.rubocop.yml`), Ruby style guide, code from I6.T1-I6.T8",
+    "target_files": [
+      "lib/activejob/temporal.rb",
+      "lib/activejob/temporal/cancel.rb",
+      "lib/activejob/temporal/payload.rb",
+      "lib/activejob/temporal/adapter.rb",
+      "spec/unit/configuration_spec.rb",
+      "spec/unit/cancel_spec.rb",
+      "spec/unit/payload_spec.rb",
+      ".rubocop.yml"
+    ],
+    "input_files": [
+      "lib/activejob/temporal.rb",
+      "lib/activejob/temporal/cancel.rb",
+      "lib/activejob/temporal/payload.rb",
+      "lib/activejob/temporal/adapter.rb",
+      "spec/unit/configuration_spec.rb",
+      "spec/unit/cancel_spec.rb",
+      "spec/unit/payload_spec.rb",
+      ".rubocop.yml"
+    ],
+    "deliverables": "Clean code passing Rubocop checks with zero offenses",
+    "acceptance_criteria": "`rake rubocop` exits with status 0 (zero offenses) on all files in lib/activejob/temporal/; All auto-correctable offenses are fixed with `rubocop -a`; Manual fixes applied for: method complexity (extract helpers), long lines (break appropriately), missing docs (ensure YARD present); All new files have `# frozen_string_literal: true` at top; If `.rubocop.yml` is updated, changes documented with comments explaining rationale (e.g., '# Allow 150-line validation methods due to comprehensive error checking'); No rubocop:disable comments without explanation; Code maintains readability after Rubocop fixes (no awkward line breaks just to satisfy line length)",
+    "dependencies": ["I6.T1", "I6.T2", "I6.T3", "I6.T4", "I6.T7", "I6.T8"],
+    "parallelizable": false,
+    "done": false
+  },
+  {
+    "task_id": "I6.T10",
+    "iteration_id": "I6",
+    "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
+    "description": "Run `rake spec` to execute all tests including new tests written in Iteration 6. Verify that SimpleCov reports >= 90% code coverage for all modules modified or created in this iteration (Configuration validation methods, Cancel enhancements, Payload size validation, new exception classes). If coverage is below 90%, write additional tests to cover edge cases and error paths: (1) Configuration validation: test each validation method independently, test validate! calling all validators, test valid and invalid inputs for each setting; (2) Cancel: test find_workflow with running workflows, closed workflows, non-existent workflows, test connection errors; (3) Payload: test size validation with payloads at 249KB (pass), 250KB (pass), 251KB (fail), test validation skip when max_payload_size_kb is nil; (4) Exception classes: test exception inheritance (ConfigurationError < Error), test raising and catching. Generate coverage report in `coverage/index.html`. Review coverage report to identify uncovered lines and add targeted tests. Acceptance: All tests pass, coverage >= 90% for all modified files.",
+    "agent_type_hint": "BackendAgent",
+    "inputs": "RSpec configuration, SimpleCov configuration, unit tests from I6.T1-I6.T8",
+    "target_files": [
+      "spec/unit/configuration_spec.rb",
+      "spec/unit/cancel_spec.rb",
+      "spec/unit/payload_spec.rb"
+    ],
+    "input_files": [
+      "spec/spec_helper.rb",
+      "spec/unit/configuration_spec.rb",
+      "spec/unit/cancel_spec.rb",
+      "spec/unit/payload_spec.rb",
+      "lib/activejob/temporal.rb",
+      "lib/activejob/temporal/cancel.rb",
+      "lib/activejob/temporal/payload.rb"
+    ],
+    "deliverables": "Passing test suite with >= 90% coverage for all Iteration 6 changes, coverage report",
+    "acceptance_criteria": "`rake spec` exits with status 0 (all tests pass); SimpleCov report shows >= 90% coverage for: lib/activejob/temporal.rb (Configuration class and exception classes), lib/activejob/temporal/cancel.rb (enhanced cancel logic), lib/activejob/temporal/payload.rb (size validation); Coverage report generated in `coverage/index.html`; No skipped or pending tests (all tests implemented); Test suite includes: 15+ new tests for configuration validation (one per validation method, one for validate!, edge cases), 10+ new tests for cancel enhancements (find_workflow, error handling, return values), 5+ new tests for payload size validation (under limit, at limit, over limit, skip validation, error message format); All edge cases covered: nil values, boundary conditions, exception hierarchies; Test descriptions are clear and follow consistent naming (e.g., 'raises ConfigurationError when target is invalid', 'returns false when workflow already completed'); Running `rake spec` completes in reasonable time (< 30 seconds for unit tests)",
+    "dependencies": ["I6.T1", "I6.T2", "I6.T3", "I6.T4", "I6.T8", "I6.T9"],
+    "parallelizable": false,
+    "done": false
+  }
+]

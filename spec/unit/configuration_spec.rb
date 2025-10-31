@@ -153,4 +153,256 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect { configuration.default_retry_initial_interval = Object.new }.to raise_error(ArgumentError)
     end
   end
+
+  describe "#validate!" do
+    context "with valid configuration" do
+      it "does not raise any errors with default values" do
+        expect { configuration.validate! }.not_to raise_error
+      end
+
+      it "does not raise errors with all valid custom values" do
+        configuration.target = "temporal.example.com:7233"
+        configuration.namespace = "production-namespace"
+        configuration.default_activity_timeout = 10.minutes
+        configuration.default_retry_initial_interval = 5.seconds
+        configuration.default_retry_backoff = 2.5
+        configuration.default_retry_max_attempts = 5
+        configuration.max_payload_size_kb = 500
+
+        expect { configuration.validate! }.not_to raise_error
+      end
+    end
+
+    context "when target is invalid" do
+      it "raises ConfigurationError for missing port" do
+        configuration.target = "localhost"
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /target must match host:port format/
+        )
+      end
+
+      it "raises ConfigurationError for missing host" do
+        configuration.target = ":7233"
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /target must match host:port format/
+        )
+      end
+
+      it "raises ConfigurationError for invalid format" do
+        configuration.target = "badformat"
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /target must match host:port format/
+        )
+      end
+
+      it "raises ConfigurationError for port number too long" do
+        configuration.target = "localhost:123456"
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /target must match host:port format/
+        )
+      end
+
+      it "raises ConfigurationError for invalid characters" do
+        configuration.target = "host with spaces:7233"
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /target must match host:port format/
+        )
+      end
+
+      it "raises ConfigurationError when target is nil" do
+        configuration.target = nil
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /target must match host:port format/
+        )
+      end
+    end
+
+    context "when namespace is invalid" do
+      it "raises ConfigurationError for spaces in namespace" do
+        configuration.namespace = "has spaces"
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /namespace must contain only alphanumeric/
+        )
+      end
+
+      it "raises ConfigurationError for special characters" do
+        configuration.namespace = "special!chars"
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /namespace must contain only alphanumeric/
+        )
+      end
+
+      it "raises ConfigurationError for dots in namespace" do
+        configuration.namespace = "namespace.with.dots"
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /namespace must contain only alphanumeric/
+        )
+      end
+
+      it "raises ConfigurationError when namespace is nil" do
+        configuration.namespace = nil
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /namespace must contain only alphanumeric/
+        )
+      end
+
+      it "accepts valid namespace with hyphens and underscores" do
+        configuration.namespace = "valid-namespace_123"
+        expect { configuration.validate! }.not_to raise_error
+      end
+    end
+
+    context "when timeouts are invalid" do
+      it "raises ConfigurationError when default_activity_timeout is zero" do
+        configuration.instance_variable_set(:@default_activity_timeout, 0)
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /default_activity_timeout must be positive/
+        )
+      end
+
+      it "raises ConfigurationError when default_activity_timeout is negative" do
+        configuration.instance_variable_set(:@default_activity_timeout, -5)
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /default_activity_timeout must be positive/
+        )
+      end
+
+      it "raises ConfigurationError when default_retry_initial_interval is zero" do
+        configuration.instance_variable_set(:@default_retry_initial_interval, 0.seconds)
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /default_retry_initial_interval must be positive/
+        )
+      end
+
+      it "raises ConfigurationError when default_retry_initial_interval is negative" do
+        configuration.instance_variable_set(:@default_retry_initial_interval, -10)
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /default_retry_initial_interval must be positive/
+        )
+      end
+
+      it "raises ConfigurationError when timeout is not a duration" do
+        configuration.instance_variable_set(:@default_activity_timeout, "not a duration")
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /default_activity_timeout must be a duration/
+        )
+      end
+    end
+
+    context "when retry settings are invalid" do
+      it "raises ConfigurationError when backoff is less than 1.0" do
+        configuration.default_retry_backoff = 0.5
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /default_retry_backoff must be >= 1.0/
+        )
+      end
+
+      it "raises ConfigurationError when backoff is zero" do
+        configuration.default_retry_backoff = 0.0
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /default_retry_backoff must be >= 1.0/
+        )
+      end
+
+      it "raises ConfigurationError when backoff is negative" do
+        configuration.default_retry_backoff = -1.0
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /default_retry_backoff must be >= 1.0/
+        )
+      end
+
+      it "accepts backoff exactly equal to 1.0" do
+        configuration.default_retry_backoff = 1.0
+        expect { configuration.validate! }.not_to raise_error
+      end
+
+      it "raises ConfigurationError when max_attempts is negative" do
+        configuration.default_retry_max_attempts = -1
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /default_retry_max_attempts must be >= 0/
+        )
+      end
+
+      it "accepts max_attempts equal to zero" do
+        configuration.default_retry_max_attempts = 0
+        expect { configuration.validate! }.not_to raise_error
+      end
+    end
+
+    context "when payload size is invalid" do
+      it "raises ConfigurationError when exceeding maximum limit" do
+        configuration.max_payload_size_kb = 2_097_153
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /max_payload_size_kb must be <= 2097152 KB/
+        )
+      end
+
+      it "raises ConfigurationError when far exceeding maximum limit" do
+        configuration.max_payload_size_kb = 5_000_000
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /max_payload_size_kb must be <= 2097152 KB/
+        )
+      end
+
+      it "accepts payload size at the maximum limit" do
+        configuration.max_payload_size_kb = 2_097_152
+        expect { configuration.validate! }.not_to raise_error
+      end
+
+      it "raises ConfigurationError when payload size is zero" do
+        configuration.max_payload_size_kb = 0
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /max_payload_size_kb must be positive/
+        )
+      end
+
+      it "raises ConfigurationError when payload size is negative" do
+        configuration.max_payload_size_kb = -100
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /max_payload_size_kb must be positive/
+        )
+      end
+
+      it "accepts a reasonable payload size" do
+        configuration.max_payload_size_kb = 1024
+        expect { configuration.validate! }.not_to raise_error
+      end
+    end
+
+    context "with multiple validation failures" do
+      it "raises on the first validation failure encountered" do
+        configuration.target = "invalid"
+        configuration.namespace = "has spaces"
+        configuration.default_retry_backoff = 0.5
+
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /target must match/
+        )
+      end
+    end
+  end
 end
