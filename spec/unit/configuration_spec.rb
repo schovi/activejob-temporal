@@ -110,47 +110,47 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "reads target from TEMPORAL_TARGET environment variable" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_TARGET').and_return('custom:9999')
+      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return("custom:9999")
 
       config = described_class.new
-      expect(config.target).to eq('custom:9999')
+      expect(config.target).to eq("custom:9999")
     end
 
     it "uses default target when TEMPORAL_TARGET is not set" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_TARGET').and_return(nil)
+      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return(nil)
 
       config = described_class.new
-      expect(config.target).to eq('127.0.0.1:7233')
+      expect(config.target).to eq("127.0.0.1:7233")
     end
 
     it "reads namespace from TEMPORAL_NAMESPACE environment variable" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_NAMESPACE').and_return('production')
+      allow(ENV).to receive(:[]).with("TEMPORAL_NAMESPACE").and_return("production")
 
       config = described_class.new
-      expect(config.namespace).to eq('production')
+      expect(config.namespace).to eq("production")
     end
 
     it "uses default namespace when TEMPORAL_NAMESPACE is not set" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_NAMESPACE').and_return(nil)
+      allow(ENV).to receive(:[]).with("TEMPORAL_NAMESPACE").and_return(nil)
 
       config = described_class.new
-      expect(config.namespace).to eq('default')
+      expect(config.namespace).to eq("default")
     end
 
     it "reads task_queue_prefix from TEMPORAL_TASK_QUEUE_PREFIX environment variable" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_TASK_QUEUE_PREFIX').and_return('my-app-')
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("TEMPORAL_TASK_QUEUE_PREFIX", nil).and_return("my-app-")
 
       config = described_class.new
-      expect(config.task_queue_prefix).to eq('my-app-')
+      expect(config.task_queue_prefix).to eq("my-app-")
     end
 
     it "uses default task_queue_prefix (nil) when TEMPORAL_TASK_QUEUE_PREFIX is not set" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_TASK_QUEUE_PREFIX').and_return(nil)
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("TEMPORAL_TASK_QUEUE_PREFIX", nil).and_return(nil)
 
       config = described_class.new
       expect(config.task_queue_prefix).to be_nil
@@ -158,7 +158,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "reads max_payload_size_kb from TEMPORAL_MAX_PAYLOAD_SIZE_KB and converts to integer" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_MAX_PAYLOAD_SIZE_KB').and_return('512')
+      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return("512")
 
       config = described_class.new
       expect(config.max_payload_size_kb).to eq(512)
@@ -166,7 +166,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "uses default max_payload_size_kb when TEMPORAL_MAX_PAYLOAD_SIZE_KB is not set" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_MAX_PAYLOAD_SIZE_KB').and_return(nil)
+      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return(nil)
 
       config = described_class.new
       expect(config.max_payload_size_kb).to eq(250)
@@ -174,31 +174,32 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "handles multiple environment variables set simultaneously" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_TARGET').and_return('temporal.prod:7233')
-      allow(ENV).to receive(:[]).with('TEMPORAL_NAMESPACE').and_return('production')
-      allow(ENV).to receive(:[]).with('TEMPORAL_TASK_QUEUE_PREFIX').and_return('app-')
-      allow(ENV).to receive(:[]).with('TEMPORAL_MAX_PAYLOAD_SIZE_KB').and_return('1024')
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return("temporal.prod:7233")
+      allow(ENV).to receive(:[]).with("TEMPORAL_NAMESPACE").and_return("production")
+      allow(ENV).to receive(:fetch).with("TEMPORAL_TASK_QUEUE_PREFIX", nil).and_return("app-")
+      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return("1024")
 
       config = described_class.new
-      expect(config.target).to eq('temporal.prod:7233')
-      expect(config.namespace).to eq('production')
-      expect(config.task_queue_prefix).to eq('app-')
+      expect(config.target).to eq("temporal.prod:7233")
+      expect(config.namespace).to eq("production")
+      expect(config.task_queue_prefix).to eq("app-")
       expect(config.max_payload_size_kb).to eq(1024)
     end
 
     it "allows explicit configuration to override environment variables" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_TARGET').and_return('env-target:7233')
+      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return("env-target:7233")
 
       config = described_class.new
-      config.target = 'explicit-target:8888'
+      config.target = "explicit-target:8888"
 
-      expect(config.target).to eq('explicit-target:8888')
+      expect(config.target).to eq("explicit-target:8888")
     end
 
     it "validates environment variable values when validate! is called" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with('TEMPORAL_TARGET').and_return('invalid-format')
+      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return("invalid-format")
 
       config = described_class.new
       expect { config.validate! }.to raise_error(

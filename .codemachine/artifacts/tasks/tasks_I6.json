@@ -41,7 +41,7 @@
     "acceptance_criteria": "Configuration class has `identity` attr_accessor (default: nil); Configuration class has `max_payload_size_kb` attr_accessor (default: 250); Configuration initialize reads from ENV['TEMPORAL_TARGET'], ENV['TEMPORAL_NAMESPACE'], ENV['TEMPORAL_TASK_QUEUE_PREFIX'], ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB'] with appropriate defaults; Setting ENV['TEMPORAL_TARGET']='custom:9999' before config creation sets config.target to 'custom:9999'; docs/configuration_reference.md includes new section documenting `identity` and `max_payload_size_kb` with types, defaults, usage examples; docs/configuration_reference.md includes table mapping environment variables to config attributes; Unit tests verify: default values, environment variable precedence, attribute read/write; `rake spec` passes; `rake rubocop` passes",
     "dependencies": ["I6.T1"],
     "parallelizable": false,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I6.T3",

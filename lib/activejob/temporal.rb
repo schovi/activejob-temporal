@@ -93,16 +93,16 @@ module ActiveJob
       attr_reader :default_activity_timeout, :default_retry_initial_interval
 
       def initialize
-        @target = ENV['TEMPORAL_TARGET'] || "127.0.0.1:7233"
-        @namespace = ENV['TEMPORAL_NAMESPACE'] || "default"
-        @task_queue_prefix = ENV['TEMPORAL_TASK_QUEUE_PREFIX']
+        @target = ENV["TEMPORAL_TARGET"] || "127.0.0.1:7233"
+        @namespace = ENV["TEMPORAL_NAMESPACE"] || "default"
+        @task_queue_prefix = ENV.fetch("TEMPORAL_TASK_QUEUE_PREFIX", nil)
         self.default_activity_timeout = 15.minutes
         self.default_retry_initial_interval = 30.seconds
         @default_retry_backoff = 2.0
         @default_retry_max_attempts = 1
         @logger = default_logger
         @enable_tracing = true
-        @max_payload_size_kb = (ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB']&.to_i || 250)
+        @max_payload_size_kb = ENV["TEMPORAL_MAX_PAYLOAD_SIZE_KB"]&.to_i || 250
         @enable_search_attributes = true
         @identity = nil
       end
