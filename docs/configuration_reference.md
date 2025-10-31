@@ -21,6 +21,8 @@ The canonical machine-readable schema for all configuration options is available
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 | `identity` | String or `nil` | `nil` | Optional worker identity string for observability and debugging. Useful in multi-worker deployments. |
+| `max_concurrent_activities` | Integer | `100` | Maximum number of activities that can execute concurrently per worker process. Used by worker to control activity execution parallelism. |
+| `max_concurrent_workflow_tasks` | Integer | `100` | Maximum number of workflow tasks that can execute concurrently per worker process. Used by worker to control workflow task processing parallelism. |
 
 ## Environment Variables
 
@@ -32,6 +34,8 @@ Configuration can also be set via environment variables for 12-factor app compli
 | `TEMPORAL_NAMESPACE` | `namespace` | String | `"default"` |
 | `TEMPORAL_TASK_QUEUE_PREFIX` | `task_queue_prefix` | String | `nil` |
 | `TEMPORAL_MAX_PAYLOAD_SIZE_KB` | `max_payload_size_kb` | Integer | `250` |
+| `TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | `max_concurrent_activities` | Integer | `100` |
+| `TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | `max_concurrent_workflow_tasks` | Integer | `100` |
 
 **Example:** Setting `TEMPORAL_TARGET=temporal.production.com:7233` before your Rails app boots will configure the adapter to connect to that Temporal server, unless you override it in an initializer.
 
@@ -177,3 +181,76 @@ Consider reducing argument size or using references (e.g., database IDs).
 ```
 
 This error is raised immediately when calling `perform_later`, before the job reaches Temporal, allowing you to catch and handle oversized payloads early in your application logic.
+
+## Production Tuning
+
+The `max_concurrent_activities` and `max_concurrent_workflow_tasks` configuration options control worker process parallelism and are critical for tuning performance in high-throughput scenarios.
+
+### Worker Concurrency Settings
+
+These settings control how many activities and workflow tasks can execute concurrently within a single worker process. They are passed to the Temporal worker process and directly affect resource utilization and throughput.
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.max_concurrent_activities = 200      # Default: 100
+  config.max_concurrent_workflow_tasks = 200  # Default: 100
+end
+```
+
+You can also set these via environment variables:
+
+```bash
+TEMPORAL_MAX_CONCURRENT_ACTIVITIES=200 \
+TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=200 \
+bin/temporal-worker
+```
+
+### When to Adjust These Settings
+
+Consider increasing these values when:
+
+1. **High job volume**: Your workers are processing thousands of jobs per minute and queue lag is accumulating
+2. **Low resource utilization**: Worker processes show low CPU/memory usage despite queue lag
+3. **I/O-bound jobs**: Jobs spend most of their time waiting on external services (database queries, API calls)
+4. **Fast-completing activities**: Most activities complete in under 5 seconds
+
+Do **not** increase these values if:
+
+1. **CPU-bound jobs**: Jobs perform heavy computation and already max out CPU cores
+2. **Memory-constrained workers**: Workers are already near their memory limits
+3. **Resource contention**: Database or external services are already saturated
+
+### Trade-offs and Recommendations
+
+**Memory Usage**: Higher concurrency uses more memory. Each concurrent activity runs in a thread and consumes memory proportional to your job's data structures (loaded ActiveRecord models, local variables, etc.). A worker with 100 concurrent activities executing jobs that each load a 10 MB dataset will use ~1 GB of memory for activity data alone.
+
+**CPU Usage**: If your jobs are CPU-bound (heavy computation, data processing), higher concurrency won't improve throughput and may degrade performance due to context switching overhead.
+
+**Recommended Starting Values**:
+- **Default (100)**: Appropriate for most workloads. Start here unless you have specific performance requirements.
+- **High-throughput (200-500)**: For I/O-bound workloads with sufficient memory. Increase incrementally and monitor worker resource usage.
+- **Resource-constrained (50)**: For memory-limited workers or CPU-intensive jobs.
+
+**Example: High-throughput configuration**
+
+```ruby
+# config/initializers/activejob_temporal.rb
+ActiveJob::Temporal.configure do |config|
+  config.target = ENV.fetch('TEMPORAL_TARGET')
+  config.namespace = 'production'
+  config.max_concurrent_activities = 300
+  config.max_concurrent_workflow_tasks = 300
+end
+```
+
+### Monitoring and Optimization
+
+When tuning worker concurrency:
+
+1. **Monitor worker resource usage**: Track memory and CPU utilization per worker process
+2. **Measure queue lag**: Use Temporal UI to track task queue backlog depth
+3. **Increase incrementally**: Raise concurrency by 50-100 at a time, observe for 10-15 minutes
+4. **Watch for OOM kills**: If workers are terminated due to memory exhaustion, reduce concurrency
+5. **Profile job memory**: Use Ruby memory profilers to understand per-job memory footprint
+
+**Note**: These settings are used by the Temporal worker process (started via `bin/temporal-worker`), not the Rails web application. They control parallelism within the worker process that polls Temporal for tasks. See the [Worker Setup Guide](./worker_setup.md) for details on passing these settings to `Temporalio::Worker.new`.

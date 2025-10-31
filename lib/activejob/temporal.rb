@@ -85,7 +85,8 @@ module ActiveJob
     # @note Environment Variable Defaults
     #   Several configuration values can be set via environment variables:
     #   TEMPORAL_TARGET, TEMPORAL_NAMESPACE, TEMPORAL_TASK_QUEUE_PREFIX,
-    #   TEMPORAL_MAX_PAYLOAD_SIZE_KB, TEMPORAL_TLS_CERT, TEMPORAL_TLS_KEY,
+    #   TEMPORAL_MAX_PAYLOAD_SIZE_KB, TEMPORAL_MAX_CONCURRENT_ACTIVITIES,
+    #   TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS, TEMPORAL_TLS_CERT, TEMPORAL_TLS_KEY,
     #   TEMPORAL_TLS_SERVER_NAME. Configuration attributes take precedence over env vars.
     #
     # @example
@@ -116,6 +117,10 @@ module ActiveJob
       #   @return [Boolean] Enable Temporal search attributes for job metadata (default: true)
       # @!attribute [rw] identity
       #   @return [String, nil] Optional worker identity for observability (default: nil)
+      # @!attribute [rw] max_concurrent_activities
+      #   @return [Integer] Maximum number of activities that can execute concurrently per worker process (default: 100)
+      # @!attribute [rw] max_concurrent_workflow_tasks
+      #   @return [Integer] Maximum workflow tasks concurrently per worker process (default: 100)
       attr_accessor :target,
                     :namespace,
                     :task_queue_prefix,
@@ -125,7 +130,9 @@ module ActiveJob
                     :enable_tracing,
                     :max_payload_size_kb,
                     :enable_search_attributes,
-                    :identity
+                    :identity,
+                    :max_concurrent_activities,
+                    :max_concurrent_workflow_tasks
 
       # @!attribute [r] default_activity_timeout
       #   @return [ActiveSupport::Duration] Timeout for activity execution (default: 15 minutes)
@@ -146,6 +153,8 @@ module ActiveJob
         @max_payload_size_kb = ENV["TEMPORAL_MAX_PAYLOAD_SIZE_KB"]&.to_i || 250
         @enable_search_attributes = true
         @identity = nil
+        @max_concurrent_activities = ENV["TEMPORAL_MAX_CONCURRENT_ACTIVITIES"]&.to_i || 100
+        @max_concurrent_workflow_tasks = ENV["TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS"]&.to_i || 100
       end
 
       # Sets the default activity timeout with validation.
@@ -184,6 +193,8 @@ module ActiveJob
       # @raise [ConfigurationError] if default_retry_max_attempts is negative
       # @raise [ConfigurationError] if max_payload_size_kb exceeds 2GB limit
       # @raise [ConfigurationError] if max_payload_size_kb is not positive
+      # @raise [ConfigurationError] if max_concurrent_activities is not positive
+      # @raise [ConfigurationError] if max_concurrent_workflow_tasks is not positive
       # @example Validate configuration after setup
       #   ActiveJob::Temporal.configure do |config|
       #     config.target = "temporal.example.com:7233"
@@ -205,6 +216,7 @@ module ActiveJob
         validate_timeouts!
         validate_retry_settings!
         validate_payload_size!
+        validate_worker_concurrency!
         nil
       end
 
@@ -289,6 +301,20 @@ module ActiveJob
 
         raise ConfigurationError,
               "max_payload_size_kb must be positive, got: #{max_payload_size_kb}"
+      end
+
+      # Validates worker concurrency settings.
+      # @api private
+      def validate_worker_concurrency!
+        if max_concurrent_activities <= 0
+          raise ConfigurationError,
+                "max_concurrent_activities must be positive, got: #{max_concurrent_activities}"
+        end
+
+        return unless max_concurrent_workflow_tasks <= 0
+
+        raise ConfigurationError,
+              "max_concurrent_workflow_tasks must be positive, got: #{max_concurrent_workflow_tasks}"
       end
 
       # Returns default logger (Rails.logger or stdout).

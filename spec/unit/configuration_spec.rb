@@ -100,6 +100,14 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "sets identity to nil by default" do
       expect(configuration.identity).to be_nil
     end
+
+    it "sets max_concurrent_activities to 100" do
+      expect(configuration.max_concurrent_activities).to eq(100)
+    end
+
+    it "sets max_concurrent_workflow_tasks to 100" do
+      expect(configuration.max_concurrent_workflow_tasks).to eq(100)
+    end
   end
 
   describe "environment variable support" do
@@ -206,6 +214,38 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         ActiveJob::Temporal::ConfigurationError,
         /target must match host:port format/
       )
+    end
+
+    it "reads max_concurrent_activities from TEMPORAL_MAX_CONCURRENT_ACTIVITIES and converts to integer" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_CONCURRENT_ACTIVITIES").and_return("200")
+
+      config = described_class.new
+      expect(config.max_concurrent_activities).to eq(200)
+    end
+
+    it "uses default max_concurrent_activities when TEMPORAL_MAX_CONCURRENT_ACTIVITIES is not set" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_CONCURRENT_ACTIVITIES").and_return(nil)
+
+      config = described_class.new
+      expect(config.max_concurrent_activities).to eq(100)
+    end
+
+    it "reads max_concurrent_workflow_tasks from TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS and converts to integer" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return("300")
+
+      config = described_class.new
+      expect(config.max_concurrent_workflow_tasks).to eq(300)
+    end
+
+    it "uses default max_concurrent_workflow_tasks when TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS is not set" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return(nil)
+
+      config = described_class.new
+      expect(config.max_concurrent_workflow_tasks).to eq(100)
     end
   end
 
@@ -499,6 +539,56 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       it "accepts a reasonable payload size" do
         configuration.max_payload_size_kb = 1024
+        expect { configuration.validate! }.not_to raise_error
+      end
+    end
+
+    context "when worker concurrency settings are invalid" do
+      it "raises ConfigurationError when max_concurrent_activities is zero" do
+        configuration.max_concurrent_activities = 0
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /max_concurrent_activities must be positive/
+        )
+      end
+
+      it "raises ConfigurationError when max_concurrent_activities is negative" do
+        configuration.max_concurrent_activities = -1
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /max_concurrent_activities must be positive/
+        )
+      end
+
+      it "accepts positive max_concurrent_activities" do
+        configuration.max_concurrent_activities = 200
+        expect { configuration.validate! }.not_to raise_error
+      end
+
+      it "raises ConfigurationError when max_concurrent_workflow_tasks is zero" do
+        configuration.max_concurrent_workflow_tasks = 0
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /max_concurrent_workflow_tasks must be positive/
+        )
+      end
+
+      it "raises ConfigurationError when max_concurrent_workflow_tasks is negative" do
+        configuration.max_concurrent_workflow_tasks = -5
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /max_concurrent_workflow_tasks must be positive/
+        )
+      end
+
+      it "accepts positive max_concurrent_workflow_tasks" do
+        configuration.max_concurrent_workflow_tasks = 300
+        expect { configuration.validate! }.not_to raise_error
+      end
+
+      it "accepts high concurrency values for both settings" do
+        configuration.max_concurrent_activities = 500
+        configuration.max_concurrent_workflow_tasks = 500
         expect { configuration.validate! }.not_to raise_error
       end
     end

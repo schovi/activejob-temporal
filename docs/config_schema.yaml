@@ -152,6 +152,30 @@ attributes:
       env_var_name: null
       example: false
 
+    - name: max_concurrent_activities
+      type: Integer
+      default: 100
+      validation_rules:
+        - "Must be > 0"
+        - "Must be a positive integer"
+        - "Recommended starting value is 100"
+        - "Increase to 200-500 for high-throughput scenarios with sufficient memory"
+      description: "Maximum number of activities that can execute concurrently per worker process. This setting is used by the Temporal worker process to control activity execution parallelism. Higher concurrency uses more memory as each activity runs in a thread. Monitor worker memory usage when increasing beyond 100."
+      env_var_name: TEMPORAL_MAX_CONCURRENT_ACTIVITIES
+      example: 200
+
+    - name: max_concurrent_workflow_tasks
+      type: Integer
+      default: 100
+      validation_rules:
+        - "Must be > 0"
+        - "Must be a positive integer"
+        - "Recommended starting value is 100"
+        - "Increase to 200-500 for high-throughput scenarios"
+      description: "Maximum number of workflow tasks that can execute concurrently per worker process. This setting is used by the Temporal worker process to control workflow task processing parallelism. Workflows are lightweight (mostly event processing), so high concurrency is generally safe."
+      env_var_name: TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS
+      example: 200
+
 # Practical configuration examples for common deployment scenarios
 examples:
 
@@ -254,6 +278,7 @@ validation:
     - "validate_timeouts! - Ensures timeouts are positive durations"
     - "validate_retry_settings! - Validates backoff and max_attempts ranges"
     - "validate_payload_size! - Ensures payload size is within bounds"
+    - "validate_worker_concurrency! - Ensures max_concurrent_activities and max_concurrent_workflow_tasks are positive integers"
 
   error_handling: "All validation errors raise ActiveJob::Temporal::ConfigurationError with descriptive messages"
 
@@ -286,4 +311,14 @@ environment_variables:
     - name: TEMPORAL_MAX_PAYLOAD_SIZE_KB
       maps_to: max_payload_size_kb
       example: "512"
+      note: "Must be converted to integer"
+
+    - name: TEMPORAL_MAX_CONCURRENT_ACTIVITIES
+      maps_to: max_concurrent_activities
+      example: "200"
+      note: "Must be converted to integer"
+
+    - name: TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS
+      maps_to: max_concurrent_workflow_tasks
+      example: "200"
       note: "Must be converted to integer"
