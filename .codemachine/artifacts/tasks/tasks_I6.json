@@ -131,7 +131,7 @@
     "acceptance_criteria": "docs/config_schema.yaml exists with valid YAML syntax; Schema documents all 11+ configuration attributes: target, namespace, identity, task_queue_prefix, default_activity_timeout, default_retry_initial_interval, default_retry_backoff, default_retry_max_attempts, logger, enable_tracing, max_payload_size_kb, enable_search_attributes; Each attribute has: name, type, default, validation_rules (array), description, env_var_name, example; Schema includes metadata section: schema_version (1.0), last_updated (ISO date), contact (email or URL); Schema includes examples section with 3+ complete configuration examples (development, production, custom); docs/configuration_reference.md references config_schema.yaml as canonical source; YAML file validates against YAML 1.2 spec; All referenced environment variables match those in Configuration class",
     "dependencies": ["I6.T2"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I6.T7",
