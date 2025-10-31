@@ -10,26 +10,30 @@ This is the full specification of the task you must complete.
 
 ```json
 {
-  "task_id": "I6.T2",
+  "task_id": "I6.T3",
   "iteration_id": "I6",
   "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
-  "description": "Add optional configuration attributes to the Configuration class for production flexibility: `identity` (worker identity string for observability, default: nil), `max_payload_size_kb` (explicit payload size limit in kilobytes, default: 250). Optionally add environment variable defaults for 12-factor app compliance by reading from ENV in the initialize method: `target` from ENV['TEMPORAL_TARGET'] || '127.0.0.1:7233', `namespace` from ENV['TEMPORAL_NAMESPACE'] || 'default', `task_queue_prefix` from ENV['TEMPORAL_TASK_QUEUE_PREFIX'] || nil, `max_payload_size_kb` from ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB'] || 250. Document these new options in existing `docs/configuration_reference.md` with descriptions, types, defaults, usage examples, and environment variable mappings. Update unit tests to verify new attributes are accessible and environment variable precedence works correctly.",
+  "description": "Enhance the Cancel module in `lib/activejob/temporal/cancel.rb` with better error handling to distinguish between workflows that never existed vs workflows that already completed. Add custom exception classes `WorkflowNotFoundError` and `TemporalConnectionError` to `lib/activejob/temporal.rb`. Refactor the `cancel` method to: (1) Add a private `find_workflow(client, job_class, job_id)` method that queries Temporal with `list_workflows` for running workflows matching the job_id search attribute; (2) If not found in running workflows, query closed workflows (with ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', etc.)); (3) If found in closed workflows, return `false` from `cancel` method to indicate job already completed (log this with Logger.warn); (4) If not found in either running or closed workflows, raise `WorkflowNotFoundError` with message 'No workflow found for job_id X. The job may have never existed.'; (5) Wrap Temporal client calls in rescue blocks to catch connection errors and raise `TemporalConnectionError` with descriptive messages. Update existing unit tests in `spec/unit/cancel_spec.rb` to cover new scenarios: workflow completed (returns false), workflow never existed (raises WorkflowNotFoundError), Temporal connection failure (raises TemporalConnectionError). Add integration test in `spec/integration/cancellation_spec.rb` if not already present.",
   "agent_type_hint": "BackendAgent",
-  "inputs": "Version 1 lib/active_job/temporal/configuration.rb:32-65 (env var patterns), Version 2 existing Configuration class, docs/configuration_reference.md",
+  "inputs": "Version 1 lib/active_job/temporal/cancel.rb:1-138 (enhanced error handling pattern), Version 2 existing cancel.rb, Temporal list_workflows API documentation",
   "target_files": [
     "lib/activejob/temporal.rb",
-    "docs/configuration_reference.md",
-    "spec/unit/configuration_spec.rb"
+    "lib/activejob/temporal/cancel.rb",
+    "spec/unit/cancel_spec.rb",
+    "spec/integration/cancellation_spec.rb"
   ],
   "input_files": [
     "lib/activejob/temporal.rb",
-    "docs/configuration_reference.md",
-    "spec/unit/configuration_spec.rb"
+    "lib/activejob/temporal/cancel.rb",
+    "spec/unit/cancel_spec.rb",
+    "spec/integration/cancellation_spec.rb"
   ],
-  "deliverables": "Enhanced Configuration class with identity and max_payload_size_kb attributes, environment variable support, updated documentation",
-  "acceptance_criteria": "Configuration class has `identity` attr_accessor (default: nil); Configuration class has `max_payload_size_kb` attr_accessor (default: 250); Configuration initialize reads from ENV['TEMPORAL_TARGET'], ENV['TEMPORAL_NAMESPACE'], ENV['TEMPORAL_TASK_QUEUE_PREFIX'], ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB'] with appropriate defaults; Setting ENV['TEMPORAL_TARGET']='custom:9999' before config creation sets config.target to 'custom:9999'; docs/configuration_reference.md includes new section documenting `identity` and `max_payload_size_kb` with types, defaults, usage examples; docs/configuration_reference.md includes table mapping environment variables to config attributes; Unit tests verify: default values, environment variable precedence, attribute read/write; `rake spec` passes; `rake rubocop` passes",
-  "dependencies": ["I6.T1"],
-  "parallelizable": false,
+  "deliverables": "Enhanced Cancel module with better error handling, new exception types, comprehensive tests",
+  "acceptance_criteria": "ActiveJob::Temporal::WorkflowNotFoundError exception class exists; ActiveJob::Temporal::TemporalConnectionError exception class exists; Cancel.cancel method returns false if workflow already completed (without raising); Cancel.cancel method raises WorkflowNotFoundError if workflow never existed; Cancel.cancel method raises TemporalConnectionError if Temporal client connection fails; Private find_workflow method queries both running and closed workflows; Unit tests in cancel_spec.rb cover: successful cancellation, workflow completed (returns false), workflow not found (raises WorkflowNotFoundError), connection error (raises TemporalConnectionError); Integration test verifies cancellation behavior end-to-end (if applicable); Structured logging uses Logger.warn for completed workflows, Logger.info for successful cancellation requests; `rake spec` passes; `rake rubocop` passes",
+  "dependencies": [
+    "I6.T1"
+  ],
+  "parallelizable": true,
   "done": false
 }
 ```
@@ -40,27 +44,130 @@ This is the full specification of the task you must complete.
 
 The following are the relevant sections from the architecture and plan documents, which I found by analyzing the task description.
 
-### Context: 12-Factor App and Configuration (General Principle)
+### Context: interaction-flow-cancellation (from 04_Behavior_and_Communication.md)
 
-**12-Factor App Methodology** requires configuration to be stored in environment variables, not in code. This allows the same codebase to be deployed across development, staging, and production without code changes. Configuration should:
-- Use environment variables as the source of truth
-- Provide sensible defaults for development
-- Allow explicit overrides in initializers for flexibility
+```markdown
+<!-- anchor: interaction-flow-cancellation -->
+#### **Key Interaction Flow 4: Job Cancellation**
 
-### Context: Observability Requirements
+**Scenario**: User cancels an in-flight job via `ActiveJob::Temporal.cancel(job_id)`.
 
-Worker identity is crucial for production observability:
-- When multiple worker processes run concurrently, each should have a unique identity string
-- This identity appears in Temporal UI and logs, helping operators identify which worker executed a job
-- Useful for debugging issues in multi-worker deployments (e.g., Kubernetes pods)
+**Diagram:**
 
-### Context: Payload Size Limits
+~~~plantuml
+@startuml
+actor "Developer/Admin" as Dev
+participant "Rails App" as Rails
+participant "Cancellation API" as Cancel
+participant "Temporal Client" as Client
+participant "Temporal Cluster" as Temporal
+participant "Worker" as Worker
+participant "AjRunnerActivity" as Activity
 
-Temporal workflows have inherent size limits:
-- Workflow history size affects performance and cost
-- Large payloads can cause workflow execution slowdowns
-- Best practice: Keep job arguments small, use references (database IDs) instead of full objects
-- A configurable limit prevents accidental misuse
+Dev -> Rails : ActiveJob::Temporal.cancel("job-uuid-123")
+Rails -> Cancel : cancel("job-uuid-123")
+activate Cancel
+
+Cancel -> Cancel : workflow_id = "ajwf:SendInvoiceJob:job-uuid-123"
+Cancel -> Client : handle = client.get_workflow_handle(workflow_id)
+Client -> Temporal : gRPC GetWorkflowExecutionHistory (brief check)
+Temporal --> Client : Workflow exists, status: Running
+
+Cancel -> Client : handle.cancel
+Client -> Temporal : gRPC RequestCancelWorkflowExecution
+Temporal --> Client : Cancellation requested
+
+Cancel --> Rails : (void, returns immediately)
+deactivate Cancel
+
+note right of Temporal
+  Cancellation signal sent,
+  but activity may not abort instantly
+end note
+
+Temporal -> Worker : Deliver cancellation signal (if activity is running)
+
+alt Activity is heartbeating
+  Worker -> Activity : Temporalio::Activity.heartbeat
+  Activity -> Temporal : Heartbeat RPC
+  Temporal --> Activity : CancelledError (exception)
+  Activity -> Activity : Catch CancelledError, cleanup, re-raise
+  Activity --> Worker : Activity cancelled
+  Worker -> Temporal : Report activity cancelled
+  Temporal -> Temporal : Mark workflow as Cancelled
+else Activity is NOT heartbeating
+  note right of Activity
+    Activity continues to completion
+    Cancellation only takes effect
+    after activity finishes
+  end note
+  Activity --> Worker : Activity completes normally
+  Worker -> Temporal : Activity complete
+  Temporal -> Temporal : Workflow still receives cancellation,\n  completes with Cancelled status
+end
+
+@enduml
+~~~
+
+**Key Steps:**
+
+1. **User calls cancellation API**: `ActiveJob::Temporal.cancel(job_id)`
+2. **Build workflow ID**: Deterministic ID constructed from job class and job_id
+3. **Get workflow handle**: Temporal client retrieves handle to running workflow
+4. **Send cancellation**: gRPC `RequestCancelWorkflowExecution` call (non-blocking, returns immediately)
+5. **Temporal propagates signal**: Sends cancellation to workflow and any running activities
+6. **(If activity heartbeats)**: Activity receives `CancelledError`, can abort early
+7. **(If no heartbeat)**: Activity completes normally; workflow still marked as cancelled afterward
+
+**Best Practice**: Jobs should call `Temporalio::Activity.heartbeat` periodically (e.g., every 30s) to enable prompt cancellation.
+```
+
+### Context: communication-error-handling (from 04_Behavior_and_Communication.md)
+
+```markdown
+<!-- anchor: communication-error-handling -->
+#### **Communication Error Handling**
+
+**Enqueue-Time Errors:**
+
+| Error Scenario | Exception Raised | Handling |
+|----------------|------------------|----------|
+| Temporal cluster unreachable | `ActiveJob::EnqueueError` | Rails rescues, may retry or log |
+| Payload too large (>250KB) | `ActiveJob::SerializationError` | Rails rescues, job not enqueued |
+| Invalid arguments (non-serializable) | `ActiveJob::SerializationError` | Rails rescues, job not enqueued |
+| Workflow ID collision (duplicate `job_id`) | `Temporalio::Client::WorkflowAlreadyStartedError` | Silently ignored (idempotent enqueue) |
+
+**Execution-Time Errors:**
+
+| Error Scenario | Handling | Outcome |
+|----------------|----------|---------|
+| Activity timeout (>15min) | Temporal raises `Temporalio::Activity::TimeoutError` | Activity fails, workflow retries per `RetryPolicy` |
+| Worker crash during activity | Temporal detects heartbeat timeout | Activity scheduled on another worker |
+| Exception in `job.perform` | Caught by `AjRunnerActivity`, mapped to `ApplicationError` | Retried per `retry_on` or marked non-retryable per `discard_on` |
+| Workflow code bug (non-determinism) | Temporal raises `Temporalio::Workflow::NondeterminismError` | Workflow stuck, requires code fix + reset |
+
+**Communication Timeouts:**
+
+- **gRPC call timeout**: 10s default (configurable via `temporalio`)
+- **Activity start-to-close timeout**: 15 minutes default (configurable)
+- **Workflow execution timeout**: None (workflows can run indefinitely if sleeping)
+```
+
+### Context: workflow-metadata (from 03_System_Structure_and_Data.md)
+
+```markdown
+**2. Workflow Metadata (Temporal Search Attributes)**
+
+Attached to the workflow on start, enabling queries in Temporal UI.
+
+| Attribute | Type | Purpose | Example |
+|-----------|------|---------|---------|
+| `ajClass` | Keyword | Job class name for filtering | `"SendInvoiceJob"` |
+| `ajQueue` | Keyword | Task queue/job queue | `"billing"` |
+| `ajJobId` | Keyword | ActiveJob job_id for correlation | `"a1b2c3d4-..."` |
+| `ajEnqueuedAt` | Datetime | Enqueue timestamp | `2025-10-25T12:00:00Z` |
+| `ajTenantId` | Keyword (optional) | Multi-tenancy support | `"tenant-123"` |
+```
 
 ---
 
@@ -68,157 +175,199 @@ Temporal workflows have inherent size limits:
 
 The following analysis is based on my direct review of the current codebase. Use these notes and tips to guide your implementation.
 
-### CRITICAL DISCOVERY: Task is Already Complete!
-
-**⚠️ IMPORTANT:** After analyzing the codebase, I discovered that **I6.T1 already implemented almost everything this task requires**. Here's what already exists:
-
-#### Already Implemented in lib/activejob/temporal.rb:
-
-1. ✅ `identity` attribute (lines 77, 87, 107)
-2. ✅ `max_payload_size_kb` attribute (lines 72-73, 85, 105)
-3. ✅ Environment variable support for `target` (line 96)
-4. ✅ Environment variable support for `namespace` (line 97)
-5. ✅ Environment variable support for `task_queue_prefix` (line 98)
-6. ✅ Environment variable support for `max_payload_size_kb` (line 105)
-7. ✅ YARD documentation for `identity` (lines 76-77)
-8. ✅ YARD documentation for `max_payload_size_kb` (lines 72-73)
-
-#### Already Documented in docs/configuration_reference.md:
-
-1. ✅ `identity` in configuration table (line 19)
-2. ✅ `max_payload_size_kb` in configuration table (line 18)
-3. ✅ Environment Variables section exists (lines 21-32)
-4. ✅ Environment variable table with all 4 mappings (lines 25-30)
-
-#### Already Tested in spec/unit/configuration_spec.rb:
-
-1. ✅ Default value test for `identity` (lines 100-102)
-2. ✅ Environment variable tests (lines 105-209)
-3. ✅ ENV precedence tests for `target`, `namespace`, `task_queue_prefix`, `max_payload_size_kb`
-4. ✅ String-to-integer conversion test for `max_payload_size_kb` (lines 159-165)
-
-### What Remains To Do
-
-Based on my analysis, here's what you should verify and potentially fix:
-
-1. **Run Tests**: Execute `rake spec` to verify all tests pass
-2. **Run Linter**: Execute `rake rubocop` to check for style violations
-3. **Verify Documentation Completeness**: Double-check that documentation accurately reflects implementation
-4. **Add ENV var for identity**: Check if `TEMPORAL_IDENTITY` environment variable support is needed (task description doesn't explicitly mention it, only mentions it as a configuration attribute)
-
 ### Relevant Existing Code
 
 *   **File:** `lib/activejob/temporal.rb`
-    *   **Summary:** Main gem entrypoint containing the `Configuration` class (lines 57-228) and module-level convenience methods.
-    *   **Current Implementation:**
-        - Lines 78-87: All required attributes are declared with `attr_accessor`, including `identity` and `max_payload_size_kb`
-        - Lines 96-108: The `initialize` method reads from ENV with appropriate fallbacks:
-          ```ruby
-          @target = ENV['TEMPORAL_TARGET'] || "127.0.0.1:7233"
-          @namespace = ENV['TEMPORAL_NAMESPACE'] || "default"
-          @task_queue_prefix = ENV['TEMPORAL_TASK_QUEUE_PREFIX']
-          @max_payload_size_kb = (ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB']&.to_i || 250)
-          @identity = nil
-          ```
-        - Lines 143-150: Comprehensive `validate!` method (from I6.T1)
-    *   **Recommendation:** **NO CODE CHANGES NEEDED** unless you find a bug. Simply verify the implementation matches all acceptance criteria.
-    *   **Potential Enhancement:** Consider adding `ENV['TEMPORAL_IDENTITY']` support in initialize if operators need to set worker identity via environment variable.
+    *   **Summary:** This is the main gem entrypoint defining the `ActiveJob::Temporal` module. It contains the `Configuration` class with validation methods (`validate!`, `validate_target!`, etc.), the `Error` base exception class, `ConfigurationError`, and module-level methods like `config`, `client`, `cancel`, and `configure`.
+    *   **Current Exception Classes (lines 42-43):**
+        ```ruby
+        class Error < StandardError; end
+        class ConfigurationError < Error; end
+        ```
+    *   **Recommendation:** You MUST add two new exception classes here after line 43:
+        ```ruby
+        class WorkflowNotFoundError < Error; end
+        class TemporalConnectionError < Error; end
+        ```
+        These should inherit from the base `Error` class and be placed right after `ConfigurationError` to maintain logical grouping of exception types.
 
-*   **File:** `docs/configuration_reference.md`
-    *   **Summary:** Complete configuration reference with two tables: configuration options (lines 7-19) and environment variables (lines 25-30).
-    *   **Current State:**
-        - Line 18: `max_payload_size_kb` documented ✓
-        - Line 19: `identity` documented ✓
-        - Lines 21-32: Environment Variables section exists ✓
-        - Lines 25-30: Environment variable mapping table with 4 entries ✓
-    *   **Recommendation:** **DOCUMENTATION IS COMPLETE**. Verify it's accurate by cross-referencing with the code implementation.
-    *   **Potential Enhancement:** If you add `TEMPORAL_IDENTITY` ENV support to the code, document it here.
+*   **File:** `lib/activejob/temporal/cancel.rb`
+    *   **Summary:** This file contains the cancellation logic in the `ActiveJob::Temporal::Cancel` module. The current implementation (70 lines) calls `client.workflow_handle(workflow_id).cancel` and handles `RPCError` with `NOT_FOUND` code to suppress "workflow not found" errors. It uses `ActiveJob::Temporal::Logger` for logging.
+    *   **Current Implementation Structure:**
+        - Line 19-27: `cancel(job_class, job_id)` public method
+        - Line 21: Direct call to `workflow_handle().cancel`
+        - Line 22: Logs cancellation requested event
+        - Line 23-26: Rescue block that catches errors and checks `workflow_not_found?`
+        - Line 31-33: `build_workflow_id` helper (already exists)
+        - Line 35-46: `workflow_not_found?` error detection logic (handles missing SDK gracefully)
+        - Line 48-65: Logging methods
+    *   **Recommendation:** You MUST significantly refactor this file. The new structure should be:
+        1. **Add private `find_workflow(client, job_class, job_id)` method** that:
+           - Queries Temporal using `client.list_workflows` API with search attribute filter
+           - Syntax: `client.list_workflows(query: "ajJobId='#{job_id}'")`
+           - First checks for running workflows: Query with `ExecutionStatus='Running'`
+           - If not found, checks closed workflows: Query with `ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')`
+           - Returns symbol: `:running`, `:closed`, or `:not_found`
+           - Wraps all queries in rescue block to catch connection errors → raise `TemporalConnectionError`
+        2. **Refactor `cancel(job_class, job_id)` method** to:
+           - Call `find_workflow` to determine workflow state first
+           - If `:closed`: Log with `Logger.warn` and `return false`
+           - If `:not_found`: Raise `WorkflowNotFoundError.new("No workflow found for job_id #{job_id}. The job may have never existed.")`
+           - If `:running`: Proceed with existing cancellation logic (workflow_handle + cancel)
+           - Update YARD doc comment to reflect new return value: `@return [Boolean, nil] Returns false if workflow already completed, nil if cancelled successfully`
 
-*   **File:** `spec/unit/configuration_spec.rb`
-    *   **Summary:** Comprehensive test suite (519 lines) with excellent coverage of defaults, environment variables, and validation.
-    *   **Current Coverage:**
-        - Lines 100-102: Tests `identity` defaults to nil ✓
-        - Lines 105-209: Full environment variable test suite ✓
-        - Lines 159-173: Tests `max_payload_size_kb` from ENV with integer conversion ✓
-        - Lines 189-197: Tests explicit override of ENV values ✓
-    *   **Recommendation:** **TESTS ARE COMPLETE**. Run `rake spec` to verify they all pass.
+*   **File:** `lib/activejob/temporal/client.rb`
+    *   **Summary:** This module provides the `Client.build(configuration)` method that connects to Temporal. It wraps Temporal connection errors in `ActiveJob::Temporal::Error` (lines 64-72). It handles TLS configuration from environment variables.
+    *   **Error Handling Pattern (lines 64-72):**
+        ```ruby
+        rescue StandardError => e
+          raise ActiveJob::Temporal::Error,
+                format(
+                  "Unable to connect to Temporal at %<target>s (namespace: %<namespace>s): %<error>s",
+                  target: configuration.target,
+                  namespace: configuration.namespace,
+                  error: e.message
+                )
+        end
+        ```
+    *   **Recommendation:** You SHOULD use a similar error wrapping pattern in your `find_workflow` method when catching connection errors. Wrap them in `TemporalConnectionError` with descriptive messages that include the job_id and original error message.
 
-*   **File:** `examples/basic_rails_app/config/initializers/activejob_temporal.rb`
-    *   **Summary:** Example Rails initializer showing configuration usage.
-    *   **Current State:** Shows `max_payload_size_kb` (line 27) but not `identity`.
-    *   **Recommendation:** Consider adding a commented example for `identity` to help users understand its purpose:
-      ```ruby
-      # Worker identity for multi-worker observability (optional)
-      # config.identity = "worker-#{ENV['HOSTNAME']}"
-      ```
+*   **File:** `lib/activejob/temporal/logger.rb`
+    *   **Summary:** Provides structured JSON logging with methods: `log_event`, `info`, `warn`, `error`. All methods accept `event_name` (String/Symbol) and `attributes` (Hash). The `warn` method logs at WARN level (lines 57-59).
+    *   **Usage Pattern:**
+        ```ruby
+        Logger.warn("event_name", attribute1: value1, attribute2: value2)
+        # Outputs: {"event": "event_name", "timestamp": "2025-10-31T...", "attribute1": value1, ...}
+        ```
+    *   **Recommendation:** You MUST use `Logger.warn` (not `Logger.log_event` or `Logger.info`) when logging completed workflows. Example:
+        ```ruby
+        ActiveJob::Temporal::Logger.warn(
+          "cancellation_workflow_already_completed",
+          workflow_id: workflow_id,
+          job_class: job_class.name,
+          job_id: job_id,
+          status: "completed"
+        )
+        ```
 
-### Implementation Strategy
-
-Since the task is essentially complete, your workflow should be:
-
-#### Phase 1: Verification (REQUIRED)
-1. Run `rake spec` to verify all tests pass
-2. Run `rake rubocop` to verify no style violations
-3. Read through the implementation to confirm it matches all acceptance criteria
-
-#### Phase 2: Optional Enhancements (if time permits)
-1. Add `ENV['TEMPORAL_IDENTITY']` support if it makes sense operationally
-2. Add commented example for `identity` in the example Rails initializer
-3. Verify documentation examples are clear and helpful
-
-#### Phase 3: Mark Complete
-1. Update the task status to `done: true` once verification is complete
+*   **File:** `spec/unit/cancel_spec.rb`
+    *   **Summary:** Contains comprehensive unit tests for the Cancel module (182 lines). Tests cover: successful cancellation (lines 52-68), workflow not found with NOT_FOUND error code (lines 70-95), different RPC error codes (lines 97-113), missing constants (lines 115-145), and error re-raising scenarios (lines 147-179). Tests use mocked `Temporalio::Error::RPCError` class.
+    *   **Current Test Structure:**
+        - Lines 27-43: Setup with mocked client, workflow_handle, and logger
+        - Lines 44-50: Before block that stubs methods
+        - Lines 52-68: Success case test
+        - Lines 70-95: NOT_FOUND error handling test
+        - Lines 97-179: Edge case tests for error handling
+    *   **Recommendation:** You MUST add the following new test contexts:
+        1. **"when workflow is already completed"** - Mock `find_workflow` to return `:closed`, assert `cancel` returns `false`, assert `Logger.warn` is called with event "cancellation_workflow_already_completed"
+        2. **"when workflow never existed"** - Mock `find_workflow` to return `:not_found`, assert `WorkflowNotFoundError` is raised with message containing job_id
+        3. **"when Temporal connection fails"** - Mock `find_workflow` to raise `StandardError` (simulating connection error), assert `TemporalConnectionError` is raised
+        4. **Update existing success test** - Add stub for `find_workflow` to return `:running` before the cancel call
+    *   **Note:** You can keep the existing RPC error tests for backward compatibility, but they may become less relevant since the new implementation queries workflow state first.
 
 ### Implementation Tips & Notes
 
-*   **Tip:** The task description says "optionally add environment variable defaults" which is misleading. The acceptance criteria explicitly requires ENV variable support, and it's already implemented. Focus on verification, not implementation.
+*   **Tip:** The Temporal Ruby SDK's `list_workflows` API returns an enumerator. Use `.first` to get the first matching workflow: `client.list_workflows(query: "...").first`. If no workflows match, it returns `nil`.
 
-*   **Note:** The `identity` attribute defaults to `nil` (line 107) because it's typically set per-worker-process, not globally. Operators might set it via: `config.identity = "worker-#{Socket.gethostname}-#{Process.pid}"` or via an ENV variable if we add support for it.
+*   **Tip:** The search attribute filter syntax for Temporal queries is SQL-like. For job_id filtering:
+    ```ruby
+    query = "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
+    ```
+    For multiple statuses, use `IN`:
+    ```ruby
+    query = "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled')"
+    ```
 
-*   **Note:** The environment variable pattern for `max_payload_size_kb` uses safe navigation: `ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB']&.to_i` (line 105). This is correct because:
-      - ENV values are always strings or nil
-      - `&.` prevents `NoMethodError` when ENV var is nil
-      - `|| 250` provides the fallback default
+*   **Tip:** When iterating on closed workflow statuses, include all terminal states:
+    - `Completed` - Workflow finished successfully
+    - `Failed` - Workflow failed permanently
+    - `Cancelled` - Workflow was cancelled
+    - `Terminated` - Workflow was forcibly terminated
+    - `TimedOut` - Workflow exceeded execution timeout
+    - `ContinuedAsNew` - Workflow continued as new execution (treat as "completed" for cancellation purposes)
 
-*   **Warning:** Do NOT rewrite or refactor existing code unless you find a legitimate bug. I6.T1 was carefully implemented and tested.
+*   **Note:** The current implementation already handles the case where `Temporalio::Error::RPCError` is not defined (lines 36-45 in cancel.rb). You should preserve this defensive programming pattern when adding new error handling. However, the new approach (querying workflow state first) may make this pattern less critical since you're catching connection errors earlier.
 
-*   **Important:** When running tests, pay attention to any failures. If tests fail, investigate the root cause before making changes. The existing implementation should pass all tests.
+*   **Note:** The task asks to "add integration test if not already present" in `spec/integration/cancellation_spec.rb`. Based on the directory listing and task data from I4.T7, an integration test for cancellation already exists. You should verify if it needs updates to test the new return values and exceptions. Specifically, you may want to add a test that:
+    1. Enqueues a job
+    2. Waits for it to complete
+    3. Attempts to cancel it
+    4. Asserts the return value is `false`
 
-### Acceptance Criteria Verification Checklist
+*   **Warning:** When querying Temporal's `list_workflows`, be aware of eventual consistency. Workflows that just completed may briefly appear in both running and closed lists, or may be missing from queries. The two-query approach (running first, then closed) helps mitigate this, but perfect consistency isn't guaranteed. Document this limitation in code comments.
 
-Go through each criterion and verify it's met:
+*   **Warning:** The `cancel` method signature changes behavior: it now returns `false` for completed workflows instead of always returning `nil`. You MUST update the YARD documentation comment (currently line 13 in cancel.rb) to reflect this:
+    ```ruby
+    # @return [Boolean, nil] Returns false if workflow already completed, nil if cancelled successfully
+    ```
 
-- [✓] Configuration class has `identity` attr_accessor (default: nil) — **EXISTS** at lines 87, 107
-- [✓] Configuration class has `max_payload_size_kb` attr_accessor (default: 250) — **EXISTS** at lines 85, 105
-- [✓] Configuration initialize reads from ENV['TEMPORAL_TARGET'] — **EXISTS** at line 96
-- [✓] Configuration initialize reads from ENV['TEMPORAL_NAMESPACE'] — **EXISTS** at line 97
-- [✓] Configuration initialize reads from ENV['TEMPORAL_TASK_QUEUE_PREFIX'] — **EXISTS** at line 98
-- [✓] Configuration initialize reads from ENV['TEMPORAL_MAX_PAYLOAD_SIZE_KB'] — **EXISTS** at line 105
-- [✓] Setting ENV['TEMPORAL_TARGET']='custom:9999' sets config.target — **TESTED** at lines 111-117
-- [✓] docs/configuration_reference.md includes `identity` — **EXISTS** at line 19
-- [✓] docs/configuration_reference.md includes `max_payload_size_kb` — **EXISTS** at line 18
-- [✓] docs/configuration_reference.md includes environment variables table — **EXISTS** at lines 25-30
-- [✓] Unit tests verify default values — **EXISTS** at lines 67-103
-- [✓] Unit tests verify environment variable precedence — **EXISTS** at lines 105-209
-- [✓] Unit tests verify attribute read/write — **EXISTS** throughout test file
-- [ ] `rake spec` passes — **NEEDS VERIFICATION**
-- [ ] `rake rubocop` passes — **NEEDS VERIFICATION**
+*   **Implementation Pattern:** Recommended structure for `find_workflow` method:
+    ```ruby
+    def find_workflow(client, job_class, job_id)
+      workflow_id = build_workflow_id(job_class, job_id)
 
-### Expected Test Output
+      # Query running workflows
+      running_query = "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
+      running = client.list_workflows(query: running_query).first
+      return :running if running
 
-When you run `rake spec`, you should see approximately **80+ passing tests** in the configuration_spec.rb file alone, including:
-- 10 tests for default values
-- 40+ tests for environment variable support
-- 30+ tests for validation (from I6.T1)
+      # Query closed workflows
+      closed_query = "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')"
+      closed = client.list_workflows(query: closed_query).first
+      return :closed if closed
 
-All tests should pass. If any fail, investigate before making code changes.
+      :not_found
+    rescue StandardError => e
+      raise TemporalConnectionError,
+            "Failed to query Temporal workflows for job_id #{job_id}: #{e.message}"
+    end
+    ```
 
-### Next Steps for Coder Agent
+*   **Testing Strategy:**
+    - **Unit tests:** Mock the `list_workflows` method to return stub workflow objects (or `nil`) with different statuses. Mock `find_workflow` to return the three symbols (`:running`, `:closed`, `:not_found`) to test each branch.
+    - **Integration tests (if updating):** Actually enqueue a job, let it complete, then try to cancel it and verify the return value is `false`. This requires the full Temporal test server setup from I4.T2.
 
-1. **DO NOT** start writing code immediately
-2. **DO** run `rake spec` first to see current test status
-3. **DO** run `rake rubocop` to check code style
-4. **DO** carefully read the verification checklist above
-5. **IF** tests pass and rubocop is clean, mark the task complete
-6. **IF** tests fail, investigate the failure cause before fixing
-7. **IF** rubocop fails, fix only the reported violations
+*   **Rubocop Considerations:** The new `find_workflow` method may trigger complexity warnings if implemented naively. Consider extracting query string building into separate methods if needed:
+    ```ruby
+    def running_workflows_query(job_id)
+      "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
+    end
+
+    def closed_workflows_query(job_id)
+      "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')"
+    end
+    ```
+
+### Step-by-Step Implementation Plan
+
+1. **Add Exception Classes** (lib/activejob/temporal.rb)
+   - Add `WorkflowNotFoundError` after line 43
+   - Add `TemporalConnectionError` after `WorkflowNotFoundError`
+
+2. **Implement `find_workflow` method** (lib/activejob/temporal/cancel.rb)
+   - Add as private method after `build_workflow_id`
+   - Query running workflows first
+   - Query closed workflows second
+   - Return appropriate symbol
+   - Wrap in rescue block for connection errors
+
+3. **Refactor `cancel` method** (lib/activejob/temporal/cancel.rb)
+   - Call `find_workflow` at the beginning
+   - Add conditional logic for `:closed` case (log + return false)
+   - Add conditional logic for `:not_found` case (raise WorkflowNotFoundError)
+   - Keep existing logic for `:running` case
+   - Update YARD documentation
+
+4. **Update Unit Tests** (spec/unit/cancel_spec.rb)
+   - Add test for completed workflow (returns false)
+   - Add test for non-existent workflow (raises WorkflowNotFoundError)
+   - Add test for connection error (raises TemporalConnectionError)
+   - Update existing success test to mock `find_workflow`
+
+5. **Verify Integration Tests** (spec/integration/cancellation_spec.rb)
+   - Check if test exists for completed workflow cancellation
+   - Add test if missing
+
+6. **Run Quality Checks**
+   - Run `rake spec` - all tests must pass
+   - Run `rake rubocop` - no offenses

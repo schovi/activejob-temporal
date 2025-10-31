@@ -5,25 +5,34 @@ module ActiveJob
     module Cancel
       class << self
         # Cancels a running Temporal workflow by sending a cancellation request.
-        # This is a best-effort operation; if the workflow already completed or
-        # does not exist, the error is logged and suppressed.
+        # This method first queries Temporal to determine the workflow state before
+        # attempting cancellation.
         #
         # @param job_class [Class] The ActiveJob class for the job to cancel.
         # @param job_id [String] Identifier of the job to cancel.
-        # @return [void]
+        # @return [Boolean, nil] Returns false if workflow already completed, nil if cancelled successfully
         #
-        # @raise [ActiveJob::Temporal::Error] if the Temporal cluster cannot be reached.
+        # @raise [WorkflowNotFoundError] if no workflow exists for the given job_id
+        # @raise [TemporalConnectionError] if the Temporal cluster cannot be reached
         #
         # @example Cancel a running job
         #   ActiveJob::Temporal.cancel(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
         def cancel(job_class, job_id)
           workflow_id = build_workflow_id(job_class, job_id)
-          ActiveJob::Temporal.client.workflow_handle(workflow_id).cancel
-          log_cancellation_requested(job_class, job_id, workflow_id)
-        rescue StandardError => e
-          return log_workflow_not_found(job_class, job_id, workflow_id, e) if workflow_not_found?(e)
+          client = ActiveJob::Temporal.client
+          workflow_state = find_workflow(client, job_class, job_id)
 
-          raise
+          case workflow_state
+          when :closed
+            log_workflow_already_completed(job_class, job_id, workflow_id)
+            false
+          when :not_found
+            raise WorkflowNotFoundError,
+                  "No workflow found for job_id #{job_id}. The job may have never existed."
+          when :running
+            client.workflow_handle(workflow_id).cancel
+            log_cancellation_requested(job_class, job_id, workflow_id)
+          end
         end
 
         private
@@ -32,21 +41,42 @@ module ActiveJob
           "ajwf:#{job_class.name}:#{job_id}"
         end
 
-        def workflow_not_found?(error)
-          return false unless defined?(Temporalio::Error::RPCError)
-          return false unless error.is_a?(Temporalio::Error::RPCError)
+        # Queries Temporal to determine the current state of the workflow.
+        # Checks running workflows first, then closed workflows.
+        #
+        # @param client [Temporalio::Client] The Temporal client instance
+        # @param _job_class [Class] The ActiveJob class (unused, kept for future extensibility)
+        # @param job_id [String] The job identifier
+        # @return [Symbol] :running, :closed, or :not_found
+        # @raise [TemporalConnectionError] if connection to Temporal fails
+        def find_workflow(client, _job_class, job_id)
+          # Query running workflows first
+          running_query = running_workflows_query(job_id)
+          running = client.list_workflows(query: running_query).first
+          return :running if running
 
-          not_found_code = if defined?(Temporalio::Error::RPCError::Code::NOT_FOUND)
-                             Temporalio::Error::RPCError::Code::NOT_FOUND
-                           else
-                             5
-                           end
+          # Query closed workflows (completed, failed, cancelled, etc.)
+          closed_query = closed_workflows_query(job_id)
+          closed = client.list_workflows(query: closed_query).first
+          return :closed if closed
 
-          error.respond_to?(:code) && error.code == not_found_code
+          :not_found
+        rescue StandardError => e
+          raise TemporalConnectionError,
+                "Failed to query Temporal workflows for job_id #{job_id}: #{e.message}"
+        end
+
+        def running_workflows_query(job_id)
+          "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
+        end
+
+        def closed_workflows_query(job_id)
+          "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', " \
+            "'Terminated', 'TimedOut', 'ContinuedAsNew')"
         end
 
         def log_cancellation_requested(job_class, job_id, workflow_id)
-          ActiveJob::Temporal::Logger.log_event(
+          ActiveJob::Temporal::Logger.info(
             "cancellation_requested",
             workflow_id: workflow_id,
             job_class: job_class.name,
@@ -54,13 +84,13 @@ module ActiveJob
           )
         end
 
-        def log_workflow_not_found(job_class, job_id, workflow_id, error)
+        def log_workflow_already_completed(job_class, job_id, workflow_id)
           ActiveJob::Temporal::Logger.warn(
-            "cancellation_workflow_not_found",
+            "cancellation_workflow_already_completed",
             workflow_id: workflow_id,
             job_class: job_class.name,
             job_id: job_id,
-            error: error.message
+            status: "completed"
           )
         end
       end

@@ -41,6 +41,8 @@ module ActiveJob
   module Temporal
     class Error < StandardError; end
     class ConfigurationError < Error; end
+    class WorkflowNotFoundError < Error; end
+    class TemporalConnectionError < Error; end
 
     # Configuration object for the activejob-temporal gem.
     #

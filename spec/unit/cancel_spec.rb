@@ -31,6 +31,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
     let(:temporal_client_class) do
       Class.new do
         def workflow_handle(_workflow_id); end
+        def list_workflows(query:); end
       end
     end
     let(:workflow_handle_class) do
@@ -44,137 +45,109 @@ RSpec.describe ActiveJob::Temporal::Cancel do
     before do
       allow(ActiveJob::Temporal).to receive(:client).and_return(client)
       allow(client).to receive(:workflow_handle).with(workflow_id).and_return(handle)
+      allow(client).to receive(:list_workflows).and_return([])
       allow(handle).to receive(:cancel)
       allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+      allow(ActiveJob::Temporal::Logger).to receive(:info)
       allow(ActiveJob::Temporal::Logger).to receive(:warn)
     end
 
-    it "cancels the workflow via Temporal client" do
-      described_class.cancel(job_class, job_id)
-
-      expect(client).to have_received(:workflow_handle).with(workflow_id)
-      expect(handle).to have_received(:cancel)
-    end
-
-    it "logs a cancellation request event" do
-      described_class.cancel(job_class, job_id)
-
-      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
-        "cancellation_requested",
-        workflow_id: workflow_id,
-        job_class: job_class.name,
-        job_id: job_id
-      )
-    end
-
-    context "when the workflow is not found" do
-      let(:error) do
-        Temporalio::Error::RPCError.new(
-          "workflow not found",
-          code: Temporalio::Error::RPCError::Code::NOT_FOUND,
-          raw_grpc_status: nil
-        )
-      end
+    context "when the workflow is running" do
+      let(:workflow_info) { double("WorkflowInfo") }
 
       before do
-        allow(handle).to receive(:cancel).and_raise(error)
+        # Mock running workflow
+        allow(client).to receive(:list_workflows)
+          .with(query: "ajJobId='#{job_id}' AND ExecutionStatus='Running'")
+          .and_return([workflow_info])
       end
 
-      it "logs a warning and suppresses the error" do
-        expect { described_class.cancel(job_class, job_id) }.not_to raise_error
+      it "cancels the workflow via Temporal client" do
+        described_class.cancel(job_class, job_id)
+
+        expect(client).to have_received(:workflow_handle).with(workflow_id)
+        expect(handle).to have_received(:cancel)
+      end
+
+      it "logs a cancellation request event" do
+        described_class.cancel(job_class, job_id)
+
+        expect(ActiveJob::Temporal::Logger).to have_received(:info).with(
+          "cancellation_requested",
+          workflow_id: workflow_id,
+          job_class: job_class.name,
+          job_id: job_id
+        )
+      end
+    end
+
+    context "when the workflow is already completed" do
+      let(:workflow_info) { double("WorkflowInfo") }
+
+      before do
+        # Not found in running workflows
+        allow(client).to receive(:list_workflows)
+          .with(query: "ajJobId='#{job_id}' AND ExecutionStatus='Running'")
+          .and_return([])
+        # Found in closed workflows
+        allow(client).to receive(:list_workflows)
+          .with(query: "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', " \
+                       "'Terminated', 'TimedOut', 'ContinuedAsNew')")
+          .and_return([workflow_info])
+      end
+
+      it "returns false and does not attempt to cancel" do
+        result = described_class.cancel(job_class, job_id)
+
+        expect(result).to eq(false)
+        expect(handle).not_to have_received(:cancel)
+      end
+
+      it "logs a warning that the workflow is already completed" do
+        described_class.cancel(job_class, job_id)
 
         expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
-          "cancellation_workflow_not_found",
+          "cancellation_workflow_already_completed",
           workflow_id: workflow_id,
           job_class: job_class.name,
           job_id: job_id,
-          error: error.message
-        )
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:log_event)
-      end
-    end
-
-    context "when a different RPC error occurs" do
-      let(:error) do
-        Temporalio::Error::RPCError.new(
-          "permission denied",
-          code: Temporalio::Error::RPCError::Code::PERMISSION_DENIED,
-          raw_grpc_status: nil
-        )
-      end
-
-      before do
-        allow(handle).to receive(:cancel).and_raise(error)
-      end
-
-      it "re-raises the error" do
-        expect { described_class.cancel(job_class, job_id) }.to raise_error(error)
-      end
-    end
-
-    context "when the Temporal RPC error class is unavailable" do
-      before do
-        hide_const("Temporalio::Error::RPCError")
-        allow(handle).to receive(:cancel).and_raise(StandardError.new("generic failure"))
-      end
-
-      it "re-raises the error" do
-        expect { described_class.cancel(job_class, job_id) }.to raise_error(StandardError, "generic failure")
-      end
-    end
-
-    context "when the RPC error omits the NOT_FOUND constant" do
-      let(:error) { Temporalio::Error::RPCError.new("workflow missing", code: 5, raw_grpc_status: nil) }
-
-      before do
-        hide_const("Temporalio::Error::RPCError::Code::NOT_FOUND")
-        allow(handle).to receive(:cancel).and_raise(error)
-      end
-
-      it "falls back to the numeric code and suppresses the error" do
-        expect { described_class.cancel(job_class, job_id) }.not_to raise_error
-
-        expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
-          "cancellation_workflow_not_found",
-          workflow_id: workflow_id,
-          job_class: job_class.name,
-          job_id: job_id,
-          error: error.message
+          status: "completed"
         )
       end
     end
 
-    context "when the RPC error lacks a code accessor" do
-      let(:rpc_error_class) do
-        Class.new(StandardError) do
-          def self.name
-            "Temporalio::Error::RPCError"
-          end
-
-          def initialize(message = "rpc error", code: nil, _raw_grpc_status: nil)
-            super(message)
-            @code = code
-          end
-        end
-      end
-
+    context "when the workflow never existed" do
       before do
-        stub_const("Temporalio::Error::RPCError", rpc_error_class)
-        allow(handle).to receive(:cancel).and_raise(rpc_error_class.new("missing code"))
+        # Not found in running workflows
+        allow(client).to receive(:list_workflows)
+          .with(query: "ajJobId='#{job_id}' AND ExecutionStatus='Running'")
+          .and_return([])
+        # Not found in closed workflows
+        allow(client).to receive(:list_workflows)
+          .with(query: "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', " \
+                       "'Terminated', 'TimedOut', 'ContinuedAsNew')")
+          .and_return([])
       end
 
-      it "re-raises the error" do
-        expect { described_class.cancel(job_class, job_id) }.to raise_error(rpc_error_class, "missing code")
+      it "raises WorkflowNotFoundError" do
+        expect { described_class.cancel(job_class, job_id) }
+          .to raise_error(ActiveJob::Temporal::WorkflowNotFoundError, /No workflow found for job_id #{job_id}/)
       end
     end
 
-    context "when a non-RPC error bubbles up" do
+    context "when Temporal connection fails" do
+      let(:connection_error) { StandardError.new("Connection refused") }
+
       before do
-        allow(handle).to receive(:cancel).and_raise(StandardError.new("other error"))
+        allow(client).to receive(:list_workflows)
+          .with(query: "ajJobId='#{job_id}' AND ExecutionStatus='Running'")
+          .and_raise(connection_error)
       end
 
-      it "re-raises the error" do
-        expect { described_class.cancel(job_class, job_id) }.to raise_error(StandardError, "other error")
+      it "raises TemporalConnectionError" do
+        expect { described_class.cancel(job_class, job_id) }
+          .to raise_error(ActiveJob::Temporal::TemporalConnectionError,
+                          /Failed to query Temporal workflows for job_id #{job_id}/)
       end
     end
   end
