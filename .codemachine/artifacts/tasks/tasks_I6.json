@@ -193,7 +193,7 @@
     "acceptance_criteria": "Configuration class has `max_concurrent_activities` attr_accessor (default: 100); Configuration class has `max_concurrent_workflow_tasks` attr_accessor (default: 100); `validate!` method checks both are positive integers, raises ConfigurationError if not; ENV['TEMPORAL_MAX_CONCURRENT_ACTIVITIES'] and ENV['TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS'] are read in initialize with defaults; docs/config_schema.yaml includes both attributes with type, default, validation rules, description, env var mapping; docs/configuration_reference.md includes 'Production Tuning' section documenting both settings with usage guidance: 'Increase to 200-500 for high-throughput scenarios with sufficient memory. Monitor worker memory usage when increasing.'; docs/worker_setup.md (if exists) includes example of passing these settings to Temporalio::Worker.new (e.g., `max_concurrent_activities: config.max_concurrent_activities`); Unit tests cover: default values (both 100), custom values work, environment variables override defaults, negative values raise ConfigurationError, zero values raise ConfigurationError; `rake spec` passes; `rake rubocop` passes",
     "dependencies": ["I6.T1", "I6.T2", "I6.T6"],
     "parallelizable": true,
-    "done": false
+    "done": true
   },
   {
     "task_id": "I6.T9",
