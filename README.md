@@ -363,25 +363,28 @@ See the [Configuration Reference](docs/configuration_reference.md) for full sear
 
 Temporal workers poll task queues for workflows and activities to execute. You must run at least one worker process for each task queue your application uses.
 
-### Starting a Worker
+### Quick Start (Development)
 
-Use the provided `bin/temporal-worker` executable:
+For local development or testing, run the worker from your Rails application directory:
 
 ```bash
+cd your-app
 TEMPORAL_TARGET=localhost:7233 \
 TEMPORAL_NAMESPACE=default \
 AJ_TEMPORAL_WORKER_QUEUE=default \
 bin/temporal-worker
 ```
 
-### Environment Variables
+The `bin/temporal-worker` binstub automatically loads your Rails environment, making job classes and configuration available.
 
-| Variable | Required | Description | Example |
-| --- | --- | --- | --- |
-| `TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` |
-| `TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` |
-| `AJ_TEMPORAL_WORKER_QUEUE` | Yes | Task queue the worker will poll for jobs. | `default` |
-| `AJ_TEMPORAL_MAX_ACT` | No | Maximum concurrent activity executions (defaults to `100`). | `50` |
+### Example Application
+
+See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete working Rails application demonstrating job enqueuing, execution, retry behavior, and cancellation. The example includes:
+
+- Sample jobs (simple, scheduled, retryable, cancellable)
+- Full configuration setup
+- Production-style worker script
+- Testing and verification instructions
 
 ### Production Deployment
 
@@ -391,8 +394,23 @@ For production environments:
 2. **Use a process manager** like systemd, Foreman, or Docker/Kubernetes to ensure workers restart on failure
 3. **Monitor worker health** via structured JSON logs emitted by the worker
 4. **Tune concurrency** using `AJ_TEMPORAL_MAX_ACT` based on your workload and resource constraints
+5. **Use `bundle exec`** when running in production: `bundle exec bin/temporal-worker`
 
-See [Worker Setup Guide](docs/worker_setup.md) for detailed deployment instructions, graceful shutdown behavior, and manual testing steps.
+**See [Worker Setup Guide](docs/worker_setup.md)** for:
+- Detailed deployment instructions (systemd, Docker, Kubernetes)
+- Environment variable reference
+- Graceful shutdown and monitoring
+- Troubleshooting common issues
+- Performance tuning guidelines
+
+### Environment Variables
+
+| Variable | Required | Description | Example |
+| --- | --- | --- | --- |
+| `TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` or `temporal.example.com:7233` |
+| `TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` or `production` |
+| `AJ_TEMPORAL_WORKER_QUEUE` | No | Task queue the worker will poll for jobs. | `default` (if omitted) |
+| `AJ_TEMPORAL_MAX_ACT` | No | Maximum concurrent activity executions (defaults to `100`). | `50` or `200` |
 
 ## Limitations (v0.1)
 

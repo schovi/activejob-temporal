@@ -1,19 +1,16 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-require_relative "../lib/activejob/temporal"
+require_relative "../config/boot"
+
+# Load Rails application so job classes and initializers are available
+require_relative "../config/environment"
 
 begin
   require "temporalio/worker"
 rescue LoadError => e
   warn("temporalio-worker gem is required to run this worker: #{e.message}")
   exit(1)
-end
-
-rails_root = ENV.fetch("RAILS_ROOT", nil)
-if rails_root && !rails_root.empty?
-  # Load Rails application so job classes and initializers are available.
-  require File.expand_path("config/environment", rails_root)
 end
 
 ActiveJob::Temporal.configure do |config|

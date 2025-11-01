@@ -78,23 +78,32 @@ docker exec -it temporal temporal operator search-attribute create \
 
 ### 4. Start the Temporal Worker
 
-The worker processes jobs from the Temporal task queue. From the **project root**:
+The worker processes jobs from the Temporal task queue. From the **example app directory**:
 
 ```bash
-RAILS_ROOT=$(pwd)/examples/basic_rails_app \
+cd examples/basic_rails_app
 TEMPORAL_TARGET=localhost:7233 \
 TEMPORAL_NAMESPACE=default \
 AJ_TEMPORAL_WORKER_QUEUE=default \
 bin/temporal-worker
 ```
 
+Or with `bundle exec`:
+
+```bash
+cd examples/basic_rails_app
+TEMPORAL_TARGET=localhost:7233 \
+TEMPORAL_NAMESPACE=default \
+AJ_TEMPORAL_WORKER_QUEUE=default \
+bundle exec bin/temporal-worker
+```
+
 You should see output like:
+```json
+{"event":"worker_started","task_queue":"default","max_concurrent_activities":100,"namespace":"default","target":"localhost:7233","timestamp":"2025-05-01T18:42:13Z"}
 ```
-Worker started for queue: default
-Registered workflow: AjWorkflow
-Registered activity: AjRunnerActivity
-Press Ctrl+C to stop
-```
+
+The worker will block while polling the task queue. Press `Ctrl+C` to gracefully shut down.
 
 ### 5. Start the Rails Server
 
@@ -347,9 +356,10 @@ This usually means search attributes weren't registered. Run the registration co
 
 ### Jobs Execute But Fail Immediately
 
-1. **Check RAILS_ROOT**: Worker must load your Rails app correctly
-2. **Check gem path**: Ensure `gem "activejob-temporal", path: "../.."` is correct
+1. **Check worker location**: Ensure you're running from the example app directory (`cd examples/basic_rails_app`)
+2. **Check Rails environment**: Verify the Rails app loaded correctly (you should see Rails boot messages)
 3. **Check job class**: Ensure it inherits from `ApplicationJob`
+4. **Check gem installation**: Run `bundle install` in the app directory
 
 ### Cancellation Not Working
 
@@ -374,12 +384,28 @@ docker-compose down
 docker-compose down -v
 ```
 
+## Understanding the Worker Script
+
+This example app includes a **production-style** `bin/temporal-worker` binstub that:
+
+1. **Loads the Rails environment** automatically via `require_relative "../config/environment"`
+2. **Works like any other Rails executable** - no special gem knowledge needed
+3. **Can be run from the app directory** - exactly how a production Rails app would use the gem
+
+This is different from the gem's `bin/temporal-worker`, which is designed for gem development and uses relative requires to the gem's lib directory.
+
+For a real Rails application, you would:
+- Add `gem "activejob-temporal"` to your Gemfile
+- Create a similar `bin/temporal-worker` binstub in your app
+- Run it from your app directory: `cd your-app && bin/temporal-worker`
+
 ## Next Steps
 
 - Read the [main README](../../README.md) for complete API documentation
 - Check [configuration reference](../../docs/configuration_reference.md) for all options
 - Review [API documentation](../../docs/api_documentation.md) for advanced features
 - See [migration guide](../../docs/migration_guide.md) to integrate into existing Rails apps
+- Check [Worker Setup Guide](../../docs/worker_setup.md) for production deployment patterns
 
 ## Support
 
