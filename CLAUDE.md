@@ -118,10 +118,6 @@ bundle exec bin/temporal-worker
 
 The `RAILS_ROOT` environment variable tells the worker to load the Rails app, so your job classes and initializers are available.
 
-#### Production Deployment
-
-For production deployments (systemd, Docker, etc.), always use `bundle exec` with full paths. See `examples/systemd/temporal-worker.service` for a complete systemd service example and `docs/worker_setup.md` for production deployment guidance.
-
 ### Build and Release
 
 ```bash

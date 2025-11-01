@@ -405,7 +405,7 @@ For a real Rails application, you would:
 - Check [configuration reference](../../docs/configuration_reference.md) for all options
 - Review [API documentation](../../docs/api_documentation.md) for advanced features
 - See [migration guide](../../docs/migration_guide.md) to integrate into existing Rails apps
-- Check [Worker Setup Guide](../../docs/worker_setup.md) for production deployment patterns
+- Check [Worker Setup Guide](../../docs/worker_setup.md) for additional worker configuration
 
 ## Support
 

@@ -383,25 +383,8 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 
 - Sample jobs (simple, scheduled, retryable, cancellable)
 - Full configuration setup
-- Production-style worker script
+- Worker setup and configuration
 - Testing and verification instructions
-
-### Production Deployment
-
-For production environments:
-
-1. **Run multiple workers** per queue for redundancy and horizontal scaling
-2. **Use a process manager** like systemd, Foreman, or Docker/Kubernetes to ensure workers restart on failure
-3. **Monitor worker health** via structured JSON logs emitted by the worker
-4. **Tune concurrency** using `AJ_TEMPORAL_MAX_ACT` based on your workload and resource constraints
-5. **Use `bundle exec`** when running in production: `bundle exec bin/temporal-worker`
-
-**See [Worker Setup Guide](docs/worker_setup.md)** for:
-- Detailed deployment instructions (systemd, Docker, Kubernetes)
-- Environment variable reference
-- Graceful shutdown and monitoring
-- Troubleshooting common issues
-- Performance tuning guidelines
 
 ### Environment Variables
 
