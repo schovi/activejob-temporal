@@ -85,17 +85,7 @@ cd examples/basic_rails_app
 TEMPORAL_TARGET=localhost:7233 \
 TEMPORAL_NAMESPACE=default \
 AJ_TEMPORAL_WORKER_QUEUE=default \
-bin/temporal-worker
-```
-
-Or with `bundle exec`:
-
-```bash
-cd examples/basic_rails_app
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=default \
-bundle exec bin/temporal-worker
+bundle exec temporal-worker
 ```
 
 You should see output like:
@@ -104,6 +94,8 @@ You should see output like:
 ```
 
 The worker will block while polling the task queue. Press `Ctrl+C` to gracefully shut down.
+
+**Note**: The gem's `temporal-worker` executable auto-detects Rails when run from the app directory and loads your Rails environment automatically.
 
 ### 5. Start the Rails Server
 
@@ -384,20 +376,27 @@ docker-compose down
 docker-compose down -v
 ```
 
-## Understanding the Worker Script
+## How the Worker Auto-Detects Rails
 
-This example app includes a **production-style** `bin/temporal-worker` binstub that:
+The gem's `temporal-worker` executable uses **smart Rails auto-detection** (similar to Sidekiq):
 
-1. **Loads the Rails environment** automatically via `require_relative "../config/environment"`
-2. **Works like any other Rails executable** - no special gem knowledge needed
-3. **Can be run from the app directory** - exactly how a production Rails app would use the gem
+1. When you run `bundle exec temporal-worker` from the example app directory
+2. It checks for `config/application.rb` in the current directory
+3. If found, it automatically loads your Rails environment
+4. Job classes and configuration become available to the worker
 
-This is different from the gem's `bin/temporal-worker`, which is designed for gem development and uses relative requires to the gem's lib directory.
+This means:
+- **No duplicate binstubs needed** - just use the gem's executable
+- **Works from any Rails app** - no special setup required
+- **Auto-detects automatically** - run from the app directory and it "just works"
 
-For a real Rails application, you would:
-- Add `gem "activejob-temporal"` to your Gemfile
-- Create a similar `bin/temporal-worker` binstub in your app
-- Run it from your app directory: `cd your-app && bin/temporal-worker`
+To use in your own Rails app:
+```bash
+cd your-app
+bundle exec temporal-worker
+```
+
+The worker will automatically detect your Rails app and load it!
 
 ## Next Steps
 

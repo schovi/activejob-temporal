@@ -91,9 +91,21 @@ docker-compose up
 
 ### Running a Worker
 
-#### Local Development
+The `temporal-worker` executable uses smart Rails auto-detection:
 
-For local development, run the worker directly from the gem directory:
+#### From a Rails Application
+
+```bash
+cd your-rails-app
+TEMPORAL_TARGET=localhost:7233 \
+TEMPORAL_NAMESPACE=default \
+AJ_TEMPORAL_WORKER_QUEUE=default \
+bundle exec temporal-worker
+```
+
+The worker auto-detects the Rails app in the current directory and loads your environment.
+
+#### From the Gem Directory (Development)
 
 ```bash
 TEMPORAL_TARGET=localhost:7233 \
@@ -102,21 +114,18 @@ AJ_TEMPORAL_WORKER_QUEUE=default \
 bin/temporal-worker
 ```
 
-The `bin/temporal-worker` script uses relative requires to load the gem's code, so it works directly without `bundle exec`.
+When run from the gem directory (not a Rails app), it works without Rails.
 
-#### In a Rails Application
+#### Specifying a Custom Path
 
-When running from a Rails application directory (not the gem directory), use `bundle exec`:
+If you need to run the worker from a different directory, use `RAILS_ROOT`:
 
 ```bash
-TEMPORAL_TARGET=temporal.example.com:7233 \
-TEMPORAL_NAMESPACE=production \
-AJ_TEMPORAL_WORKER_QUEUE=default \
 RAILS_ROOT=/path/to/app \
-bundle exec bin/temporal-worker
+bundle exec temporal-worker
 ```
 
-The `RAILS_ROOT` environment variable tells the worker to load the Rails app, so your job classes and initializers are available.
+The worker will load the Rails app at that path.
 
 ### Build and Release
 

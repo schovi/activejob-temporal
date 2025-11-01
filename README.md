@@ -363,28 +363,28 @@ See the [Configuration Reference](docs/configuration_reference.md) for full sear
 
 Temporal workers poll task queues for workflows and activities to execute. You must run at least one worker process for each task queue your application uses.
 
-### Quick Start (Development)
+### Quick Start
 
-For local development or testing, run the worker from your Rails application directory:
+Run the worker from your Rails application directory. The `temporal-worker` executable auto-detects your Rails environment:
 
 ```bash
 cd your-app
 TEMPORAL_TARGET=localhost:7233 \
 TEMPORAL_NAMESPACE=default \
 AJ_TEMPORAL_WORKER_QUEUE=default \
-bin/temporal-worker
+bundle exec temporal-worker
 ```
 
-The `bin/temporal-worker` binstub automatically loads your Rails environment, making job classes and configuration available.
+The worker automatically detects your Rails app (by checking for `config/application.rb`) and loads your environment, making job classes and initializers available.
 
 ### Example Application
 
-See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete working Rails application demonstrating job enqueuing, execution, retry behavior, and cancellation. The example includes:
+See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete working Rails application demonstrating:
 
-- Sample jobs (simple, scheduled, retryable, cancellable)
-- Full configuration setup
-- Worker setup and configuration
-- Testing and verification instructions
+- Job enqueuing and execution (simple, scheduled, retryable, cancellable jobs)
+- Full ActiveJob Temporal configuration
+- Worker setup and testing
+- How the auto-detection feature works
 
 ### Environment Variables
 

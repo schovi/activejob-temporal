@@ -5,7 +5,7 @@ This guide covers setting up and running ActiveJob Temporal workers.
 ## Prerequisites
 - Temporal server accessible (e.g., Dockerized Temporal test server listening on `localhost:7233`).
 - Ruby 3.2+ environment with the `activejob-temporal` gem and the Temporal Ruby SDK (`temporalio-worker`) installed.
-- Optional Rails application: set `RAILS_ROOT` to load your app so job classes are available to the worker.
+- Rails application with `activejob-temporal` gem in the Gemfile.
 
 ## Required Environment Variables
 Set the following variables before starting the worker:
@@ -20,17 +20,43 @@ Set the following variables before starting the worker:
 | `TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum concurrent workflow tasks per worker (defaults to `100`). | `200` |
 
 ## Starting the Worker
+
 1. Ensure the Temporal server is running locally or reachable over the network.
-2. From the project root, export the environment variables and launch the worker:
+2. From your Rails application directory, run the worker:
 
 ```bash
+cd /path/to/your/rails/app
 TEMPORAL_TARGET=localhost:7233 \
 TEMPORAL_NAMESPACE=default \
 AJ_TEMPORAL_WORKER_QUEUE=default \
-bin/temporal-worker
+bundle exec temporal-worker
 ```
 
-Add `AJ_TEMPORAL_MAX_ACT=50` (or another value) if you need to tune activity concurrency. When running inside a Rails app, also export `RAILS_ROOT=/path/to/your/app`.
+The worker automatically detects your Rails environment and loads your job classes.
+
+### Options
+
+- **`AJ_TEMPORAL_WORKER_QUEUE`**: Task queue name. Defaults to `default`.
+- **`AJ_TEMPORAL_MAX_ACT`**: Maximum concurrent activity executions. Defaults to `100`.
+- **`RAILS_ROOT`**: Optional path to Rails app. Auto-detected if omitted (uses current directory).
+
+### Examples
+
+**From app directory (auto-detected):**
+```bash
+bundle exec temporal-worker
+```
+
+**Explicit Rails app path:**
+```bash
+RAILS_ROOT=/opt/myapp bundle exec temporal-worker
+```
+
+**Multiple workers on different queues:**
+```bash
+RAILS_ROOT=/opt/myapp AJ_TEMPORAL_WORKER_QUEUE=high_priority bundle exec temporal-worker &
+RAILS_ROOT=/opt/myapp AJ_TEMPORAL_WORKER_QUEUE=default bundle exec temporal-worker &
+```
 
 ## Expected Log Output
 The worker emits structured JSON logs. On startup you should see output similar to:
@@ -49,16 +75,22 @@ When the worker shuts down (for example, via `Ctrl+C`), you should see:
 Press `Ctrl+C` or send `SIGTERM` to the worker process. The Temporal SDK will finish in-flight activities before exiting and will emit the `worker_shutdown` log event.
 
 ## Manual Test
-With a Temporal test server running locally, execute:
+
+With a Temporal server running, run the worker from your Rails app directory:
 
 ```bash
+cd /path/to/rails/app
 TEMPORAL_TARGET=localhost:7233 \
 TEMPORAL_NAMESPACE=default \
 AJ_TEMPORAL_WORKER_QUEUE=default \
-bin/temporal-worker
+bundle exec temporal-worker
 ```
 
-The worker should connect without errors, log the `worker_started` event, and block while polling the task queue. Use `Ctrl+C` to stop the worker and verify the `worker_shutdown` log is emitted.
+You should see:
+- Initial `worker_started` event in JSON logs
+- Worker blocks while polling the task queue
+- Use `Ctrl+C` to gracefully stop
+- Worker emits `worker_shutdown` event on exit
 
 ## Worker Performance Tuning
 

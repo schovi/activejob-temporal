@@ -10,11 +10,22 @@ rescue LoadError => e
   exit(1)
 end
 
-rails_root = ENV.fetch("RAILS_ROOT", nil)
-if rails_root && !rails_root.empty?
-  # Load Rails application so job classes and initializers are available.
+# Auto-detect and load Rails application if present
+rails_root = ENV.fetch("RAILS_ROOT", ".")
+
+if File.directory?(rails_root) && File.exist?(File.expand_path("config/application.rb", rails_root))
+  # It's a Rails application - load the environment
   require File.expand_path("config/environment", rails_root)
+elsif rails_root != "." && File.directory?(rails_root)
+  # User specified a directory that exists but isn't a Rails app
+  warn "Warning: #{rails_root} does not appear to be a Rails application"
+  warn "Continuing without Rails environment. Job classes may not be available."
+elsif rails_root != "."
+  # User specified a path that doesn't exist
+  warn "Error: Cannot find Rails application at: #{rails_root}"
+  exit(1)
 end
+# If rails_root is "." and it's not a Rails app, just continue (gem development mode)
 
 ActiveJob::Temporal.configure do |config|
   config.target = ENV.fetch("TEMPORAL_TARGET", config.target)
