@@ -38,7 +38,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 
 **Requirements:**
 - Ruby >= 3.2
-- Rails >= 6.1 (ActiveJob 6.1+)
+- Rails >= 7.2 (ActiveJob 7.2+ and 8.x)
 - Temporal cluster (self-hosted or [Temporal Cloud](https://temporal.io/cloud))
 
 Add this line to your application's Gemfile:
