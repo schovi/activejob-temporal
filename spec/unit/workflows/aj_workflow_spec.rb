@@ -24,12 +24,21 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
   subject(:workflow) { described_class.new }
 
   let(:activity_timeout) { ActiveJob::Temporal.config.default_activity_timeout }
+  let(:retry_policy_hash) do
+    {
+      initial_interval: 30.0,
+      backoff_coefficient: 2.0,
+      maximum_attempts: 3,
+      non_retryable_error_types: []
+    }
+  end
   let(:base_payload) do
     {
       "job_class" => "SampleJob",
       "job_id" => "abc-123",
       "queue_name" => "default",
-      "arguments" => []
+      "arguments" => [],
+      "retry_policy" => retry_policy_hash
     }
   end
 
@@ -91,19 +100,19 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
     context "when retry policy metadata is available" do
       it "passes the retry policy through to the activity call" do
-        retry_policy_hash = {
-          initial_interval: 30.0,
-          backoff_coefficient: 2.0,
-          maximum_attempts: 3,
+        custom_retry_policy = {
+          initial_interval: 15.0,
+          backoff_coefficient: 1.5,
+          maximum_attempts: 5,
           non_retryable_error_types: []
         }
-        allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(SampleJob).and_return(retry_policy_hash)
+        payload = base_payload.merge("retry_policy" => custom_retry_policy)
 
-        workflow.execute(base_payload)
+        workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload, options|
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload_arg, options|
           expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
-          expect(payload).to eq(base_payload)
+          expect(payload_arg).to eq(payload)
           expect(options[:start_to_close_timeout]).to eq(activity_timeout)
           expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
         end

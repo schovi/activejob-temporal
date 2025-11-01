@@ -65,13 +65,13 @@ module ActiveJob
         # @option payload [String] :job_id Unique job identifier (required)
         # @option payload [String] :queue_name Target queue name (required)
         # @option payload [Array] :arguments Serialized job arguments (required)
+        # @option payload [Hash] :retry_policy Retry policy for activity execution (required)
         # @option payload [String] :scheduled_at ISO8601 timestamp for delayed execution (optional)
         # @option payload [Integer] :executions Current execution count (default: 0)
         # @option payload [Hash] :exception_executions Exception execution counts (default: {})
         #
         # @return [Object, nil] Result from the activity execution
         #
-        # @raise [NameError] if job_class cannot be constantized
         # @raise [Temporalio::Error::ActivityError] if activity execution fails (propagates from activity)
         # @raise [Temporalio::Error::TimeoutError] if activity exceeds start_to_close_timeout
         #
@@ -142,11 +142,9 @@ module ActiveJob
             start_to_close_timeout: ActiveJob::Temporal.config.default_activity_timeout
           }
 
-          # Look up job class and build retry policy
-          job_class_name = payload[:job_class] || payload["job_class"]
-          if job_class_name
-            job_class = Object.const_get(job_class_name)
-            retry_policy_hash = ActiveJob::Temporal::RetryMapper.for(job_class)
+          # Use retry policy from payload (serialized at enqueue time)
+          retry_policy_hash = payload[:retry_policy] || payload["retry_policy"]
+          if retry_policy_hash
             options[:retry_policy] = build_retry_policy(retry_policy_hash)
           end
 

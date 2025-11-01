@@ -142,14 +142,22 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
     job
   end
 
-  let(:payload) { { job_class: "SimpleJob", job_id: "job-123", queue_name: "mailers", arguments: [] } }
-
   let(:retry_policy) do
     {
       initial_interval: 30.0,
       backoff_coefficient: 2.0,
       maximum_attempts: 3,
       non_retryable_error_types: []
+    }
+  end
+
+  let(:payload) do
+    {
+      job_class: "SimpleJob",
+      job_id: "job-123",
+      queue_name: "mailers",
+      arguments: [],
+      retry_policy: retry_policy
     }
   end
 
@@ -160,7 +168,13 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
   let(:workflow_handle) { instance_double("WorkflowHandle") }
 
   before do
-    allow(ActiveJob::Temporal::Payload).to receive(:from_job).with(job, scheduled_at: nil).and_return(payload)
+    allow(ActiveJob::Temporal::Payload).to receive(:from_job).with(job, scheduled_at: nil).and_return({
+      job_class: "SimpleJob",
+      job_id: "job-123",
+      queue_name: "mailers",
+      arguments: []
+    })
+    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(SimpleJob).and_return(retry_policy)
     allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
     allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
     allow(ActiveJob::Temporal::SearchAttributes).to receive(:for).with(job).and_return(search_attributes)
@@ -243,22 +257,39 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
     let(:workflow_id) { "ajwf:ScheduledJob:job-456" }
     let(:task_queue) { "billing" }
     let(:search_attributes) { { ajClass: "ScheduledJob", ajQueue: "billing" } }
+    let(:scheduled_retry_policy) do
+      {
+        initial_interval: 15.0,
+        backoff_coefficient: 1.5,
+        maximum_attempts: 2,
+        non_retryable_error_types: []
+      }
+    end
+
     let(:payload) do
       {
         job_class: "ScheduledJob",
         job_id: "job-456",
         queue_name: "billing",
-        arguments: []
+        arguments: [],
+        scheduled_at: scheduled_time.iso8601,
+        retry_policy: scheduled_retry_policy
       }
     end
-    let(:payload_with_schedule) { payload.merge(scheduled_at: scheduled_time.iso8601) }
 
     before do
       allow(Time).to receive(:at).with(timestamp).and_return(scheduled_time)
       allow(ActiveJob::Temporal::Payload)
         .to receive(:from_job)
         .with(job, scheduled_at: scheduled_time)
-        .and_return(payload_with_schedule)
+        .and_return({
+          job_class: "ScheduledJob",
+          job_id: "job-456",
+          queue_name: "billing",
+          arguments: [],
+          scheduled_at: scheduled_time.iso8601
+        })
+      allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(ScheduledJob).and_return(scheduled_retry_policy)
       allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
       allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
       allow(ActiveJob::Temporal::SearchAttributes).to receive(:for).with(job).and_return(search_attributes)
@@ -274,7 +305,7 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
     it "includes scheduled_at in ISO8601 format within the payload" do
       adapter.enqueue_at(job, timestamp)
 
-      expect(payload_with_schedule[:scheduled_at]).to eq(scheduled_time.iso8601)
+      expect(payload[:scheduled_at]).to eq(scheduled_time.iso8601)
     end
 
     it "starts the workflow immediately with the scheduled payload" do
@@ -282,7 +313,7 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
 
       expect(client).to have_received(:start_workflow).with(
         ActiveJob::Temporal::Workflows::AjWorkflow,
-        payload_with_schedule,
+        payload,
         id: workflow_id,
         task_queue: task_queue,
         id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL,

@@ -236,9 +236,16 @@ module ActiveJob
       end
 
       # Builds a payload hash from a job instance.
+      # Includes the job's retry policy for use in the workflow.
       # @api private
       def build_payload(job, scheduled_at: nil)
-        ActiveJob::Temporal::Payload.from_job(job, scheduled_at: scheduled_at)
+        payload = ActiveJob::Temporal::Payload.from_job(job, scheduled_at: scheduled_at)
+
+        # Build and add retry policy from job class
+        retry_policy = ActiveJob::Temporal::RetryMapper.for(job.class)
+        payload[:retry_policy] = retry_policy
+
+        payload
       end
 
       # Starts the Temporal workflow with the given options.
