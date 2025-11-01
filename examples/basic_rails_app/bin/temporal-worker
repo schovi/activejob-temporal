@@ -28,8 +28,7 @@ worker = Temporalio::Worker.new(
   task_queue: task_queue,
   workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
   activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
-  shutdown_signals: %w[SIGINT SIGTERM],
-  max_concurrent_activity_task_executions: max_concurrent_activities
+  max_concurrent_activity_task_polls: max_concurrent_activities
 )
 
 ActiveJob::Temporal::Logger.log_event(
@@ -41,7 +40,10 @@ ActiveJob::Temporal::Logger.log_event(
 )
 
 begin
-  worker.run
+  Temporalio::Worker.run_all(
+    worker,
+    shutdown_signals: %w[SIGINT SIGTERM]
+  )
 rescue Interrupt
   # Temporal worker raises Interrupt on shutdown signals; swallow to allow clean exit.
 ensure

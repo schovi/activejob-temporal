@@ -2,8 +2,8 @@
 
 require "active_support/core_ext/string/inflections"
 
-require "activejob/temporal/payload"
-require "activejob/temporal/retry_mapper"
+require_relative "../payload"
+require_relative "../retry_mapper"
 
 # Provide lightweight Temporal stubs so specs can run without the real SDK.
 unless defined?(Temporalio::Activity)
