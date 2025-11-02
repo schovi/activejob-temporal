@@ -625,21 +625,21 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "raises and catches ConfigurationError correctly" do
-      expect {
+      expect do
         raise ActiveJob::Temporal::ConfigurationError, "test error"
-      }.to raise_error(ActiveJob::Temporal::ConfigurationError, "test error")
+      end.to raise_error(ActiveJob::Temporal::ConfigurationError, "test error")
     end
 
     it "raises and catches WorkflowNotFoundError correctly" do
-      expect {
+      expect do
         raise ActiveJob::Temporal::WorkflowNotFoundError, "workflow not found"
-      }.to raise_error(ActiveJob::Temporal::WorkflowNotFoundError, "workflow not found")
+      end.to raise_error(ActiveJob::Temporal::WorkflowNotFoundError, "workflow not found")
     end
 
     it "raises and catches TemporalConnectionError correctly" do
-      expect {
+      expect do
         raise ActiveJob::Temporal::TemporalConnectionError, "connection failed"
-      }.to raise_error(ActiveJob::Temporal::TemporalConnectionError, "connection failed")
+      end.to raise_error(ActiveJob::Temporal::TemporalConnectionError, "connection failed")
     end
   end
 end

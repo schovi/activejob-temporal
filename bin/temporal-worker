@@ -19,9 +19,7 @@ if File.directory?(rails_root) && File.exist?(File.expand_path("config/applicati
 
   # Force eager loading of all job classes to prevent autoloading in workflows
   # Workflows must be deterministic and cannot use Thread::Mutex which autoloading triggers
-  if defined?(Rails)
-    Rails.application.eager_load! if Rails.env.development? || Rails.env.test?
-  end
+  Rails.application.eager_load! if defined?(Rails) && (Rails.env.development? || Rails.env.test?)
 elsif rails_root != "." && File.directory?(rails_root)
   # User specified a directory that exists but isn't a Rails app
   warn "Warning: #{rails_root} does not appear to be a Rails application"

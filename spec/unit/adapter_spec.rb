@@ -168,12 +168,13 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
   let(:workflow_handle) { instance_double("WorkflowHandle") }
 
   before do
-    allow(ActiveJob::Temporal::Payload).to receive(:from_job).with(job, scheduled_at: nil).and_return({
-      job_class: "SimpleJob",
-      job_id: "job-123",
-      queue_name: "mailers",
-      arguments: []
-    })
+    allow(ActiveJob::Temporal::Payload).to receive(:from_job).with(job, scheduled_at: nil)
+                                                             .and_return({
+                                                                           job_class: "SimpleJob",
+                                                                           job_id: "job-123",
+                                                                           queue_name: "mailers",
+                                                                           arguments: []
+                                                                         })
     allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(SimpleJob).and_return(retry_policy)
     allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
     allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
@@ -283,12 +284,12 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
         .to receive(:from_job)
         .with(job, scheduled_at: scheduled_time)
         .and_return({
-          job_class: "ScheduledJob",
-          job_id: "job-456",
-          queue_name: "billing",
-          arguments: [],
-          scheduled_at: scheduled_time.iso8601
-        })
+                      job_class: "ScheduledJob",
+                      job_id: "job-456",
+                      queue_name: "billing",
+                      arguments: [],
+                      scheduled_at: scheduled_time.iso8601
+                    })
       allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(ScheduledJob).and_return(scheduled_retry_policy)
       allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
       allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)

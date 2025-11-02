@@ -144,9 +144,7 @@ module ActiveJob
 
           # Use retry policy from payload (serialized at enqueue time)
           retry_policy_hash = payload[:retry_policy] || payload["retry_policy"]
-          if retry_policy_hash
-            options[:retry_policy] = build_retry_policy(retry_policy_hash)
-          end
+          options[:retry_policy] = build_retry_policy(retry_policy_hash) if retry_policy_hash
 
           options
         end
