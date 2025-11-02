@@ -38,6 +38,7 @@ end
 
 task_queue = ENV.fetch("AJ_TEMPORAL_WORKER_QUEUE", "default")
 max_concurrent_activities = ENV.fetch("AJ_TEMPORAL_MAX_ACT", 100).to_i
+max_concurrent_workflows = ENV.fetch("AJ_TEMPORAL_MAX_WORKFLOWS", 5).to_i
 
 client = ActiveJob::Temporal.client
 
@@ -46,13 +47,15 @@ worker = Temporalio::Worker.new(
   task_queue: task_queue,
   workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
   activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
-  max_concurrent_activity_task_polls: max_concurrent_activities
+  max_concurrent_activity_task_polls: max_concurrent_activities,
+  max_concurrent_workflow_task_polls: max_concurrent_workflows
 )
 
 ActiveJob::Temporal::Logger.log_event(
   "worker_started",
   task_queue: task_queue,
   max_concurrent_activities: max_concurrent_activities,
+  max_concurrent_workflows: max_concurrent_workflows,
   namespace: ActiveJob::Temporal.config.namespace,
   target: ActiveJob::Temporal.config.target
 )

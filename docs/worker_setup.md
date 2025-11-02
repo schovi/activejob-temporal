@@ -16,8 +16,7 @@ Set the following variables before starting the worker:
 | `TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` |
 | `AJ_TEMPORAL_WORKER_QUEUE` | Yes | Task queue the worker will poll for jobs. | `default` |
 | `AJ_TEMPORAL_MAX_ACT` | No | Maximum concurrent activity executions (defaults to `100`). | `50` |
-| `TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum concurrent activities per worker (defaults to `100`). Alternative to `AJ_TEMPORAL_MAX_ACT`. | `200` |
-| `TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum concurrent workflow tasks per worker (defaults to `100`). | `200` |
+| `AJ_TEMPORAL_MAX_WORKFLOWS` | No | Maximum concurrent workflow task polls (defaults to `5`). | `20` |
 
 ## Starting the Worker
 
@@ -38,6 +37,7 @@ The worker automatically detects your Rails environment and loads your job class
 
 - **`AJ_TEMPORAL_WORKER_QUEUE`**: Task queue name. Defaults to `default`.
 - **`AJ_TEMPORAL_MAX_ACT`**: Maximum concurrent activity executions. Defaults to `100`.
+- **`AJ_TEMPORAL_MAX_WORKFLOWS`**: Maximum concurrent workflow task polls. Defaults to `5`.
 - **`RAILS_ROOT`**: Optional path to Rails app. Auto-detected if omitted (uses current directory).
 
 ### Examples
@@ -62,7 +62,7 @@ RAILS_ROOT=/opt/myapp AJ_TEMPORAL_WORKER_QUEUE=default bundle exec temporal-work
 The worker emits structured JSON logs. On startup you should see output similar to:
 
 ```json
-{"event":"worker_started","task_queue":"default","max_concurrent_activities":100,"namespace":"default","target":"localhost:7233","timestamp":"2024-05-01T18:42:13Z"}
+{"event":"worker_started","task_queue":"default","max_concurrent_activities":100,"max_concurrent_workflows":5,"namespace":"default","target":"localhost:7233","timestamp":"2024-05-01T18:42:13Z"}
 ```
 
 When the worker shuts down (for example, via `Ctrl+C`), you should see:
@@ -94,95 +94,130 @@ You should see:
 
 ## Worker Performance Tuning
 
-The worker process can be tuned for high-throughput scenarios by adjusting concurrency settings. These settings control how many activities and workflow tasks can execute concurrently within a single worker process.
+The worker process can be tuned for different deployment scenarios by adjusting concurrency settings via environment variables.
 
-### Configuration via ActiveJob::Temporal Config
+### Concurrency Configuration
 
-The recommended approach is to configure these settings in your ActiveJob::Temporal initializer, then pass them to the worker:
+#### Activity Task Concurrency
 
-```ruby
-# config/initializers/activejob_temporal.rb
-ActiveJob::Temporal.configure do |config|
-  config.target = ENV.fetch('TEMPORAL_TARGET', 'localhost:7233')
-  config.namespace = ENV.fetch('TEMPORAL_NAMESPACE', 'default')
-  config.max_concurrent_activities = 200      # Default: 100
-  config.max_concurrent_workflow_tasks = 200  # Default: 100
-end
-```
-
-Then in your worker bootstrap script (e.g., `bin/temporal-worker`), pass these values to `Temporalio::Worker.new`:
-
-```ruby
-#!/usr/bin/env ruby
-# bin/temporal-worker
-
-require_relative '../config/environment'
-
-config = ActiveJob::Temporal.config
-client = ActiveJob::Temporal.client
-
-worker = Temporalio::Worker.new(
-  client: client,
-  task_queue: ENV.fetch('AJ_TEMPORAL_WORKER_QUEUE', 'default'),
-  workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-  activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
-  max_concurrent_activity_task_executions: config.max_concurrent_activities,
-  max_concurrent_workflow_task_executions: config.max_concurrent_workflow_tasks
-)
-
-puts "Starting worker on task queue: #{worker.task_queue}"
-puts "Max concurrent activities: #{config.max_concurrent_activities}"
-puts "Max concurrent workflow tasks: #{config.max_concurrent_workflow_tasks}"
-
-worker.run
-```
-
-### Configuration via Environment Variables
-
-Alternatively, you can set these values via environment variables:
+Controls how many jobs execute in parallel:
 
 ```bash
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=default \
-TEMPORAL_MAX_CONCURRENT_ACTIVITIES=200 \
-TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=200 \
-bin/temporal-worker
+AJ_TEMPORAL_MAX_ACT=200 bundle exec temporal-worker
 ```
 
-The worker bootstrap script should read these from the configuration:
+- **Default:** 100
+- **Higher values:** More jobs execute in parallel (higher throughput)
+- **Lower values:** Less resource consumption, better for constrained environments
+- **Recommended:** 50-200 for typical workloads
 
-```ruby
-config = ActiveJob::Temporal.config  # Already initialized with ENV vars
+#### Workflow Task Concurrency
 
-worker = Temporalio::Worker.new(
-  # ... other options ...
-  max_concurrent_activity_task_executions: config.max_concurrent_activities,
-  max_concurrent_workflow_task_executions: config.max_concurrent_workflow_tasks
-)
-```
-
-### Tuning Guidelines
-
-**Default (100)**: Appropriate for most workloads. Each worker can execute up to 100 concurrent activities and 100 concurrent workflow tasks.
-
-**High-throughput (200-500)**: Increase to 200-500 for high-throughput scenarios with sufficient memory. Monitor worker memory usage when increasing. Example:
+Controls how many workflows can be orchestrated concurrently:
 
 ```bash
-TEMPORAL_MAX_CONCURRENT_ACTIVITIES=300 \
-TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=300 \
-bin/temporal-worker
+AJ_TEMPORAL_MAX_WORKFLOWS=50 bundle exec temporal-worker
 ```
 
-**Resource-constrained (50)**: Decrease for memory-limited workers or CPU-intensive jobs:
+- **Default:** 5
+- **Higher values:** More workflows being orchestrated concurrently
+- **Lower values:** Lower CPU overhead, better for resource-constrained environments
+- **Typical Range:** 5-100
 
-```ruby
-config.max_concurrent_activities = 50
-config.max_concurrent_workflow_tasks = 50
+**Why adjust this?** Workflow tasks are CPU-bound and determine:
+- Which activities to schedule
+- When activities completed
+- Whether to retry or discard
+- Durable timer scheduling
+
+Increase if you see high latency between activity completion and next activity scheduled.
+
+#### Combined Configuration
+
+```bash
+# Balanced for medium-load scenario
+TEMPORAL_TARGET=temporal.example.com:7233 \
+TEMPORAL_NAMESPACE=production \
+AJ_TEMPORAL_WORKER_QUEUE=important_jobs \
+AJ_TEMPORAL_MAX_ACT=150 \
+AJ_TEMPORAL_MAX_WORKFLOWS=25 \
+bundle exec temporal-worker
 ```
 
-**Trade-offs**:
-- **Higher concurrency** = More throughput for I/O-bound jobs, but more memory usage
-- **Lower concurrency** = Less memory usage, better for CPU-bound or memory-intensive jobs
+### Resource Consumption Guidelines
 
-See the [Configuration Reference](./configuration_reference.md#production-tuning) for detailed guidance on when to adjust these settings, memory/CPU trade-offs, and monitoring recommendations.
+**Low-resource environment** (1 vCPU, 512MB RAM):
+```bash
+AJ_TEMPORAL_MAX_ACT=10
+AJ_TEMPORAL_MAX_WORKFLOWS=2
+```
+
+**Standard environment** (2 vCPU, 2GB RAM):
+```bash
+AJ_TEMPORAL_MAX_ACT=100
+AJ_TEMPORAL_MAX_WORKFLOWS=5
+```
+
+**High-throughput environment** (8 vCPU, 16GB RAM):
+```bash
+AJ_TEMPORAL_MAX_ACT=500
+AJ_TEMPORAL_MAX_WORKFLOWS=50
+```
+
+### Monitoring & Tuning
+
+Use Temporal UI (http://localhost:8080 in development) to monitor:
+- **Workflow Task Queue**: Shows queue depth and processing rate
+- **Activity Task Queue**: Shows queue depth and processing rate
+- **Worker Health**: Shows worker availability and last heartbeat
+
+**Tuning Process:**
+1. Deploy with default settings (100 activities, 5 workflows)
+2. Monitor queue depths in Temporal UI
+3. If Workflow Task Queue is growing: increase `AJ_TEMPORAL_MAX_WORKFLOWS`
+4. If Activity Task Queue is growing: increase `AJ_TEMPORAL_MAX_ACT`
+5. Monitor CPU/Memory usage after each adjustment
+6. Iterate until balanced
+
+### Deployment Scenarios
+
+#### Docker Compose (Development)
+```yaml
+# In compose file
+environment:
+  AJ_TEMPORAL_MAX_ACT: 20
+  AJ_TEMPORAL_MAX_WORKFLOWS: 3
+```
+
+#### Kubernetes (Production)
+```yaml
+spec:
+  containers:
+  - name: temporal-worker
+    env:
+    - name: AJ_TEMPORAL_MAX_ACT
+      value: "300"
+    - name: AJ_TEMPORAL_MAX_WORKFLOWS
+      value: "50"
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "500m"
+      limits:
+        memory: "1Gi"
+        cpu: "2000m"
+```
+
+#### EC2/VPS (Self-hosted)
+```bash
+#!/bin/bash
+# /etc/systemd/system/temporal-worker.service
+
+[Service]
+Environment="TEMPORAL_TARGET=temporal.prod.internal:7233"
+Environment="TEMPORAL_NAMESPACE=production"
+Environment="AJ_TEMPORAL_WORKER_QUEUE=default"
+Environment="AJ_TEMPORAL_MAX_ACT=200"
+Environment="AJ_TEMPORAL_MAX_WORKFLOWS=20"
+ExecStart=/usr/local/bin/temporal-worker
+```

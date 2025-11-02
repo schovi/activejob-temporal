@@ -394,6 +394,29 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` or `production` |
 | `AJ_TEMPORAL_WORKER_QUEUE` | No | Task queue the worker will poll for jobs. | `default` (if omitted) |
 | `AJ_TEMPORAL_MAX_ACT` | No | Maximum concurrent activity executions (defaults to `100`). | `50` or `200` |
+| `AJ_TEMPORAL_MAX_WORKFLOWS` | No | Maximum concurrent workflow task polls (defaults to `5`). | `20` or `50` |
+
+### Performance Tuning
+
+By default, the worker runs with:
+- 100 concurrent activity tasks (job executions)
+- 5 concurrent workflow tasks (orchestration)
+
+For different workloads, adjust via environment variables:
+
+```bash
+# High-throughput setup (production)
+AJ_TEMPORAL_MAX_ACT=500 \
+AJ_TEMPORAL_MAX_WORKFLOWS=50 \
+bundle exec temporal-worker
+
+# Low-resource setup (development)
+AJ_TEMPORAL_MAX_ACT=20 \
+AJ_TEMPORAL_MAX_WORKFLOWS=2 \
+bundle exec temporal-worker
+```
+
+See [docs/worker_setup.md](docs/worker_setup.md) for detailed tuning guidance.
 
 ## Limitations (v0.1)
 

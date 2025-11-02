@@ -127,6 +127,27 @@ bundle exec temporal-worker
 
 The worker will load the Rails app at that path.
 
+#### Performance Tuning
+
+Control concurrency for different environments:
+
+```bash
+# High-throughput production
+TEMPORAL_TARGET=temporal.prod:7233 \
+TEMPORAL_NAMESPACE=production \
+AJ_TEMPORAL_WORKER_QUEUE=jobs \
+AJ_TEMPORAL_MAX_ACT=500 \
+AJ_TEMPORAL_MAX_WORKFLOWS=50 \
+bundle exec temporal-worker
+
+# Low-resource development
+AJ_TEMPORAL_MAX_ACT=20 \
+AJ_TEMPORAL_MAX_WORKFLOWS=2 \
+bundle exec temporal-worker
+```
+
+See `docs/worker_setup.md` for detailed tuning guidance.
+
 ### Build and Release
 
 ```bash
