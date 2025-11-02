@@ -95,7 +95,22 @@ module ActiveJob
     # @example Scheduled job
     #   MyJob.set(wait: 1.hour).perform_later("arg")
     class TemporalAdapter
+      # @return [WorkflowEnqueuer] the enqueuer service
+      attr_reader :enqueuer
+
+      # Initialize the adapter with a WorkflowEnqueuer service instance.
+      def initialize
+        client = ActiveJob::Temporal.client
+        config = ActiveJob::Temporal.config
+        logger = config.logger
+
+        @enqueuer = ActiveJob::Temporal::WorkflowEnqueuer.new(client, config, logger)
+      end
+
       # Enqueues a job for immediate execution on Temporal by starting the AjWorkflow.
+      #
+      # Delegates to the WorkflowEnqueuer service to handle the mechanics of workflow
+      # creation and startup.
       #
       # @param job [ActiveJob::Base] the job instance provided by ActiveJob
       # @return [Object, nil] workflow run handle (if provided by Temporal SDK), or nil if duplicate
@@ -141,8 +156,7 @@ module ActiveJob
       # @see #enqueue_at
       # @see https://docs.temporal.io/workflows#workflow-id-reuse-policy Temporal Workflow ID Policies
       def enqueue(job)
-        payload = build_payload(job)
-        enqueue_with_payload(job, payload)
+        @enqueuer.enqueue(job)
       end
 
       # Enqueues a job for execution at a specific time by starting the AjWorkflow immediately.
@@ -182,9 +196,7 @@ module ActiveJob
       # @see Workflows::AjWorkflow#sleep_until
       def enqueue_at(job, timestamp)
         scheduled_time = Time.at(timestamp)
-        payload = build_payload(job, scheduled_at: scheduled_time)
-
-        enqueue_with_payload(job, payload)
+        @enqueuer.enqueue(job, scheduled_at: scheduled_time)
       end
 
       # Signals ActiveJob to defer enqueuing until after the current database transaction commits.
@@ -209,108 +221,6 @@ module ActiveJob
       #   end
       def enqueue_after_transaction_commit?
         true
-      end
-
-      private
-
-      # Enqueues a workflow with the given payload and options.
-      # @api private
-      def enqueue_with_payload(job, payload)
-        workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
-        task_queue = ActiveJob::Temporal::Adapter.resolve_task_queue(job)
-        client = ActiveJob::Temporal.client
-
-        options = {
-          id: workflow_id,
-          task_queue: task_queue,
-          id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL
-        }
-
-        # Add search attributes if configured
-        if ActiveJob::Temporal.config.respond_to?(:enable_search_attributes) && ActiveJob::Temporal.config.enable_search_attributes
-          search_attributes = ActiveJob::Temporal::SearchAttributes.for(job)
-          options[:search_attributes] = search_attributes
-        end
-
-        start_workflow(client, payload, options, job)
-      end
-
-      # Builds a payload hash from a job instance.
-      # Includes the job's retry policy for use in the workflow.
-      # @api private
-      def build_payload(job, scheduled_at: nil)
-        payload = ActiveJob::Temporal::Payload.from_job(job, scheduled_at: scheduled_at)
-
-        # Build and add retry policy from job class
-        retry_policy = ActiveJob::Temporal::RetryMapper.for(job.class)
-        payload[:retry_policy] = retry_policy
-
-        payload
-      end
-
-      # Starts the Temporal workflow with the given options.
-      # @api private
-      def start_workflow(client, payload, options, job)
-        workflow_class = ActiveJob::Temporal::Workflows::AjWorkflow
-        handle = client.start_workflow(workflow_class, payload, **options)
-
-        log_enqueued_with_options(job, options, payload, duplicate: false)
-
-        handle
-      rescue StandardError => e
-        if workflow_already_started?(e)
-          log_enqueued_with_options(job, options, payload, duplicate: true)
-          return nil
-        end
-
-        raise ActiveJob::EnqueueError, build_enqueue_error_message(job, e)
-      end
-
-      # Checks if error indicates workflow was already started (duplicate job_id).
-      # @api private
-      def workflow_already_started?(error)
-        return false unless defined?(Temporalio::Client::WorkflowAlreadyStartedError)
-
-        error.is_a?(Temporalio::Client::WorkflowAlreadyStartedError)
-      end
-
-      # Logs enqueue event with structured metadata.
-      # @api private
-      def log_enqueued(job, workflow_id, task_queue, duplicate:, scheduled_at: nil)
-        attributes = {
-          workflow_id: workflow_id,
-          job_class: job.class.name,
-          job_id: job.job_id,
-          queue: job.queue_name,
-          task_queue: task_queue,
-          duplicate: duplicate
-        }
-        attributes[:scheduled_at] = scheduled_at if scheduled_at
-
-        ActiveJob::Temporal::Logger.log_event("workflow_enqueued", **attributes)
-      end
-
-      # Logs enqueue event using options hash and payload.
-      # @api private
-      def log_enqueued_with_options(job, options, payload, duplicate:)
-        log_enqueued(
-          job,
-          options[:id],
-          options[:task_queue],
-          duplicate: duplicate,
-          scheduled_at: payload[:scheduled_at]
-        )
-      end
-
-      # Builds error message for enqueue failures.
-      # @api private
-      def build_enqueue_error_message(job, error)
-        format(
-          "Failed to enqueue job %<job_class>s (%<job_id>s): %<error>s",
-          job_class: job.class.name,
-          job_id: job.job_id,
-          error: error.message
-        )
       end
     end
   end

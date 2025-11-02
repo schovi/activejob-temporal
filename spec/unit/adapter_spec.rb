@@ -133,8 +133,6 @@ RSpec.describe ActiveJob::Temporal::Adapter do
 end
 
 RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
-  subject(:adapter) { described_class.new }
-
   let(:job) do
     job = SimpleJob.new
     job.job_id = "job-123"
@@ -142,199 +140,79 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
     job
   end
 
-  let(:retry_policy) do
-    {
-      initial_interval: 30.0,
-      backoff_coefficient: 2.0,
-      maximum_attempts: 3,
-      non_retryable_error_types: []
-    }
-  end
-
-  let(:payload) do
-    {
-      job_class: "SimpleJob",
-      job_id: "job-123",
-      queue_name: "mailers",
-      arguments: [],
-      retry_policy: retry_policy
-    }
-  end
-
-  let(:workflow_id) { "ajwf:SimpleJob:job-123" }
-  let(:task_queue) { "mailers" }
-  let(:search_attributes) { { ajClass: "SimpleJob", ajQueue: "mailers" } }
-  let(:client) { instance_double("TemporalClient") }
-  let(:workflow_handle) { instance_double("WorkflowHandle") }
+  let(:client) { instance_double(Temporalio::Client) }
+  let(:config) { build_configuration }
 
   before do
-    allow(ActiveJob::Temporal::Payload).to receive(:from_job).with(job, scheduled_at: nil)
-                                                             .and_return({
-                                                                           job_class: "SimpleJob",
-                                                                           job_id: "job-123",
-                                                                           queue_name: "mailers",
-                                                                           arguments: []
-                                                                         })
-    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(SimpleJob).and_return(retry_policy)
-    allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
-    allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
-    allow(ActiveJob::Temporal::SearchAttributes).to receive(:for).with(job).and_return(search_attributes)
     allow(ActiveJob::Temporal).to receive(:client).and_return(client)
-    allow(client).to receive(:start_workflow).and_return(workflow_handle)
+    allow(ActiveJob::Temporal).to receive(:config).and_return(config)
+    allow(client).to receive(:start_workflow).and_return("workflow-handle")
     allow(ActiveJob::Temporal::Logger).to receive(:log_event)
-    allow(ActiveJob::Temporal.config).to receive(:enable_search_attributes).and_return(true)
+  end
+
+  subject(:adapter) { described_class.new }
+
+  describe "#initialize" do
+    it "creates a WorkflowEnqueuer instance" do
+      expect(adapter.enqueuer).to be_a(ActiveJob::Temporal::WorkflowEnqueuer)
+    end
   end
 
   describe "#enqueue" do
-    it "serializes payload and starts workflow" do
+    it "delegates to the enqueuer" do
       result = adapter.enqueue(job)
 
-      expect(result).to eq(workflow_handle)
-      expect(client).to have_received(:start_workflow).with(
-        ActiveJob::Temporal::Workflows::AjWorkflow,
-        payload,
-        id: workflow_id,
-        task_queue: task_queue,
-        id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL,
-        search_attributes: search_attributes
-      )
-      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
-        "workflow_enqueued",
-        workflow_id: workflow_id,
-        job_class: "SimpleJob",
-        job_id: "job-123",
-        queue: "mailers",
-        task_queue: task_queue,
-        duplicate: false
-      )
+      expect(client).to have_received(:start_workflow).once
+      expect(result).to eq("workflow-handle")
     end
 
-    it "propagates serialization errors" do
-      error = ActiveJob::SerializationError.new("too large")
-      allow(ActiveJob::Temporal::Payload).to receive(:from_job).and_raise(error)
+    it "propagates enqueuer errors" do
+      allow(client).to receive(:start_workflow).and_raise(StandardError, "workflow failed")
 
-      expect { adapter.enqueue(job) }.to raise_error(ActiveJob::SerializationError, "too large")
+      expect { adapter.enqueue(job) }.to raise_error(ActiveJob::EnqueueError)
     end
 
-    it "wraps Temporal client failures in ActiveJob::EnqueueError" do
-      allow(client).to receive(:start_workflow).and_raise(StandardError, "connection refused")
-
-      expect { adapter.enqueue(job) }
-        .to raise_error(ActiveJob::EnqueueError, /Failed to enqueue job SimpleJob \(job-123\): connection refused/)
-    end
-
-    it "treats duplicate workflow IDs as successful enqueue" do
-      duplicate_error = Class.new(StandardError)
-      stub_const("Temporalio", Module.new) unless defined?(Temporalio)
-      stub_const("Temporalio::Client", Module.new) unless defined?(Temporalio::Client)
-      stub_const("Temporalio::Client::WorkflowAlreadyStartedError", duplicate_error)
-      allow(client).to receive(:start_workflow).and_raise(duplicate_error.new("already started"))
+    it "handles duplicate enqueue (nil result)" do
+      error = Class.new(StandardError)
+      stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
+      allow(client).to receive(:start_workflow).and_raise(error.new("already started"))
 
       result = adapter.enqueue(job)
 
       expect(result).to be_nil
-      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
-        "workflow_enqueued",
-        workflow_id: workflow_id,
-        job_class: "SimpleJob",
-        job_id: "job-123",
-        queue: "mailers",
-        task_queue: task_queue,
-        duplicate: true
-      )
     end
   end
 
   describe "#enqueue_at" do
-    let(:job) do
-      job = ScheduledJob.new
-      job.job_id = "job-456"
-      job.queue_name = "billing"
-      job
-    end
-
     let(:timestamp) { (Time.now + 300).to_i }
     let(:scheduled_time) { Time.at(timestamp) }
-    let(:workflow_id) { "ajwf:ScheduledJob:job-456" }
-    let(:task_queue) { "billing" }
-    let(:search_attributes) { { ajClass: "ScheduledJob", ajQueue: "billing" } }
-    let(:scheduled_retry_policy) do
-      {
-        initial_interval: 15.0,
-        backoff_coefficient: 1.5,
-        maximum_attempts: 2,
-        non_retryable_error_types: []
-      }
-    end
 
-    let(:payload) do
-      {
-        job_class: "ScheduledJob",
-        job_id: "job-456",
-        queue_name: "billing",
-        arguments: [],
-        scheduled_at: scheduled_time.iso8601,
-        retry_policy: scheduled_retry_policy
-      }
-    end
-
-    before do
+    it "converts timestamp to Time and enqueues with scheduled_at" do
       allow(Time).to receive(:at).with(timestamp).and_return(scheduled_time)
-      allow(ActiveJob::Temporal::Payload)
-        .to receive(:from_job)
-        .with(job, scheduled_at: scheduled_time)
-        .and_return({
-                      job_class: "ScheduledJob",
-                      job_id: "job-456",
-                      queue_name: "billing",
-                      arguments: [],
-                      scheduled_at: scheduled_time.iso8601
-                    })
-      allow(ActiveJob::Temporal::RetryMapper).to receive(:for).with(ScheduledJob).and_return(scheduled_retry_policy)
-      allow(ActiveJob::Temporal::Adapter).to receive(:build_workflow_id).with(job).and_return(workflow_id)
-      allow(ActiveJob::Temporal::Adapter).to receive(:resolve_task_queue).with(job).and_return(task_queue)
-      allow(ActiveJob::Temporal::SearchAttributes).to receive(:for).with(job).and_return(search_attributes)
-    end
 
-    it "converts the timestamp to a Time and passes it to Payload.from_job" do
       adapter.enqueue_at(job, timestamp)
 
       expect(Time).to have_received(:at).with(timestamp)
-      expect(ActiveJob::Temporal::Payload).to have_received(:from_job).with(job, scheduled_at: scheduled_time)
+      expect(client).to have_received(:start_workflow).once
     end
 
-    it "includes scheduled_at in ISO8601 format within the payload" do
-      adapter.enqueue_at(job, timestamp)
+    it "returns workflow handle for scheduled jobs" do
+      allow(Time).to receive(:at).with(timestamp).and_return(scheduled_time)
 
-      expect(payload[:scheduled_at]).to eq(scheduled_time.iso8601)
+      result = adapter.enqueue_at(job, timestamp)
+
+      expect(result).to eq("workflow-handle")
     end
 
-    it "starts the workflow immediately with the scheduled payload" do
-      adapter.enqueue_at(job, timestamp)
+    it "handles duplicate enqueue for scheduled jobs" do
+      error = Class.new(StandardError)
+      stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
+      allow(client).to receive(:start_workflow).and_raise(error.new("already started"))
+      allow(Time).to receive(:at).with(timestamp).and_return(scheduled_time)
 
-      expect(client).to have_received(:start_workflow).with(
-        ActiveJob::Temporal::Workflows::AjWorkflow,
-        payload,
-        id: workflow_id,
-        task_queue: task_queue,
-        id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL,
-        search_attributes: search_attributes
-      )
-    end
+      result = adapter.enqueue_at(job, timestamp)
 
-    it "logs the enqueue event with scheduled_at metadata" do
-      adapter.enqueue_at(job, timestamp)
-
-      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
-        "workflow_enqueued",
-        workflow_id: workflow_id,
-        job_class: "ScheduledJob",
-        job_id: "job-456",
-        queue: "billing",
-        task_queue: task_queue,
-        duplicate: false,
-        scheduled_at: scheduled_time.iso8601
-      )
+      expect(result).to be_nil
     end
   end
 
@@ -353,4 +231,12 @@ RSpec.describe "ActiveJob adapter registration" do
       expect(adapter_class).to eq(ActiveJob::QueueAdapters::TemporalAdapter)
     end
   end
+end
+
+def build_configuration
+  config = ActiveJob::Temporal::Configuration.new
+  config.target = "localhost:7233"
+  config.namespace = "default"
+  config.task_queue_prefix = nil
+  config
 end
