@@ -23,15 +23,14 @@ RSpec.describe "Concurrent worker execution", :integration do
 
   it "prevents duplicate execution from concurrent workers" do
     task_queue = "test-concurrent-#{SecureRandom.hex(4)}"
-    execution_count = 0
-    execution_lock = Mutex.new
+    Mutex.new
 
     # Create a job class that tracks execution count
     job_class = Class.new(ActiveJob::Base) do
       class_variable_set(:@@execution_count, 0)
       class_variable_set(:@@execution_lock, Mutex.new)
 
-      def perform(test_id)
+      def perform(_test_id)
         self.class.class_variable_get(:@@execution_lock).synchronize do
           count = self.class.class_variable_get(:@@execution_count)
           self.class.class_variable_set(:@@execution_count, count + 1)
@@ -62,6 +61,7 @@ RSpec.describe "Concurrent worker execution", :integration do
       loop do
         count = job_class.execution_count
         break if count.present? && count > 0
+
         sleep 0.1
       end
     end
@@ -101,6 +101,7 @@ RSpec.describe "Concurrent worker execution", :integration do
     Timeout.timeout(10) do
       loop do
         break if completed_jobs.size >= 5
+
         sleep 0.1
       end
     end
@@ -109,6 +110,7 @@ RSpec.describe "Concurrent worker execution", :integration do
     executed_jobs = []
     loop do
       break if completed_jobs.empty?
+
       executed_jobs << completed_jobs.pop
     end
 
@@ -133,6 +135,7 @@ RSpec.describe "Concurrent worker execution", :integration do
   def stop_all_workers
     [@worker_thread, @worker_threads].flatten.compact.each do |thread|
       next unless thread&.alive?
+
       thread.kill
       thread.join(5)
     end

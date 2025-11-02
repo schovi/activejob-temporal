@@ -67,9 +67,9 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
     it "raises ActiveJob::EnqueueError for non-duplicate errors" do
       allow(client).to receive(:start_workflow).and_raise(StandardError, "Connection failed")
 
-      expect {
+      expect do
         enqueuer.enqueue(job)
-      }.to raise_error(ActiveJob::EnqueueError)
+      end.to raise_error(ActiveJob::EnqueueError)
     end
 
     context "with scheduled_at" do
@@ -90,9 +90,9 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       it "raises ConfigurationError" do
         allow(job).to receive(:queue_name).and_return(nil)
 
-        expect {
+        expect do
           enqueuer.enqueue(job)
-        }.to raise_error(ActiveJob::Temporal::ConfigurationError, /queue name cannot be blank/)
+        end.to raise_error(ActiveJob::Temporal::ConfigurationError, /queue name cannot be blank/)
       end
     end
   end

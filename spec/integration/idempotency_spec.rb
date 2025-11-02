@@ -26,12 +26,10 @@ RSpec.describe "Idempotency key handling", :integration do
     @worker_thread = start_worker(task_queue)
     sleep 0.5
 
-    captured_key = nil
-
     job_class = Class.new(ActiveJob::Base) do
       class_variable_set(:@@captured_key, nil)
 
-      def perform(test_id)
+      def perform(_test_id)
         # Access idempotency key from thread-local storage
         key = Thread.current[ActiveJob::Temporal::Activities::AjRunnerActivity::IDEMPOTENCY_KEY]
         self.class.class_variable_set(:@@captured_key, key)
@@ -43,7 +41,7 @@ RSpec.describe "Idempotency key handling", :integration do
     end
 
     # Enqueue and execute job
-    job_id = SecureRandom.uuid
+    SecureRandom.uuid
     job = job_class.set(queue: task_queue).perform_later("test-1")
 
     # Build the workflow ID to verify it matches what's in the idempotency key
@@ -54,6 +52,7 @@ RSpec.describe "Idempotency key handling", :integration do
       loop do
         key = job_class.captured_key
         break if key.present?
+
         sleep 0.1
       end
     end
@@ -63,22 +62,20 @@ RSpec.describe "Idempotency key handling", :integration do
     # Verify the idempotency key includes the workflow ID
     expect(captured_key).to be_present
     expect(captured_key).to include(workflow_id)
-    expect(captured_key).to match(/\/runner\z/) # Should end with "/runner"
+    expect(captured_key).to match(%r{/runner\z}) # Should end with "/runner"
   end
 
   it "provides consistent idempotency key across job execution" do
     task_queue = "test-idempotency-consistency-#{SecureRandom.hex(4)}"
     @worker_thread = start_worker(task_queue)
     sleep 0.5
-
-    captured_keys = []
-    keys_lock = Mutex.new
+    Mutex.new
 
     job_class = Class.new(ActiveJob::Base) do
       class_variable_set(:@@captured_keys, [])
       class_variable_set(:@@keys_lock, Mutex.new)
 
-      def perform(iteration)
+      def perform(_iteration)
         # Capture the idempotency key multiple times during execution
         key = Thread.current[ActiveJob::Temporal::Activities::AjRunnerActivity::IDEMPOTENCY_KEY]
         lock = self.class.class_variable_get(:@@keys_lock)
@@ -102,6 +99,7 @@ RSpec.describe "Idempotency key handling", :integration do
       loop do
         keys = job_class.captured_keys
         break if keys.present? && keys.size > 0
+
         sleep 0.1
       end
     end
@@ -113,7 +111,7 @@ RSpec.describe "Idempotency key handling", :integration do
 
     # Verify all keys are identical (consistent throughout execution)
     expect(captured_keys.uniq.size).to eq(1)
-    expect(captured_keys.first).to match(/\/runner\z/)
+    expect(captured_keys.first).to match(%r{/runner\z})
   end
 
   it "clears idempotency key after job execution" do
@@ -142,7 +140,7 @@ RSpec.describe "Idempotency key handling", :integration do
       end
     end
 
-    # Note: In a real scenario with proper workflow execution,
+    # NOTE: In a real scenario with proper workflow execution,
     # we would verify that the worker's thread-local key is cleared.
     # Since we're testing the activity in isolation through the integration,
     # we rely on the ensure block in AjRunnerActivity#execute to clean up.
@@ -173,6 +171,7 @@ RSpec.describe "Idempotency key handling", :integration do
     Timeout.timeout(10) do
       loop do
         break if captured_keys.size >= 3
+
         sleep 0.1
       end
     end
@@ -181,6 +180,7 @@ RSpec.describe "Idempotency key handling", :integration do
     executed_jobs = []
     loop do
       break if captured_keys.empty?
+
       executed_jobs << captured_keys.pop
     end
 
@@ -195,7 +195,7 @@ RSpec.describe "Idempotency key handling", :integration do
 
     # Verify all keys are properly formatted
     keys.each do |key|
-      expect(key).to match(/\/runner\z/)
+      expect(key).to match(%r{/runner\z})
     end
   end
 

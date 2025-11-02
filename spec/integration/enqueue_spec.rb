@@ -132,6 +132,7 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
       Timeout.timeout(10) do
         loop do
           break if job_class.last_executed.present?
+
           sleep 0.1
         end
       end
