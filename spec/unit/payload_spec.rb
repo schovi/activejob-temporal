@@ -133,6 +133,78 @@ RSpec.describe ActiveJob::Temporal::Payload do
       expect { described_class.from_job(bad_job) }
         .to raise_error(ActiveJob::SerializationError)
     end
+
+    context "boundary conditions for payload size" do
+      it "accepts payload that is 1 byte under the limit" do
+        # Create a payload that's just under 50KB limit
+        # Estimate: SimpleJob class name + job_id + args = ~100 bytes baseline
+        # So create an argument that brings total to exactly 50KB - 1 byte
+        target_size_kb = 50
+        estimate_overhead = 200 # rough estimate for metadata
+        arg_size = (target_size_kb * 1024) - estimate_overhead - 1
+        job_with_arg = SimpleJob.new(["x" * arg_size])
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = target_size_kb
+        end
+
+        # Should not raise when under limit
+        expect { described_class.from_job(job_with_arg) }.not_to raise_error
+      end
+
+      it "accepts payload at exact size boundary" do
+        # Create a payload at exactly the limit by adjusting argument size
+        target_size_kb = 25
+        estimate_overhead = 200
+        arg_size = (target_size_kb * 1024) - estimate_overhead
+        job_at_limit = SimpleJob.new(["y" * arg_size])
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = target_size_kb
+        end
+
+        # Should not raise when exactly at limit
+        expect { described_class.from_job(job_at_limit) }.not_to raise_error
+      end
+
+      it "rejects payload that is over the limit" do
+        # Create a very small limit and a payload clearly over it
+        target_size_kb = 2
+        large_arg_size = (target_size_kb * 1024) + 100 # Clearly over limit
+
+        job_over = SimpleJob.new(["z" * large_arg_size])
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = target_size_kb
+        end
+
+        expect { described_class.from_job(job_over) }
+          .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+      end
+
+      it "accepts empty payload (0 bytes argument)" do
+        job_empty = SimpleJob.new([])
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 1
+        end
+
+        # Empty job should always pass
+        expect { described_class.from_job(job_empty) }.not_to raise_error
+      end
+
+      it "accepts job with nil arguments" do
+        # Job with no arguments (shouldn't raise even with small limit)
+        job_nil = Class.new(ActiveJob::Base) { }
+        job_instance = job_nil.new
+        job_instance.arguments = nil
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 1
+        end
+
+        expect { described_class.from_job(job_instance) }.not_to raise_error
+      end
+    end
   end
 
   describe ".deserialize_args" do

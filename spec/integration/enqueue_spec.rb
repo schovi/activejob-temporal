@@ -87,6 +87,91 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
     stop_worker(@worker_thread)
   end
 
+  context "large payloads" do
+    it "rejects job with payload > 250KB (default limit)" do
+      # Create a large argument that exceeds the default 250KB limit
+      large_argument = "x" * (251 * 1024)
+      job_class = Class.new(ActiveJob::Base) do
+        def perform(arg)
+          # Job logic
+        end
+      end
+
+      ActiveJob::Base.queue_adapter = :temporal
+
+      expect do
+        job_class.perform_later(large_argument)
+      end.to raise_error(ActiveJob::EnqueueError) do |error|
+        expect(error.cause).to be_a(ActiveJob::SerializationError)
+        expect(error.cause.message).to include("exceeds maximum allowed size")
+      end
+    end
+
+    it "accepts job with payload < 250KB (default limit)" do
+      task_queue = "test-#{SecureRandom.hex(4)}"
+      @worker_thread = start_worker(task_queue)
+      sleep 0.5
+
+      # Create a payload under the limit
+      small_argument = "x" * (100 * 1024) # 100 KB
+      job_class = Class.new(ActiveJob::Base) do
+        class_variable_set(:@@last_executed, nil)
+
+        def perform(arg)
+          self.class.class_variable_set(:@@last_executed, arg.length)
+        end
+
+        def self.last_executed
+          class_variable_get(:@@last_executed) if class_variable_defined?(:@@last_executed)
+        end
+      end
+
+      job_class.set(queue: task_queue).perform_later(small_argument)
+
+      # Wait for job to execute
+      Timeout.timeout(10) do
+        loop do
+          break if job_class.last_executed.present?
+          sleep 0.1
+        end
+      end
+
+      # Verify the job executed
+      expect(job_class.last_executed).to eq(100 * 1024)
+    ensure
+      stop_worker(@worker_thread)
+    end
+
+    it "respects custom max_payload_size_kb configuration" do
+      # Configure a custom smaller limit
+      ActiveJob::Temporal.configure do |config|
+        config.max_payload_size_kb = 10
+      end
+
+      # Create a payload between 10KB and 250KB
+      medium_argument = "y" * (15 * 1024) # 15 KB
+      job_class = Class.new(ActiveJob::Base) do
+        def perform(arg)
+          # Job logic
+        end
+      end
+
+      ActiveJob::Base.queue_adapter = :temporal
+
+      expect do
+        job_class.perform_later(medium_argument)
+      end.to raise_error(ActiveJob::EnqueueError) do |error|
+        expect(error.cause).to be_a(ActiveJob::SerializationError)
+        expect(error.cause.message).to include("exceeds maximum allowed size")
+      end
+    ensure
+      # Reset to default
+      ActiveJob::Temporal.configure do |config|
+        config.max_payload_size_kb = 250
+      end
+    end
+  end
+
   private
 
   def start_worker(task_queue = "default")

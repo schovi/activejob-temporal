@@ -107,6 +107,55 @@ RSpec.describe ActiveJob::Temporal::Logger do
 
       logger_helper.info(:structured_event, workflow_id: "abc123")
     end
+
+    it "falls back to JSON serialization when SemanticLogger is not available" do
+      # Without defining SemanticLogger, semantic_logger_available? should return false
+      # This tests the JSON serialization fallback path
+      logger_helper.info("fallback_event", workflow_id: "xyz789")
+
+      payload = parsed_lines.first
+      expect(payload["event"]).to eq("fallback_event")
+      expect(payload["workflow_id"]).to eq("xyz789")
+      expect(payload["timestamp"]).to eq("2025-10-25T12:00:00Z")
+    end
+
+    it "JSON serializes payload without SemanticLogger" do
+      # When SemanticLogger is not defined, messages should be JSON strings
+      logger_helper.info("json_test", key: "value")
+
+      logged_output = log_io.string.strip
+      # Should be valid JSON when no SemanticLogger
+      parsed = JSON.parse(logged_output)
+      expect(parsed["event"]).to eq("json_test")
+      expect(parsed["key"]).to eq("value")
+    end
+  end
+
+  describe "SemanticLogger detection" do
+    it "properly detects when SemanticLogger is defined" do
+      stub_const("SemanticLogger", Module.new)
+      # semantic_logger_available? is a private method, but we test through behavior
+      semantic_logger = instance_double("SemanticLoggerLogger")
+      ActiveJob::Temporal.config.logger = semantic_logger
+
+      expect(semantic_logger).to receive(:info) do |payload|
+        # When SemanticLogger is available, payload should be a Hash, not a JSON string
+        expect(payload).to be_a(Hash)
+        expect(payload[:event]).to eq(:hash_event)
+      end
+
+      logger_helper.info(:hash_event, data: "test")
+    end
+
+    it "properly detects when SemanticLogger is not defined" do
+      # When SemanticLogger constant is not defined, should emit JSON string
+      logger_helper.info("no_semantic", test: true)
+
+      # The output should be JSON stringified when SemanticLogger is not available
+      logged = log_io.string.strip
+      parsed = JSON.parse(logged)
+      expect(parsed).to be_a(Hash)
+    end
   end
 
   def parsed_lines

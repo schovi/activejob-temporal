@@ -154,4 +154,64 @@ RSpec.describe ActiveJob::Temporal, ".client" do
       described_class.client
     end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal at 1\.2\.3\.4:7233/)
   end
+
+  context "TLS certificate error handling" do
+    it "wraps OpenSSL certificate errors with descriptive message" do
+      require "openssl"
+
+      described_class.configure do |config|
+        config.target = "temporal.example.com:7233"
+        config.namespace = "default"
+      end
+
+      allow(Temporalio::Client).to receive(:connect)
+        .and_raise(OpenSSL::X509::CertificateError, "invalid certificate format")
+
+      expect do
+        described_class.client
+      end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal/)
+    end
+
+    it "wraps socket errors when target is unreachable" do
+      described_class.configure do |config|
+        config.target = "invalid.temporal.example.com:7233"
+        config.namespace = "default"
+      end
+
+      allow(Temporalio::Client).to receive(:connect)
+        .and_raise(SocketError, "getaddrinfo: nodename nor servname provided")
+
+      expect do
+        described_class.client
+      end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal/)
+    end
+
+    it "wraps connection refused errors with descriptive message" do
+      described_class.configure do |config|
+        config.target = "localhost:7233"
+        config.namespace = "default"
+      end
+
+      allow(Temporalio::Client).to receive(:connect)
+        .and_raise(Errno::ECONNREFUSED, "Connection refused")
+
+      expect do
+        described_class.client
+      end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal at localhost:7233/)
+    end
+
+    it "wraps timeout errors when connection takes too long" do
+      described_class.configure do |config|
+        config.target = "slow.temporal.example.com:7233"
+        config.namespace = "default"
+      end
+
+      allow(Temporalio::Client).to receive(:connect)
+        .and_raise(Errno::ETIMEDOUT, "Connection timed out")
+
+      expect do
+        described_class.client
+      end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal/)
+    end
+  end
 end
