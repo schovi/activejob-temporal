@@ -212,12 +212,16 @@ module ActiveJob
       #     # => "target must match host:port format..."
       #   end
       def validate!
-        validate_target!
-        validate_namespace!
-        validate_timeouts!
-        validate_retry_settings!
-        validate_payload_size!
-        validate_worker_concurrency!
+        errors = []
+        errors.concat(validate_target_errors)
+        errors.concat(validate_namespace_errors)
+        errors.concat(validate_timeouts_errors)
+        errors.concat(validate_retry_settings_errors)
+        errors.concat(validate_payload_size_errors)
+        errors.concat(validate_worker_concurrency_errors)
+
+        raise ConfigurationError, format_validation_errors(errors) unless errors.empty?
+
         nil
       end
 
@@ -234,88 +238,144 @@ module ActiveJob
         value
       end
 
-      # Validates target host:port format.
+      # Collects target validation errors.
       # @api private
-      def validate_target!
-        target_regex = /^[\w.-]+:\d{1,5}$/
-        return if target&.match?(target_regex)
+      # @return [Array<String>] list of validation errors
+      def validate_target_errors
+        errors = []
 
-        raise ConfigurationError,
-              "target must match host:port format (e.g., 'localhost:7233'), got: #{target.inspect}"
+        if target.nil? || target.empty?
+          errors << "Target host is required (set TEMPORAL_TARGET or config.target)"
+        else
+          target_regex = /^[\w.-]+:\d{1,5}$/
+          unless target.match?(target_regex)
+            errors << "Target must be in format 'host:port' " \
+                      "(e.g., 'localhost:7233' or 'temporal.example.com:7233'), got: #{target.inspect}"
+          end
+        end
+
+        errors
       end
 
-      # Validates namespace format (alphanumeric, hyphens, underscores).
+      # Collects namespace validation errors.
       # @api private
-      def validate_namespace!
-        namespace_regex = /^[\w-]+$/
-        return if namespace&.match?(namespace_regex)
+      # @return [Array<String>] list of validation errors
+      def validate_namespace_errors
+        errors = []
 
-        raise ConfigurationError,
-              "namespace must contain only alphanumeric characters, hyphens, and underscores, got: #{namespace.inspect}"
+        if namespace.nil? || namespace.empty?
+          errors << "Namespace is required (set TEMPORAL_NAMESPACE or config.namespace)"
+        else
+          namespace_regex = /^[\w-]+$/
+          unless namespace.match?(namespace_regex)
+            errors << "Namespace must contain only alphanumeric characters, hyphens, and underscores " \
+                      "(got: #{namespace.inspect}). Use 'prod-default' not 'prod_default!'"
+          end
+        end
+
+        errors
       end
 
-      # Validates all timeout configuration values.
+      # Collects timeout validation errors.
       # @api private
-      def validate_timeouts!
-        validate_positive_duration_value!(@default_activity_timeout, "default_activity_timeout")
-        validate_positive_duration_value!(@default_retry_initial_interval, "default_retry_initial_interval")
+      # @return [Array<String>] list of validation errors
+      def validate_timeouts_errors
+        errors = []
+        errors.concat(validate_positive_duration_value(@default_activity_timeout, "default_activity_timeout"))
+        errors.concat(validate_positive_duration_value(@default_retry_initial_interval,
+                                                       "default_retry_initial_interval"))
+        errors
       end
 
       # Validates that a value is a positive duration.
       # @api private
-      def validate_positive_duration_value!(value, attribute_name)
+      # @return [Array<String>] list of validation errors
+      def validate_positive_duration_value(value, attribute_name)
+        errors = []
+
         # Check if it's a proper duration-like object (Numeric or ActiveSupport::Duration)
         unless value.is_a?(Numeric) || value.is_a?(ActiveSupport::Duration)
-          raise ConfigurationError, "#{attribute_name} must be a duration, got: #{value.inspect}"
+          errors << "#{attribute_name} must be a duration (e.g., 10.minutes or 30.seconds), got: #{value.inspect}"
+          return errors
         end
 
         seconds = value.to_f
-        return if seconds.positive?
+        unless seconds.positive?
+          errors << "#{attribute_name} must be positive (got: #{seconds} seconds). " \
+                    "Use values like 1.second or 10.minutes"
+        end
 
-        raise ConfigurationError, "#{attribute_name} must be positive, got: #{seconds}"
+        errors
       end
 
-      # Validates retry backoff and max attempts configuration.
+      # Collects retry settings validation errors.
       # @api private
-      def validate_retry_settings!
+      # @return [Array<String>] list of validation errors
+      def validate_retry_settings_errors
+        errors = []
+
         if default_retry_backoff < 1.0
-          raise ConfigurationError,
-                "default_retry_backoff must be >= 1.0, got: #{default_retry_backoff}"
+          errors << "default_retry_backoff must be >= 1.0 (got: #{default_retry_backoff}). " \
+                    "Use 2.0 for exponential backoff"
         end
 
-        return unless default_retry_max_attempts.negative?
+        if default_retry_max_attempts.negative?
+          errors << "default_retry_max_attempts must be >= 0 (got: #{default_retry_max_attempts}). " \
+                    "Use 0 for unlimited retries, or positive number for max attempts"
+        end
 
-        raise ConfigurationError,
-              "default_retry_max_attempts must be >= 0, got: #{default_retry_max_attempts}"
+        errors
       end
 
-      # Validates max_payload_size_kb is within allowed range.
+      # Collects payload size validation errors.
       # @api private
-      def validate_payload_size!
+      # @return [Array<String>] list of validation errors
+      def validate_payload_size_errors
+        errors = []
         max_allowed_kb = 2_097_152 # 2 GB in KB
-        if max_payload_size_kb > max_allowed_kb
-          raise ConfigurationError,
-                "max_payload_size_kb must be <= #{max_allowed_kb} KB (2 GB), got: #{max_payload_size_kb}"
+
+        if max_payload_size_kb <= 0
+          errors << "max_payload_size_kb must be positive (got: #{max_payload_size_kb}). " \
+                    "Typical values: 250 KB (default), 500 KB (large), or 1000 KB (very large)"
+        elsif max_payload_size_kb > max_allowed_kb
+          errors << "max_payload_size_kb cannot exceed #{max_allowed_kb} KB (2 GB) " \
+                    "per Temporal limits (got: #{max_payload_size_kb})"
         end
 
-        return unless max_payload_size_kb <= 0
-
-        raise ConfigurationError,
-              "max_payload_size_kb must be positive, got: #{max_payload_size_kb}"
+        errors
       end
 
-      # Validates worker concurrency settings.
+      # Collects worker concurrency validation errors.
       # @api private
-      def validate_worker_concurrency!
+      # @return [Array<String>] list of validation errors
+      def validate_worker_concurrency_errors
+        errors = []
+
         if max_concurrent_activities <= 0
-          raise ConfigurationError,
-                "max_concurrent_activities must be positive, got: #{max_concurrent_activities}"
+          errors << "max_concurrent_activities must be positive (got: #{max_concurrent_activities}). " \
+                    "Typical values: 50 (low), 100 (default), 200+ (high throughput)"
         end
 
-        return unless max_concurrent_workflow_tasks <= 0
+        if max_concurrent_workflow_tasks <= 0
+          errors << "max_concurrent_workflow_tasks must be positive (got: #{max_concurrent_workflow_tasks}). " \
+                    "Typical values: 5 (default), 10-50 (medium), 100+ (high throughput)"
+        end
 
-        raise ConfigurationError,
-              "max_concurrent_workflow_tasks must be positive, got: #{max_concurrent_workflow_tasks}"
+        errors
+      end
+
+      # Formats validation errors for display.
+      # @api private
+      # @param errors [Array<String>] list of error messages
+      # @return [String] formatted error message
+      def format_validation_errors(errors)
+        return errors.first if errors.size == 1
+
+        error_list = errors.each_with_index.map do |error, i|
+          "  #{i + 1}. #{error}"
+        end.join("\n")
+
+        "Configuration validation failed with #{errors.size} error#{'s' if errors.size > 1}:\n#{error_list}"
       end
 
       # Returns default logger (Rails.logger or stdout).

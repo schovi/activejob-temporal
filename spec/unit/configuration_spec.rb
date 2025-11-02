@@ -212,7 +212,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       config = described_class.new
       expect { config.validate! }.to raise_error(
         ActiveJob::Temporal::ConfigurationError,
-        /target must match host:port format/
+        /[Tt]arget must.*host:port/
       )
     end
 
@@ -329,7 +329,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.target = "localhost"
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /target must match host:port format/
+          /[Tt]arget must.*host:port/
         )
       end
 
@@ -337,7 +337,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.target = ":7233"
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /target must match host:port format/
+          /[Tt]arget must.*host:port/
         )
       end
 
@@ -345,7 +345,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.target = "badformat"
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /target must match host:port format/
+          /[Tt]arget must.*host:port/
         )
       end
 
@@ -353,7 +353,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.target = "localhost:123456"
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /target must match host:port format/
+          /[Tt]arget must.*host:port/
         )
       end
 
@@ -361,7 +361,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.target = "host with spaces:7233"
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /target must match host:port format/
+          /[Tt]arget must.*host:port/
         )
       end
 
@@ -369,7 +369,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.target = nil
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /target must match host:port format/
+          /Target host is required|Target must be in format/
         )
       end
     end
@@ -379,7 +379,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.namespace = "has spaces"
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /namespace must contain only alphanumeric/
+          /[Nn]amespace must contain only/
         )
       end
 
@@ -387,7 +387,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.namespace = "special!chars"
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /namespace must contain only alphanumeric/
+          /[Nn]amespace must contain only/
         )
       end
 
@@ -395,7 +395,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.namespace = "namespace.with.dots"
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /namespace must contain only alphanumeric/
+          /[Nn]amespace must contain only/
         )
       end
 
@@ -403,7 +403,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.namespace = nil
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /namespace must contain only alphanumeric/
+          /Namespace is required|namespace must contain only alphanumeric/
         )
       end
 
@@ -504,7 +504,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.max_payload_size_kb = 2_097_153
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_payload_size_kb must be <= 2097152 KB/
+          /max_payload_size_kb.*2097152 KB/
         )
       end
 
@@ -512,7 +512,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.max_payload_size_kb = 5_000_000
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_payload_size_kb must be <= 2097152 KB/
+          /max_payload_size_kb.*2097152 KB/
         )
       end
 
@@ -594,14 +594,35 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     context "with multiple validation failures" do
-      it "raises on the first validation failure encountered" do
+      it "collects and reports all validation errors" do
         configuration.target = "invalid"
         configuration.namespace = "has spaces"
         configuration.default_retry_backoff = 0.5
+        configuration.max_payload_size_kb = -1
+
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError
+        ) do |error|
+          # Should include header for multiple errors
+          expect(error.message).to include("Configuration validation failed")
+
+          # Should include all errors
+          expect(error.message).to include("Target must be in format")
+          expect(error.message).to include("Namespace must contain only")
+          expect(error.message).to include("default_retry_backoff must be >= 1.0")
+          expect(error.message).to include("max_payload_size_kb must be positive")
+
+          # Should number the errors
+          expect(error.message).to match(/\d+\.\s/)
+        end
+      end
+
+      it "shows single error without numbering" do
+        configuration.target = "invalid"
 
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /target must match/
+          /^Target must be in format/ # Should start with the error (not "Configuration validation failed")
         )
       end
     end
