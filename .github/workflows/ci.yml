@@ -25,6 +25,30 @@ jobs:
       - name: Run Rubocop
         run: bundle exec rake rubocop
 
+  # Security scanning - checks for known vulnerabilities in dependencies
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Install bundle-audit
+        run: gem install bundler-audit
+
+      - name: Update vulnerability database
+        run: bundle-audit update
+
+      - name: Check for vulnerabilities
+        run: bundle-audit check --update
+
   # Unit tests - runs on Ruby matrix
   test-unit:
     name: Unit Tests (Ruby ${{ matrix.ruby }})
@@ -91,7 +115,7 @@ jobs:
   build:
     name: Build Gem
     runs-on: ubuntu-latest
-    needs: [lint, test-unit, test-integration]
+    needs: [lint, security, test-unit, test-integration]
 
     steps:
       - name: Checkout code

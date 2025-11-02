@@ -20,4 +20,9 @@ Gemfile.lock
 _yardoc/
 doc/
 node_modules/
+
+# Security audit artifacts
+/brakeman-report.html
+.bundle-audit.json
+
 .WIP/
