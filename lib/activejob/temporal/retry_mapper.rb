@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "active_support/core_ext/string/inflections"
+require_relative "retry_handler_extractor"
 
 module ActiveJob
   module Temporal
@@ -145,19 +146,22 @@ module ActiveJob
       #   RetryMapper.discard_exception?(MyJob, ActiveRecord::RecordNotFound.new)
       #   # => true
       def discard_exception?(job_class, exception)
-        return false unless job_class && exception
-
-        discard_handlers(job_class).any? do |handler|
-          handles_exception?(handler[:exception], exception)
-        end
+        extractor.discard_exception?(job_class, exception)
       end
 
       # -- helpers ----------------------------------------------------------------
 
+      # Returns the handler extractor instance (memoized).
+      # @api private
+      def extractor
+        @extractor ||= RetryHandlerExtractor.new
+      end
+      private_class_method :extractor
+
       # Selects the matching retry handler entry for the given exception.
       # @api private
       def select_retry_entry(job_class, exception)
-        handlers = retry_handlers(job_class)
+        handlers = extractor.retry_handlers(job_class)
         return nil if handlers.empty?
 
         return handlers.find { |handler| handles_exception?(handler[:exception], exception) } if exception
@@ -166,88 +170,20 @@ module ActiveJob
       end
       private_class_method :select_retry_entry
 
-      # Extracts retry handler entries from job class's rescue_handlers.
+      # Extracts discard handler exception class names.
       # @api private
-      def retry_handlers(job_class)
-        handler_entries(job_class) do |handler|
-          next unless handler.respond_to?(:binding)
+      def discard_exception_names(job_class)
+        extractor.discard_handlers(job_class).each_with_object([]) do |handler, names|
+          next unless handler[:exception]
 
-          binding = handler.binding
-          next unless retry_handler_binding?(binding)
+          name = handler[:exception].name
+          next unless name
+          next if names.include?(name)
 
-          {
-            handler: handler,
-            wait: binding.local_variable_get(:wait),
-            attempts: binding.local_variable_get(:attempts)
-          }
+          names << name
         end
       end
-      private_class_method :retry_handlers
-
-      # Extracts discard handler entries from job class's rescue_handlers.
-      # @api private
-      def discard_handlers(job_class)
-        handler_entries(job_class) do |handler|
-          next unless handler.respond_to?(:binding)
-
-          binding = handler.binding
-          next unless discard_handler_binding?(binding)
-
-          { handler: handler }
-        end
-      end
-      private_class_method :discard_handlers
-
-      # Generic handler entry extractor (used by retry_handlers and discard_handlers).
-      # @api private
-      def handler_entries(job_class)
-        return [] unless job_class
-        return [] unless job_class.respond_to?(:rescue_handlers)
-
-        handlers = job_class.rescue_handlers
-        return [] unless handlers.respond_to?(:reverse_each)
-
-        entries = []
-        handlers.reverse_each do |class_or_name, handler|
-          payload = yield(handler)
-          next unless payload
-
-          exception_class = constantize_handler_class(job_class, class_or_name)
-          next unless exception_class
-
-          entries << payload.merge(exception: exception_class)
-        end
-        entries
-      end
-      private_class_method :handler_entries
-
-      # Checks if a binding represents a retry handler (has :attempts local variable).
-      # @api private
-      def retry_handler_binding?(binding)
-        binding&.local_variable_defined?(:attempts)
-      end
-      private_class_method :retry_handler_binding?
-
-      # Checks if a binding represents a discard handler (has :report but not :attempts).
-      # @api private
-      def discard_handler_binding?(binding)
-        binding&.local_variable_defined?(:report) && !binding.local_variable_defined?(:attempts)
-      end
-      private_class_method :discard_handler_binding?
-
-      # Constantizes exception class from symbol/string/module.
-      # @api private
-      def constantize_handler_class(job_class, class_or_name)
-        case class_or_name
-        when Module
-          class_or_name
-        when String, Symbol
-          job_class.const_get(class_or_name)
-        end
-      rescue NameError
-        class_or_name.to_s.safe_constantize
-      end
-      private_class_method :constantize_handler_class
+      private_class_method :discard_exception_names
 
       # Extracts initial interval from retry_on wait value.
       # @api private
@@ -279,22 +215,8 @@ module ActiveJob
       end
       private_class_method :attempts_from
 
-      # Extracts exception class names from discard handlers.
-      # @api private
-      def discard_exception_names(job_class)
-        discard_handlers(job_class).each_with_object([]) do |handler, names|
-          next unless handler[:exception]
-
-          name = handler[:exception].name
-          next unless name
-          next if names.include?(name)
-
-          names << name
-        end
-      end
-      private_class_method :discard_exception_names
-
       # Checks if handler_class handles the given exception.
+      # Delegates to the extractor's private method via duck typing.
       # @api private
       def handles_exception?(handler_class, exception)
         return false unless handler_class && exception
