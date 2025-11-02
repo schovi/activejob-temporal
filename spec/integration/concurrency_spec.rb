@@ -27,23 +27,22 @@ RSpec.describe "Concurrent worker execution", :integration do
 
     # Create a job class that tracks execution count
     job_class = Class.new(ActiveJob::Base) do
-      class_variable_set(:@@execution_count, 0)
-      class_variable_set(:@@execution_lock, Mutex.new)
+      @execution_count = 0
+      @execution_lock = Mutex.new
+
+      class << self
+        attr_accessor :execution_count, :execution_lock
+      end
 
       def perform(_test_id)
-        self.class.class_variable_get(:@@execution_lock).synchronize do
-          count = self.class.class_variable_get(:@@execution_count)
-          self.class.class_variable_set(:@@execution_count, count + 1)
+        self.class.execution_lock.synchronize do
+          self.class.execution_count += 1
         end
         sleep 0.2 # Simulate work
       end
 
-      def self.execution_count
-        class_variable_get(:@@execution_count) if class_variable_defined?(:@@execution_count)
-      end
-
       def self.reset_count
-        class_variable_set(:@@execution_count, 0)
+        @execution_count = 0
       end
     end
 

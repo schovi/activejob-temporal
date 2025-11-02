@@ -97,6 +97,9 @@ module ActiveJob
     #     config.default_activity_timeout = 10.minutes
     #     config.default_retry_max_attempts = 3
     #   end
+    # rubocop:disable Metrics/ClassLength
+    # Configuration class has legitimate complexity due to many config options
+    # and comprehensive validation logic. Extracting would reduce cohesion.
     class Configuration
       # @!attribute [rw] target
       #   @return [String] Temporal server host:port (default: "127.0.0.1:7233")
@@ -388,6 +391,7 @@ module ActiveJob
         end
       end
     end
+    # rubocop:enable Metrics/ClassLength
 
     class << self
       # Returns the global configuration object.

@@ -194,7 +194,7 @@ RSpec.describe ActiveJob::Temporal::Payload do
 
       it "accepts job with nil arguments" do
         # Job with no arguments (shouldn't raise even with small limit)
-        job_nil = Class.new(ActiveJob::Base) {}
+        job_nil = Class.new(ActiveJob::Base)
         job_instance = job_nil.new
         job_instance.arguments = nil
 

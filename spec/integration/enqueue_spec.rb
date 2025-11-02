@@ -99,12 +99,16 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
 
       ActiveJob::Base.queue_adapter = :temporal
 
-      expect do
+      error_raised = nil
+      begin
         job_class.perform_later(large_argument)
-      end.to raise_error(ActiveJob::EnqueueError) do |error|
-        expect(error.cause).to be_a(ActiveJob::SerializationError)
-        expect(error.cause.message).to include("exceeds maximum allowed size")
+      rescue ActiveJob::EnqueueError => e
+        error_raised = e
       end
+
+      expect(error_raised).to be_a(ActiveJob::EnqueueError)
+      expect(error_raised.cause).to be_a(ActiveJob::SerializationError)
+      expect(error_raised.cause.message).to include("exceeds maximum allowed size")
     end
 
     it "accepts job with payload < 250KB (default limit)" do
@@ -115,14 +119,14 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
       # Create a payload under the limit
       small_argument = "x" * (100 * 1024) # 100 KB
       job_class = Class.new(ActiveJob::Base) do
-        class_variable_set(:@@last_executed, nil)
+        @last_executed = nil
 
-        def perform(arg)
-          self.class.class_variable_set(:@@last_executed, arg.length)
+        class << self
+          attr_accessor :last_executed
         end
 
-        def self.last_executed
-          class_variable_get(:@@last_executed) if class_variable_defined?(:@@last_executed)
+        def perform(arg)
+          self.class.last_executed = arg.length
         end
       end
 
@@ -159,12 +163,16 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
 
       ActiveJob::Base.queue_adapter = :temporal
 
-      expect do
+      error_raised = nil
+      begin
         job_class.perform_later(medium_argument)
-      end.to raise_error(ActiveJob::EnqueueError) do |error|
-        expect(error.cause).to be_a(ActiveJob::SerializationError)
-        expect(error.cause.message).to include("exceeds maximum allowed size")
+      rescue ActiveJob::EnqueueError => e
+        error_raised = e
       end
+
+      expect(error_raised).to be_a(ActiveJob::EnqueueError)
+      expect(error_raised.cause).to be_a(ActiveJob::SerializationError)
+      expect(error_raised.cause.message).to include("exceeds maximum allowed size")
     ensure
       # Reset to default
       ActiveJob::Temporal.configure do |config|

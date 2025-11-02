@@ -27,16 +27,16 @@ RSpec.describe "Idempotency key handling", :integration do
     sleep 0.5
 
     job_class = Class.new(ActiveJob::Base) do
-      class_variable_set(:@@captured_key, nil)
+      @captured_key = nil
+
+      class << self
+        attr_accessor :captured_key
+      end
 
       def perform(_test_id)
         # Access idempotency key from thread-local storage
         key = Thread.current[ActiveJob::Temporal::Activities::AjRunnerActivity::IDEMPOTENCY_KEY]
-        self.class.class_variable_set(:@@captured_key, key)
-      end
-
-      def self.captured_key
-        class_variable_get(:@@captured_key) if class_variable_defined?(:@@captured_key)
+        self.class.captured_key = key
       end
     end
 
@@ -72,22 +72,19 @@ RSpec.describe "Idempotency key handling", :integration do
     Mutex.new
 
     job_class = Class.new(ActiveJob::Base) do
-      class_variable_set(:@@captured_keys, [])
-      class_variable_set(:@@keys_lock, Mutex.new)
+      @captured_keys = []
+      @keys_lock = Mutex.new
+
+      class << self
+        attr_accessor :captured_keys, :keys_lock
+      end
 
       def perform(_iteration)
         # Capture the idempotency key multiple times during execution
         key = Thread.current[ActiveJob::Temporal::Activities::AjRunnerActivity::IDEMPOTENCY_KEY]
-        lock = self.class.class_variable_get(:@@keys_lock)
-        lock.synchronize do
-          keys = self.class.class_variable_get(:@@captured_keys)
-          keys << key
-          self.class.class_variable_set(:@@captured_keys, keys)
+        self.class.keys_lock.synchronize do
+          self.class.captured_keys << key
         end
-      end
-
-      def self.captured_keys
-        class_variable_get(:@@captured_keys) if class_variable_defined?(:@@captured_keys)
       end
     end
 
@@ -98,7 +95,7 @@ RSpec.describe "Idempotency key handling", :integration do
     Timeout.timeout(10) do
       loop do
         keys = job_class.captured_keys
-        break if keys.present? && keys.size > 0
+        break if keys.present? && !keys.empty?
 
         sleep 0.1
       end
@@ -131,14 +128,8 @@ RSpec.describe "Idempotency key handling", :integration do
     job_class.set(queue: task_queue).perform_later("test-cleanup")
 
     # Wait for job to complete
-    Timeout.timeout(10) do
-      loop do
-        # Give it time to execute and clean up
-        sleep 0.2
-        # Break after a reasonable time
-        break
-      end
-    end
+    # Give it time to execute and clean up
+    sleep 0.5
 
     # NOTE: In a real scenario with proper workflow execution,
     # we would verify that the worker's thread-local key is cleared.
