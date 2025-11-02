@@ -18,7 +18,48 @@ This is a minimal Rails 8 application that demonstrates the core features of the
 
 ## Quick Start
 
-### 1. Install Dependencies
+### Fastest: Docker Compose (Recommended)
+
+The example includes a complete `docker-compose.yml` that starts all services in one command:
+
+```bash
+cd examples/basic_rails_app
+docker-compose up
+```
+
+This will:
+1. ✅ Start PostgreSQL (Temporal's database)
+2. ✅ Start Temporal Server (port 7233)
+3. ✅ Start Temporal UI (port 8080)
+4. ✅ Register search attributes automatically
+5. ✅ Start the Rails app (port 3000)
+6. ✅ Start the Temporal worker
+
+Once running, you'll see output from both the Rails server and worker. The services are ready when you see "Worker started" in the logs.
+
+**Access the services:**
+- Rails API: http://localhost:3000
+- Temporal UI: http://localhost:8080
+
+That's it! You can now [jump to usage examples](#usage-examples) below.
+
+To stop all services:
+```bash
+docker-compose down
+```
+
+To see logs from a specific service:
+```bash
+docker-compose logs -f rails-app      # Rails server
+docker-compose logs -f temporal-worker  # Temporal worker
+docker-compose logs -f temporal         # Temporal server
+```
+
+### Alternative: Manual Setup (Without Docker)
+
+If you prefer to run services manually instead of using Docker Compose:
+
+#### 1. Install Dependencies
 
 ```bash
 cd examples/basic_rails_app
@@ -27,7 +68,7 @@ bundle install
 
 This will install Rails and the `activejob-temporal` gem from the parent directory.
 
-### 2. Start Temporal Server
+#### 2. Start Temporal Server
 
 From the **project root directory** (not the example app directory):
 
@@ -48,7 +89,7 @@ docker-compose ps
 
 Access the Temporal UI at http://localhost:8080
 
-### 3. Register Search Attributes
+#### 3. Register Search Attributes
 
 **CRITICAL**: Before starting the worker, you must register search attributes. This is required for workflows to start successfully.
 
@@ -76,7 +117,7 @@ docker exec -it temporal temporal operator search-attribute create \
   --name ajTenantId --type Keyword
 ```
 
-### 4. Start the Temporal Worker
+#### 4. Start the Temporal Worker
 
 The worker processes jobs from the Temporal task queue. From the **example app directory**:
 
@@ -97,7 +138,7 @@ The worker will block while polling the task queue. Press `Ctrl+C` to gracefully
 
 **Note**: The gem's `temporal-worker` executable auto-detects Rails when run from the app directory and loads your Rails environment automatically.
 
-### 5. Start the Rails Server
+#### 5. Start the Rails Server
 
 In a **new terminal**, from the example app directory:
 
@@ -361,14 +402,27 @@ This usually means search attributes weren't registered. Run the registration co
 
 ## Cleanup
 
-To stop all services:
+### If using Docker Compose (recommended):
+
+```bash
+# Stop all services
+docker-compose down
+
+# To also remove volumes (databases, persisted data):
+docker-compose down -v
+
+# To remove built images:
+docker-compose down --rmi all
+```
+
+### If using manual setup:
 
 ```bash
 # Stop Rails server (Ctrl+C in terminal)
 
 # Stop worker (Ctrl+C in terminal)
 
-# Stop Temporal services
+# Stop Temporal services from project root
 cd ../..  # Go to project root
 docker-compose down
 

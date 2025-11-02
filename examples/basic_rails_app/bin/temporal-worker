@@ -1,0 +1,7 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+ENV["RUBY_UNBUFFERED"] = "1"
+
+require "bundler/setup"
+load Gem.bin_path("activejob-temporal", "temporal-worker")

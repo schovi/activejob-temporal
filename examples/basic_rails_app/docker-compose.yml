@@ -1,0 +1,145 @@
+services:
+  # PostgreSQL database for Temporal
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: temporal
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - temporal-network
+
+  # Temporal server
+  temporal:
+    image: temporalio/auto-setup:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: postgres
+      LOG_LEVEL: info
+    ports:
+      - "7233:7233"
+    volumes:
+      - temporal_data:/var/lib/temporal
+    networks:
+      - temporal-network
+
+  # Initialize search attributes for ActiveJob
+  temporal-init:
+    image: temporalio/auto-setup:latest
+    depends_on:
+      temporal:
+        condition: service_started
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "Waiting for Temporal to be ready..."
+        sleep 15
+
+        echo "Registering ActiveJob search attributes..."
+
+        tctl --address temporal:7233 --auto_confirm admin cluster add-search-attributes \
+          --name ajClass --type Keyword \
+          --name ajQueue --type Keyword \
+          --name ajJobId --type Keyword \
+          --name ajEnqueuedAt --type Datetime \
+          --name ajTenantId --type Keyword
+
+        echo "✅ Search attributes initialization complete"
+        exit 0
+    networks:
+      - temporal-network
+
+  # Temporal UI
+  temporal-ui:
+    image: temporalio/ui:latest
+    depends_on:
+      temporal:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    networks:
+      - temporal-network
+
+  # Rails application
+  rails-app:
+    build:
+      context: ../../
+      dockerfile: examples/basic_rails_app/Dockerfile.dev
+    depends_on:
+      temporal-init:
+        condition: service_completed_successfully
+    ports:
+      - "3000:3000"
+    environment:
+      RAILS_ENV: development
+      TEMPORAL_TARGET: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      AJ_TEMPORAL_WORKER_QUEUE: default
+      RAILS_LOG_TO_STDOUT: 1
+    volumes:
+      # Mount project root for live code changes (Dockerfile.dev expects /workspace)
+      - ../../:/workspace
+      # Preserve bundle cache across runs
+      - bundle_cache:/usr/local/bundle
+      # Preserve database
+      - rails_storage:/workspace/examples/basic_rails_app/storage
+    command: bundle exec rails server -b 0.0.0.0
+    networks:
+      - temporal-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/up"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Temporal worker
+  temporal-worker:
+    build:
+      context: ../../
+      dockerfile: examples/basic_rails_app/Dockerfile.dev
+    depends_on:
+      rails-app:
+        condition: service_started
+      temporal-init:
+        condition: service_completed_successfully
+    environment:
+      RAILS_ENV: development
+      TEMPORAL_TARGET: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      AJ_TEMPORAL_WORKER_QUEUE: default
+      RAILS_LOG_TO_STDOUT: 1
+      RUBY_UNBUFFERED: 1
+    volumes:
+      # Mount project root for live code changes (Dockerfile.dev expects /workspace)
+      - ../../:/workspace
+      # Preserve bundle cache across runs
+      - bundle_cache:/usr/local/bundle
+    command: ./bin/temporal-worker
+    networks:
+      - temporal-network
+
+volumes:
+  postgres_data:
+  temporal_data:
+  bundle_cache:
+  rails_storage:
+
+networks:
+  temporal-network:
+    driver: bridge

@@ -1,5 +1,12 @@
 # frozen_string_literal: true
 
+# Ensure Rails logger is configured for stdout output in Docker environments
+if ENV["RAILS_LOG_TO_STDOUT"] == "1" && defined?(Rails)
+  Rails.logger = ActiveSupport::Logger.new($stdout)
+  Rails.logger.level = Logger::INFO
+  Rails.logger.formatter = Logger::Formatter.new
+end
+
 # Configure the ActiveJob Temporal adapter
 ActiveJob::Temporal.configure do |config|
   # Temporal server address (default: "127.0.0.1:7233")
@@ -29,3 +36,6 @@ ActiveJob::Temporal.configure do |config|
   # Maximum payload size in KB (default: 250)
   config.max_payload_size_kb = 250
 end
+
+# Validate configuration
+ActiveJob::Temporal.config.validate!

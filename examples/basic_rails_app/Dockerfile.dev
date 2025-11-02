@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1
+# Development Dockerfile for basic_rails_app
+# Optimized for development with live code reloading via volume mounts
+# Build context: project root (../../)
+
+ARG RUBY_VERSION=3.3.5
+FROM docker.io/library/ruby:$RUBY_VERSION-slim
+
+# Install base packages including development tools
+RUN apt-get update -qq && \
+    apt-get install --no-install-recommends -y \
+      build-essential \
+      curl \
+      git \
+      libjemalloc2 \
+      libyaml-dev \
+      libvips \
+      pkg-config \
+      sqlite3 && \
+    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+
+# Set development environment with unbuffered output for proper logging
+ENV RAILS_ENV="development" \
+    BUNDLE_PATH="/usr/local/bundle" \
+    RUBY_UNBUFFERED="1" \
+    RUBYGEMS_GEMDEPS="-"
+
+# Create app directory
+WORKDIR /workspace
+
+# Copy gem code (needed for Gemfile's path: "../..")
+COPY . .
+
+# Create non-root user for security
+RUN groupadd --system --gid 1000 rails && \
+    useradd rails --uid 1000 --gid 1000 --create-home --shell /bin/bash
+
+# Install application gems
+RUN cd examples/basic_rails_app && \
+    bundle install
+
+# Switch to app directory
+WORKDIR /workspace/examples/basic_rails_app
+
+# Set up ownership
+RUN chown -R rails:rails /workspace
+USER 1000:1000
+
+# Expose Rails default port
+EXPOSE 3000
+
+# Default to running Rails server
+CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0"]

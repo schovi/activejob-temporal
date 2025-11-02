@@ -1,0 +1,35 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Development and logs
+log/
+tmp/
+*.log
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dependencies (use volume mount instead)
+vendor/bundle
+node_modules/
+
+# Storage and database (use volume mount instead)
+storage/
+db/sqlite
+
+# Temporary files
+.cache/
+.env.local
+.env.*.local
