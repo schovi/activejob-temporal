@@ -78,8 +78,8 @@ Create an initializer to configure the Temporal client connection:
 ```ruby
 # config/initializers/activejob_temporal.rb
 ActiveJob::Temporal.configure do |config|
-  config.target = ENV.fetch("TEMPORAL_TARGET", "127.0.0.1:7233")
-  config.namespace = ENV.fetch("TEMPORAL_NAMESPACE", "default")
+  config.target = ENV.fetch("ACTIVEJOB_TEMPORAL_TARGET", "127.0.0.1:7233")
+  config.namespace = ENV.fetch("ACTIVEJOB_TEMPORAL_NAMESPACE", "default")
   config.task_queue_prefix = ENV.fetch("TEMPORAL_TASK_QUEUE_PREFIX", nil)
 
   # Optional: customize timeouts and retries
@@ -143,9 +143,9 @@ SendInvoiceJob.set(wait: 5.minutes).perform_later(invoice.id)
 The worker polls Temporal for jobs and executes them. Start the worker using the provided executable:
 
 ```bash
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=billing \
+ACTIVEJOB_TEMPORAL_TARGET=localhost:7233 \
+ACTIVEJOB_TEMPORAL_NAMESPACE=default \
+ACTIVEJOB_TEMPORAL_TASK_QUEUE=billing \
 bin/temporal-worker
 ```
 
@@ -369,9 +369,9 @@ Run the worker from your Rails application directory. The `temporal-worker` exec
 
 ```bash
 cd your-app
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=default \
+ACTIVEJOB_TEMPORAL_TARGET=localhost:7233 \
+ACTIVEJOB_TEMPORAL_NAMESPACE=default \
+ACTIVEJOB_TEMPORAL_TASK_QUEUE=default \
 bundle exec temporal-worker
 ```
 
@@ -390,11 +390,11 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 
 | Variable | Required | Description | Example |
 | --- | --- | --- | --- |
-| `TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` or `temporal.example.com:7233` |
-| `TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` or `production` |
-| `AJ_TEMPORAL_WORKER_QUEUE` | No | Task queue the worker will poll for jobs. | `default` (if omitted) |
-| `AJ_TEMPORAL_MAX_ACT` | No | Maximum concurrent activity executions (defaults to `100`). | `50` or `200` |
-| `AJ_TEMPORAL_MAX_WORKFLOWS` | No | Maximum concurrent workflow task polls (defaults to `5`). | `20` or `50` |
+| `ACTIVEJOB_TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` or `temporal.example.com:7233` |
+| `ACTIVEJOB_TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` or `production` |
+| `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | No | Task queue the worker will poll for jobs. | `default` (if omitted) |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum concurrent activity executions (defaults to `100`). | `50` or `200` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum concurrent workflow task polls (defaults to `5`). | `20` or `50` |
 
 ### Performance Tuning
 
@@ -406,13 +406,13 @@ For different workloads, adjust via environment variables:
 
 ```bash
 # High-throughput setup (production)
-AJ_TEMPORAL_MAX_ACT=500 \
-AJ_TEMPORAL_MAX_WORKFLOWS=50 \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=500 \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=50 \
 bundle exec temporal-worker
 
 # Low-resource setup (development)
-AJ_TEMPORAL_MAX_ACT=20 \
-AJ_TEMPORAL_MAX_WORKFLOWS=2 \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=20 \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=2 \
 bundle exec temporal-worker
 ```
 

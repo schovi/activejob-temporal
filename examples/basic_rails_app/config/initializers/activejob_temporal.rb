@@ -11,10 +11,16 @@ end
 # Note: Configuration is automatically validated at the end of this block
 ActiveJob::Temporal.configure do |config|
   # Temporal server address (default: "127.0.0.1:7233")
-  config.target = ENV.fetch("TEMPORAL_TARGET", "127.0.0.1:7233")
+  # Defaults to ENV["ACTIVEJOB_TEMPORAL_TARGET"] if not set
+  config.target = ENV.fetch("ACTIVEJOB_TEMPORAL_TARGET", "127.0.0.1:7233")
 
   # Temporal namespace (default: "default")
-  config.namespace = ENV.fetch("TEMPORAL_NAMESPACE", "default")
+  # Defaults to ENV["ACTIVEJOB_TEMPORAL_NAMESPACE"] if not set
+  config.namespace = ENV.fetch("ACTIVEJOB_TEMPORAL_NAMESPACE", "default")
+
+  # Task queue for workers (default: "default")
+  # Defaults to ENV["ACTIVEJOB_TEMPORAL_TASK_QUEUE"] if not set
+  config.task_queue = ENV.fetch("ACTIVEJOB_TEMPORAL_TASK_QUEUE", "default")
 
   # Task queue prefix for organizing workflows
   # If set, queues will be prefixed (e.g., "myapp-default")
@@ -35,6 +41,16 @@ ActiveJob::Temporal.configure do |config|
   config.enable_tracing = true
 
   # Maximum payload size in KB (default: 250)
+  # Defaults to ENV["ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB"] if not set
   config.max_payload_size_kb = 250
+
+  # Maximum concurrent activities per worker (default: 100)
+  # Defaults to ENV["ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES"] if not set
+  config.max_concurrent_activities = 100
+
+  # Maximum concurrent workflow tasks per worker (default: 5)
+  # Defaults to ENV["ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS"] if not set
+  config.max_concurrent_workflow_tasks = 5
+
   # Validation happens automatically at the end of this block!
 end

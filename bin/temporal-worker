@@ -31,14 +31,11 @@ elsif rails_root != "."
 end
 # If rails_root is "." and it's not a Rails app, just continue (gem development mode)
 
-ActiveJob::Temporal.configure do |config|
-  config.target = ENV.fetch("TEMPORAL_TARGET", config.target)
-  config.namespace = ENV.fetch("TEMPORAL_NAMESPACE", config.namespace)
-end
-
-task_queue = ENV.fetch("AJ_TEMPORAL_WORKER_QUEUE", "default")
-max_concurrent_activities = ENV.fetch("AJ_TEMPORAL_MAX_ACT", 100).to_i
-max_concurrent_workflows = ENV.fetch("AJ_TEMPORAL_MAX_WORKFLOWS", 5).to_i
+# Read from configuration singleton (already set by Rails initializer)
+config = ActiveJob::Temporal.config
+task_queue = config.task_queue
+max_concurrent_activities = config.max_concurrent_activities
+max_concurrent_workflows = config.max_concurrent_workflow_tasks
 
 client = ActiveJob::Temporal.client
 

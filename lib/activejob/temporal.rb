@@ -92,9 +92,10 @@ module ActiveJob
     #
     # @note Environment Variable Defaults
     #   Several configuration values can be set via environment variables:
-    #   TEMPORAL_TARGET, TEMPORAL_NAMESPACE, TEMPORAL_TASK_QUEUE_PREFIX,
-    #   TEMPORAL_MAX_PAYLOAD_SIZE_KB, TEMPORAL_MAX_CONCURRENT_ACTIVITIES,
-    #   TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS. Configuration attributes take precedence over env vars.
+    #   ACTIVEJOB_TEMPORAL_TARGET, ACTIVEJOB_TEMPORAL_NAMESPACE, ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX,
+    #   ACTIVEJOB_TEMPORAL_TASK_QUEUE, ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB,
+    #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES, ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS.
+    #   Configuration attributes take precedence over env vars.
     #
     # @note Validation
     #   Configuration is automatically validated when using {.configure} with a block.

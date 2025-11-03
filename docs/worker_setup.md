@@ -12,11 +12,11 @@ Set the following variables before starting the worker:
 
 | Variable | Required | Description | Example |
 | --- | --- | --- | --- |
-| `TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` |
-| `TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` |
-| `AJ_TEMPORAL_WORKER_QUEUE` | Yes | Task queue the worker will poll for jobs. | `default` |
-| `AJ_TEMPORAL_MAX_ACT` | No | Maximum concurrent activity executions (defaults to `100`). | `50` |
-| `AJ_TEMPORAL_MAX_WORKFLOWS` | No | Maximum concurrent workflow task polls (defaults to `5`). | `20` |
+| `ACTIVEJOB_TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` |
+| `ACTIVEJOB_TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` |
+| `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | Yes | Task queue the worker will poll for jobs. | `default` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum concurrent activity executions (defaults to `100`). | `50` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum concurrent workflow task polls (defaults to `5`). | `20` |
 
 ## Starting the Worker
 
@@ -25,9 +25,9 @@ Set the following variables before starting the worker:
 
 ```bash
 cd /path/to/your/rails/app
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=default \
+ACTIVEJOB_TEMPORAL_TARGET=localhost:7233 \
+ACTIVEJOB_TEMPORAL_NAMESPACE=default \
+ACTIVEJOB_TEMPORAL_TASK_QUEUE=default \
 bundle exec temporal-worker
 ```
 
@@ -35,9 +35,9 @@ The worker automatically detects your Rails environment and loads your job class
 
 ### Options
 
-- **`AJ_TEMPORAL_WORKER_QUEUE`**: Task queue name. Defaults to `default`.
-- **`AJ_TEMPORAL_MAX_ACT`**: Maximum concurrent activity executions. Defaults to `100`.
-- **`AJ_TEMPORAL_MAX_WORKFLOWS`**: Maximum concurrent workflow task polls. Defaults to `5`.
+- **`ACTIVEJOB_TEMPORAL_TASK_QUEUE`**: Task queue name. Defaults to `default`.
+- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`**: Maximum concurrent activity executions. Defaults to `100`.
+- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum concurrent workflow task polls. Defaults to `5`.
 - **`RAILS_ROOT`**: Optional path to Rails app. Auto-detected if omitted (uses current directory).
 
 ### Examples
@@ -54,8 +54,8 @@ RAILS_ROOT=/opt/myapp bundle exec temporal-worker
 
 **Multiple workers on different queues:**
 ```bash
-RAILS_ROOT=/opt/myapp AJ_TEMPORAL_WORKER_QUEUE=high_priority bundle exec temporal-worker &
-RAILS_ROOT=/opt/myapp AJ_TEMPORAL_WORKER_QUEUE=default bundle exec temporal-worker &
+RAILS_ROOT=/opt/myapp ACTIVEJOB_TEMPORAL_TASK_QUEUE=high_priority bundle exec temporal-worker &
+RAILS_ROOT=/opt/myapp ACTIVEJOB_TEMPORAL_TASK_QUEUE=default bundle exec temporal-worker &
 ```
 
 ## Expected Log Output
@@ -80,9 +80,9 @@ With a Temporal server running, run the worker from your Rails app directory:
 
 ```bash
 cd /path/to/rails/app
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=default \
+ACTIVEJOB_TEMPORAL_TARGET=localhost:7233 \
+ACTIVEJOB_TEMPORAL_NAMESPACE=default \
+ACTIVEJOB_TEMPORAL_TASK_QUEUE=default \
 bundle exec temporal-worker
 ```
 
@@ -103,7 +103,7 @@ The worker process can be tuned for different deployment scenarios by adjusting 
 Controls how many jobs execute in parallel:
 
 ```bash
-AJ_TEMPORAL_MAX_ACT=200 bundle exec temporal-worker
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=200 bundle exec temporal-worker
 ```
 
 - **Default:** 100
@@ -116,7 +116,7 @@ AJ_TEMPORAL_MAX_ACT=200 bundle exec temporal-worker
 Controls how many workflows can be orchestrated concurrently:
 
 ```bash
-AJ_TEMPORAL_MAX_WORKFLOWS=50 bundle exec temporal-worker
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=50 bundle exec temporal-worker
 ```
 
 - **Default:** 5
@@ -136,11 +136,11 @@ Increase if you see high latency between activity completion and next activity s
 
 ```bash
 # Balanced for medium-load scenario
-TEMPORAL_TARGET=temporal.example.com:7233 \
-TEMPORAL_NAMESPACE=production \
-AJ_TEMPORAL_WORKER_QUEUE=important_jobs \
-AJ_TEMPORAL_MAX_ACT=150 \
-AJ_TEMPORAL_MAX_WORKFLOWS=25 \
+ACTIVEJOB_TEMPORAL_TARGET=temporal.example.com:7233 \
+ACTIVEJOB_TEMPORAL_NAMESPACE=production \
+ACTIVEJOB_TEMPORAL_TASK_QUEUE=important_jobs \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=150 \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=25 \
 bundle exec temporal-worker
 ```
 
@@ -148,20 +148,20 @@ bundle exec temporal-worker
 
 **Low-resource environment** (1 vCPU, 512MB RAM):
 ```bash
-AJ_TEMPORAL_MAX_ACT=10
-AJ_TEMPORAL_MAX_WORKFLOWS=2
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=10
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=2
 ```
 
 **Standard environment** (2 vCPU, 2GB RAM):
 ```bash
-AJ_TEMPORAL_MAX_ACT=100
-AJ_TEMPORAL_MAX_WORKFLOWS=5
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=100
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=5
 ```
 
 **High-throughput environment** (8 vCPU, 16GB RAM):
 ```bash
-AJ_TEMPORAL_MAX_ACT=500
-AJ_TEMPORAL_MAX_WORKFLOWS=50
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=500
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=50
 ```
 
 ### Monitoring & Tuning
@@ -174,8 +174,8 @@ Use Temporal UI (http://localhost:8080 in development) to monitor:
 **Tuning Process:**
 1. Deploy with default settings (100 activities, 5 workflows)
 2. Monitor queue depths in Temporal UI
-3. If Workflow Task Queue is growing: increase `AJ_TEMPORAL_MAX_WORKFLOWS`
-4. If Activity Task Queue is growing: increase `AJ_TEMPORAL_MAX_ACT`
+3. If Workflow Task Queue is growing: increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`
+4. If Activity Task Queue is growing: increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`
 5. Monitor CPU/Memory usage after each adjustment
 6. Iterate until balanced
 
@@ -185,8 +185,8 @@ Use Temporal UI (http://localhost:8080 in development) to monitor:
 ```yaml
 # In compose file
 environment:
-  AJ_TEMPORAL_MAX_ACT: 20
-  AJ_TEMPORAL_MAX_WORKFLOWS: 3
+  ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES: 20
+  ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS: 3
 ```
 
 #### Kubernetes (Production)
@@ -195,9 +195,9 @@ spec:
   containers:
   - name: temporal-worker
     env:
-    - name: AJ_TEMPORAL_MAX_ACT
+    - name: ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES
       value: "300"
-    - name: AJ_TEMPORAL_MAX_WORKFLOWS
+    - name: ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS
       value: "50"
     resources:
       requests:
@@ -214,10 +214,10 @@ spec:
 # /etc/systemd/system/temporal-worker.service
 
 [Service]
-Environment="TEMPORAL_TARGET=temporal.prod.internal:7233"
-Environment="TEMPORAL_NAMESPACE=production"
-Environment="AJ_TEMPORAL_WORKER_QUEUE=default"
-Environment="AJ_TEMPORAL_MAX_ACT=200"
-Environment="AJ_TEMPORAL_MAX_WORKFLOWS=20"
+Environment="ACTIVEJOB_TEMPORAL_TARGET=temporal.prod.internal:7233"
+Environment="ACTIVEJOB_TEMPORAL_NAMESPACE=production"
+Environment="ACTIVEJOB_TEMPORAL_TASK_QUEUE=default"
+Environment="ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=200"
+Environment="ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=20"
 ExecStart=/usr/local/bin/temporal-worker
 ```

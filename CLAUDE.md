@@ -97,9 +97,9 @@ The `temporal-worker` executable uses smart Rails auto-detection:
 
 ```bash
 cd your-rails-app
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=default \
+ACTIVEJOB_TEMPORAL_TARGET=localhost:7233 \
+ACTIVEJOB_TEMPORAL_NAMESPACE=default \
+ACTIVEJOB_TEMPORAL_TASK_QUEUE=default \
 bundle exec temporal-worker
 ```
 
@@ -108,9 +108,9 @@ The worker auto-detects the Rails app in the current directory and loads your en
 #### From the Gem Directory (Development)
 
 ```bash
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=default \
+ACTIVEJOB_TEMPORAL_TARGET=localhost:7233 \
+ACTIVEJOB_TEMPORAL_NAMESPACE=default \
+ACTIVEJOB_TEMPORAL_TASK_QUEUE=default \
 bin/temporal-worker
 ```
 
@@ -133,16 +133,16 @@ Control concurrency for different environments:
 
 ```bash
 # High-throughput production
-TEMPORAL_TARGET=temporal.prod:7233 \
-TEMPORAL_NAMESPACE=production \
-AJ_TEMPORAL_WORKER_QUEUE=jobs \
-AJ_TEMPORAL_MAX_ACT=500 \
-AJ_TEMPORAL_MAX_WORKFLOWS=50 \
+ACTIVEJOB_TEMPORAL_TARGET=temporal.prod:7233 \
+ACTIVEJOB_TEMPORAL_NAMESPACE=production \
+ACTIVEJOB_TEMPORAL_TASK_QUEUE=jobs \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=500 \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=50 \
 bundle exec temporal-worker
 
 # Low-resource development
-AJ_TEMPORAL_MAX_ACT=20 \
-AJ_TEMPORAL_MAX_WORKFLOWS=2 \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=20 \
+ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=2 \
 bundle exec temporal-worker
 ```
 

@@ -105,8 +105,12 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.max_concurrent_activities).to eq(100)
     end
 
-    it "sets max_concurrent_workflow_tasks to 100" do
-      expect(configuration.max_concurrent_workflow_tasks).to eq(100)
+    it "sets max_concurrent_workflow_tasks to 5" do
+      expect(configuration.max_concurrent_workflow_tasks).to eq(5)
+    end
+
+    it "sets task_queue to 'default'" do
+      expect(configuration.task_queue).to eq("default")
     end
   end
 
@@ -116,65 +120,81 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       ActiveJob::Temporal.instance_variable_set(:@config, nil)
     end
 
-    it "reads target from TEMPORAL_TARGET environment variable" do
+    it "reads target from ACTIVEJOB_TEMPORAL_TARGET environment variable" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return("custom:9999")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return("custom:9999")
 
       config = described_class.new
       expect(config.target).to eq("custom:9999")
     end
 
-    it "uses default target when TEMPORAL_TARGET is not set" do
+    it "uses default target when ACTIVEJOB_TEMPORAL_TARGET is not set" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return(nil)
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return(nil)
 
       config = described_class.new
       expect(config.target).to eq("127.0.0.1:7233")
     end
 
-    it "reads namespace from TEMPORAL_NAMESPACE environment variable" do
+    it "reads namespace from ACTIVEJOB_TEMPORAL_NAMESPACE environment variable" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_NAMESPACE").and_return("production")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_NAMESPACE").and_return("production")
 
       config = described_class.new
       expect(config.namespace).to eq("production")
     end
 
-    it "uses default namespace when TEMPORAL_NAMESPACE is not set" do
+    it "uses default namespace when ACTIVEJOB_TEMPORAL_NAMESPACE is not set" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_NAMESPACE").and_return(nil)
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_NAMESPACE").and_return(nil)
 
       config = described_class.new
       expect(config.namespace).to eq("default")
     end
 
-    it "reads task_queue_prefix from TEMPORAL_TASK_QUEUE_PREFIX environment variable" do
+    it "reads task_queue_prefix from ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX environment variable" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_TASK_QUEUE_PREFIX").and_return("my-app-")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX").and_return("my-app-")
 
       config = described_class.new
       expect(config.task_queue_prefix).to eq("my-app-")
     end
 
-    it "uses default task_queue_prefix (nil) when TEMPORAL_TASK_QUEUE_PREFIX is not set" do
+    it "uses default task_queue_prefix (nil) when ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX is not set" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_TASK_QUEUE_PREFIX").and_return(nil)
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX").and_return(nil)
 
       config = described_class.new
       expect(config.task_queue_prefix).to be_nil
     end
 
-    it "reads max_payload_size_kb from TEMPORAL_MAX_PAYLOAD_SIZE_KB and converts to integer" do
+    it "reads task_queue from ACTIVEJOB_TEMPORAL_TASK_QUEUE environment variable" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return("512")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE").and_return("critical")
+
+      config = described_class.new
+      expect(config.task_queue).to eq("critical")
+    end
+
+    it "uses default task_queue ('default') when ACTIVEJOB_TEMPORAL_TASK_QUEUE is not set" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE").and_return(nil)
+
+      config = described_class.new
+      expect(config.task_queue).to eq("default")
+    end
+
+    it "reads max_payload_size_kb from ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB and converts to integer" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return("512")
 
       config = described_class.new
       expect(config.max_payload_size_kb).to eq(512)
     end
 
-    it "uses default max_payload_size_kb when TEMPORAL_MAX_PAYLOAD_SIZE_KB is not set" do
+    it "uses default max_payload_size_kb when ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB is not set" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return(nil)
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return(nil)
 
       config = described_class.new
       expect(config.max_payload_size_kb).to eq(250)
@@ -182,10 +202,10 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "handles multiple environment variables set simultaneously" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return("temporal.prod:7233")
-      allow(ENV).to receive(:[]).with("TEMPORAL_NAMESPACE").and_return("production")
-      allow(ENV).to receive(:[]).with("TEMPORAL_TASK_QUEUE_PREFIX").and_return("app-")
-      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return("1024")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return("temporal.prod:7233")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_NAMESPACE").and_return("production")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX").and_return("app-")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return("1024")
 
       config = described_class.new
       expect(config.target).to eq("temporal.prod:7233")
@@ -196,7 +216,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "allows explicit configuration to override environment variables" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return("env-target:7233")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return("env-target:7233")
 
       config = described_class.new
       config.target = "explicit-target:8888"
@@ -206,7 +226,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "validates environment variable values when validate! is called" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return("invalid-format")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return("invalid-format")
 
       config = described_class.new
       expect { config.validate! }.to raise_error(
@@ -215,36 +235,36 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       )
     end
 
-    it "reads max_concurrent_activities from TEMPORAL_MAX_CONCURRENT_ACTIVITIES and converts to integer" do
+    it "reads max_concurrent_activities from ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES and converts to integer" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_CONCURRENT_ACTIVITIES").and_return("200")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES").and_return("200")
 
       config = described_class.new
       expect(config.max_concurrent_activities).to eq(200)
     end
 
-    it "uses default max_concurrent_activities when TEMPORAL_MAX_CONCURRENT_ACTIVITIES is not set" do
+    it "uses default max_concurrent_activities when ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES is not set" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_CONCURRENT_ACTIVITIES").and_return(nil)
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES").and_return(nil)
 
       config = described_class.new
       expect(config.max_concurrent_activities).to eq(100)
     end
 
-    it "reads max_concurrent_workflow_tasks from TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS and converts to integer" do
+    it "reads max_concurrent_workflow_tasks from ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS env var" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return("300")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return("300")
 
       config = described_class.new
       expect(config.max_concurrent_workflow_tasks).to eq(300)
     end
 
-    it "uses default max_concurrent_workflow_tasks when TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS is not set" do
+    it "uses default (5) when ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS is not set" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return(nil)
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return(nil)
 
       config = described_class.new
-      expect(config.max_concurrent_workflow_tasks).to eq(100)
+      expect(config.max_concurrent_workflow_tasks).to eq(5)
     end
   end
 

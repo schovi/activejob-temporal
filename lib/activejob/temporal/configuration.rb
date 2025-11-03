@@ -26,23 +26,30 @@ module ActiveJob
       # Connection Settings
       target: {
         default: "127.0.0.1:7233",
-        env_var: "TEMPORAL_TARGET",
+        env_var: "ACTIVEJOB_TEMPORAL_TARGET",
         type: :string,
         description: "Temporal server host:port"
       },
 
       namespace: {
         default: "default",
-        env_var: "TEMPORAL_NAMESPACE",
+        env_var: "ACTIVEJOB_TEMPORAL_NAMESPACE",
         type: :string,
         description: "Temporal namespace"
       },
 
       task_queue_prefix: {
         default: nil,
-        env_var: "TEMPORAL_TASK_QUEUE_PREFIX",
+        env_var: "ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX",
         type: :string,
         description: "Optional prefix for task queue names"
+      },
+
+      task_queue: {
+        default: "default",
+        env_var: "ACTIVEJOB_TEMPORAL_TASK_QUEUE",
+        type: :string,
+        description: "Default task queue name for workers"
       },
 
       # Timeouts (use Proc for lazy evaluation of ActiveSupport::Duration)
@@ -96,7 +103,7 @@ module ActiveJob
       # Payload & Performance
       max_payload_size_kb: {
         default: 250,
-        env_var: "TEMPORAL_MAX_PAYLOAD_SIZE_KB",
+        env_var: "ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB",
         type: :integer,
         description: "Maximum job payload size in kilobytes"
       },
@@ -109,14 +116,14 @@ module ActiveJob
 
       max_concurrent_activities: {
         default: 100,
-        env_var: "TEMPORAL_MAX_CONCURRENT_ACTIVITIES",
+        env_var: "ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES",
         type: :integer,
         description: "Maximum concurrent activities per worker"
       },
 
       max_concurrent_workflow_tasks: {
-        default: 100,
-        env_var: "TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS",
+        default: 5,
+        env_var: "ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS",
         type: :integer,
         description: "Maximum concurrent workflow tasks per worker"
       }
