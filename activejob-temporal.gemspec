@@ -34,6 +34,7 @@ Gem::Specification.new do |spec|
   spec.require_paths = ["lib"]
 
   spec.add_dependency "activejob", ">= 7.2", "< 9"
+  spec.add_dependency "activemodel", ">= 7.2", "< 9"
   spec.add_dependency "globalid", ">= 0.3"
   spec.add_dependency "temporalio", ">= 1.0"
 

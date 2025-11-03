@@ -1,0 +1,36 @@
+en:
+  activemodel:
+    errors:
+      models:
+        active_job/temporal/config_validator:
+          attributes:
+            target:
+              target_required: "Target host is required (set TEMPORAL_TARGET or config.target)"
+              invalid_format: "must be in format 'host:port' (e.g., 'localhost:7233' or 'temporal.example.com:7233'), got: %{target}"
+
+            namespace:
+              namespace_required: "Namespace is required (set TEMPORAL_NAMESPACE or config.namespace)"
+              invalid_format: "must contain only alphanumeric characters, hyphens, and underscores (got: %{namespace}). Use 'prod-default' not 'prod_default!'"
+
+            default_activity_timeout:
+              not_a_duration: "must be a duration (e.g., 10.minutes or 30.seconds), got: %{value}"
+              duration_not_positive: "must be positive (got: %{seconds} seconds). Use values like 1.second or 10.minutes"
+
+            default_retry_initial_interval:
+              not_a_duration: "must be a duration (e.g., 10.minutes or 30.seconds), got: %{value}"
+              duration_not_positive: "must be positive (got: %{seconds} seconds). Use values like 1.second or 10.minutes"
+
+            default_retry_backoff:
+              retry_backoff_too_small: "must be >= 1.0 (got: %{value}). Use 2.0 for exponential backoff"
+
+            default_retry_max_attempts:
+              retry_max_attempts_negative: "must be >= 0 (got: %{value}). Use 0 for unlimited retries, or positive number for max attempts"
+
+            max_payload_size_kb:
+              payload_size_invalid: "must be between 1 and 2,097,152 KB (got: %{value}). Typical values: 250 KB (default), 500 KB (large), or 1000 KB (very large)"
+
+            max_concurrent_activities:
+              concurrent_activities_invalid: "must be positive (got: %{value}). Typical values: 50 (low), 100 (default), 200+ (high throughput)"
+
+            max_concurrent_workflow_tasks:
+              concurrent_workflow_tasks_invalid: "must be positive (got: %{value}). Typical values: 5 (default), 10-50 (medium), 100+ (high throughput)"
