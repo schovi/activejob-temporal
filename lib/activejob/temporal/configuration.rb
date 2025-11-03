@@ -6,7 +6,20 @@ require "active_model"
 module ActiveJob
   module Temporal
     # Central registry of all configuration attributes.
+    #
     # This is the single source of truth for attribute names, types, defaults, and env vars.
+    # Provides metadata for:
+    # - Automatic attribute accessor generation
+    # - Default value initialization (with lazy evaluation via Proc)
+    # - Environment variable mapping (e.g., TEMPORAL_TARGET)
+    # - Type information for validation and type coercion
+    #
+    # @example Accessing configuration metadata
+    #   metadata = CONFIGURATION_ATTRIBUTES[:target]
+    #   metadata[:default]      # => "127.0.0.1:7233"
+    #   metadata[:env_var]      # => "TEMPORAL_TARGET"
+    #   metadata[:type]         # => :string
+    #   metadata[:description]  # => "Temporal server host:port"
     #
     # @api private
     CONFIGURATION_ATTRIBUTES = {
@@ -60,7 +73,7 @@ module ActiveJob
 
       # Observability
       logger: {
-        default: -> {
+        default: lambda {
           (defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger) ||
             ::Logger.new($stdout)
         },
@@ -115,6 +128,28 @@ module ActiveJob
     # with i18n support. Attributes are automatically synchronized from the
     # configuration via metaprogramming.
     #
+    # **Validation Rules:**
+    # - `target`: Presence + host:port format validation
+    # - `namespace`: Presence + alphanumeric/hyphens/underscores format
+    # - `default_activity_timeout`: Duration type + positive value
+    # - `default_retry_initial_interval`: Duration type + positive value
+    # - `default_retry_backoff`: Numericality >= 1.0
+    # - `default_retry_max_attempts`: Numericality >= 0
+    # - `max_payload_size_kb`: Numericality 1..2GB
+    # - `max_concurrent_activities`: Numericality > 0
+    # - `max_concurrent_workflow_tasks`: Numericality > 0
+    #
+    # @example Using ConfigValidator directly
+    #   validator = ConfigValidator.new
+    #   validator.target = "localhost:7233"
+    #   validator.namespace = "production"
+    #   if validator.valid?
+    #     puts "Configuration is valid"
+    #   else
+    #     puts validator.errors.full_messages
+    #   end
+    #
+    # @see ActiveJob::Temporal::Configuration.validate!
     # @api private
     class ConfigValidator
       include ActiveModel::Validations
@@ -129,52 +164,52 @@ module ActiveJob
 
       # Connection Settings
       validates :target,
-        presence: { message: :target_required }
+                presence: { message: :target_required }
 
       validates :namespace,
-        presence: { message: :namespace_required }
+                presence: { message: :namespace_required }
 
       # Retry Settings
       validates :default_retry_backoff,
-        numericality: {
-          greater_than_or_equal_to: 1.0,
-          message: :retry_backoff_too_small,
-          allow_nil: false
-        }
+                numericality: {
+                  greater_than_or_equal_to: 1.0,
+                  message: :retry_backoff_too_small,
+                  allow_nil: false
+                }
 
       validates :default_retry_max_attempts,
-        numericality: {
-          greater_than_or_equal_to: 0,
-          only_integer: true,
-          message: :retry_max_attempts_negative,
-          allow_nil: false
-        }
+                numericality: {
+                  greater_than_or_equal_to: 0,
+                  only_integer: true,
+                  message: :retry_max_attempts_negative,
+                  allow_nil: false
+                }
 
       # Payload & Performance
       validates :max_payload_size_kb,
-        numericality: {
-          greater_than: 0,
-          less_than_or_equal_to: 2_097_152, # 2 GB in KB
-          only_integer: true,
-          message: :payload_size_invalid,
-          allow_nil: false
-        }
+                numericality: {
+                  greater_than: 0,
+                  less_than_or_equal_to: 2_097_152, # 2 GB in KB
+                  only_integer: true,
+                  message: :payload_size_invalid,
+                  allow_nil: false
+                }
 
       validates :max_concurrent_activities,
-        numericality: {
-          greater_than: 0,
-          only_integer: true,
-          message: :concurrent_activities_invalid,
-          allow_nil: false
-        }
+                numericality: {
+                  greater_than: 0,
+                  only_integer: true,
+                  message: :concurrent_activities_invalid,
+                  allow_nil: false
+                }
 
       validates :max_concurrent_workflow_tasks,
-        numericality: {
-          greater_than: 0,
-          only_integer: true,
-          message: :concurrent_workflow_tasks_invalid,
-          allow_nil: false
-        }
+                numericality: {
+                  greater_than: 0,
+                  only_integer: true,
+                  message: :concurrent_workflow_tasks_invalid,
+                  allow_nil: false
+                }
 
       #
       # CUSTOM VALIDATORS
@@ -220,11 +255,11 @@ module ActiveJob
 
         # Check if positive
         seconds = value.to_f
-        unless seconds.positive?
-          errors.add(attr_name, :duration_not_positive,
-                     seconds: seconds,
-                     attribute: attr_name.to_s.humanize.downcase)
-        end
+        return if seconds.positive?
+
+        errors.add(attr_name, :duration_not_positive,
+                   seconds: seconds,
+                   attribute: attr_name.to_s.humanize.downcase)
       end
     end
   end

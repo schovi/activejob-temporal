@@ -81,11 +81,14 @@ module ActiveJob
     # Configuration object for the activejob-temporal gem.
     #
     # Holds connection settings, timeouts, retry policies, and operational flags.
-    # Use {ActiveJob::Temporal.configure} to set configuration values.
+    # This is a configuration wrapper that uses {ConfigValidator} for declarative,
+    # i18n-ready validation.
+    #
+    # Use {ActiveJob::Temporal.configure} to set configuration values with automatic validation.
     #
     # @note Thread Safety
-    #   The configuration object is thread-safe for reading via ActiveSupport::Configurable.
-    #   Configuration changes should be completed during application initialization before workers start.
+    #   The configuration object is thread-safe for reading. Configuration changes should be
+    #   completed during application initialization before workers start.
     #
     # @note Environment Variable Defaults
     #   Several configuration values can be set via environment variables:
@@ -93,17 +96,29 @@ module ActiveJob
     #   TEMPORAL_MAX_PAYLOAD_SIZE_KB, TEMPORAL_MAX_CONCURRENT_ACTIVITIES,
     #   TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS. Configuration attributes take precedence over env vars.
     #
-    # @example
+    # @note Validation
+    #   Configuration is automatically validated when using {.configure} with a block.
+    #   Call {#validate!} explicitly if modifying config directly.
+    #
+    # @example Using the configure method (recommended)
+    #   # Validation happens automatically at end of block
     #   ActiveJob::Temporal.configure do |config|
     #     config.target = "temporal.example.com:7233"
     #     config.namespace = "production"
     #     config.default_activity_timeout = 10.minutes
     #     config.default_retry_max_attempts = 3
     #   end
-    # Configuration object for the activejob-temporal gem.
     #
-    # This is a configuration wrapper that uses ConfigValidator for validation.
+    # @example Accessing configuration
+    #   ActiveJob::Temporal.config.target
+    #   # => "temporal.example.com:7233"
     #
+    # @example Manual validation (rarely needed)
+    #   ActiveJob::Temporal.config.target = "new-host:7233"
+    #   ActiveJob::Temporal.config.validate!
+    #
+    # @see ConfigValidator
+    # @see .configure
     # @api private
     class Configuration
       # Create a new Configuration instance with all defaults
@@ -128,48 +143,43 @@ module ActiveJob
       # Explicit accessors for timeout attributes to support instance variable access
       # These support both old-style instance variables and new-style @attributes hash
       def default_activity_timeout
-        # Support both old instance var and new attributes hash for backward compatibility
-        instance_variable_defined?(:@default_activity_timeout) ? @default_activity_timeout : @attributes[:default_activity_timeout]
+        if instance_variable_defined?(:@default_activity_timeout)
+          @default_activity_timeout
+        else
+          @attributes[:default_activity_timeout]
+        end
       end
 
       def default_activity_timeout=(value)
         ensure_positive_duration!(value, :default_activity_timeout)
         @attributes[:default_activity_timeout] = value
-        @default_activity_timeout = value  # Also set instance var for backward compat
+        @default_activity_timeout = value # Also set instance var for backward compat
       end
 
       def default_retry_initial_interval
-        # Support both old instance var and new attributes hash for backward compatibility
-        instance_variable_defined?(:@default_retry_initial_interval) ? @default_retry_initial_interval : @attributes[:default_retry_initial_interval]
+        if instance_variable_defined?(:@default_retry_initial_interval)
+          @default_retry_initial_interval
+        else
+          @attributes[:default_retry_initial_interval]
+        end
       end
 
       def default_retry_initial_interval=(value)
         ensure_positive_duration!(value, :default_retry_initial_interval)
         @attributes[:default_retry_initial_interval] = value
-        @default_retry_initial_interval = value  # Also set instance var for backward compat
+        @default_retry_initial_interval = value # Also set instance var for backward compat
       end
 
       # Dynamic attribute access
       def method_missing(method, *args)
-        if method.to_s.end_with?("=")
-          attr_name = method.to_s[0..-2].to_sym
-          if CONFIGURATION_ATTRIBUTES.key?(attr_name)
-            # Special handling for duration setters
-            if attr_name == :default_activity_timeout
-              ensure_positive_duration!(args[0], attr_name)
-            elsif attr_name == :default_retry_initial_interval
-              ensure_positive_duration!(args[0], attr_name)
-            end
-            @attributes[attr_name] = args[0]
-            return args[0]
-          end
+        method_str = method.to_s
+        if method_str.end_with?("=")
+          handle_attribute_setter(method_str[0..-2].to_sym, args[0])
         elsif args.empty?
-          attr_name = method.to_sym
-          if CONFIGURATION_ATTRIBUTES.key?(attr_name)
-            return @attributes[attr_name]
-          end
+          handle_attribute_getter(method.to_sym)
+        else
+          super
         end
-        super
       end
 
       # Check if attribute is defined
@@ -189,23 +199,38 @@ module ActiveJob
 
         # Automatically sync all attributes from config to validator using accessors
         # This supports both old instance variables and new @attributes hash
-        CONFIGURATION_ATTRIBUTES.keys.each do |attr|
+        CONFIGURATION_ATTRIBUTES.each_key do |attr|
           # Use the accessor method if it exists (handles backward compat),
           # otherwise use the @attributes hash
-          if respond_to?(attr)
-            config_value = public_send(attr)
-          else
-            config_value = @attributes[attr]
-          end
+          config_value = respond_to?(attr) ? public_send(attr) : @attributes[attr]
           validator.public_send("#{attr}=", config_value)
         end
 
-        return if validator.valid?
-
-        raise ConfigurationError, format_errors(validator.errors)
+        raise ConfigurationError, format_errors(validator.errors) unless validator.valid?
       end
 
       private
+
+      # Handles dynamic getter for attributes
+      def handle_attribute_getter(attr_name)
+        return @attributes[attr_name] if CONFIGURATION_ATTRIBUTES.key?(attr_name)
+
+        raise NoMethodError, "undefined method `#{attr_name}' for #{self.class}"
+      end
+
+      # Handles dynamic setter for attributes
+      def handle_attribute_setter(attr_name, value)
+        return unless CONFIGURATION_ATTRIBUTES.key?(attr_name)
+
+        # Special handling for duration setters
+        case attr_name
+        when :default_activity_timeout, :default_retry_initial_interval
+          ensure_positive_duration!(value, attr_name)
+        end
+
+        @attributes[attr_name] = value
+        value
+      end
 
       # Formats ActiveModel errors for ConfigurationError message.
       def format_errors(errors)
@@ -216,8 +241,8 @@ module ActiveJob
           "  #{i + 1}. #{msg}"
         end.join("\n")
 
-        "Configuration validation failed with #{messages.size} " \
-        "error#{'s' if messages.size > 1}:\n#{error_list}"
+        plural = "s" if messages.size > 1
+        "Configuration validation failed with #{messages.size} error#{plural}:\n#{error_list}"
       end
 
       # Ensures a value is a positive duration
@@ -366,9 +391,7 @@ module ActiveJob
       #   ActiveJob::Temporal.validate! # Explicit call
       def validate!
         validator = build_validator
-        return if validator.valid?
-
-        raise ConfigurationError, format_validation_errors(validator.errors)
+        raise ConfigurationError, format_validation_errors(validator.errors) unless validator.valid?
       end
 
       private
@@ -382,7 +405,7 @@ module ActiveJob
         validator = ConfigValidator.new
 
         # Automatically sync all attributes from config to validator
-        CONFIGURATION_ATTRIBUTES.keys.each do |attr|
+        CONFIGURATION_ATTRIBUTES.each_key do |attr|
           config_value = config.public_send(attr)
           validator.public_send("#{attr}=", config_value)
         end
@@ -403,10 +426,9 @@ module ActiveJob
           "  #{i + 1}. #{msg}"
         end.join("\n")
 
-        "Configuration validation failed with #{messages.size} " \
-        "error#{'s' if messages.size > 1}:\n#{error_list}"
+        plural = "s" if messages.size > 1
+        "Configuration validation failed with #{messages.size} error#{plural}:\n#{error_list}"
       end
-
     end
 
     # Resolves default value for an attribute from metadata.
