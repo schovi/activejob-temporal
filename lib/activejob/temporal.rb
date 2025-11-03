@@ -145,40 +145,6 @@ module ActiveJob
         @attributes[key] = value
       end
 
-      # Explicit accessors for timeout attributes to support instance variable access
-      # These support both old-style instance variables and new-style @attributes hash
-      def default_activity_timeout
-        if instance_variable_defined?(:@default_activity_timeout)
-          @default_activity_timeout
-        else
-          @attributes[:default_activity_timeout]
-        end
-      end
-
-      def default_activity_timeout=(value)
-        @attributes[:default_activity_timeout] = value
-        @default_activity_timeout = value # Also set instance var for backward compat
-
-        # Use unified validation (same as all other attributes)
-        validate! unless @in_configure_block
-      end
-
-      def default_retry_initial_interval
-        if instance_variable_defined?(:@default_retry_initial_interval)
-          @default_retry_initial_interval
-        else
-          @attributes[:default_retry_initial_interval]
-        end
-      end
-
-      def default_retry_initial_interval=(value)
-        @attributes[:default_retry_initial_interval] = value
-        @default_retry_initial_interval = value # Also set instance var for backward compat
-
-        # Use unified validation (same as all other attributes)
-        validate! unless @in_configure_block
-      end
-
       # Dynamic attribute access
       def method_missing(method, *args)
         method_str = method.to_s
@@ -206,13 +172,9 @@ module ActiveJob
       def validate!
         validator = ConfigValidator.new
 
-        # Automatically sync all attributes from config to validator using accessors
-        # This supports both old instance variables and new @attributes hash
+        # Sync all attributes from config to validator
         CONFIGURATION_ATTRIBUTES.each_key do |attr|
-          # Use the accessor method if it exists (handles backward compat),
-          # otherwise use the @attributes hash
-          config_value = respond_to?(attr) ? public_send(attr) : @attributes[attr]
-          validator.public_send("#{attr}=", config_value)
+          validator.public_send("#{attr}=", @attributes[attr])
         end
 
         raise ConfigurationError, format_errors(validator.errors) unless validator.valid?

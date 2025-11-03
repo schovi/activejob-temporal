@@ -461,7 +461,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     context "when timeouts are invalid" do
       it "raises ConfigurationError when default_activity_timeout is zero" do
-        configuration.instance_variable_set(:@default_activity_timeout, 0)
+        configuration.in_configure_block = true
+        configuration[:default_activity_timeout] = 0
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Dd]efault activity timeout.*must be positive/
@@ -469,7 +471,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError when default_activity_timeout is negative" do
-        configuration.instance_variable_set(:@default_activity_timeout, -5)
+        configuration.in_configure_block = true
+        configuration[:default_activity_timeout] = -5
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Dd]efault activity timeout.*must be positive/
@@ -477,7 +481,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError when default_retry_initial_interval is zero" do
-        configuration.instance_variable_set(:@default_retry_initial_interval, 0.seconds)
+        configuration.in_configure_block = true
+        configuration[:default_retry_initial_interval] = 0.seconds
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Dd]efault retry initial interval.*must be positive/
@@ -485,7 +491,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError when default_retry_initial_interval is negative" do
-        configuration.instance_variable_set(:@default_retry_initial_interval, -10)
+        configuration.in_configure_block = true
+        configuration[:default_retry_initial_interval] = -10
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Dd]efault retry initial interval.*must be positive/
@@ -493,7 +501,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError when timeout is not a duration" do
-        configuration.instance_variable_set(:@default_activity_timeout, "not a duration")
+        configuration.in_configure_block = true
+        configuration[:default_activity_timeout] = "not a duration"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Dd]efault activity timeout.*must be a duration/
