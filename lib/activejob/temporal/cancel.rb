@@ -62,6 +62,7 @@ module ActiveJob
         #
         # @see #find_workflow
         def cancel(job_class, job_id)
+          validate_job_id!(job_id)
           workflow_id = build_workflow_id(job_class, job_id)
           client = ActiveJob::Temporal.client
           workflow_state = find_workflow(client, job_class, job_id)
@@ -80,7 +81,30 @@ module ActiveJob
           end
         end
 
+        # UUID format regex (compliant with RFC 4122).
+        # Matches standard UUID format: 8-4-4-4-12 hexadecimal characters.
+        # @api private
+        UUID_REGEX = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
+
         private
+
+        # Validates that job_id is a valid UUID format.
+        #
+        # ActiveJob generates job IDs using SecureRandom.uuid, which produces RFC 4122
+        # compliant UUIDs. This validation prevents search query injection attacks by
+        # ensuring job_id contains only hexadecimal characters and hyphens, making it
+        # safe for direct use in Temporal queries.
+        #
+        # @param job_id [String] The job identifier to validate
+        # @raise [ArgumentError] if job_id is not a valid UUID format
+        # @api private
+        def validate_job_id!(job_id)
+          return if job_id.is_a?(String) && job_id.match?(UUID_REGEX)
+
+          raise ArgumentError,
+                "Invalid job_id format: expected UUID (e.g., '550e8400-e29b-41d4-a716-446655440000'), " \
+                "got: #{job_id.inspect}"
+        end
 
         # Builds deterministic workflow ID from job class and job ID.
         # @api private
@@ -114,12 +138,20 @@ module ActiveJob
         end
 
         # Builds Temporal query for running workflows by job_id.
+        #
+        # Note: job_id is validated as a UUID before reaching this method, ensuring it
+        # contains only safe characters ([0-9a-fA-F-]) for direct query interpolation.
+        #
         # @api private
         def running_workflows_query(job_id)
           "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
         end
 
         # Builds Temporal query for closed workflows by job_id.
+        #
+        # Note: job_id is validated as a UUID before reaching this method, ensuring it
+        # contains only safe characters ([0-9a-fA-F-]) for direct query interpolation.
+        #
         # @api private
         def closed_workflows_query(job_id)
           "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', " \

@@ -26,7 +26,7 @@ end
 RSpec.describe ActiveJob::Temporal::Cancel do
   describe ".cancel" do
     let(:job_class) { SimpleJob }
-    let(:job_id) { "test-job-123" }
+    let(:job_id) { "550e8400-e29b-41d4-a716-446655440000" }
     let(:workflow_id) { "ajwf:#{job_class.name}:#{job_id}" }
     let(:temporal_client_class) do
       Class.new do
@@ -148,6 +148,105 @@ RSpec.describe ActiveJob::Temporal::Cancel do
         expect { described_class.cancel(job_class, job_id) }
           .to raise_error(ActiveJob::Temporal::TemporalConnectionError,
                           /Failed to query Temporal workflows for job_id #{job_id}/)
+      end
+    end
+
+    context "job_id validation (security)" do
+      context "when job_id contains SQL injection attempt" do
+        let(:malicious_job_id) { "test' OR '1'='1" }
+
+        it "raises ArgumentError before making any queries" do
+          expect { described_class.cancel(job_class, malicious_job_id) }
+            .to raise_error(ArgumentError, /Invalid job_id format/)
+
+          # Verify no queries were made
+          expect(client).not_to have_received(:list_workflows)
+        end
+      end
+
+      context "when job_id contains single quotes" do
+        let(:malicious_job_id) { "test'123" }
+
+        it "raises ArgumentError" do
+          expect { described_class.cancel(job_class, malicious_job_id) }
+            .to raise_error(ArgumentError, /Invalid job_id format/)
+        end
+      end
+
+      context "when job_id is not a valid UUID format" do
+        let(:invalid_job_id) { "not-a-uuid" }
+
+        it "raises ArgumentError with helpful message" do
+          expect { described_class.cancel(job_class, invalid_job_id) }
+            .to raise_error(ArgumentError, /Invalid job_id format: expected UUID/)
+        end
+      end
+
+      context "when job_id is nil" do
+        let(:nil_job_id) { nil }
+
+        it "raises ArgumentError" do
+          expect { described_class.cancel(job_class, nil_job_id) }
+            .to raise_error(ArgumentError, /Invalid job_id format/)
+        end
+      end
+
+      context "when job_id is an integer" do
+        let(:integer_job_id) { 12_345 }
+
+        it "raises ArgumentError" do
+          expect { described_class.cancel(job_class, integer_job_id) }
+            .to raise_error(ArgumentError, /Invalid job_id format/)
+        end
+      end
+
+      context "when job_id is a valid UUID (lowercase)" do
+        let(:valid_uuid) { "550e8400-e29b-41d4-a716-446655440000" }
+        let(:workflow_info) { double("WorkflowInfo") }
+
+        before do
+          allow(client).to receive(:list_workflows)
+            .with(query: "ajJobId='#{valid_uuid}' AND ExecutionStatus='Running'")
+            .and_return([workflow_info])
+        end
+
+        it "accepts the UUID and proceeds with cancellation" do
+          expect { described_class.cancel(job_class, valid_uuid) }.not_to raise_error
+        end
+      end
+
+      context "when job_id is a valid UUID (uppercase)" do
+        let(:valid_uuid_uppercase) { "550E8400-E29B-41D4-A716-446655440000" }
+        let(:workflow_info) { double("WorkflowInfo") }
+        let(:workflow_id_uppercase) { "ajwf:#{job_class.name}:#{valid_uuid_uppercase}" }
+
+        before do
+          allow(client).to receive(:list_workflows)
+            .with(query: "ajJobId='#{valid_uuid_uppercase}' AND ExecutionStatus='Running'")
+            .and_return([workflow_info])
+          allow(client).to receive(:workflow_handle).with(workflow_id_uppercase).and_return(handle)
+        end
+
+        it "accepts the UUID and proceeds with cancellation" do
+          expect { described_class.cancel(job_class, valid_uuid_uppercase) }.not_to raise_error
+        end
+      end
+
+      context "when job_id is a valid UUID (mixed case)" do
+        let(:valid_uuid_mixed) { "550e8400-E29B-41d4-A716-446655440000" }
+        let(:workflow_info) { double("WorkflowInfo") }
+        let(:workflow_id_mixed) { "ajwf:#{job_class.name}:#{valid_uuid_mixed}" }
+
+        before do
+          allow(client).to receive(:list_workflows)
+            .with(query: "ajJobId='#{valid_uuid_mixed}' AND ExecutionStatus='Running'")
+            .and_return([workflow_info])
+          allow(client).to receive(:workflow_handle).with(workflow_id_mixed).and_return(handle)
+        end
+
+        it "accepts the UUID and proceeds with cancellation" do
+          expect { described_class.cancel(job_class, valid_uuid_mixed) }.not_to raise_error
+        end
       end
     end
   end

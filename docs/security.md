@@ -46,11 +46,33 @@ Conservative constraints prevent unpredictable breaking changes.
 
 ## Code Security
 
-### No User Input Without Sanitization
+### Input Validation and Sanitization
+
+The gem takes the following security measures:
+
+#### Job Cancellation (Query Injection Prevention)
+
+The `Cancel` module builds Temporal search queries using job_id. To prevent query injection attacks:
+
+1. **UUID Validation**: All job_id values are validated to match RFC 4122 UUID format before use
+2. **Safe Character Set**: UUIDs contain only hexadecimal characters and hyphens `[0-9a-fA-F-]`, making them inherently safe for query interpolation
+3. **Early Rejection**: Invalid job_id values raise `ArgumentError` before any queries are executed
+
+```ruby
+# ✅ Valid UUID - accepted
+ActiveJob::Temporal.cancel(MyJob, "550e8400-e29b-41d4-a716-446655440000")
+
+# ❌ Invalid format - rejected with ArgumentError
+ActiveJob::Temporal.cancel(MyJob, "test' OR '1'='1")  # Query injection attempt blocked
+```
+
+**Rationale**: While ActiveJob auto-generates UUIDs, the `cancel()` method is a public API that accepts arbitrary job_id values. Validation prevents search query injection in multi-tenant environments.
+
+#### General Security Practices
 
 The gem does **not**:
 - ❌ Execute user code directly
-- ❌ Build SQL queries from user input
+- ❌ Build SQL queries from user input (except validated Temporal search queries as above)
 - ❌ Render user input in HTML
 - ❌ Execute shell commands with job arguments
 
