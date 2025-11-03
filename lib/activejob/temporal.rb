@@ -124,11 +124,15 @@ module ActiveJob
       # Create a new Configuration instance with all defaults
       def initialize
         @attributes = {}
+        @in_configure_block = false
         CONFIGURATION_ATTRIBUTES.each do |attr, metadata|
           default_value = Temporal.resolve_default_value(metadata)
           @attributes[attr] = default_value
         end
       end
+
+      # Track whether we're inside a configure block
+      attr_accessor :in_configure_block
 
       # Get attribute value
       def [](key)
@@ -151,9 +155,11 @@ module ActiveJob
       end
 
       def default_activity_timeout=(value)
-        ensure_positive_duration!(value, :default_activity_timeout)
         @attributes[:default_activity_timeout] = value
         @default_activity_timeout = value # Also set instance var for backward compat
+
+        # Use unified validation (same as all other attributes)
+        validate! unless @in_configure_block
       end
 
       def default_retry_initial_interval
@@ -165,9 +171,11 @@ module ActiveJob
       end
 
       def default_retry_initial_interval=(value)
-        ensure_positive_duration!(value, :default_retry_initial_interval)
         @attributes[:default_retry_initial_interval] = value
         @default_retry_initial_interval = value # Also set instance var for backward compat
+
+        # Use unified validation (same as all other attributes)
+        validate! unless @in_configure_block
       end
 
       # Dynamic attribute access
@@ -219,16 +227,17 @@ module ActiveJob
       end
 
       # Handles dynamic setter for attributes
+      # Note: Explicit setters (e.g., default_activity_timeout=) take precedence
+      # and handle their own validation, so this is only called for attributes
+      # without explicit setters.
       def handle_attribute_setter(attr_name, value)
         return unless CONFIGURATION_ATTRIBUTES.key?(attr_name)
 
-        # Special handling for duration setters
-        case attr_name
-        when :default_activity_timeout, :default_retry_initial_interval
-          ensure_positive_duration!(value, attr_name)
-        end
-
         @attributes[attr_name] = value
+
+        # Validate immediately unless we're in a configure block
+        validate! unless @in_configure_block
+
         value
       end
 
@@ -243,16 +252,6 @@ module ActiveJob
 
         plural = "s" if messages.size > 1
         "Configuration validation failed with #{messages.size} error#{plural}:\n#{error_list}"
-      end
-
-      # Ensures a value is a positive duration
-      def ensure_positive_duration!(value, attribute_name)
-        raise ArgumentError, "#{attribute_name} must be a duration" unless value.respond_to?(:to_f)
-
-        seconds = value.to_f
-        raise ArgumentError, "#{attribute_name} must be positive" unless seconds.positive?
-
-        value
       end
     end
 
@@ -372,7 +371,16 @@ module ActiveJob
       def configure
         return config unless block_given?
 
-        yield(config)
+        # Track that we're in a configure block
+        config.in_configure_block = true
+
+        begin
+          yield(config)
+        ensure
+          # Always clear flag, even if block raises exception
+          config.in_configure_block = false
+        end
+
         validate! # Automatic validation after configuration
       end
 

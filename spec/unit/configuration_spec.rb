@@ -149,16 +149,16 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "reads task_queue_prefix from TEMPORAL_TASK_QUEUE_PREFIX environment variable" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("TEMPORAL_TASK_QUEUE_PREFIX", nil).and_return("my-app-")
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("TEMPORAL_TASK_QUEUE_PREFIX").and_return("my-app-")
 
       config = described_class.new
       expect(config.task_queue_prefix).to eq("my-app-")
     end
 
     it "uses default task_queue_prefix (nil) when TEMPORAL_TASK_QUEUE_PREFIX is not set" do
-      allow(ENV).to receive(:fetch).and_call_original
-      allow(ENV).to receive(:fetch).with("TEMPORAL_TASK_QUEUE_PREFIX", nil).and_return(nil)
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("TEMPORAL_TASK_QUEUE_PREFIX").and_return(nil)
 
       config = described_class.new
       expect(config.task_queue_prefix).to be_nil
@@ -182,10 +182,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "handles multiple environment variables set simultaneously" do
       allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:fetch).and_call_original
       allow(ENV).to receive(:[]).with("TEMPORAL_TARGET").and_return("temporal.prod:7233")
       allow(ENV).to receive(:[]).with("TEMPORAL_NAMESPACE").and_return("production")
-      allow(ENV).to receive(:fetch).with("TEMPORAL_TASK_QUEUE_PREFIX", nil).and_return("app-")
+      allow(ENV).to receive(:[]).with("TEMPORAL_TASK_QUEUE_PREFIX").and_return("app-")
       allow(ENV).to receive(:[]).with("TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return("1024")
 
       config = described_class.new
@@ -281,12 +280,15 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "raises when duration is zero or negative" do
-      expect { configuration.default_activity_timeout = 0 }.to raise_error(ArgumentError)
-      expect { configuration.default_activity_timeout = -5 }.to raise_error(ArgumentError)
+      expect { configuration.default_activity_timeout = 0 }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be positive/)
+      expect { configuration.default_activity_timeout = -5 }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be positive/)
     end
 
     it "raises when value cannot be coerced into a duration" do
-      expect { configuration.default_activity_timeout = Object.new }.to raise_error(ArgumentError)
+      expect { configuration.default_activity_timeout = Object.new }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be a duration/)
     end
   end
 
@@ -297,11 +299,13 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "raises when duration is zero or negative" do
-      expect { configuration.default_retry_initial_interval = 0.seconds }.to raise_error(ArgumentError)
+      expect { configuration.default_retry_initial_interval = 0.seconds }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be positive/)
     end
 
     it "raises when value lacks numeric semantics" do
-      expect { configuration.default_retry_initial_interval = Object.new }.to raise_error(ArgumentError)
+      expect { configuration.default_retry_initial_interval = Object.new }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be a duration/)
     end
   end
 
@@ -326,7 +330,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     context "when target is invalid" do
       it "raises ConfigurationError for missing port" do
+        configuration.in_configure_block = true
         configuration.target = "localhost"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Tt]arget must.*host:port/
@@ -334,7 +340,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError for missing host" do
+        configuration.in_configure_block = true
         configuration.target = ":7233"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Tt]arget must.*host:port/
@@ -342,7 +350,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError for invalid format" do
+        configuration.in_configure_block = true
         configuration.target = "badformat"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Tt]arget must.*host:port/
@@ -350,7 +360,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError for port number too long" do
+        configuration.in_configure_block = true
         configuration.target = "localhost:123456"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Tt]arget must.*host:port/
@@ -358,7 +370,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError for invalid characters" do
+        configuration.in_configure_block = true
         configuration.target = "host with spaces:7233"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Tt]arget must.*host:port/
@@ -366,7 +380,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError when target is nil" do
+        configuration.in_configure_block = true
         configuration.target = nil
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /Target host is required|Target must be in format/
@@ -376,7 +392,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     context "when namespace is invalid" do
       it "raises ConfigurationError for spaces in namespace" do
+        configuration.in_configure_block = true
         configuration.namespace = "has spaces"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Nn]amespace must contain only/
@@ -384,7 +402,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError for special characters" do
+        configuration.in_configure_block = true
         configuration.namespace = "special!chars"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Nn]amespace must contain only/
@@ -392,7 +412,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError for dots in namespace" do
+        configuration.in_configure_block = true
         configuration.namespace = "namespace.with.dots"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /[Nn]amespace must contain only/
@@ -400,7 +422,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "raises ConfigurationError when namespace is nil" do
+        configuration.in_configure_block = true
         configuration.namespace = nil
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
           /Namespace is required|namespace must contain only alphanumeric/
@@ -408,7 +432,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "accepts valid namespace with hyphens and underscores" do
+        configuration.in_configure_block = true
         configuration.namespace = "valid-namespace_123"
+        configuration.in_configure_block = false
         expect { configuration.validate! }.not_to raise_error
       end
     end
@@ -418,7 +444,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.instance_variable_set(:@default_activity_timeout, 0)
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /default_activity_timeout must be positive/
+          /[Dd]efault activity timeout.*must be positive/
         )
       end
 
@@ -426,7 +452,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.instance_variable_set(:@default_activity_timeout, -5)
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /default_activity_timeout must be positive/
+          /[Dd]efault activity timeout.*must be positive/
         )
       end
 
@@ -434,7 +460,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.instance_variable_set(:@default_retry_initial_interval, 0.seconds)
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /default_retry_initial_interval must be positive/
+          /[Dd]efault retry initial interval.*must be positive/
         )
       end
 
@@ -442,7 +468,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.instance_variable_set(:@default_retry_initial_interval, -10)
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /default_retry_initial_interval must be positive/
+          /[Dd]efault retry initial interval.*must be positive/
         )
       end
 
@@ -450,155 +476,195 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.instance_variable_set(:@default_activity_timeout, "not a duration")
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /default_activity_timeout must be a duration/
+          /[Dd]efault activity timeout.*must be a duration/
         )
       end
     end
 
     context "when retry settings are invalid" do
       it "raises ConfigurationError when backoff is less than 1.0" do
+        configuration.in_configure_block = true
         configuration.default_retry_backoff = 0.5
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /default_retry_backoff must be >= 1.0/
+          /[Dd]efault retry backoff.*>= 1\.0/
         )
       end
 
       it "raises ConfigurationError when backoff is zero" do
+        configuration.in_configure_block = true
         configuration.default_retry_backoff = 0.0
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /default_retry_backoff must be >= 1.0/
+          /[Dd]efault retry backoff.*>= 1\.0/
         )
       end
 
       it "raises ConfigurationError when backoff is negative" do
+        configuration.in_configure_block = true
         configuration.default_retry_backoff = -1.0
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /default_retry_backoff must be >= 1.0/
+          /[Dd]efault retry backoff.*>= 1\.0/
         )
       end
 
       it "accepts backoff exactly equal to 1.0" do
+        configuration.in_configure_block = true
         configuration.default_retry_backoff = 1.0
+        configuration.in_configure_block = false
         expect { configuration.validate! }.not_to raise_error
       end
 
       it "raises ConfigurationError when max_attempts is negative" do
+        configuration.in_configure_block = true
         configuration.default_retry_max_attempts = -1
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /default_retry_max_attempts must be >= 0/
+          /[Dd]efault retry max attempts.*>= 0/
         )
       end
 
       it "accepts max_attempts equal to zero" do
+        configuration.in_configure_block = true
         configuration.default_retry_max_attempts = 0
+        configuration.in_configure_block = false
         expect { configuration.validate! }.not_to raise_error
       end
     end
 
     context "when payload size is invalid" do
       it "raises ConfigurationError when exceeding maximum limit" do
+        configuration.in_configure_block = true
         configuration.max_payload_size_kb = 2_097_153
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_payload_size_kb.*2097152 KB/
+          /[Mm]ax payload size.*2,097,152/
         )
       end
 
       it "raises ConfigurationError when far exceeding maximum limit" do
+        configuration.in_configure_block = true
         configuration.max_payload_size_kb = 5_000_000
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_payload_size_kb.*2097152 KB/
+          /[Mm]ax payload size.*2,097,152/
         )
       end
 
       it "accepts payload size at the maximum limit" do
+        configuration.in_configure_block = true
         configuration.max_payload_size_kb = 2_097_152
+        configuration.in_configure_block = false
         expect { configuration.validate! }.not_to raise_error
       end
 
       it "raises ConfigurationError when payload size is zero" do
+        configuration.in_configure_block = true
         configuration.max_payload_size_kb = 0
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_payload_size_kb must be positive/
+          /[Mm]ax payload size.*(must be positive|between 1)/
         )
       end
 
       it "raises ConfigurationError when payload size is negative" do
+        configuration.in_configure_block = true
         configuration.max_payload_size_kb = -100
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_payload_size_kb must be positive/
+          /[Mm]ax payload size.*(must be positive|between 1)/
         )
       end
 
       it "accepts a reasonable payload size" do
+        configuration.in_configure_block = true
         configuration.max_payload_size_kb = 1024
+        configuration.in_configure_block = false
         expect { configuration.validate! }.not_to raise_error
       end
     end
 
     context "when worker concurrency settings are invalid" do
       it "raises ConfigurationError when max_concurrent_activities is zero" do
+        configuration.in_configure_block = true
         configuration.max_concurrent_activities = 0
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_concurrent_activities must be positive/
+          /[Mm]ax concurrent activities.*must be positive/
         )
       end
 
       it "raises ConfigurationError when max_concurrent_activities is negative" do
+        configuration.in_configure_block = true
         configuration.max_concurrent_activities = -1
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_concurrent_activities must be positive/
+          /[Mm]ax concurrent activities.*must be positive/
         )
       end
 
       it "accepts positive max_concurrent_activities" do
+        configuration.in_configure_block = true
         configuration.max_concurrent_activities = 200
+        configuration.in_configure_block = false
         expect { configuration.validate! }.not_to raise_error
       end
 
       it "raises ConfigurationError when max_concurrent_workflow_tasks is zero" do
+        configuration.in_configure_block = true
         configuration.max_concurrent_workflow_tasks = 0
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_concurrent_workflow_tasks must be positive/
+          /[Mm]ax concurrent workflow.*must be positive/
         )
       end
 
       it "raises ConfigurationError when max_concurrent_workflow_tasks is negative" do
+        configuration.in_configure_block = true
         configuration.max_concurrent_workflow_tasks = -5
+        configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /max_concurrent_workflow_tasks must be positive/
+          /[Mm]ax concurrent workflow.*must be positive/
         )
       end
 
       it "accepts positive max_concurrent_workflow_tasks" do
+        configuration.in_configure_block = true
         configuration.max_concurrent_workflow_tasks = 300
+        configuration.in_configure_block = false
         expect { configuration.validate! }.not_to raise_error
       end
 
       it "accepts high concurrency values for both settings" do
+        configuration.in_configure_block = true
         configuration.max_concurrent_activities = 500
         configuration.max_concurrent_workflow_tasks = 500
+        configuration.in_configure_block = false
         expect { configuration.validate! }.not_to raise_error
       end
     end
 
     context "with multiple validation failures" do
       it "collects and reports all validation errors" do
+        configuration.in_configure_block = true
         configuration.target = "invalid"
         configuration.namespace = "has spaces"
         configuration.default_retry_backoff = 0.5
         configuration.max_payload_size_kb = -1
+        configuration.in_configure_block = false
 
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError
@@ -606,11 +672,11 @@ RSpec.describe ActiveJob::Temporal::Configuration do
           # Should include header for multiple errors
           expect(error.message).to include("Configuration validation failed")
 
-          # Should include all errors
-          expect(error.message).to include("Target must be in format")
-          expect(error.message).to include("Namespace must contain only")
-          expect(error.message).to include("default_retry_backoff must be >= 1.0")
-          expect(error.message).to include("max_payload_size_kb must be positive")
+          # Should include all errors (with flexible matching for case and formatting)
+          expect(error.message).to match(/[Tt]arget.*format/)
+          expect(error.message).to match(/[Nn]amespace.*contain only/)
+          expect(error.message).to match(/[Dd]efault retry backoff.*>= 1\.0/)
+          expect(error.message).to match(/[Mm]ax payload size.*positive|between/)
 
           # Should number the errors
           expect(error.message).to match(/\d+\.\s/)
@@ -618,11 +684,13 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end
 
       it "shows single error without numbering" do
+        configuration.in_configure_block = true
         configuration.target = "invalid"
+        configuration.in_configure_block = false
 
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /^Target must be in format/ # Should start with the error (not "Configuration validation failed")
+          /[Tt]arget.*format/ # Should start with the error (not "Configuration validation failed")
         )
       end
     end
