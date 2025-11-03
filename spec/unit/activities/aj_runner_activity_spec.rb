@@ -8,12 +8,15 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
   subject(:activity) { described_class.new }
 
   let(:workflow_id) { "wf-123" }
-  let(:activity_info) { instance_double("TemporalActivityInfo", workflow_id: workflow_id) }
+  let(:activity_info) { instance_double("Temporalio::Activity::Info", workflow_id: workflow_id) }
+  let(:activity_context) { instance_double("Temporalio::Activity::Context", info: activity_info) }
   let(:args) { [42, "payload"] }
   let(:idempotency_key) { :aj_temporal_idempotency_key }
 
   before do
-    allow(Temporalio::Activity).to receive(:info).and_return(activity_info)
+    # Mock the real SDK's Activity Context API
+    allow(Temporalio::Activity::Context).to receive(:exist?).and_return(true)
+    allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
     allow(ActiveJob::Temporal::Payload).to receive(:deserialize_args).and_return(args)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?).and_return(false)
   end
@@ -63,9 +66,8 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         .and_return(true)
 
       expect { activity.execute(payload) }
-        .to raise_error(Temporalio::Activity::ApplicationError) do |error|
+        .to raise_error(Temporalio::Error::ApplicationError) do |error|
           expect(error.non_retryable).to eq(true)
-          expect(error.cause).to eq(original_error)
           expect(error.message).to eq(original_error.message)
         end
 

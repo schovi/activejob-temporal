@@ -5,54 +5,6 @@ require "active_support/core_ext/string/inflections"
 require_relative "../payload"
 require_relative "../retry_mapper"
 
-# Provide lightweight Temporal stubs so specs can run without the real SDK.
-unless defined?(Temporalio::Activity)
-  module Temporalio
-    module Activity
-    end
-  end
-end
-
-unless defined?(Temporalio::Activity::Definition)
-  module Temporalio
-    module Activity
-      Definition = Class.new
-    end
-  end
-end
-
-unless defined?(Temporalio::Activity::ApplicationError)
-  module Temporalio
-    module Activity
-      class ApplicationError < StandardError
-        attr_reader :non_retryable, :cause
-
-        def initialize(message = nil, non_retryable: false, cause: nil)
-          super(message)
-          @non_retryable = non_retryable
-          @cause = cause
-        end
-      end
-    end
-  end
-end
-
-unless Temporalio::Activity.respond_to?(:info)
-  module Temporalio
-    module Activity
-      Info = Struct.new(:workflow_id) unless const_defined?(:Info)
-
-      class << self
-        attr_writer :info
-
-        def info
-          @info ||= Info.new
-        end
-      end
-    end
-  end
-end
-
 module ActiveJob
   module Temporal
     module Activities
@@ -119,7 +71,7 @@ module ActiveJob
         # @raise [ArgumentError] if payload is missing job_class
         # @raise [NameError] if job_class cannot be constantized
         # @raise [ActiveJob::SerializationError] if arguments cannot be deserialized
-        # @raise [Temporalio::Activity::ApplicationError] if job raises a discardable exception (non-retryable)
+        # @raise [Temporalio::Error::ApplicationError] if job raises a discardable exception (non-retryable)
         # @raise [StandardError] if job raises a retryable exception (propagates to Temporal)
         #
         # @example Basic execution
@@ -176,9 +128,6 @@ module ActiveJob
         def set_idempotency_key
           workflow_id = if defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
                           Temporalio::Activity::Context.current.info.workflow_id
-                        elsif Temporalio::Activity.respond_to?(:info)
-                          # For unit tests with stub
-                          Temporalio::Activity.info&.workflow_id || "unknown-workflow"
                         else
                           "unknown-workflow"
                         end
@@ -189,10 +138,9 @@ module ActiveJob
         # @api private
         def handle_exception(job_class, error)
           if job_class && RetryMapper.discard_exception?(job_class, error)
-            raise Temporalio::Activity::ApplicationError.new(
+            raise Temporalio::Error::ApplicationError.new(
               error.message,
-              non_retryable: true,
-              cause: error
+              non_retryable: true
             )
           end
 
