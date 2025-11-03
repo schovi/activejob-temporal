@@ -4,7 +4,7 @@ require "spec_helper"
 
 RSpec.describe ActiveJob::Temporal do
   before do
-    described_class.instance_variable_set(:@config, nil)
+    described_class.instance_variable_set(:@config_mvar, nil)
   end
 
   describe ".config" do
@@ -57,6 +57,125 @@ RSpec.describe ActiveJob::Temporal do
 
     it "returns the configuration even when no block provided" do
       expect(described_class.configure).to be_a(ActiveJob::Temporal::Configuration)
+    end
+  end
+
+  describe "Thread safety" do
+    before do
+      # Reset config for thread safety tests
+      described_class.instance_variable_set(:@config_mvar, nil)
+    end
+
+    it "allows concurrent reads of configuration" do
+      described_class.configure do |config|
+        config.target = "localhost:7233"
+        config.namespace = "test"
+      end
+
+      # Spawn multiple threads that read configuration concurrently
+      threads = 10.times.map do
+        Thread.new do
+          100.times do
+            config = described_class.config
+            expect(config.target).to eq("localhost:7233")
+            expect(config.namespace).to eq("test")
+          end
+        end
+      end
+
+      threads.each(&:join)
+    end
+
+    it "synchronizes concurrent configuration modifications" do
+      results = []
+      mutex = Mutex.new
+
+      # Spawn multiple threads that configure concurrently
+      threads = 5.times.map do |i|
+        Thread.new do
+          described_class.configure do |config|
+            config.target = "localhost:#{7233 + i}"
+            config.namespace = "test-#{i}"
+            # Small sleep to increase chance of interleaving
+            sleep 0.001
+          end
+
+          # Record what was configured
+          mutex.synchronize do
+            results << {
+              target: described_class.config.target,
+              namespace: described_class.config.namespace
+            }
+          end
+        end
+      end
+
+      threads.each(&:join)
+
+      # Verify that one of the configurations "won" and is consistent
+      final_config = described_class.config
+      expect(final_config.target).to match(/localhost:7\d{3}/)
+      expect(final_config.namespace).to match(/test-\d/)
+
+      # Verify target and namespace match (came from same configure block)
+      case final_config.target
+      when "localhost:7233"
+        expect(final_config.namespace).to eq("test-0")
+      when "localhost:7234"
+        expect(final_config.namespace).to eq("test-1")
+      when "localhost:7235"
+        expect(final_config.namespace).to eq("test-2")
+      when "localhost:7236"
+        expect(final_config.namespace).to eq("test-3")
+      when "localhost:7237"
+        expect(final_config.namespace).to eq("test-4")
+      end
+    end
+
+    it "ensures configure blocks have exclusive access" do
+      described_class.configure do |config|
+        config.target = "initial:7233"
+        config.namespace = "initial"
+      end
+
+      access_log = []
+      mutex = Mutex.new
+
+      # Thread 1: Long-running configure
+      thread1 = Thread.new do
+        described_class.configure do |config|
+          mutex.synchronize { access_log << "thread1_start" }
+          config.target = "thread1:7233"
+          sleep 0.1 # Simulate long configuration
+          config.namespace = "thread1"
+          mutex.synchronize { access_log << "thread1_end" }
+        end
+      end
+
+      # Give thread1 a head start
+      sleep 0.01
+
+      # Thread 2: Quick configure (should wait for thread1)
+      thread2 = Thread.new do
+        described_class.configure do |config|
+          mutex.synchronize { access_log << "thread2_start" }
+          config.target = "thread2:7233"
+          config.namespace = "thread2"
+          mutex.synchronize { access_log << "thread2_end" }
+        end
+      end
+
+      thread1.join
+      thread2.join
+
+      # Verify that configure blocks didn't interleave
+      # Either thread1 completed before thread2 started, or vice versa
+      expect(access_log).to satisfy do |log|
+        # thread1 finished before thread2 started
+        (log.index("thread1_end") < log.index("thread2_start")) ||
+          # OR thread2 finished before thread1 started (less likely but possible)
+          (log.index("thread2_end") < log.index("thread1_start"))
+      end
     end
   end
 end

@@ -3,6 +3,7 @@
 require "logger"
 require "active_support/core_ext/numeric/time"
 require "active_support/ordered_options"
+require "concurrent/mvar"
 
 require_relative "temporal/version"
 require_relative "temporal/configuration"
@@ -87,8 +88,10 @@ module ActiveJob
     # Use {ActiveJob::Temporal.configure} to set configuration values with automatic validation.
     #
     # @note Thread Safety
-    #   The configuration object is thread-safe for reading. Configuration changes should be
-    #   completed during application initialization before workers start.
+    #   The configuration object is thread-safe for both reading and writing.
+    #   Concurrent reads are safe at any time. Configuration changes are synchronized
+    #   using Concurrent::MVar to ensure exclusive access during modifications.
+    #   For best practices, complete configuration during application initialization.
     #
     # @note Environment Variable Defaults
     #   Several configuration values can be set via environment variables:
@@ -226,7 +229,8 @@ module ActiveJob
       #
       # @return [Configuration] the gem configuration
       def config
-        @config ||= Configuration.new
+        @config_mvar ||= Concurrent::MVar.new(Configuration.new)
+        @config_mvar.value
       end
       alias configuration config
 
@@ -334,14 +338,18 @@ module ActiveJob
       def configure
         return config unless block_given?
 
-        # Track that we're in a configure block
-        config.in_configure_block = true
+        # Use MVar's borrow to ensure exclusive access during configuration
+        @config_mvar ||= Concurrent::MVar.new(Configuration.new)
+        @config_mvar.borrow do |cfg|
+          # Track that we're in a configure block
+          cfg.in_configure_block = true
 
-        begin
-          yield(config)
-        ensure
-          # Always clear flag, even if block raises exception
-          config.in_configure_block = false
+          begin
+            yield(cfg)
+          ensure
+            # Always clear flag, even if block raises exception
+            cfg.in_configure_block = false
+          end
         end
 
         validate! # Automatic validation after configuration

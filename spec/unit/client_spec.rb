@@ -10,7 +10,7 @@ RSpec.describe ActiveJob::Temporal, ".client" do
   around do |example|
     # Save original configuration state before resetting
     original_client = described_class.instance_variable_get(:@client)
-    original_config = described_class.instance_variable_get(:@config)
+    original_config_mvar = described_class.instance_variable_get(:@config_mvar)
     original_target = described_class.config&.target
     original_namespace = described_class.config&.namespace
     original_task_queue_prefix = described_class.config&.task_queue_prefix
@@ -19,8 +19,8 @@ RSpec.describe ActiveJob::Temporal, ".client" do
   ensure
     # Restore original configuration state after test completes
     described_class.instance_variable_set(:@client, original_client)
-    described_class.instance_variable_set(:@config, original_config)
-    if original_config
+    described_class.instance_variable_set(:@config_mvar, original_config_mvar)
+    if original_config_mvar
       described_class.configure do |config|
         config.target = original_target
         config.namespace = original_namespace
@@ -32,7 +32,7 @@ RSpec.describe ActiveJob::Temporal, ".client" do
   before do
     # Reset instance variables and stub Temporal client for each test
     described_class.instance_variable_set(:@client, nil)
-    described_class.instance_variable_set(:@config, nil)
+    described_class.instance_variable_set(:@config_mvar, nil)
     stub_const("Temporalio::Client", class_double("Temporalio::Client"))
   end
 
