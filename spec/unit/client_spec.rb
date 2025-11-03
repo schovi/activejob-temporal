@@ -114,6 +114,34 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     expect(described_class.client).to be(client_instance)
   end
 
+  it "handles only TLS key being set" do
+    ENV["TEMPORAL_TLS_KEY"] = "key-only"
+
+    client_instance = instance_double("Temporalio::Client")
+    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
+      expect(target).to eq("127.0.0.1:7233")
+      expect(namespace).to eq("default")
+      expect(kwargs[:tls]).to eq(private_key: "key-only")
+      client_instance
+    end
+
+    expect(described_class.client).to be(client_instance)
+  end
+
+  it "handles only TLS server_name being set" do
+    ENV["TEMPORAL_TLS_SERVER_NAME"] = "temporal.example.com"
+
+    client_instance = instance_double("Temporalio::Client")
+    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
+      expect(target).to eq("127.0.0.1:7233")
+      expect(namespace).to eq("default")
+      expect(kwargs[:tls]).to eq(server_name: "temporal.example.com")
+      client_instance
+    end
+
+    expect(described_class.client).to be(client_instance)
+  end
+
   it "prefers TLS configuration defined on the config object" do
     described_class.configure do |config|
       config.target = "localhost:7233"

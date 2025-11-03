@@ -293,6 +293,34 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
   end
 
+  describe "dynamic attribute methods" do
+    it "raises NoMethodError for unknown attribute getter" do
+      expect { configuration.unknown_attribute }
+        .to raise_error(NoMethodError, /undefined method.*unknown_attribute/)
+    end
+
+    it "silently ignores unknown attribute setters" do
+      # Unknown setters don't raise errors but also don't store the value
+      expect { configuration.unknown_attribute = "value" }.not_to raise_error
+
+      # Verify the value was not stored (getter still raises NoMethodError)
+      expect { configuration.unknown_attribute }
+        .to raise_error(NoMethodError, /undefined method.*unknown_attribute/)
+    end
+
+    it "returns false for respond_to? with unknown attribute" do
+      expect(configuration.respond_to?(:unknown_attribute)).to be(false)
+      expect(configuration.respond_to?(:unknown_attribute=)).to be(false)
+    end
+
+    it "returns true for respond_to? with known attributes" do
+      expect(configuration.respond_to?(:target)).to be(true)
+      expect(configuration.respond_to?(:target=)).to be(true)
+      expect(configuration.respond_to?(:namespace)).to be(true)
+      expect(configuration.respond_to?(:namespace=)).to be(true)
+    end
+  end
+
   describe "#default_activity_timeout=" do
     it "accepts positive durations" do
       configuration.default_activity_timeout = 10.seconds
