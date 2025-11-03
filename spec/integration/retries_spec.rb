@@ -10,17 +10,13 @@ RSpec.describe "ActiveJob Temporal retry behavior", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
-    $attempt_count = 0
-    $test_result = nil
-    $discard_test_executed = false
+    TestState.instance.reset!
 
     example.run
   ensure
     ActiveJob::Base.queue_adapter = original_adapter
     stop_worker(@worker_thread)
-    $attempt_count = 0
-    $test_result = nil
-    $discard_test_executed = false
+    TestState.instance.reset!
   end
 
   def client
@@ -40,9 +36,9 @@ RSpec.describe "ActiveJob Temporal retry behavior", :integration do
     wait_for_workflow_completion(workflow_id)
 
     # Verify job executed exactly twice (failed once, then succeeded)
-    # The global variables prove the retry mechanism worked
-    expect($test_result).to eq("success")
-    expect($attempt_count).to eq(2)
+    # The test state proves the retry mechanism worked
+    expect(TestState.instance.test_result).to eq("success")
+    expect(TestState.instance.attempt_count).to eq(2)
 
     # Verify workflow completed successfully
     handle = client.workflow_handle(workflow_id)
@@ -78,7 +74,7 @@ RSpec.describe "ActiveJob Temporal retry behavior", :integration do
     wait_for_workflow_failure(workflow_id)
 
     # Verify job executed exactly once (no retries)
-    expect($discard_test_executed).to eq(true)
+    expect(TestState.instance.discard_test_executed).to eq(true)
 
     # Verify workflow failed (not completed)
     handle = client.workflow_handle(workflow_id)
@@ -126,7 +122,7 @@ RSpec.describe "ActiveJob Temporal retry behavior", :integration do
   def wait_for_result(expected)
     Timeout.timeout(10) do
       loop do
-        break if $test_result == expected
+        break if TestState.instance.test_result == expected
 
         sleep 0.1
       end

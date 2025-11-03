@@ -89,11 +89,11 @@ class RetryTestJob < ActiveJob::Base
   queue_as :default
 
   def perform
-    $attempt_count ||= 0
-    $attempt_count += 1
-    raise StandardError, "Transient error" if $attempt_count == 1
+    state = TestState.instance
+    state.attempt_count += 1
+    raise StandardError, "Transient error" if state.attempt_count == 1
 
-    $test_result = "success"
+    state.test_result = "success"
   end
 end
 
@@ -105,7 +105,7 @@ class DiscardTestJob < ActiveJob::Base
   queue_as :default
 
   def perform
-    $discard_test_executed = true
+    TestState.instance.discard_test_executed = true
     raise NonRetryableTestError, "This error should not be retried"
   end
 end
@@ -114,15 +114,16 @@ class LongRunningJob < ActiveJob::Base
   queue_as :default
 
   def perform
-    $long_running_iterations = 0
-    $long_running_completed = false
+    state = TestState.instance
+    state.long_running_iterations = 0
+    state.long_running_completed = false
 
     10.times do
       Temporalio::Activity::Context.current.heartbeat
       sleep 1
-      $long_running_iterations += 1
+      state.long_running_iterations += 1
     end
 
-    $long_running_completed = true
+    state.long_running_completed = true
   end
 end

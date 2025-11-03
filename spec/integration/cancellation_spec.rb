@@ -10,15 +10,13 @@ RSpec.describe "ActiveJob Temporal cancellation", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
-    $long_running_iterations = 0
-    $long_running_completed = false
+    TestState.instance.reset!
 
     example.run
   ensure
     ActiveJob::Base.queue_adapter = original_adapter
     stop_worker(@worker_thread)
-    $long_running_iterations = 0
-    $long_running_completed = false
+    TestState.instance.reset!
   end
 
   def client
@@ -52,11 +50,11 @@ RSpec.describe "ActiveJob Temporal cancellation", :integration do
     expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::CANCELED)
 
     # Verify job did not complete (heartbeat loop was interrupted)
-    expect($long_running_completed).to eq(false)
+    expect(TestState.instance.long_running_completed).to eq(false)
     # Verify job was interrupted mid-execution (not all 10 iterations)
-    expect($long_running_iterations).to be < 10
+    expect(TestState.instance.long_running_iterations).to be < 10
     # Verify job started executing (at least 1 iteration)
-    expect($long_running_iterations).to be > 0
+    expect(TestState.instance.long_running_iterations).to be > 0
   end
 
   private

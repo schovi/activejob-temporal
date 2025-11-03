@@ -11,8 +11,10 @@ SimpleCov.start do
 end
 
 require "bundler/setup"
+require "singleton"
 require "activejob/temporal"
 require_relative "support/temporal_test_server"
+require_relative "support/test_state"
 
 RSpec.configure do |config|
   config.expect_with :rspec do |expectations|
