@@ -18,7 +18,7 @@ Each enqueued job becomes a workflow execution, with optional activities for the
 
 ## Key Components
 
-- **Configuration** (`lib/activejob/temporal.rb`): DSL-style setup with explicit validation (`config.validate!`)
+- **Configuration** (`lib/activejob/temporal.rb`): DSL-style setup with automatic validation (validates at end of configure block)
 - **Client** (`lib/activejob/temporal/client.rb`): Temporal gRPC client builder with target/namespace/credentials handling
 - **RetryMapper** (`lib/activejob/temporal/retry_mapper.rb`): Introspects ActiveJob `retry_on`/`discard_on` and converts to Temporal retry policies
 - **Payload** (`lib/activejob/temporal/payload.rb`): Job argument serialization/deserialization with size validation
@@ -185,20 +185,20 @@ The gem uses a custom exception hierarchy rooted at `ActiveJob::Temporal::Error`
 
 ### Configuration Pattern
 
-Configuration uses a DSL pattern:
+Configuration uses a DSL pattern with **automatic validation**:
 
 ```ruby
 ActiveJob::Temporal.configure do |config|
   config.target = "localhost:7233"
   config.namespace = "default"
   # Additional settings...
+  # Validation happens automatically at the end of this block!
 end
-
-# Validation must be explicit
-ActiveJob::Temporal.config.validate!
 ```
 
-Configuration is validated on `validate!` call. Environment variables with defaults are used for sensitive values (e.g., `ENV.fetch("TEMPORAL_TARGET", default)`).
+Configuration is automatically validated at the end of the `configure` block. If validation fails, a `ConfigurationError` is raised immediately. You can also manually validate by calling `ActiveJob::Temporal.config.validate!` if you modify the config directly outside the block.
+
+Environment variables with defaults are used for sensitive values (e.g., `ENV.fetch("TEMPORAL_TARGET", default)`).
 
 ## Testing Patterns
 

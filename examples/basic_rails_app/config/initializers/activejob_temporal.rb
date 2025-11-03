@@ -8,6 +8,7 @@ if ENV["RAILS_LOG_TO_STDOUT"] == "1" && defined?(Rails)
 end
 
 # Configure the ActiveJob Temporal adapter
+# Note: Configuration is automatically validated at the end of this block
 ActiveJob::Temporal.configure do |config|
   # Temporal server address (default: "127.0.0.1:7233")
   config.target = ENV.fetch("TEMPORAL_TARGET", "127.0.0.1:7233")
@@ -35,7 +36,5 @@ ActiveJob::Temporal.configure do |config|
 
   # Maximum payload size in KB (default: 250)
   config.max_payload_size_kb = 250
+  # Validation happens automatically at the end of this block!
 end
-
-# Validate configuration
-ActiveJob::Temporal.config.validate!

@@ -228,6 +228,7 @@ examples:
         config.task_queue_prefix = 'rails-app-'
         config.default_retry_max_attempts = 3
         config.identity = ENV.fetch('HOSTNAME', 'unknown-worker')
+        # Validation happens automatically at end of block!
       end
 
   # High-throughput scenario with custom tuning
@@ -259,28 +260,37 @@ examples:
         config.default_retry_max_attempts = 5
         config.max_payload_size_kb = 512
         config.identity = 'worker-heavy-01'
+        # Validation happens automatically at end of block!
       end
 
 # Configuration validation notes
 validation:
-  description: "The Configuration class provides a validate! method for comprehensive validation"
+  description: "Configuration is automatically validated using ActiveModel::Validations with i18n support"
   usage: |
-    # Call validate! explicitly after configuration to ensure all settings are valid
+    # Configuration is automatically validated at the end of the configure block
+    # If validation fails, ConfigurationError is raised immediately
     ActiveJob::Temporal.configure do |config|
       config.target = "temporal.example.com:7233"
       config.namespace = "production"
+      # Validation happens automatically here!
     end
-    ActiveJob::Temporal.config.validate!  # Raises ConfigurationError if invalid
 
-  validation_methods:
-    - "validate_target! - Checks host:port format"
-    - "validate_namespace! - Checks namespace format"
-    - "validate_timeouts! - Ensures timeouts are positive durations"
-    - "validate_retry_settings! - Validates backoff and max_attempts ranges"
-    - "validate_payload_size! - Ensures payload size is within bounds"
-    - "validate_worker_concurrency! - Ensures max_concurrent_activities and max_concurrent_workflow_tasks are positive integers"
+    # You can also manually validate if you modify config directly:
+    ActiveJob::Temporal.config.target = "new-host:7233"
+    ActiveJob::Temporal.config.validate!  # Optional manual validation
 
-  error_handling: "All validation errors raise ActiveJob::Temporal::ConfigurationError with descriptive messages"
+  validation_rules:
+    - "target - Must be in host:port format with alphanumeric/dots/hyphens in host and 1-5 digit port"
+    - "namespace - Must contain only alphanumeric characters, hyphens, and underscores"
+    - "default_activity_timeout - Must be a positive duration"
+    - "default_retry_initial_interval - Must be a positive duration"
+    - "default_retry_backoff - Must be >= 1.0"
+    - "default_retry_max_attempts - Must be >= 0"
+    - "max_payload_size_kb - Must be between 1 and 2,097,152 KB"
+    - "max_concurrent_activities - Must be > 0"
+    - "max_concurrent_workflow_tasks - Must be > 0"
+
+  error_handling: "All validation errors raise ActiveJob::Temporal::ConfigurationError with helpful, i18n-ready error messages that include examples and guidance"
 
 # Type system reference
 type_reference:
