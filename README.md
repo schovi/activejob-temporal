@@ -27,11 +27,12 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Scheduled execution:** Use `MyJob.set(wait: 5.minutes).perform_later(args)` or `MyJob.set(wait_until: Time.zone.now + 1.hour).perform_later(args)` for delayed jobs
 - ✅ **Retry mapping:** ActiveJob `retry_on` declarations automatically map to Temporal retry policies with exponential backoff
 - ✅ **Discard mapping:** `discard_on` maps to non-retryable errors, preventing wasted retry attempts
+- ✅ **Per-job timeout configuration:** Configure activity timeouts per job using `temporal_options` class method
 - ✅ **Job cancellation:** Cancel in-flight jobs via `ActiveJob::Temporal.cancel(JobClass, job_id)` API
 - ✅ **Search attributes:** Filter and debug jobs in Temporal UI using job class, queue, job ID, tenant ID, and enqueue timestamp
 - ✅ **Transactional enqueue:** Jobs automatically defer enqueue until the current database transaction commits (via `enqueue_after_transaction_commit?`)
 - ✅ **GlobalID support:** Seamless serialization of ActiveRecord models and other GlobalID-compatible objects
-- ✅ **Configurable timeouts and retries:** Fine-tune activity timeouts, retry intervals, and backoff coefficients per job or globally
+- ✅ **Configurable timeouts and retries:** Fine-tune activity timeouts, retry intervals, and backoff coefficients globally
 - ✅ **Structured logging:** JSON logs for integration with observability infrastructure
 
 ## Installation
@@ -271,6 +272,73 @@ Temporal automatically applies exponential backoff using the `default_retry_back
 - Attempt 1: 60 seconds
 - Attempt 2: 120 seconds
 - Attempt 3: 240 seconds
+
+## Per-Job Timeout Configuration
+
+You can configure activity timeouts on a per-job basis using the `temporal_options` class method. This overrides the global timeout defaults for specific jobs.
+
+### Basic Timeout Override
+
+```ruby
+class QuickJob < ApplicationJob
+  temporal_options start_to_close_timeout: 30.seconds
+
+  def perform
+    # Fast operation that should complete within 30 seconds
+  end
+end
+```
+
+### Long-Running Job with Heartbeat
+
+```ruby
+class DataProcessingJob < ApplicationJob
+  temporal_options(
+    start_to_close_timeout: 2.hours,
+    heartbeat_timeout: 30.seconds
+  )
+
+  def perform(batch_id)
+    records = Record.where(batch_id: batch_id)
+
+    records.find_each do |record|
+      process_record(record)
+
+      # Send heartbeat to Temporal
+      Temporalio::Activity::Context.current.heartbeat
+    end
+  end
+end
+```
+
+### All Timeout Types
+
+```ruby
+class CriticalJob < ApplicationJob
+  temporal_options(
+    start_to_close_timeout: 10.minutes,      # Max execution time for a single attempt
+    schedule_to_start_timeout: 1.minute,     # Max wait before activity starts
+    schedule_to_close_timeout: 15.minutes,   # Total time including all retries
+    heartbeat_timeout: 10.seconds            # Max interval between heartbeats
+  )
+
+  def perform
+    # Critical operation with strict SLAs
+  end
+end
+```
+
+**Available Timeout Options:**
+- `start_to_close_timeout` — Maximum execution time for a single activity attempt
+- `heartbeat_timeout` — Maximum interval between heartbeats before the activity is considered failed
+- `schedule_to_start_timeout` — Maximum wait time before the activity starts after scheduling
+- `schedule_to_close_timeout` — Total time including all retries from schedule to completion
+
+**Notes:**
+- Timeout values can be specified as integers (seconds) or ActiveSupport::Duration objects (`2.hours`, `30.seconds`)
+- At least one of `start_to_close_timeout` or `schedule_to_close_timeout` must be specified (either via `temporal_options` or global configuration)
+- Per-job timeouts override global configuration defaults
+- For long-running jobs, use `heartbeat_timeout` with regular `Temporalio::Activity::Context.current.heartbeat` calls to enable responsive cancellation
 
 ## Cancellation
 

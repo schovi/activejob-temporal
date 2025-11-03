@@ -78,7 +78,7 @@ module ActiveJob
       end
 
       # Builds a payload hash from a job instance.
-      # Includes the job's retry policy for use in the workflow.
+      # Includes the job's retry policy and temporal timeout options for use in the workflow.
       # @api private
       def build_payload(job, scheduled_at: nil)
         payload = Payload.from_job(job, scheduled_at: scheduled_at)
@@ -86,6 +86,10 @@ module ActiveJob
         # Build and add retry policy from job class
         retry_policy = RetryMapper.for(job.class)
         payload[:retry_policy] = retry_policy
+
+        # Extract and add temporal timeout options from job class
+        temporal_options = extract_temporal_options(job.class)
+        payload[:temporal_options] = temporal_options if temporal_options.any?
 
         payload
       end
@@ -150,6 +154,20 @@ module ActiveJob
       # @api private
       def validate_job_for_enqueueing(job)
         raise ConfigurationError, "Job queue name cannot be blank" if job.queue_name.blank?
+      end
+
+      # Extracts temporal timeout options from job class.
+      #
+      # Calls the job class's +temporal_options+ method (if defined) to retrieve
+      # per-job timeout configuration. Returns an empty hash if no options are defined.
+      #
+      # @param job_class [Class] ActiveJob subclass
+      # @return [Hash] Timeout options hash (may be empty)
+      # @api private
+      def extract_temporal_options(job_class)
+        return {} unless job_class.respond_to?(:temporal_options)
+
+        job_class.temporal_options
       end
     end
   end

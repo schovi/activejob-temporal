@@ -127,3 +127,16 @@ class LongRunningJob < ActiveJob::Base
     state.long_running_completed = true
   end
 end
+
+class CustomTimeoutJob < ActiveJob::Base
+  temporal_options(
+    start_to_close_timeout: 2.minutes,
+    heartbeat_timeout: 10.seconds
+  )
+
+  queue_as :default
+
+  def perform
+    TestState.instance.custom_timeout_executed = true
+  end
+end

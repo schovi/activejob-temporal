@@ -16,7 +16,8 @@ class TestState
                 :test_result,
                 :discard_test_executed,
                 :long_running_iterations,
-                :long_running_completed
+                :long_running_completed,
+                :custom_timeout_executed
 
   def initialize
     reset!
@@ -29,5 +30,6 @@ class TestState
     @discard_test_executed = false
     @long_running_iterations = 0
     @long_running_completed = false
+    @custom_timeout_executed = false
   end
 end

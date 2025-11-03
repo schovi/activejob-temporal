@@ -118,5 +118,99 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         end
       end
     end
+
+    context "when temporal_options are present in payload" do
+      it "overrides timeout values with per-job temporal_options" do
+        temporal_options = {
+          start_to_close_timeout: 7200.0,
+          heartbeat_timeout: 30.0
+        }
+        payload = base_payload.merge("temporal_options" => temporal_options)
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
+          expect(options[:start_to_close_timeout]).to eq(7200.0)
+          expect(options[:heartbeat_timeout]).to eq(30.0)
+        end
+      end
+
+      it "applies all four timeout types when specified" do
+        temporal_options = {
+          start_to_close_timeout: 3600.0,
+          schedule_to_close_timeout: 7200.0,
+          schedule_to_start_timeout: 300.0,
+          heartbeat_timeout: 30.0
+        }
+        payload = base_payload.merge("temporal_options" => temporal_options)
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
+          expect(options[:start_to_close_timeout]).to eq(3600.0)
+          expect(options[:schedule_to_close_timeout]).to eq(7200.0)
+          expect(options[:schedule_to_start_timeout]).to eq(300.0)
+          expect(options[:heartbeat_timeout]).to eq(30.0)
+        end
+      end
+
+      it "handles symbol keys in temporal_options" do
+        temporal_options = {
+          start_to_close_timeout: 1800.0
+        }
+        payload = base_payload.merge(temporal_options: temporal_options)
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
+          expect(options[:start_to_close_timeout]).to eq(1800.0)
+        end
+      end
+
+      it "uses global config defaults when temporal_options are not present" do
+        workflow.execute(base_payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
+          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
+          expect(options[:heartbeat_timeout]).to be_nil
+        end
+      end
+    end
+
+    context "when global timeout configuration is set" do
+      before do
+        ActiveJob::Temporal.config.default_heartbeat_timeout = 60
+        ActiveJob::Temporal.config.default_schedule_to_start_timeout = 120
+      end
+
+      after do
+        ActiveJob::Temporal.config.default_heartbeat_timeout = nil
+        ActiveJob::Temporal.config.default_schedule_to_start_timeout = nil
+      end
+
+      it "applies global timeout defaults" do
+        workflow.execute(base_payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
+          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
+          expect(options[:heartbeat_timeout]).to eq(60)
+          expect(options[:schedule_to_start_timeout]).to eq(120)
+        end
+      end
+
+      it "allows per-job temporal_options to override global defaults" do
+        temporal_options = {
+          heartbeat_timeout: 15.0
+        }
+        payload = base_payload.merge("temporal_options" => temporal_options)
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
+          expect(options[:heartbeat_timeout]).to eq(15.0)
+          expect(options[:schedule_to_start_timeout]).to eq(120)
+        end
+      end
+    end
   end
 end

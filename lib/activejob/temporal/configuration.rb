@@ -56,7 +56,25 @@ module ActiveJob
       default_activity_timeout: {
         default: -> { 15.minutes },
         type: :duration,
-        description: "Timeout for activity execution"
+        description: "Default start_to_close_timeout for activity execution"
+      },
+
+      default_heartbeat_timeout: {
+        default: nil,
+        type: :duration,
+        description: "Default heartbeat_timeout for activity execution (optional)"
+      },
+
+      default_schedule_to_start_timeout: {
+        default: nil,
+        type: :duration,
+        description: "Default schedule_to_start_timeout for activity execution (optional)"
+      },
+
+      default_schedule_to_close_timeout: {
+        default: nil,
+        type: :duration,
+        description: "Default schedule_to_close_timeout for activity execution (optional)"
       },
 
       default_retry_initial_interval: {
@@ -247,12 +265,21 @@ module ActiveJob
 
       # Validates duration attributes are positive durations
       def validate_duration_values
-        validate_duration_attribute(:default_activity_timeout)
-        validate_duration_attribute(:default_retry_initial_interval)
+        # Required duration attributes
+        validate_duration_attribute(:default_activity_timeout, required: true)
+        validate_duration_attribute(:default_retry_initial_interval, required: true)
+
+        # Optional duration attributes
+        validate_duration_attribute(:default_heartbeat_timeout, required: false)
+        validate_duration_attribute(:default_schedule_to_start_timeout, required: false)
+        validate_duration_attribute(:default_schedule_to_close_timeout, required: false)
       end
 
-      def validate_duration_attribute(attr_name)
+      def validate_duration_attribute(attr_name, required: true)
         value = public_send(attr_name)
+
+        # Allow nil for optional attributes
+        return if value.nil? && !required
 
         # Check if it's a duration-like object (Numeric or ActiveSupport::Duration)
         unless value.is_a?(Numeric) || value.is_a?(ActiveSupport::Duration)

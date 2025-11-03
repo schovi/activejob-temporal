@@ -95,6 +95,50 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
         end.to raise_error(ActiveJob::Temporal::ConfigurationError, /queue name cannot be blank/)
       end
     end
+
+    context "with temporal_options" do
+      let(:timeout_job_class) do
+        Class.new(ActiveJob::Base) do
+          def self.name
+            "TimeoutJob"
+          end
+
+          temporal_options(
+            start_to_close_timeout: 2.hours,
+            heartbeat_timeout: 30.seconds
+          )
+
+          def perform; end
+        end
+      end
+
+      let(:timeout_job) do
+        job = timeout_job_class.new
+        job.job_id = "timeout-job-id"
+        job.queue_name = "default"
+        job
+      end
+
+      it "includes temporal_options in the payload" do
+        allow(client).to receive(:start_workflow) do |_klass, payload, **_options|
+          expect(payload[:temporal_options]).to be_present
+          expect(payload[:temporal_options][:start_to_close_timeout]).to eq(7200.0)
+          expect(payload[:temporal_options][:heartbeat_timeout]).to eq(30.0)
+          "handle"
+        end
+
+        enqueuer.enqueue(timeout_job)
+      end
+
+      it "omits temporal_options from payload when not defined" do
+        allow(client).to receive(:start_workflow) do |_klass, payload, **_options|
+          expect(payload[:temporal_options]).to be_nil
+          "handle"
+        end
+
+        enqueuer.enqueue(job)
+      end
+    end
   end
 
   describe "initialization" do
