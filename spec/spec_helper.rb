@@ -1,14 +1,6 @@
 # frozen_string_literal: true
 
 require "simplecov"
-SimpleCov.start do
-  add_filter "/spec/"
-  enable_coverage :branch
-
-  # Enable result merging for separate test runs (unit + integration)
-  command_name "RSpec:#{ENV['TEST_SUITE'] || 'all'}"
-  merge_timeout 3600 # 1 hour
-end
 
 require "bundler/setup"
 require "singleton"
