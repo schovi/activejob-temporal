@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Migrate the supported Ruby baseline and CI validation target to Ruby 4.0+.
+- Pin the repository Ruby version for local development and document Ruby 4.0.3 validation commands.
 - Require Temporal Ruby SDK 1.4.1+ for Ruby 4 compatibility.
 - Extract configuration state management into a dedicated `Configurable` concern.
 - Extract deterministic workflow ID construction into `WorkflowIdBuilder`.

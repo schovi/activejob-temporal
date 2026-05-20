@@ -128,7 +128,7 @@ Allow configurable custom ID generators. **Original Why Not Chosen:** YAGNI (no 
 
 ## References
 
-- [Ruby Module Functions Documentation](https://ruby-doc.org/core-3.0.0/Module.html#method-i-module_function)
+- [Ruby Module Functions Documentation](https://docs.ruby-lang.org/en/master/Module.html#method-i-module_function)
 - [Temporal Workflow IDs Best Practices](https://docs.temporal.io/workflows#workflow-id)
 - [ActiveJob Queue Adapter Interface](https://api.rubyonrails.org/classes/ActiveJob/QueueAdapters.html)
 - [Single Responsibility Principle](https://en.wikipedia.org/wiki/Single-responsibility_principle)

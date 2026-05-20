@@ -10,7 +10,7 @@ We use `bundle-audit` to automatically check for known vulnerabilities in gem de
 
 ```bash
 # Local scan
-bundle-audit check --update
+rvm 4.0.3 do bundle-audit check --update
 
 # CI automatically scans on each push/PR
 ```
@@ -23,10 +23,10 @@ To update gems safely:
 
 ```bash
 # Update all gems
-bundle update
+rvm 4.0.3 do bundle update
 
 # Update specific gem
-bundle update rails
+rvm 4.0.3 do bundle update rails
 
 # Run security check after updating
 ./tools/security-check.sh
@@ -169,8 +169,8 @@ This script:
 ### Update Process
 
 1. Update Gemfile
-2. Run `bundle update`
-3. Run local tests: `bundle exec rake spec`
+2. Run `rvm 4.0.3 do bundle update`
+3. Run local tests: `rvm 4.0.3 do bundle exec rake spec:unit`
 4. Run security check: `./tools/security-check.sh`
 5. Commit and create PR
 6. Wait for CI to pass

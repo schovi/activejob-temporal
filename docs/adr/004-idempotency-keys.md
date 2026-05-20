@@ -108,6 +108,6 @@ Use `ActiveSupport::Notifications` to inject keys via callbacks. **Why Not Chose
 ## References
 
 - [Stripe Idempotent Requests](https://stripe.com/docs/api/idempotent_requests)
-- [Ruby Thread-Local Storage](https://ruby-doc.org/core-3.0.0/Thread.html#class-Thread-label-Fiber-local+vs.+Thread-local)
+- [Ruby Thread Documentation](https://docs.ruby-lang.org/en/master/Thread.html)
 - [Temporal Activity Context](https://docs.temporal.io/activities#activity-context)
 - [ActiveJob Perform Documentation](https://guides.rubyonrails.org/active_job_basics.html#create-the-job)

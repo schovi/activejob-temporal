@@ -5,13 +5,13 @@ The repository includes a `benchmark-ips` suite for core adapter operations. The
 Run the full suite:
 
 ```bash
-bundle exec rake benchmark
+rvm 4.0.3 do bundle exec rake benchmark
 ```
 
 For a faster smoke run:
 
 ```bash
-BENCHMARK_TIME=1 BENCHMARK_WARMUP=1 bundle exec rake benchmark
+BENCHMARK_TIME=1 BENCHMARK_WARMUP=1 rvm 4.0.3 do bundle exec rake benchmark
 ```
 
 Use the smoke run while iterating and the full run when recording release or optimization notes.
@@ -31,7 +31,7 @@ Use the smoke run while iterating and the full run when recording release or opt
 Measured with Ruby 4.0.3 using:
 
 ```bash
-BENCHMARK_TIME=1 BENCHMARK_WARMUP=1 bundle exec rake benchmark
+BENCHMARK_TIME=1 BENCHMARK_WARMUP=1 rvm 4.0.3 do bundle exec rake benchmark
 ```
 
 | Operation | Throughput |

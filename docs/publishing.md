@@ -142,8 +142,8 @@ cd /Users/schovi/work/activejob-temporal
 ls -lh activejob-temporal-0.1.0.gem
 
 # Run final quality checks
-bundle exec rspec
-bundle exec rubocop
+rvm 4.0.3 do bundle exec rspec
+rvm 4.0.3 do bundle exec rubocop
 
 # Verify git tag is pushed
 git ls-remote --tags origin | grep v0.1.0
@@ -188,17 +188,17 @@ gem search activejob-temporal
 open "https://rubygems.org/gems/activejob-temporal"
 
 # Check gem installation works
-gem install activejob-temporal
-gem list activejob-temporal
+rvm 4.0.3 do gem install activejob-temporal
+rvm 4.0.3 do gem list activejob-temporal
 
 # Test requiring the gem
-ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
+rvm 4.0.3 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
 ```
 
 **Verification Checklist:**
 - [ ] Gem is searchable: `gem search activejob-temporal` returns results
 - [ ] Gem page loads: `https://rubygems.org/gems/activejob-temporal`
-- [ ] Gem can be installed: `gem install activejob-temporal` succeeds
+- [ ] Gem can be installed: `rvm 4.0.3 do gem install activejob-temporal` succeeds
 - [ ] Homepage link works (click "Homepage" on gem page)
 - [ ] Source code link works (click "Source" on gem page)
 - [ ] Changelog link works (click "Changelog" on gem page)
@@ -290,16 +290,16 @@ Use this checklist when you're ready to publish:
 - [ ] Credentials file exists: `~/.gem/credentials`
 
 ### Quality Gates
-- [ ] All tests passing: `bundle exec rspec` shows 0 failures
+- [ ] All tests passing: `rvm 4.0.3 do bundle exec rspec` shows 0 failures
 - [ ] Code coverage adequate: >95% line coverage
-- [ ] No linting offenses: `bundle exec rubocop` shows 0 offenses
+- [ ] No linting offenses: `rvm 4.0.3 do bundle exec rubocop` shows 0 offenses
 - [ ] Documentation complete: README, API docs, migration guide
 - [ ] Changelog finalized: `CHANGELOG.md` has v0.1.0 entry
 
 ### Gem Readiness
 - [ ] Gemspec complete: All metadata fields filled
 - [ ] Version set: `0.1.0` in `lib/activejob/temporal/version.rb`
-- [ ] Gem builds successfully: `gem build activejob-temporal.gemspec`
+- [ ] Gem builds successfully: `rvm 4.0.3 do gem build activejob-temporal.gemspec`
 - [ ] Gem file exists: `activejob-temporal-0.1.0.gem`
 
 ### Publication
@@ -333,9 +333,9 @@ gem push --dry-run activejob-temporal-0.1.0.gem  # Test publish
 gem push activejob-temporal-0.1.0.gem     # Publish (IRREVERSIBLE)
 
 # Verification commands
-gem search activejob-temporal              # Search RubyGems
-gem install activejob-temporal             # Install from RubyGems
-ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
+rvm 4.0.3 do gem search activejob-temporal # Search RubyGems
+rvm 4.0.3 do gem install activejob-temporal # Install from RubyGems
+rvm 4.0.3 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
 
 # Emergency commands (use with caution)
 gem yank activejob-temporal -v 0.1.0      # Remove from new installs

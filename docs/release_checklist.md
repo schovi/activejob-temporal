@@ -5,17 +5,17 @@ This document tracks all quality checks required before releasing activejob-temp
 ## Quality Check Commands
 
 ### 1. Dependency Installation
-- [x] `bundle install` succeeds without errors
+- [x] `rvm 4.0.3 do bundle install` succeeds without errors
 - [x] All dependencies resolve correctly
 - [x] Gemfile.lock is up to date
 
 ### 2. Code Linting (Rubocop)
-- [x] `rake rubocop` exits with status 0
+- [x] `rvm 4.0.3 do bundle exec rake rubocop` exits with status 0
 - [x] Zero Rubocop offenses reported (35 files inspected, 0 offenses)
 - [x] All code meets style guidelines
 
 ### 3. Test Suite
-- [x] `rake spec` exits with status 0
+- [x] `rvm 4.0.3 do bundle exec rake spec` exits with status 0
 - [x] All unit tests pass (108 examples, 0 failures)
 - [x] All integration tests pass (7 examples, 0 failures)
 - [x] No test failures or errors
@@ -27,13 +27,13 @@ This document tracks all quality checks required before releasing activejob-temp
 - [x] All critical paths are tested
 
 ### 5. API Documentation (YARD)
-- [x] `rake yard` succeeds (2 benign warnings about markdown links only)
+- [x] `rvm 4.0.3 do bundle exec rake yard` succeeds (2 benign warnings about markdown links only)
 - [x] All public classes documented
 - [x] All public methods documented
 - [x] Documentation is clear and accurate
 
 ### 6. Gem Build
-- [x] `gem build activejob-temporal.gemspec` succeeds
+- [x] `rvm 4.0.3 do gem build activejob-temporal.gemspec` succeeds
 - [x] `.gem` file created successfully (activejob-temporal-0.1.0.gem)
 - [x] No critical build errors (warnings about dependency constraints are acceptable for v0.1)
 - [x] Gemspec metadata is correct (version 0.1.0, authors, dependencies)

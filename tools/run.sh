@@ -16,4 +16,4 @@ fi
 source "$ENV_EXPORT_FILE"
 
 cd "$REPO_ROOT"
-bundle exec rake
+rvm 4.0.3 do bundle exec rake

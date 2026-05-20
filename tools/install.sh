@@ -7,6 +7,13 @@ ENV_EXPORT_FILE="${SCRIPT_DIR}/.bundle-env"
 
 cd "$REPO_ROOT"
 
+if ! command -v rvm >/dev/null 2>&1; then
+  echo "RVM with Ruby 4.0.3 is required for local repository tooling." >&2
+  exit 1
+fi
+
+RUBY_COMMAND=(rvm 4.0.3 do)
+
 if [[ -f "package.json" && -f "Gemfile" ]]; then
   echo "Multiple manifest files detected. This installer currently supports Ruby (Gemfile) projects only." >&2
   exit 1
@@ -20,10 +27,10 @@ else
 fi
 
 if [[ "$PROJECT_TYPE" == "ruby" ]]; then
-  if ! command -v bundle >/dev/null 2>&1; then
+  if ! "${RUBY_COMMAND[@]}" bundle --version >/dev/null 2>&1; then
     cat >&2 <<'MSG'
-Bundler is required but was not found in PATH.
-Install it with: gem install bundler
+Bundler is required but was not found for Ruby 4.0.3.
+Install it with: rvm 4.0.3 do gem install bundler
 MSG
     exit 1
   fi
@@ -49,13 +56,13 @@ if [[ ":$PATH_TEMPLATE:" != *":$PATH_UPDATE:"* ]]; then
 fi
 EOF
 
-  bundle config set --local path "$BUNDLE_PATH" >/dev/null
+  "${RUBY_COMMAND[@]}" bundle config set --local path "$BUNDLE_PATH" >/dev/null
 
-  if bundle check >/dev/null 2>&1; then
+  if "${RUBY_COMMAND[@]}" bundle check >/dev/null 2>&1; then
     exit 0
   fi
 
-  bundle install \
+  "${RUBY_COMMAND[@]}" bundle install \
     --jobs "${BUNDLE_JOBS:-4}" \
     --retry "${BUNDLE_RETRY:-3}" \
     --path "$BUNDLE_PATH"

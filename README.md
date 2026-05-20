@@ -663,15 +663,18 @@ Contributions are welcome! To contribute:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b my-feature`)
 3. Make your changes and add tests
-4. Ensure tests pass: `bundle exec rake spec`
-5. Ensure code is linted: `bundle exec rake rubocop`
-6. Commit your changes (`git commit -am 'Add new feature'`)
-7. Push to the branch (`git push origin my-feature`)
-8. Open a Pull Request
+4. Install dependencies: `rvm 4.0.3 do bundle install`
+5. Ensure unit tests pass: `rvm 4.0.3 do bundle exec rake spec:unit`
+6. Ensure code is linted: `rvm 4.0.3 do bundle exec rubocop`
+7. Ensure the gem builds: `rvm 4.0.3 do bundle exec rake build`
+8. Commit your changes (`git commit -am 'Add new feature'`)
+9. Push to the branch (`git push origin my-feature`)
+10. Open a Pull Request
 
 Please ensure:
-- **Tests pass** (`rake spec`) with >= 90% code coverage
-- **Code is linted** (`rake rubocop`) with no offenses
+- **Tests pass** (`rvm 4.0.3 do bundle exec rake spec:unit`) with >= 90% code coverage
+- **Code is linted** (`rvm 4.0.3 do bundle exec rubocop`) with no offenses
+- **Gem builds** (`rvm 4.0.3 do bundle exec rake build`) successfully
 - **Documentation is updated** (YARD comments, README, etc.) for new features
 
 For bug reports and feature requests, please [open an issue](https://github.com/temporalio/activejob-temporal/issues).

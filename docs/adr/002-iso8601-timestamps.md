@@ -140,6 +140,6 @@ Preserve local timezone offsets (`2025-10-31T09:32:18-05:00`) instead of UTC. **
 
 - [ISO8601 Standard (Wikipedia)](https://en.wikipedia.org/wiki/ISO_8601)
 - [RFC 3339: Date and Time on the Internet](https://tools.ietf.org/html/rfc3339)
-- [Ruby Time#iso8601 Documentation](https://ruby-doc.org/stdlib-3.0.0/libdoc/time/rdoc/Time.html#method-i-iso8601)
+- [Ruby Time.iso8601 Documentation](https://docs.ruby-lang.org/en/master/Time.html#method-c-iso8601)
 - [Temporal Workflow Time Handling](https://docs.temporal.io/workflows#wall-clock-time)
 - [System Structure: Data Model](../03_System_Structure_and_Data.md#data-model)

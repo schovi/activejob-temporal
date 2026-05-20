@@ -16,6 +16,8 @@ fi
 source "$ENV_EXPORT_FILE"
 
 cd "$REPO_ROOT"
+RUBY_COMMAND=(rvm 4.0.3 do)
+
 if command -v mktemp >/dev/null 2>&1; then
   report_file="$(mktemp -t rubocop-json.XXXXXX)"
 else
@@ -25,13 +27,13 @@ else
 fi
 trap 'rm -f "$report_file"' EXIT
 
-rubocop_status=0
-if ! bundle exec rubocop --format json --force-exclusion >"$report_file"; then
-  rubocop_status=$?
-fi
+set +e
+"${RUBY_COMMAND[@]}" bundle exec rubocop --format json --force-exclusion >"$report_file"
+rubocop_status=$?
+set -e
 
 export RUBOCOP_STATUS="$rubocop_status"
-ruby - "$report_file" <<'RUBY'
+"${RUBY_COMMAND[@]}" ruby - "$report_file" <<'RUBY'
 require "json"
 path = ARGV.fetch(0)
 status = Integer(ENV.fetch("RUBOCOP_STATUS", "0"), 10)
@@ -75,7 +77,7 @@ RUBY
 
 ruby_status=$?
 
-if (( rubocop_status >= 2 )) && (( ruby_status == 0 )); then
+if (( rubocop_status != 0 )); then
   exit "$rubocop_status"
 fi
 
