@@ -190,6 +190,7 @@ module ActiveJob
         actual_size_kb = json.bytesize / 1024.0
         usage_ratio = json.bytesize.to_f / size_limit_bytes
 
+        Metrics.observe_payload_size(payload: payload, bytes: json.bytesize)
         log_payload_size(payload, actual_size_kb, max_size_kb, usage_ratio)
         return if json.bytesize <= size_limit_bytes
 

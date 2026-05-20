@@ -26,6 +26,9 @@ The canonical machine-readable schema for all configuration options is available
 | `logger` | `Logger` | `Rails.logger` (if available) or `Logger.new($stdout)` | Destination for adapter log output. |
 | `validation_level` | Symbol | `:strict` | Controls configuration validation: `:strict` raises, `:warn` logs warnings, `:none` skips validation. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
+| `metrics_provider` | Symbol | `:none` | Metrics provider. Set to `:prometheus` to collect built-in Prometheus metrics. |
+| `metrics_port` | Integer or `nil` | `nil` | Optional worker HTTP port for Prometheus metrics at `GET /metrics`. |
+| `metrics_bind` | String | `"127.0.0.1"` | Bind address for the Prometheus metrics endpoint. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 | `identity` | String or `nil` | `nil` | Optional worker identity string for observability and debugging. Useful in multi-worker deployments. |
@@ -45,6 +48,9 @@ Configuration can also be set via environment variables for 12-factor app compli
 | `ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB` | `max_payload_size_kb` | Integer | `250` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | `max_concurrent_activities` | Integer | `100` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | `max_concurrent_workflow_tasks` | Integer | `5` |
+| `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | `metrics_provider` | Symbol | `:none` |
+| `ACTIVEJOB_TEMPORAL_METRICS_PORT` | `metrics_port` | Integer | `nil` |
+| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | `metrics_bind` | String | `"127.0.0.1"` |
 
 **Example:** Setting `ACTIVEJOB_TEMPORAL_TARGET=temporal.production.com:7233` before your Rails app boots will configure the adapter to connect to that Temporal server, unless you override it in an initializer.
 
@@ -72,6 +78,8 @@ ActiveJob::Temporal.configure do |config|
   # Other settings
   config.validation_level = :strict
   config.enable_tracing = false
+  config.metrics_provider = :prometheus
+  config.metrics_port = 9394
   config.max_payload_size_kb = 512
 end
 ```
@@ -116,6 +124,32 @@ ExportJob.set(priority: 10).perform_later(report.id)
 ```
 
 Priority mapping keys must be integers because ActiveJob priorities are numeric. Run at least one worker for each resolved task queue. For the example above, start a worker with `ACTIVEJOB_TEMPORAL_TASK_QUEUE=high_priority bundle exec temporal-worker`.
+
+## Prometheus Metrics
+
+Set `metrics_provider` to `:prometheus` to collect built-in metrics:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.metrics_provider = :prometheus
+  config.metrics_port = 9394
+  config.metrics_bind = "127.0.0.1"
+end
+```
+
+The worker can also enable the scrape endpoint from CLI flags or environment variables:
+
+```bash
+ACTIVEJOB_TEMPORAL_METRICS_PROVIDER=prometheus \
+ACTIVEJOB_TEMPORAL_METRICS_PORT=9394 \
+bundle exec temporal-worker
+
+bundle exec temporal-worker --metrics-port 9394
+```
+
+`metrics_provider` accepts `:none` or `:prometheus`. `metrics_port` is optional; when set, the worker exposes `GET /metrics`. `metrics_bind` defaults to localhost. Use `0.0.0.0` only when Prometheus runs outside the worker process namespace. Enqueue and payload size metrics are recorded by the process that calls `perform_later`, so expose `ActiveJob::Temporal::Metrics.render` from that process if Prometheus should scrape those series.
+
+See the [Metrics Guide](metrics.md) for metric names, scrape configuration, and Grafana dashboard setup.
 
 ## Validation Levels
 

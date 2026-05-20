@@ -19,6 +19,9 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` |
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT` | No | Expose `GET /health` on the given port. Off by default. | `8080` |
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND` | No | Bind address for the health endpoint. Defaults to localhost. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
+| `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. Off by default. | `9394` |
+| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. | `0.0.0.0` |
 
 ## Starting the Worker
 
@@ -42,6 +45,8 @@ The worker automatically detects your Rails environment and loads your job class
 - **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum workflow task poll capacity. Defaults to `5`.
 - **`--health-check-port PORT`**: Optional HTTP health endpoint at `GET /health`. Can also be set with `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT`.
 - **`--health-check-bind HOST`**: Health endpoint bind address. Defaults to `127.0.0.1`; set `0.0.0.0` when an orchestrator must reach the port from outside the process namespace.
+- **`--metrics-port PORT`**: Optional Prometheus metrics endpoint at `GET /metrics`. Can also be set with `ACTIVEJOB_TEMPORAL_METRICS_PORT`.
+- **`--metrics-bind HOST`**: Metrics endpoint bind address. Defaults to `127.0.0.1`; set `0.0.0.0` when Prometheus scrapes from outside the process namespace.
 - **`RAILS_ROOT`**: Optional path to Rails app. Auto-detected if omitted (uses current directory).
 
 ### Examples
@@ -73,7 +78,15 @@ curl http://localhost:8080/health
 bundle exec temporal-worker --health-check-bind 0.0.0.0 --health-check-port 8080
 ```
 
-The endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, poll capacity settings, PID, start time, and uptime:
+**Prometheus metrics endpoint:**
+```bash
+bundle exec temporal-worker --metrics-bind 0.0.0.0 --metrics-port 9394
+curl http://localhost:9394/metrics
+```
+
+The metrics endpoint returns Prometheus text format from `GET /metrics`. It is not a health probe.
+
+The health endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, poll capacity settings, PID, start time, and uptime:
 
 ```json
 {
@@ -106,6 +119,8 @@ When the worker shuts down (for example, via `Ctrl+C`), you should see:
 ```json
 {"event":"worker_shutdown","task_queue":"default","timestamp":"2024-05-01T18:45:27Z"}
 ```
+
+When metrics are enabled, startup also logs `metrics_server_started` with the bind address and assigned port.
 
 ## Stopping the Worker
 Press `Ctrl+C` or send `SIGTERM` to the worker process. The Temporal SDK will finish in-flight activities before exiting and will emit the `worker_shutdown` log event.

@@ -166,6 +166,37 @@ attributes:
       env_var_name: null
       example: false
 
+    - name: metrics_provider
+      type: Symbol
+      default: ":none"
+      validation_rules:
+        - "Must be one of: :none, :prometheus"
+        - ":none disables built-in metrics"
+        - ":prometheus records built-in Prometheus metrics"
+      description: "Metrics provider for built-in job and worker metrics."
+      env_var_name: ACTIVEJOB_TEMPORAL_METRICS_PROVIDER
+      example: ":prometheus"
+
+    - name: metrics_port
+      type: Integer
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must be between 1 and 65535"
+      description: "Optional HTTP port for the worker Prometheus scrape endpoint at GET /metrics."
+      env_var_name: ACTIVEJOB_TEMPORAL_METRICS_PORT
+      example: 9394
+
+    - name: metrics_bind
+      type: String
+      default: "127.0.0.1"
+      validation_rules:
+        - "Must be present"
+        - "Use 0.0.0.0 only when Prometheus must scrape from outside the worker process namespace"
+      description: "Bind address for the worker Prometheus metrics endpoint."
+      env_var_name: ACTIVEJOB_TEMPORAL_METRICS_BIND
+      example: "0.0.0.0"
+
     - name: middleware_chain
       type: Middleware::Chain
       default: "ActiveJob::Temporal::Middleware::Chain.new"
@@ -255,6 +286,9 @@ examples:
       logger: "Rails.logger"
       validation_level: ":strict"
       enable_tracing: true
+      metrics_provider: ":none"
+      metrics_port: null
+      metrics_bind: "127.0.0.1"
       middleware_chain: "empty"
       max_payload_size_kb: 250
       enable_search_attributes: true
@@ -285,6 +319,9 @@ examples:
       logger: "Rails.logger"
       validation_level: ":strict"
       enable_tracing: true
+      metrics_provider: ":prometheus"
+      metrics_port: 9394
+      metrics_bind: "127.0.0.1"
       middleware_chain: "empty"
       max_payload_size_kb: 250
       enable_search_attributes: true
@@ -299,6 +336,8 @@ examples:
         config.priority_task_queues = { 10 => "high_priority", 90 => "low_priority" }
         config.validation_level = :strict
         config.default_retry_max_attempts = 3
+        config.metrics_provider = :prometheus
+        config.metrics_port = 9394
         config.identity = ENV.fetch('HOSTNAME', 'unknown-worker')
         # Validation happens automatically at end of block!
       end
@@ -319,6 +358,9 @@ examples:
       logger: "Rails.logger"
       validation_level: ":strict"
       enable_tracing: true
+      metrics_provider: ":prometheus"
+      metrics_port: 9394
+      metrics_bind: "127.0.0.1"
       middleware_chain: "empty"
       max_payload_size_kb: 512
       max_concurrent_activities: 300
@@ -340,6 +382,8 @@ examples:
         config.max_payload_size_kb = 512
         config.max_concurrent_activities = 300
         config.max_concurrent_workflow_tasks = 25
+        config.metrics_provider = :prometheus
+        config.metrics_port = 9394
         config.identity = 'worker-heavy-01'
         # Validation happens automatically at end of block!
       end
@@ -377,6 +421,9 @@ validation:
     - "max_payload_size_kb - Must be between 1 and 2,097,152 KB"
     - "max_concurrent_activities - Must be > 0"
     - "max_concurrent_workflow_tasks - Must be > 0"
+    - "metrics_provider - Must be :none or :prometheus"
+    - "metrics_port - Optional, but when set must be between 1 and 65535"
+    - "metrics_bind - Must be present"
     - "middleware_chain - Must respond to #add and #call"
 
   error_handling: "Validation errors raise ActiveJob::Temporal::ConfigurationError by default. Set validation_level to :warn to log warnings and continue, or :none to skip validation."
@@ -427,3 +474,17 @@ environment_variables:
       maps_to: max_concurrent_workflow_tasks
       example: "20"
       note: "Must be converted to integer"
+
+    - name: ACTIVEJOB_TEMPORAL_METRICS_PROVIDER
+      maps_to: metrics_provider
+      example: "prometheus"
+      note: "Must be converted to symbol"
+
+    - name: ACTIVEJOB_TEMPORAL_METRICS_PORT
+      maps_to: metrics_port
+      example: "9394"
+      note: "Must be converted to integer"
+
+    - name: ACTIVEJOB_TEMPORAL_METRICS_BIND
+      maps_to: metrics_bind
+      example: "0.0.0.0"

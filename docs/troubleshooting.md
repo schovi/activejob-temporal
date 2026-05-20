@@ -541,6 +541,8 @@ bundle exec rails runner 'puts "namespace=#{ActiveJob::Temporal.config.namespace
 bundle exec rails runner 'puts "task_queue=#{ActiveJob::Temporal.config.task_queue}"'
 bundle exec rails runner 'puts "task_queue_prefix=#{ActiveJob::Temporal.config.task_queue_prefix.inspect}"'
 bundle exec rails runner 'puts "priority_task_queues=#{ActiveJob::Temporal.config.priority_task_queues.inspect}"'
+bundle exec rails runner 'puts "metrics_provider=#{ActiveJob::Temporal.config.metrics_provider}"'
+bundle exec rails runner 'puts "metrics_port=#{ActiveJob::Temporal.config.metrics_port.inspect}"'
 bundle exec rails runner 'puts "max_payload_size_kb=#{ActiveJob::Temporal.config.max_payload_size_kb}"'
 ```
 

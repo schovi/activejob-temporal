@@ -40,6 +40,8 @@ end
 
 ## Constructor Arguments
 
+Built-in Prometheus metrics do not require custom middleware. Enable `config.metrics_provider = :prometheus` and use the worker `GET /metrics` endpoint for worker-side metrics. Custom middleware is still useful when you need application-specific metrics beyond the built-in job counters, duration histograms, payload size histograms, retry counters, and worker gauges.
+
 Pass constructor arguments when registering middleware classes:
 
 ```ruby

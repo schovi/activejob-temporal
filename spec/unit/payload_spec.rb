@@ -23,6 +23,7 @@ RSpec.describe ActiveJob::Temporal::Payload do
     allow(ActiveJob::Temporal::Logger).to receive(:info)
     allow(ActiveJob::Temporal::Logger).to receive(:warn)
     allow(ActiveJob::Temporal::Logger).to receive(:error)
+    allow(ActiveJob::Temporal::Metrics).to receive(:observe_payload_size)
   end
 
   describe ".from_job" do
@@ -39,6 +40,15 @@ RSpec.describe ActiveJob::Temporal::Payload do
         exception_executions: job.exception_executions
       )
       expect(payload[:arguments]).to eq(ActiveJob::Arguments.serialize(job.arguments))
+    end
+
+    it "records serialized payload size metrics" do
+      payload = described_class.from_job(job)
+
+      expect(ActiveJob::Temporal::Metrics).to have_received(:observe_payload_size).with(
+        payload: payload,
+        bytes: kind_of(Integer)
+      )
     end
 
     it "includes scheduled_at in ISO8601 when provided" do

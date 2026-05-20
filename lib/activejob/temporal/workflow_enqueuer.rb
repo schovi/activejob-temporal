@@ -136,6 +136,7 @@ module ActiveJob
         attributes[:scheduled_at] = payload[:scheduled_at] if payload[:scheduled_at]
 
         Logger.log_event("workflow_enqueued", **attributes)
+        Metrics.record_enqueue(job: job, duplicate: duplicate)
       end
 
       # Builds error message for enqueue failures.

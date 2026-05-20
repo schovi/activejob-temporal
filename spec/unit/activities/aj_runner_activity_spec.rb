@@ -21,6 +21,8 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     allow(ActiveJob::Temporal::Payload).to receive(:deserialize_args).and_return(args)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?).and_return(false)
     allow(ActiveJob::Temporal.config).to receive(:middleware_chain).and_return(middleware_chain)
+    allow(ActiveJob::Temporal::Metrics).to receive(:instrument_perform).and_call_original
+    allow(ActiveJob::Temporal::Metrics).to receive(:record_retry)
   end
 
   describe "#execute" do
@@ -89,6 +91,35 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
                            ])
     end
 
+    it "records job execution metrics around perform" do
+      job_instance = instance_double("MetricsRunnerJob")
+      class_double("MetricsRunnerJob", new: job_instance).as_stubbed_const
+      payload = { "job_class" => "MetricsRunnerJob", "queue_name" => "critical" }
+      allow(job_instance).to receive(:perform).and_return("performed")
+
+      expect(activity.execute(payload)).to eq("performed")
+
+      expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(payload)
+    end
+
+    it "records failed metrics for setup failures before perform starts" do
+      previous_provider = ActiveJob::Temporal.config.metrics_provider
+      payload = { "job_class" => "SetupFailureJob", "queue_name" => "critical" }
+      error = ArgumentError.new("bad payload")
+      ActiveJob::Temporal::Metrics.reset!
+      ActiveJob::Temporal.config.metrics_provider = :prometheus
+      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_args).with(payload).and_raise(error)
+
+      expect { activity.execute(payload) }.to raise_error(error)
+
+      expect(ActiveJob::Temporal::Metrics.render).to include(
+        'activejob_temporal_jobs_failed_total{class="SetupFailureJob",queue="critical",error="ArgumentError"} 1.0'
+      )
+    ensure
+      ActiveJob::Temporal.config.metrics_provider = previous_provider if previous_provider
+      ActiveJob::Temporal::Metrics.reset!
+    end
+
     it "routes middleware exceptions through Temporal retry handling" do
       error = RuntimeError.new("middleware failed")
       middleware_class = Class.new do
@@ -111,6 +142,21 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(job_instance).not_to have_received(:perform)
       expect(ActiveJob::Temporal::RetryMapper).to have_received(:discard_exception?).with(RetryableJob, error)
       expect(Thread.current[idempotency_key]).to be_nil
+    end
+
+    it "records retry metrics for retry attempts that fail" do
+      activity_info = instance_double("Temporalio::Activity::Info", workflow_id: workflow_id, attempt: 2)
+      activity_context = instance_double("Temporalio::Activity::Context", info: activity_info)
+      allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
+      payload = { "job_class" => "RetryableJob", "queue_name" => "critical" }
+      job_instance = instance_double(RetryableJob.name)
+      allow(RetryableJob).to receive(:new).and_return(job_instance)
+      error = SampleJobError.new("boom")
+      allow(job_instance).to receive(:perform).and_raise(error)
+
+      expect { activity.execute(payload) }.to raise_error(error)
+
+      expect(ActiveJob::Temporal::Metrics).to have_received(:record_retry).with(payload, error)
     end
 
     it "wraps discard_on exceptions in non-retryable ApplicationError" do

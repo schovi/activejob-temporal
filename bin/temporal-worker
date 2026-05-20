@@ -29,6 +29,14 @@ OptionParser.new do |parser|
   parser.on("--health-check-bind HOST", "Bind health endpoint to HOST") do |host|
     options[:health_check_bind] = host
   end
+
+  parser.on("--metrics-port PORT", Integer, "Expose GET /metrics on PORT") do |port|
+    options[:metrics_port] = port
+  end
+
+  parser.on("--metrics-bind HOST", "Bind metrics endpoint to HOST") do |host|
+    options[:metrics_bind] = host
+  end
 end.parse!(ARGV)
 
 # Auto-detect and load Rails application if present
@@ -54,9 +62,12 @@ end
 
 # Read from configuration singleton (already set by Rails initializer)
 config = ActiveJob::Temporal.config
+config.metrics_provider = :prometheus if options[:metrics_port] && config.metrics_provider == :none
 task_queue = config.task_queue
 max_concurrent_activities = config.max_concurrent_activities
 max_concurrent_workflows = config.max_concurrent_workflow_tasks
+metrics_port = options.key?(:metrics_port) ? options[:metrics_port] : config.metrics_port
+metrics_bind = options.key?(:metrics_bind) ? options[:metrics_bind] : config.metrics_bind
 
 client = ActiveJob::Temporal.client
 worker_health = ActiveJob::Temporal::WorkerHealth.new(
@@ -101,6 +112,22 @@ if options[:health_check_port]
   )
 end
 
+metrics_server = nil
+if metrics_port
+  config.metrics_provider = :prometheus if config.metrics_provider == :none
+  metrics_server = ActiveJob::Temporal::MetricsServer.new(
+    port: metrics_port,
+    bind_address: metrics_bind,
+    provider: ActiveJob::Temporal::Metrics.provider(config)
+  ).start
+
+  ActiveJob::Temporal::Logger.log_event(
+    "metrics_server_started",
+    bind_address: metrics_server.bind_address,
+    port: metrics_server.port
+  )
+end
+
 begin
   worker_health.mark_started!
   Temporalio::Worker.run_all(
@@ -112,6 +139,7 @@ rescue Interrupt
 ensure
   worker_health.mark_stopped!
   health_check_server&.stop
+  metrics_server&.stop
   ActiveJob::Temporal::Logger.log_event(
     "worker_shutdown",
     task_queue: task_queue

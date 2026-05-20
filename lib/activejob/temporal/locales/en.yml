@@ -38,6 +38,15 @@ en:
             validation_level:
               invalid_level: "must be one of: strict, warn, none (got: %{value})"
 
+            metrics_provider:
+              unsupported_provider: "must be one of: none, prometheus (got: %{value})"
+
+            metrics_port:
+              invalid_port: "must be between 1 and 65535, got: %{value}"
+
+            metrics_bind:
+              blank: "must be present when metrics are configured"
+
             workflow_id_generator:
               not_callable: "must respond to #call (for example, ->(job) { \"custom-#{job.job_id}\" }), got: %{value}"
               wrong_arity: "must accept one ActiveJob argument (for example, ->(job) { \"custom-#{job.job_id}\" }), got: %{value}"

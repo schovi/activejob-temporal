@@ -101,13 +101,16 @@ module ActiveJob
         def execute(payload)
           job_class = nil
 
-          args = Payload.deserialize_args(payload)
-          job_class = constantize_job_class(payload)
-          job = job_class.new
+          Metrics.instrument_perform(payload) do
+            args = Payload.deserialize_args(payload)
+            job_class = constantize_job_class(payload)
+            job = job_class.new
 
-          set_idempotency_key
-          perform_job(job, args)
+            set_idempotency_key
+            perform_job(job, args)
+          end
         rescue StandardError => e
+          Metrics.record_retry(payload, e)
           handle_exception(job_class, e)
         ensure
           Thread.current[IDEMPOTENCY_KEY] = nil

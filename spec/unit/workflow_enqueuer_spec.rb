@@ -19,12 +19,22 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
     before do
       allow(client).to receive(:start_workflow).and_return("workflow-handle")
       allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+      allow(ActiveJob::Temporal::Metrics).to receive(:record_enqueue)
     end
 
     it "delegates to client.start_workflow" do
       enqueuer.enqueue(job)
 
       expect(client).to have_received(:start_workflow).once
+    end
+
+    it "records enqueue metrics after a workflow starts" do
+      enqueuer.enqueue(job)
+
+      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
+        job: job,
+        duplicate: false
+      )
     end
 
     it "returns the workflow handle" do
@@ -109,6 +119,32 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       enqueuer.enqueue(priority_job)
     end
 
+    it "records enqueue metrics with the ActiveJob queue when priority maps to another task queue" do
+      config.priority_task_queues = { 10 => "high_priority" }
+      priority_job_class = Class.new(ActiveJob::Base) do
+        self.queue_adapter = :test
+
+        def self.name = "PriorityMetricJob"
+
+        def perform; end
+      end
+      priority_job = priority_job_class.set(priority: 10).perform_later
+      priority_job.job_id = "priority-metric-job-id"
+      priority_job.queue_name = "default"
+
+      allow(client).to receive(:start_workflow) do |_klass, _payload, **options|
+        expect(options[:task_queue]).to eq("high_priority")
+        "handle"
+      end
+
+      enqueuer.enqueue(priority_job)
+
+      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
+        job: priority_job,
+        duplicate: false
+      )
+    end
+
     it "includes global activity timeout defaults in the payload" do
       config.default_heartbeat_timeout = 45.seconds
       config.default_schedule_to_start_timeout = 2.minutes
@@ -147,6 +183,10 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       result = enqueuer.enqueue(job)
 
       expect(result).to be_nil
+      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
+        job: job,
+        duplicate: true
+      )
     end
 
     it "raises ActiveJob::EnqueueError for non-duplicate errors" do

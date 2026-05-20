@@ -182,6 +182,7 @@ Watch these signals together:
 - Temporal UI activity task queue backlog and schedule-to-start latency.
 - Temporal UI workflow task queue backlog.
 - Worker `worker_started` logs for task queue and poll settings.
+- Prometheus metrics from `GET /metrics`, especially job duration, payload size, failed jobs, active workers, and active tasks.
 - Payload logs: `payload_size_large`, `payload_size_near_limit`, and `payload_size_exceeded`.
 - Job duration distribution by job class and queue.
 - Worker CPU, memory, thread count, and restarts.
@@ -189,6 +190,8 @@ Watch these signals together:
 - Downstream API latency, error rate, and rate-limit responses.
 
 The strongest signal is usually schedule-to-start latency. If it grows while workers have spare resources, add worker capacity. If it grows while a dependency is saturated, reduce poll capacity or isolate the expensive jobs.
+
+See the [Metrics Guide](metrics.md) for the built-in Prometheus exporter and Grafana dashboard example.
 
 ## Queue Isolation
 

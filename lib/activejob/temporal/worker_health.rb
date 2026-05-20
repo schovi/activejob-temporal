@@ -26,25 +26,31 @@ module ActiveJob
           @started_at ||= Time.now
           @worker_running = true
         end
+        Metrics.record_worker_started
       end
 
       def mark_stopped!
         @mutex.synchronize do
           @worker_running = false
         end
+        Metrics.record_worker_stopped
       end
 
       def record_task_started!(now: Time.now)
-        @mutex.synchronize do
+        active_tasks = @mutex.synchronize do
           @active_tasks += 1
           @last_poll = now
+          @active_tasks
         end
+        Metrics.record_active_tasks(active_tasks)
       end
 
       def record_task_finished!
-        @mutex.synchronize do
+        active_tasks = @mutex.synchronize do
           @active_tasks = [@active_tasks - 1, 0].max
+          @active_tasks
         end
+        Metrics.record_active_tasks(active_tasks)
       end
 
       def snapshot(now: Time.now)

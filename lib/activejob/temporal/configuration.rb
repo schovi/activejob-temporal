@@ -20,6 +20,7 @@ module ActiveJob
     class ConfigurationError < Error; end
 
     VALIDATION_LEVELS = %i[strict warn none].freeze
+    METRICS_PROVIDERS = %i[none prometheus].freeze
 
     # Central registry of all configuration attributes.
     #
@@ -146,6 +147,27 @@ module ActiveJob
         description: "Enable OpenTelemetry distributed tracing"
       },
 
+      metrics_provider: {
+        default: :none,
+        env_var: "ACTIVEJOB_TEMPORAL_METRICS_PROVIDER",
+        type: :symbol,
+        description: "Metrics provider: :none or :prometheus"
+      },
+
+      metrics_port: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_METRICS_PORT",
+        type: :integer,
+        description: "Optional HTTP port for Prometheus metrics at /metrics"
+      },
+
+      metrics_bind: {
+        default: "127.0.0.1",
+        env_var: "ACTIVEJOB_TEMPORAL_METRICS_BIND",
+        type: :string,
+        description: "Bind address for the Prometheus metrics endpoint"
+      },
+
       middleware_chain: {
         default: -> { Middleware::Chain.new },
         type: :object,
@@ -200,8 +222,10 @@ module ActiveJob
     #   ACTIVEJOB_TEMPORAL_TARGET, ACTIVEJOB_TEMPORAL_NAMESPACE,
     #   ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX, ACTIVEJOB_TEMPORAL_TASK_QUEUE,
     #   ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB,
-    #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES, and
-    #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS can provide defaults.
+    #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES,
+    #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS,
+    #   ACTIVEJOB_TEMPORAL_METRICS_PROVIDER, ACTIVEJOB_TEMPORAL_METRICS_PORT, and
+    #   ACTIVEJOB_TEMPORAL_METRICS_BIND can provide defaults.
     #
     # @see ConfigValidator
     # @see ActiveJob::Temporal.configure
@@ -298,6 +322,7 @@ module ActiveJob
         when :integer then value.to_i
         when :float then value.to_f
         when :boolean then value == "true"
+        when :symbol then value.to_sym
         else value
         end
       end
@@ -334,6 +359,7 @@ module ActiveJob
     #
     # @see ActiveJob::Temporal::Configuration.validate!
     # @api private
+    # rubocop:disable Metrics/ClassLength
     class ConfigValidator
       include ActiveModel::Validations
 
@@ -400,6 +426,12 @@ module ActiveJob
                   message: :invalid_level
                 }
 
+      validates :metrics_provider,
+                inclusion: {
+                  in: METRICS_PROVIDERS,
+                  message: :unsupported_provider
+                }
+
       #
       # CUSTOM VALIDATORS
       # For complex logic that doesn't fit standard validators
@@ -411,6 +443,7 @@ module ActiveJob
       validate :validate_workflow_id_generator
       validate :validate_middleware_chain
       validate :validate_priority_task_queues
+      validate :validate_metrics_settings
 
       private
 
@@ -485,6 +518,24 @@ module ActiveJob
         priority_task_queues.values.find { |task_queue| task_queue.to_s.strip.empty? }
       end
 
+      def validate_metrics_settings
+        validate_metrics_port
+        validate_metrics_bind
+      end
+
+      def validate_metrics_port
+        return if metrics_port.nil?
+        return if metrics_port.is_a?(Integer) && metrics_port.between?(1, 65_535)
+
+        errors.add(:metrics_port, :invalid_port, value: metrics_port.inspect)
+      end
+
+      def validate_metrics_bind
+        return if metrics_bind.to_s.strip.present?
+
+        errors.add(:metrics_bind, :blank)
+      end
+
       def callable_accepts_positional_job?(callable)
         arity = callable.respond_to?(:arity) ? callable.arity : callable.method(:call).arity
 
@@ -512,5 +563,6 @@ module ActiveJob
                    attribute: attr_name.to_s.humanize.downcase)
       end
     end
+    # rubocop:enable Metrics/ClassLength
   end
 end

@@ -58,6 +58,12 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.priority_task_queues).to eq({})
     end
 
+    it "disables metrics by default" do
+      expect(configuration.metrics_provider).to be(:none)
+      expect(configuration.metrics_port).to be_nil
+      expect(configuration.metrics_bind).to eq("127.0.0.1")
+    end
+
     it "uses the default workflow ID generator when none is configured" do
       expect(configuration.workflow_id_generator).to be_nil
     end
@@ -216,6 +222,30 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(config.max_concurrent_workflow_tasks).to eq(300)
     end
 
+    it "reads metrics provider from ACTIVEJOB_TEMPORAL_METRICS_PROVIDER" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_METRICS_PROVIDER").and_return("prometheus")
+
+      config = described_class.new
+      expect(config.metrics_provider).to be(:prometheus)
+    end
+
+    it "reads metrics port from ACTIVEJOB_TEMPORAL_METRICS_PORT and converts to integer" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_METRICS_PORT").and_return("9394")
+
+      config = described_class.new
+      expect(config.metrics_port).to eq(9394)
+    end
+
+    it "reads metrics bind address from ACTIVEJOB_TEMPORAL_METRICS_BIND" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_METRICS_BIND").and_return("0.0.0.0")
+
+      config = described_class.new
+      expect(config.metrics_bind).to eq("0.0.0.0")
+    end
+
     it "uses default (5) when ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS is not set" do
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return(nil)
@@ -270,6 +300,36 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects blank task queue names" do
       expect { configuration.priority_task_queues = { 10 => " " } }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /task queue names must be present/)
+    end
+  end
+
+  describe "#metrics_provider=" do
+    it "accepts prometheus and none" do
+      configuration.metrics_provider = :prometheus
+      expect(configuration.metrics_provider).to be(:prometheus)
+
+      configuration.metrics_provider = :none
+      expect(configuration.metrics_provider).to be(:none)
+    end
+
+    it "rejects unsupported providers" do
+      expect { configuration.metrics_provider = :statsd }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Metrics provider must be one of/)
+    end
+  end
+
+  describe "#metrics_port=" do
+    it "accepts nil and valid TCP ports" do
+      configuration.metrics_port = nil
+      expect(configuration.metrics_port).to be_nil
+
+      configuration.metrics_port = 9394
+      expect(configuration.metrics_port).to eq(9394)
+    end
+
+    it "rejects invalid ports" do
+      expect { configuration.metrics_port = 70_000 }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Metrics port must be between 1 and 65535/)
     end
   end
 

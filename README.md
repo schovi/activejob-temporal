@@ -193,6 +193,9 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `logger` | `Logger` | `Rails.logger` or `Logger.new($stdout)` | Destination for adapter log output. |
 | `validation_level` | Symbol | `:strict` | Controls configuration validation: `:strict` raises, `:warn` logs warnings, `:none` skips validation. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
+| `metrics_provider` | Symbol | `:none` | Metrics provider to use. Set to `:prometheus` to collect built-in Prometheus metrics. |
+| `metrics_port` | Integer or `nil` | `nil` | Optional worker HTTP port for Prometheus metrics at `GET /metrics`. |
+| `metrics_bind` | String | `"127.0.0.1"` | Bind address for the Prometheus metrics endpoint. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 
@@ -211,6 +214,8 @@ ActiveJob::Temporal.configure do |config|
   config.default_retry_max_attempts = 5
   config.validation_level = :strict
   config.enable_tracing = false
+  config.metrics_provider = :prometheus
+  config.metrics_port = 9394
   config.max_payload_size_kb = 512
 end
 ```
@@ -271,6 +276,26 @@ end
 ```
 
 Middleware runs inside the activity, after payload deserialization and before `job.perform`. The first registered middleware wraps the rest of the chain. See the [Middleware Guide](docs/middleware.md) for ordering and examples.
+
+### Prometheus Metrics
+
+Enable built-in Prometheus metrics when workers should expose job and worker telemetry:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.metrics_provider = :prometheus
+  config.metrics_port = 9394
+end
+```
+
+Then start the worker and scrape `GET /metrics`:
+
+```bash
+bundle exec temporal-worker --metrics-port 9394
+curl http://localhost:9394/metrics
+```
+
+The exporter includes completed and failed job counters, job duration histograms, retry counters, and worker gauges. Enqueue counters and payload size histograms are recorded in the process that calls `perform_later`; scrape that process too if you need those series. See the [Metrics Guide](docs/metrics.md) for metric names, Prometheus scrape config, and the Grafana dashboard example.
 
 ## Conditional Enqueueing
 
@@ -658,6 +683,13 @@ For container probes or remote load balancers, bind the endpoint outside localho
 bundle exec temporal-worker --health-check-bind 0.0.0.0 --health-check-port 8080
 ```
 
+Expose Prometheus metrics for scraping:
+
+```bash
+bundle exec temporal-worker --metrics-bind 0.0.0.0 --metrics-port 9394
+curl http://localhost:9394/metrics
+```
+
 For VM or bare-metal deployments, see the [systemd worker examples](examples/systemd/). They include a single worker service, a template for one worker per task queue, restart policy, file logging, and log rotation.
 
 ### Example Application
@@ -679,6 +711,9 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | No | Task queue the worker will poll for jobs. | `default` (if omitted) |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity (defaults to `100`). | `50` or `200` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` or `50` |
+| `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
+| `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. | `9394` |
+| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. | `0.0.0.0` |
 
 ### Performance Tuning
 
@@ -710,6 +745,7 @@ Additional guides:
 - [Troubleshooting Guide](docs/troubleshooting.md)
 - [Performance Tuning Guide](docs/performance_tuning.md)
 - [Configuration Reference](docs/configuration_reference.md)
+- [Metrics Guide](docs/metrics.md)
 - [Retry Policy Guide](docs/retry_policies.md)
 - [Worker Setup Guide](docs/worker_setup.md)
 - [Migration Guide](docs/migration_guide.md)
@@ -725,7 +761,6 @@ The following features are **not yet implemented** in v0.1 but are planned for f
 - **Child workflows** → Planned for v0.3
 - **Rails generators** (for scaffolding jobs, initializers, etc.) → Planned for v1.0
 - **ActiveRecord callback interception** (e.g., automatic transactional enqueue) → Deferred
-- **Built-in metrics and alerting** → Planned for v0.2
 
 **Other constraints:**
 - **250KB payload size limit** (configurable via `max_payload_size_kb`). Jobs with larger payloads will raise `ActiveJob::SerializationError`. Store large data externally (e.g., S3, database) and pass references instead.
