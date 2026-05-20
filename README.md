@@ -221,6 +221,8 @@ Under the hood, the adapter starts a Temporal workflow that sleeps until the sch
 
 ActiveJob's `retry_on` and `discard_on` declarations are automatically translated to Temporal retry policies.
 
+For a full mapping table and more examples, see the [Retry Policy Guide](docs/retry_policies.md).
+
 > **Note:** Algorithmic wait strategies (`:exponentially_longer`, `:polynomially_longer`, and custom Procs) are not directly supported. Use static `wait:` values and Temporal's backoff configuration instead. See [Migration Guide - Known Limitations](docs/migration_guide.md#known-limitations) for details and examples.
 
 ### Basic Retry
@@ -268,14 +270,16 @@ class MultiRetryJob < ApplicationJob
 end
 ```
 
-The gem merges multiple `retry_on` declarations into a single RetryPolicy. The most specific (last declared) rule is prioritized when determining retry behavior for a given exception.
+The gem maps multiple `retry_on` declarations into a single RetryPolicy. Because the policy is attached when the job is enqueued, the first handler in ActiveJob precedence order is used, which is usually the last declared rule.
 
 ### Exponential Backoff
 
-Temporal automatically applies exponential backoff using the `default_retry_backoff` configuration (default: `2.0`). Retry delays double with each attempt:
-- Attempt 1: 60 seconds
-- Attempt 2: 120 seconds
-- Attempt 3: 240 seconds
+Temporal automatically applies exponential backoff using the `default_retry_backoff` configuration (default: `2.0`). Retry delays double after each failed attempt:
+- Retry delay 1: 60 seconds
+- Retry delay 2: 120 seconds
+- Retry delay 3: 240 seconds
+
+`attempts:` counts total activity attempts, including the initial run. For example, `attempts: 5` allows four retry delays after the first failed attempt.
 
 ## Per-Job Timeout Configuration
 

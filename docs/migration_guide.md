@@ -102,6 +102,8 @@ end
 
 With the default backoff coefficient and `attempts: 5`, this allows five total activity attempts with retry delays of 15s, 30s, 60s, and 120s. Use `temporal_options` for activity timeout tuning on long-running jobs, not for custom retry delay functions.
 
+For complete ActiveJob-to-Temporal retry mappings, see the [Retry Policy Guide](retry_policies.md).
+
 ### Transaction Safety
 
 activejob-temporal defers enqueue until DB transaction commits (safer than Sidekiq's immediate enqueue). This **may expose existing race conditions** but is generally beneficial.
