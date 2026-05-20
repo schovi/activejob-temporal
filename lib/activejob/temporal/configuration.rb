@@ -19,6 +19,8 @@ module ActiveJob
     # @see Configuration#validate!
     class ConfigurationError < Error; end
 
+    VALIDATION_LEVELS = %i[strict warn none].freeze
+
     # Central registry of all configuration attributes.
     #
     # This is the single source of truth for attribute names, types, defaults, and env vars.
@@ -126,6 +128,12 @@ module ActiveJob
         description: "Logger instance for gem output"
       },
 
+      validation_level: {
+        default: :strict,
+        type: :symbol,
+        description: "Configuration validation behavior: :strict, :warn, or :none"
+      },
+
       enable_tracing: {
         default: true,
         type: :boolean,
@@ -229,13 +237,12 @@ module ActiveJob
       end
 
       def validate!
-        validator = ConfigValidator.new
+        return if validation_level == :none
 
-        CONFIGURATION_ATTRIBUTES.each_key do |attribute|
-          validator.public_send("#{attribute}=", @attributes[attribute])
-        end
+        validator = build_validator
+        return if validator.valid?
 
-        raise ConfigurationError, self.class.format_validation_errors(validator.errors) unless validator.valid?
+        handle_validation_errors(validator.errors)
       end
 
       def self.format_validation_errors(errors)
@@ -251,6 +258,24 @@ module ActiveJob
       end
 
       private
+
+      def build_validator
+        validator = ConfigValidator.new
+
+        CONFIGURATION_ATTRIBUTES.each_key do |attribute|
+          validator.public_send("#{attribute}=", @attributes[attribute])
+        end
+
+        validator
+      end
+
+      def handle_validation_errors(errors)
+        message = self.class.format_validation_errors(errors)
+
+        raise ConfigurationError, message unless validation_level == :warn
+
+        logger.warn(message)
+      end
 
       def resolve_default_value(metadata)
         if metadata[:env_var] && ENV[metadata[:env_var]]
@@ -361,6 +386,12 @@ module ActiveJob
                   only_integer: true,
                   message: :concurrent_workflow_tasks_invalid,
                   allow_nil: false
+                }
+
+      validates :validation_level,
+                inclusion: {
+                  in: VALIDATION_LEVELS,
+                  message: :invalid_level
                 }
 
       #

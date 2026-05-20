@@ -129,6 +129,18 @@ attributes:
       env_var_name: null
       example: "Logger.new('log/temporal.log')"
 
+    - name: validation_level
+      type: Symbol
+      default: ":strict"
+      validation_rules:
+        - "Must be one of: :strict, :warn, :none"
+        - ":strict raises ActiveJob::Temporal::ConfigurationError"
+        - ":warn logs validation warnings and allows configuration to continue"
+        - ":none skips validation entirely"
+      description: "Controls how configuration validation failures are handled. Use :strict for normal boot, :warn for gradual migrations, and :none only for intentional partial test configuration."
+      env_var_name: null
+      example: ":warn"
+
     - name: enable_tracing
       type: Boolean
       default: true
@@ -225,6 +237,7 @@ examples:
       default_retry_backoff: 2.0
       default_retry_max_attempts: 1
       logger: "Rails.logger"
+      validation_level: ":strict"
       enable_tracing: true
       middleware_chain: "empty"
       max_payload_size_kb: 250
@@ -251,6 +264,7 @@ examples:
       default_retry_backoff: 2.0
       default_retry_max_attempts: 3
       logger: "Rails.logger"
+      validation_level: ":strict"
       enable_tracing: true
       middleware_chain: "empty"
       max_payload_size_kb: 250
@@ -263,6 +277,7 @@ examples:
         config.namespace = 'production'
         config.task_queue = ENV.fetch("ACTIVEJOB_TEMPORAL_TASK_QUEUE", "default")
         config.task_queue_prefix = nil
+        config.validation_level = :strict
         config.default_retry_max_attempts = 3
         config.identity = ENV.fetch('HOSTNAME', 'unknown-worker')
         # Validation happens automatically at end of block!
@@ -282,6 +297,7 @@ examples:
       default_retry_backoff: 1.5
       default_retry_max_attempts: 5
       logger: "Rails.logger"
+      validation_level: ":strict"
       enable_tracing: true
       middleware_chain: "empty"
       max_payload_size_kb: 512
@@ -300,6 +316,7 @@ examples:
         config.default_retry_initial_interval = 1.minute
         config.default_retry_backoff = 1.5
         config.default_retry_max_attempts = 5
+        config.validation_level = :strict
         config.max_payload_size_kb = 512
         config.max_concurrent_activities = 300
         config.max_concurrent_workflow_tasks = 25
@@ -312,11 +329,17 @@ validation:
   description: "Configuration is automatically validated using ActiveModel::Validations with i18n support"
   usage: |
     # Configuration is automatically validated at the end of the configure block
-    # If validation fails, ConfigurationError is raised immediately
+    # If validation fails, ConfigurationError is raised immediately by default
     ActiveJob::Temporal.configure do |config|
       config.target = "temporal.example.com:7233"
       config.namespace = "production"
       # Validation happens automatically here!
+    end
+
+    # During gradual migrations, warn without raising:
+    ActiveJob::Temporal.configure do |config|
+      config.validation_level = :warn
+      config.target = ENV["ACTIVEJOB_TEMPORAL_TARGET"]
     end
 
     # You can also manually validate if you modify config directly:
@@ -324,6 +347,7 @@ validation:
     ActiveJob::Temporal.config.validate!  # Optional manual validation
 
   validation_rules:
+    - "validation_level - Must be one of :strict, :warn, or :none"
     - "target - Must be in host:port format with alphanumeric/dots/hyphens in host and 1-5 digit port"
     - "namespace - Must contain only alphanumeric characters, hyphens, and underscores"
     - "default_activity_timeout - Must be a positive duration"
@@ -335,14 +359,15 @@ validation:
     - "max_concurrent_workflow_tasks - Must be > 0"
     - "middleware_chain - Must respond to #add and #call"
 
-  error_handling: "All validation errors raise ActiveJob::Temporal::ConfigurationError with helpful, i18n-ready error messages that include examples and guidance"
+  error_handling: "Validation errors raise ActiveJob::Temporal::ConfigurationError by default. Set validation_level to :warn to log warnings and continue, or :none to skip validation."
 
 # Type system reference
 type_reference:
   String: "Ruby String object"
-  Integer: "Ruby Integer (Fixnum or Bignum)"
+  Integer: "Ruby Integer"
   Float: "Ruby Float (decimal number)"
   Boolean: "Ruby true or false"
+  Symbol: "Ruby Symbol, used for finite option sets such as :strict, :warn, and :none"
   Duration: "Numeric (seconds) or ActiveSupport::Duration object (e.g., 15.minutes, 30.seconds)"
   Logger: "Ruby Logger or Logger-compatible object with standard logging interface"
   Middleware::Chain: "Callable object that responds to #add and #call"

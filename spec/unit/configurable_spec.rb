@@ -49,6 +49,7 @@ RSpec.describe ActiveJob::Temporal do
         config.default_retry_max_attempts = 4
         config.logger = custom_logger
         config.enable_tracing = false
+        config.validation_level = :warn
       end
 
       configured = described_class.config
@@ -61,6 +62,7 @@ RSpec.describe ActiveJob::Temporal do
       expect(configured.default_retry_max_attempts).to eq(4)
       expect(configured.logger).to be(custom_logger)
       expect(configured.enable_tracing).to be(false)
+      expect(configured.validation_level).to be(:warn)
     end
 
     it "returns the configuration even when no block provided" do
@@ -75,6 +77,20 @@ RSpec.describe ActiveJob::Temporal do
       end.to raise_error(ActiveJob::Temporal::ConfigurationError)
 
       expect(described_class.config.in_configure_block).to be(false)
+    end
+
+    it "logs validation warnings instead of raising when validation_level is warn" do
+      warning_logger = instance_spy(Logger)
+
+      expect do
+        described_class.configure do |config|
+          config.validation_level = :warn
+          config.logger = warning_logger
+          config.target = "invalid"
+        end
+      end.not_to raise_error
+
+      expect(warning_logger).to have_received(:warn).with(/[Tt]arget.*format/)
     end
   end
 
@@ -102,6 +118,28 @@ RSpec.describe ActiveJob::Temporal do
         ActiveJob::Temporal::ConfigurationError,
         /[Tt]arget must.*host:port/
       )
+    end
+
+    it "logs warnings for invalid module configuration when validation_level is warn" do
+      warning_logger = instance_spy(Logger)
+
+      described_class.config.in_configure_block = true
+      described_class.config.validation_level = :warn
+      described_class.config.logger = warning_logger
+      described_class.config.target = "invalid"
+      described_class.config.in_configure_block = false
+
+      expect { described_class.validate! }.not_to raise_error
+      expect(warning_logger).to have_received(:warn).with(/[Tt]arget.*format/)
+    end
+
+    it "skips validation when validation_level is none" do
+      described_class.config.in_configure_block = true
+      described_class.config.validation_level = :none
+      described_class.config.target = nil
+      described_class.config.in_configure_block = false
+
+      expect { described_class.validate! }.not_to raise_error
     end
   end
 

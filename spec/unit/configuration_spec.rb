@@ -62,6 +62,10 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.middleware_chain).to be_a(ActiveJob::Temporal::Middleware::Chain)
       expect(configuration.middleware_chain.to_a).to be_empty
     end
+
+    it "uses strict validation by default" do
+      expect(configuration.validation_level).to be(:strict)
+    end
   end
 
   describe "environment variable support" do
@@ -293,6 +297,21 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects invalid middleware chain replacements" do
       expect { configuration.middleware_chain = Object.new }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /Middleware chain must respond to #add and #call/)
+    end
+  end
+
+  describe "#validation_level=" do
+    it "accepts supported validation levels" do
+      configuration.validation_level = :warn
+      expect(configuration.validation_level).to be(:warn)
+
+      configuration.validation_level = :none
+      expect(configuration.validation_level).to be(:none)
+    end
+
+    it "rejects unsupported validation levels" do
+      expect { configuration.validation_level = :relaxed }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Validation level must be one of/)
     end
   end
 
@@ -765,6 +784,35 @@ RSpec.describe ActiveJob::Temporal::Configuration do
           ActiveJob::Temporal::ConfigurationError,
           /[Tt]arget.*format/ # Should start with the error (not "Configuration validation failed")
         )
+      end
+    end
+
+    context "with validation levels" do
+      it "warns instead of raising when validation_level is warn" do
+        warning_logger = instance_spy(Logger)
+
+        configuration.in_configure_block = true
+        configuration.validation_level = :warn
+        configuration.logger = warning_logger
+        configuration.target = "invalid"
+        configuration.in_configure_block = false
+
+        expect { configuration.validate! }.not_to raise_error
+        expect(warning_logger).to have_received(:warn).with(/[Tt]arget.*format/)
+      end
+
+      it "skips validation when validation_level is none" do
+        warning_logger = instance_spy(Logger)
+
+        configuration.in_configure_block = true
+        configuration.validation_level = :none
+        configuration.logger = warning_logger
+        configuration.target = nil
+        configuration.default_retry_backoff = 0.5
+        configuration.in_configure_block = false
+
+        expect { configuration.validate! }.not_to raise_error
+        expect(warning_logger).not_to have_received(:warn)
       end
     end
   end

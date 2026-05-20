@@ -23,6 +23,7 @@ The canonical machine-readable schema for all configuration options is available
 | `default_retry_backoff` | Float | `2.0` | Exponential factor used when calculating retry delays. |
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
 | `logger` | `Logger` | `Rails.logger` (if available) or `Logger.new($stdout)` | Destination for adapter log output. |
+| `validation_level` | Symbol | `:strict` | Controls configuration validation: `:strict` raises, `:warn` logs warnings, `:none` skips validation. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
@@ -67,6 +68,7 @@ ActiveJob::Temporal.configure do |config|
   config.default_retry_max_attempts = 5
 
   # Other settings
+  config.validation_level = :strict
   config.enable_tracing = false
   config.max_payload_size_kb = 512
 end
@@ -79,6 +81,25 @@ ActiveJob::Temporal.config.logger.info("Temporal target: #{ActiveJob::Temporal.c
 ```
 
 > **Note:** Duration settings must be positive values (e.g., `15.seconds`, `5.minutes`, `10.0`). An `ArgumentError` is raised if they are configured with zero or negative numbers.
+
+## Validation Levels
+
+`validation_level` controls how `ActiveJob::Temporal.configure`, `ActiveJob::Temporal.validate!`, and `ActiveJob::Temporal.config.validate!` handle invalid configuration:
+
+| Level | Behavior | Typical Use |
+| --- | --- | --- |
+| `:strict` | Raises `ActiveJob::Temporal::ConfigurationError`. This is the default. | Production and normal application boot. |
+| `:warn` | Logs validation warnings through the configured logger and continues. | Gradual migrations where invalid values must be visible before enforcement. |
+| `:none` | Skips configuration validation entirely. | Tests or local setup code that intentionally creates partial configuration. |
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.validation_level = :warn
+  config.target = ENV["ACTIVEJOB_TEMPORAL_TARGET"]
+end
+```
+
+Unsupported validation levels still raise in `:strict` and `:warn` modes.
 
 ## Workflow ID Generation
 

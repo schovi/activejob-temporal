@@ -187,6 +187,7 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `default_retry_backoff` | Float | `2.0` | Exponential factor used when calculating retry delays. |
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
 | `logger` | `Logger` | `Rails.logger` or `Logger.new($stdout)` | Destination for adapter log output. |
+| `validation_level` | Symbol | `:strict` | Controls configuration validation: `:strict` raises, `:warn` logs warnings, `:none` skips validation. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
@@ -203,10 +204,13 @@ ActiveJob::Temporal.configure do |config|
   config.default_retry_initial_interval = 10.seconds
   config.default_retry_backoff = 1.5
   config.default_retry_max_attempts = 5
+  config.validation_level = :strict
   config.enable_tracing = false
   config.max_payload_size_kb = 512
 end
 ```
+
+Use `validation_level = :warn` during gradual configuration migrations when boot should continue but warnings should be visible. Use `validation_level = :none` only for test setups that intentionally build partial configuration.
 
 For detailed configuration documentation, see [Configuration Reference](docs/configuration_reference.md).
 

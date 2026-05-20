@@ -196,7 +196,7 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-Configuration is automatically validated at the end of the `configure` block. If validation fails, a `ConfigurationError` is raised immediately. You can also manually validate by calling `ActiveJob::Temporal.config.validate!` if you modify the config directly outside the block.
+Configuration is automatically validated at the end of the `configure` block. By default validation failures raise `ConfigurationError` immediately. `config.validation_level` can downgrade failures to warnings with `:warn` or skip validation with `:none`. You can also manually validate by calling `ActiveJob::Temporal.config.validate!` if you modify the config directly outside the block.
 
 Environment variables with defaults are used for sensitive values (e.g., `ENV.fetch("TEMPORAL_TARGET", default)`).
 

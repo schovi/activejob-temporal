@@ -47,20 +47,7 @@ module ActiveJob
       # @return [void]
       # @raise [ConfigurationError] if validation fails
       def validate!
-        validator = build_validator
-        raise ConfigurationError, Configuration.format_validation_errors(validator.errors) unless validator.valid?
-      end
-
-      private
-
-      def build_validator
-        validator = ConfigValidator.new
-
-        CONFIGURATION_ATTRIBUTES.each_key do |attribute|
-          validator.public_send("#{attribute}=", config.public_send(attribute))
-        end
-
-        validator
+        config.validate!
       end
     end
   end
