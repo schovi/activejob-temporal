@@ -12,6 +12,7 @@ RSpec.describe "ActiveJob Temporal inspection", :integration do
     original_workflow_id_generator = ActiveJob::Temporal.config.workflow_id_generator
     ActiveJob::Base.queue_adapter = :temporal
     TestState.instance.reset!
+    TestJob.last_argument = nil
     @workflow_ids = []
 
     example.run
@@ -19,6 +20,7 @@ RSpec.describe "ActiveJob Temporal inspection", :integration do
     cleanup_workflows
     stop_worker(@worker_thread)
     TestState.instance.reset!
+    TestJob.last_argument = nil
     ActiveJob::Temporal.config.workflow_id_generator = original_workflow_id_generator
     ActiveJob::Base.queue_adapter = original_adapter
   end
@@ -32,18 +34,18 @@ RSpec.describe "ActiveJob Temporal inspection", :integration do
     @worker_thread = start_worker(task_queue)
     sleep 0.5
 
-    job = LongRunningJob.set(queue: task_queue).perform_later
+    job = TestJob.set(queue: task_queue, wait: 30.seconds).perform_later(42)
     workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
     @workflow_ids << workflow_id
     wait_for_workflow_status(workflow_id, Temporalio::Client::WorkflowExecutionStatus::RUNNING)
 
-    status = ActiveJob::Temporal.status(LongRunningJob, job.job_id)
+    status = ActiveJob::Temporal.status(TestJob, job.job_id)
 
     expect(status[:state]).to eq(:running)
     expect(status[:workflow_id]).to eq(workflow_id)
     expect(status[:run_id]).to be_a(String)
     expect(status[:started_at]).to be_a(Time)
-    expect(ActiveJob::Temporal.running?(LongRunningJob, job.job_id)).to be(true)
+    expect(ActiveJob::Temporal.running?(TestJob, job.job_id)).to be(true)
   end
 
   it "reports completed workflow status" do

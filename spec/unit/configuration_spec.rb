@@ -61,8 +61,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
   describe "environment variable support" do
     before do
-      # Reset the memoized config to force new instance creation
-      ActiveJob::Temporal.instance_variable_set(:@config, nil)
+      ActiveJob::Temporal.instance_variable_set(:@config_mvar, nil)
     end
 
     it "reads target from ACTIVEJOB_TEMPORAL_TARGET environment variable" do

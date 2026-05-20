@@ -7,6 +7,10 @@ RSpec.describe ActiveJob::Temporal do
     described_class.instance_variable_set(:@config_mvar, nil)
   end
 
+  after do
+    described_class.instance_variable_set(:@config_mvar, nil)
+  end
+
   describe ".config" do
     it "extends the configurable concern" do
       expect(described_class.singleton_class.ancestors).to include(ActiveJob::Temporal::Configurable)
