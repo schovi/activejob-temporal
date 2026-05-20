@@ -4,7 +4,7 @@ This guide covers setting up and running ActiveJob Temporal workers.
 
 ## Prerequisites
 - Temporal server accessible (e.g., Dockerized Temporal test server listening on `localhost:7233`).
-- Ruby 3.2+ environment with the `activejob-temporal` gem and the Temporal Ruby SDK (`temporalio-worker`) installed.
+- Ruby 4.0+ environment with the `activejob-temporal` gem and the Temporal Ruby SDK (`temporalio-worker`) installed.
 - Rails application with `activejob-temporal` gem in the Gemfile.
 
 ## Required Environment Variables

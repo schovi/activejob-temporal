@@ -123,12 +123,12 @@ module ActiveJob
         def find_workflow(client, _job_class, job_id)
           # Query running workflows first
           running_query = running_workflows_query(job_id)
-          running = client.list_workflows(query: running_query).first
+          running = client.list_workflows(running_query).first
           return :running if running
 
           # Query closed workflows (completed, failed, cancelled, etc.)
           closed_query = closed_workflows_query(job_id)
-          closed = client.list_workflows(query: closed_query).first
+          closed = client.list_workflows(closed_query).first
           return :closed if closed
 
           :not_found

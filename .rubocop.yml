@@ -3,7 +3,7 @@ inherit_mode:
     - Exclude
 
 AllCops:
-  TargetRubyVersion: 3.2
+  TargetRubyVersion: 3.5
   NewCops: enable
   Exclude:
     - "tmp/**/*"
@@ -52,4 +52,8 @@ Style/GlobalVars:
     - "spec/**/*"
 
 Gemspec/DevelopmentDependencies:
+  Enabled: false
+
+# RuboCop 1.81 does not accept TargetRubyVersion 4.0 yet; CI still runs Ruby 4.
+Gemspec/RequiredRubyVersion:
   Enabled: false

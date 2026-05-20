@@ -87,7 +87,7 @@ This document tracks all quality checks required before releasing activejob-temp
 - [x] Duplicate enqueue (same job_id) is rejected (integration test: "treats duplicate workflow IDs as successful enqueue")
 - [x] `ActiveJob::Temporal.cancel` cancels running workflows (integration test: cancellation)
 - [x] Search attributes are persisted (integration test: "attaches search attributes to workflows")
-- [x] Works on Ruby 3.2+ and Rails 6.1+ (gemspec requires Ruby >= 3.2, ActiveJob >= 6.1)
+- [x] Works on Ruby 4.0+ and Rails 7.2+ (gemspec requires Ruby >= 4.0, ActiveJob >= 7.2)
 
 ## Security Requirements
 

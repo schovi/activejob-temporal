@@ -19,7 +19,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3'
+          ruby-version: '4.0'
           bundler-cache: true
 
       - name: Run Rubocop
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3'
+          ruby-version: '4.0'
           bundler-cache: true
 
       - name: Install bundle-audit
@@ -56,7 +56,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ['3.2', '3.3']
+        ruby: ['4.0']
 
     steps:
       - name: Checkout code
@@ -74,7 +74,7 @@ jobs:
           TEST_SUITE: unit
 
       - name: Upload unit test coverage
-        if: matrix.ruby == '3.3'
+        if: matrix.ruby == '4.0'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-unit-ruby-${{ matrix.ruby }}
@@ -87,7 +87,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ['3.2', '3.3']
+        ruby: ['4.0']
 
     steps:
       - name: Checkout code
@@ -99,17 +99,44 @@ jobs:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
 
+      - name: Start Temporal test server
+        run: |
+          docker compose up -d postgresql temporal
+          for i in {1..120}; do
+            if docker compose exec -T temporal temporal operator namespace list >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs temporal
+          exit 1
+
+      - name: Configure Temporal test namespace
+        run: |
+          docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1 ||
+            docker compose exec -T temporal temporal operator namespace create test
+          docker compose exec -T temporal temporal operator search-attribute create -n test \
+            --name ajClass --type Keyword \
+            --name ajQueue --type Keyword \
+            --name ajJobId --type Keyword \
+            --name ajEnqueuedAt --type Datetime \
+            --name ajTenantId --type Int || true
+
       - name: Run integration tests
         run: bundle exec rake spec:integration
         env:
           TEST_SUITE: integration
 
       - name: Upload integration test coverage
-        if: matrix.ruby == '3.3'
+        if: matrix.ruby == '4.0'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-integration-ruby-${{ matrix.ruby }}
           path: coverage/
+
+      - name: Stop Temporal test server
+        if: always()
+        run: docker compose down -v
 
   # Build gem - runs once to verify gem can be built
   build:
@@ -124,7 +151,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3'
+          ruby-version: '4.0'
           bundler-cache: true
 
       - name: Build gem

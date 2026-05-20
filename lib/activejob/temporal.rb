@@ -251,11 +251,11 @@ module ActiveJob
       # @raise [OpenSSL::SSL::SSLError] if TLS configuration is invalid
       # @example Get the client
       #   client = ActiveJob::Temporal.client
-      #   client.list_workflows(query: "ajQueue='default'")
+      #   client.list_workflows("ajQueue='default'")
       #
       # @example Using client for workflow queries
       #   client = ActiveJob::Temporal.client
-      #   workflows = client.list_workflows(query: "ajClass='MyJob'")
+      #   workflows = client.list_workflows("ajClass='MyJob'")
       #   workflows.each { |wf| puts wf.id }
       #
       # @example Accessing workflow handles

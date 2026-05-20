@@ -3,7 +3,7 @@
 # Optimized for development with live code reloading via volume mounts
 # Build context: project root (../../)
 
-ARG RUBY_VERSION=3.3.5
+ARG RUBY_VERSION=4.0.3
 FROM docker.io/library/ruby:$RUBY_VERSION-slim
 
 # Install base packages including development tools

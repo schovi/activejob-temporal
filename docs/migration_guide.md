@@ -18,11 +18,15 @@ Practical migration instructions from Sidekiq/Resque/Delayed Job to activejob-te
 ## 2. Prerequisites
 
 - Temporal cluster access (self-hosted or Temporal Cloud)
-- Ruby >= 3.2, Rails >= 6.1
+- Ruby >= 4.0, Rails >= 7.2
 - Add `gem "activejob-temporal"` to Gemfile
 - Register search attributes (see [README](../README.md#step-3-register-search-attributes-one-time-setup))
 
 **Docs:** [README](../README.md) | [Configuration Reference](configuration_reference.md) | [Worker Setup Guide](worker_setup.md)
+
+### Ruby 4 Upgrade Note
+
+Ruby 4 support requires Temporal Ruby SDK 1.4.1+, which rejects process configuration reads from workflow code. New workflows serialize global activity timeout defaults into the workflow payload at enqueue time. Before upgrading an application with existing Temporal workflow histories, drain or complete workflows that depend on non-default global activity timeout settings, then deploy the Ruby 4 worker.
 
 ---
 

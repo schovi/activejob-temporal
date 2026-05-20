@@ -60,65 +60,65 @@ RSpec.describe ActiveJob::Temporal::TemporalOptions do
 
     context "when invalid keys are provided" do
       it "raises ArgumentError for unknown keys" do
-        expect {
+        expect do
           test_job_class.temporal_options(invalid_timeout: 100)
-        }.to raise_error(ArgumentError, /Invalid temporal_options keys: invalid_timeout/)
+        end.to raise_error(ArgumentError, /Invalid temporal_options keys: invalid_timeout/)
       end
 
       it "raises ArgumentError for multiple unknown keys" do
-        expect {
+        expect do
           test_job_class.temporal_options(
             start_to_close_timeout: 300,
             bad_key: 100,
             another_bad_key: 200
           )
-        }.to raise_error(ArgumentError, /Invalid temporal_options keys/)
+        end.to raise_error(ArgumentError, /Invalid temporal_options keys/)
       end
     end
 
     context "when invalid value types are provided" do
       it "raises ArgumentError for string values" do
-        expect {
+        expect do
           test_job_class.temporal_options(start_to_close_timeout: "300")
-        }.to raise_error(ArgumentError, /Timeout values must be numeric or ActiveSupport::Duration/)
+        end.to raise_error(ArgumentError, /Timeout values must be numeric or ActiveSupport::Duration/)
       end
 
       it "raises ArgumentError for nil values" do
-        expect {
+        expect do
           test_job_class.temporal_options(heartbeat_timeout: nil)
-        }.to raise_error(ArgumentError, /Timeout values must be numeric or ActiveSupport::Duration/)
+        end.to raise_error(ArgumentError, /Timeout values must be numeric or ActiveSupport::Duration/)
       end
 
       it "raises ArgumentError for array values" do
-        expect {
+        expect do
           test_job_class.temporal_options(start_to_close_timeout: [300])
-        }.to raise_error(ArgumentError, /Timeout values must be numeric or ActiveSupport::Duration/)
+        end.to raise_error(ArgumentError, /Timeout values must be numeric or ActiveSupport::Duration/)
       end
     end
 
     context "valid timeout keys" do
       it "accepts start_to_close_timeout" do
-        expect {
+        expect do
           test_job_class.temporal_options(start_to_close_timeout: 300)
-        }.not_to raise_error
+        end.not_to raise_error
       end
 
       it "accepts schedule_to_close_timeout" do
-        expect {
+        expect do
           test_job_class.temporal_options(schedule_to_close_timeout: 600)
-        }.not_to raise_error
+        end.not_to raise_error
       end
 
       it "accepts schedule_to_start_timeout" do
-        expect {
+        expect do
           test_job_class.temporal_options(schedule_to_start_timeout: 120)
-        }.not_to raise_error
+        end.not_to raise_error
       end
 
       it "accepts heartbeat_timeout" do
-        expect {
+        expect do
           test_job_class.temporal_options(heartbeat_timeout: 30)
-        }.not_to raise_error
+        end.not_to raise_error
       end
     end
   end

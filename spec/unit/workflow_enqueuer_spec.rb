@@ -54,6 +54,24 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       enqueuer.enqueue(job)
     end
 
+    it "includes global activity timeout defaults in the payload" do
+      config.default_heartbeat_timeout = 45.seconds
+      config.default_schedule_to_start_timeout = 2.minutes
+      config.default_schedule_to_close_timeout = 20.minutes
+
+      allow(client).to receive(:start_workflow) do |_klass, payload, **_options|
+        expect(payload[:default_activity_options]).to eq(
+          start_to_close_timeout: 900.0,
+          schedule_to_close_timeout: 1200.0,
+          schedule_to_start_timeout: 120.0,
+          heartbeat_timeout: 45.0
+        )
+        "handle"
+      end
+
+      enqueuer.enqueue(job)
+    end
+
     it "returns nil for duplicate workflows" do
       error = Class.new(StandardError)
       stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
@@ -121,6 +139,7 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
 
       it "includes temporal_options in the payload" do
         allow(client).to receive(:start_workflow) do |_klass, payload, **_options|
+          expect(payload[:default_activity_options]).to include(start_to_close_timeout: 900.0)
           expect(payload[:temporal_options]).to be_present
           expect(payload[:temporal_options][:start_to_close_timeout]).to eq(7200.0)
           expect(payload[:temporal_options][:heartbeat_timeout]).to eq(30.0)

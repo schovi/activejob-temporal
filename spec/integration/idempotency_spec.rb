@@ -26,7 +26,7 @@ RSpec.describe "Idempotency key handling", :integration do
     @worker_thread = start_worker(task_queue)
     sleep 0.5
 
-    job_class = Class.new(ActiveJob::Base) do
+    job_class = stub_const("IdempotencyWorkflowKeyJob", Class.new(ActiveJob::Base) do
       @captured_key = nil
 
       class << self
@@ -38,7 +38,7 @@ RSpec.describe "Idempotency key handling", :integration do
         key = Thread.current[ActiveJob::Temporal::Activities::AjRunnerActivity::IDEMPOTENCY_KEY]
         self.class.captured_key = key
       end
-    end
+    end)
 
     # Enqueue and execute job
     SecureRandom.uuid
@@ -71,7 +71,7 @@ RSpec.describe "Idempotency key handling", :integration do
     sleep 0.5
     Mutex.new
 
-    job_class = Class.new(ActiveJob::Base) do
+    job_class = stub_const("IdempotencyConsistencyJob", Class.new(ActiveJob::Base) do
       @captured_keys = []
       @keys_lock = Mutex.new
 
@@ -86,7 +86,7 @@ RSpec.describe "Idempotency key handling", :integration do
           self.class.captured_keys << key
         end
       end
-    end
+    end)
 
     # Enqueue job
     job_class.set(queue: task_queue).perform_later(1)
@@ -115,11 +115,11 @@ RSpec.describe "Idempotency key handling", :integration do
     task_queue = "test-idempotency-cleanup-#{SecureRandom.hex(4)}"
 
     # Create a custom workflow that we can monitor directly
-    job_class = Class.new(ActiveJob::Base) do
+    job_class = stub_const("IdempotencyCleanupJob", Class.new(ActiveJob::Base) do
       def perform(test_id)
         # Job logic - idempotency key should be set here
       end
-    end
+    end)
 
     @worker_thread = start_worker(task_queue)
     sleep 0.5
@@ -146,12 +146,12 @@ RSpec.describe "Idempotency key handling", :integration do
 
     captured_keys = Queue.new
 
-    job_class = Class.new(ActiveJob::Base) do
+    job_class = stub_const("IdempotencyUniqueJob", Class.new(ActiveJob::Base) do
       define_method :perform do |job_num|
         key = Thread.current[ActiveJob::Temporal::Activities::AjRunnerActivity::IDEMPOTENCY_KEY]
         captured_keys.push({ job_num: job_num, key: key })
       end
-    end
+    end)
 
     # Enqueue multiple jobs
     3.times do |i|

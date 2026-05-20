@@ -17,6 +17,13 @@ module ActiveJob
     #   enqueuer = WorkflowEnqueuer.new(client, config)
     #   enqueuer.enqueue(job)
     class WorkflowEnqueuer
+      TIMEOUT_CONFIG_ATTRIBUTES = {
+        default_activity_timeout: :start_to_close_timeout,
+        default_schedule_to_close_timeout: :schedule_to_close_timeout,
+        default_schedule_to_start_timeout: :schedule_to_start_timeout,
+        default_heartbeat_timeout: :heartbeat_timeout
+      }.freeze
+
       # @param client [Temporalio::Client] Temporal client connection
       # @param config [ActiveJob::Temporal::Configuration] Configuration object
       # @param logger [Logger] Optional logger instance
@@ -82,6 +89,7 @@ module ActiveJob
       # @api private
       def build_payload(job, scheduled_at: nil)
         payload = Payload.from_job(job, scheduled_at: scheduled_at)
+        payload[:default_activity_options] = default_activity_options
 
         # Build and add retry policy from job class
         retry_policy = RetryMapper.for(job.class)
@@ -168,6 +176,25 @@ module ActiveJob
         return {} unless job_class.respond_to?(:temporal_options)
 
         job_class.temporal_options
+      end
+
+      # Extracts global timeout defaults before workflow execution so replay stays deterministic.
+      #
+      # @return [Hash] Timeout options hash
+      # @api private
+      def default_activity_options
+        TIMEOUT_CONFIG_ATTRIBUTES.each_with_object({}) do |(config_attribute, option_name), options|
+          value = @config.public_send(config_attribute)
+          options[option_name] = normalize_duration(value) if value
+        end
+      end
+
+      # Normalizes configuration durations to primitive values for workflow payloads.
+      # @api private
+      def normalize_duration(value)
+        return value.to_f if value.respond_to?(:to_f)
+
+        value
       end
     end
   end

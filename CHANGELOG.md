@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Migrate the supported Ruby baseline and CI validation target to Ruby 4.0+.
+- Require Temporal Ruby SDK 1.4.1+ for Ruby 4 compatibility.
+- Serialize global activity timeout defaults into workflow payloads so workflows do not read mutable process configuration during replay.
+
+### Fixed
+- Declare `concurrent-ruby` as an explicit runtime dependency.
+
 ### Added
 - Per-job timeout configuration via `temporal_options` class method
   - Support for `start_to_close_timeout`, `heartbeat_timeout`, `schedule_to_start_timeout`, and `schedule_to_close_timeout`

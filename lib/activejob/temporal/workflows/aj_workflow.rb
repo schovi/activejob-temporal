@@ -38,6 +38,8 @@ module ActiveJob
       # @see https://docs.temporal.io/workflows#deterministic-constraints Temporal Determinism Guide
       # @see https://docs.temporal.io/workflows#timers Temporal Durable Timers
       class AjWorkflow < Temporalio::Workflow::Definition
+        DEFAULT_START_TO_CLOSE_TIMEOUT = 900.0
+
         # Executes the workflow: optionally sleeps until scheduled time, then runs the activity.
         #
         # @param payload [Hash] Job payload containing execution metadata
@@ -45,6 +47,7 @@ module ActiveJob
         # @option payload [String] :job_id Unique job identifier (required)
         # @option payload [String] :queue_name Target queue name (required)
         # @option payload [Array] :arguments Serialized job arguments (required)
+        # @option payload [Hash] :default_activity_options Global activity timeout defaults (required)
         # @option payload [Hash] :retry_policy Retry policy for activity execution (required)
         # @option payload [Hash] :temporal_options Per-job timeout configuration (optional)
         # @option payload [String] :scheduled_at ISO8601 timestamp for delayed execution (optional)
@@ -118,36 +121,28 @@ module ActiveJob
 
         # Builds activity execution options with timeout configuration and retry policy.
         #
-        # Merges timeout options from three sources (in order of precedence):
-        # 1. Global configuration defaults
-        # 2. Per-job temporal_options (from job class)
-        # 3. Retry policy from job's retry_on/discard_on declarations
+        # Merges timeout options from deterministic payload values only.
         #
         # @api private
         def activity_options(payload)
-          config = ActiveJob::Temporal.config
+          options = default_activity_options(payload)
 
-          # Start with global timeout defaults
-          options = {
-            start_to_close_timeout: config.default_activity_timeout
-          }
-
-          # Add optional global timeout defaults (if configured)
-          options[:schedule_to_close_timeout] = config.default_schedule_to_close_timeout if config.default_schedule_to_close_timeout
-          options[:schedule_to_start_timeout] = config.default_schedule_to_start_timeout if config.default_schedule_to_start_timeout
-          options[:heartbeat_timeout] = config.default_heartbeat_timeout if config.default_heartbeat_timeout
-
-          # Override with per-job temporal_options from payload (if present)
           temporal_opts = payload[:temporal_options] || payload["temporal_options"]
-          if temporal_opts
-            options.merge!(temporal_opts.symbolize_keys)
-          end
+          options.merge!(temporal_opts.symbolize_keys) if temporal_opts
 
-          # Add retry policy from payload (serialized at enqueue time)
           retry_policy_hash = payload[:retry_policy] || payload["retry_policy"]
           options[:retry_policy] = build_retry_policy(retry_policy_hash) if retry_policy_hash
 
           options
+        end
+
+        # Builds activity timeout defaults from workflow input.
+        # @api private
+        def default_activity_options(payload)
+          options = payload[:default_activity_options] || payload["default_activity_options"]
+          return options.symbolize_keys if options
+
+          { start_to_close_timeout: DEFAULT_START_TO_CLOSE_TIMEOUT }
         end
 
         # Builds Temporalio::RetryPolicy from hash.

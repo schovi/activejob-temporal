@@ -26,7 +26,7 @@ RSpec.describe "Concurrent worker execution", :integration do
     Mutex.new
 
     # Create a job class that tracks execution count
-    job_class = Class.new(ActiveJob::Base) do
+    job_class = stub_const("ConcurrentExecutionJob", Class.new(ActiveJob::Base) do
       @execution_count = 0
       @execution_lock = Mutex.new
 
@@ -44,7 +44,7 @@ RSpec.describe "Concurrent worker execution", :integration do
       def self.reset_count
         @execution_count = 0
       end
-    end
+    end)
 
     # Start two workers
     worker1 = start_worker(task_queue)
@@ -80,11 +80,11 @@ RSpec.describe "Concurrent worker execution", :integration do
     sleep 0.5
 
     completed_jobs = Queue.new
-    job_class = Class.new(ActiveJob::Base) do
+    job_class = stub_const("ConcurrentEnqueueJob", Class.new(ActiveJob::Base) do
       define_method :perform do |job_num|
         completed_jobs.push(job_num)
       end
-    end
+    end)
 
     # Enqueue jobs from multiple threads
     threads = 5.times.map do |i|
@@ -125,7 +125,10 @@ RSpec.describe "Concurrent worker execution", :integration do
         client: TemporalTestHelper.client,
         task_queue: task_queue,
         workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
+        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
+        deployment_options: Temporalio::Worker::DeploymentOptions.new(
+          version: Temporalio::WorkerDeploymentVersion.new(deployment_name: "", build_id: SecureRandom.hex(8))
+        )
       )
       worker.run
     end

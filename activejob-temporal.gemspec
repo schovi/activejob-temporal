@@ -16,7 +16,7 @@ Gem::Specification.new do |spec|
   DESC
   spec.homepage = "https://github.com/temporalio/activejob-temporal"
   spec.license = "MIT"
-  spec.required_ruby_version = ">= 3.2"
+  spec.required_ruby_version = ">= 4.0"
 
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = spec.homepage
@@ -35,8 +35,9 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "activejob", ">= 7.2", "< 9"
   spec.add_dependency "activemodel", ">= 7.2", "< 9"
+  spec.add_dependency "concurrent-ruby", "~> 1.1"
   spec.add_dependency "globalid", ">= 0.3"
-  spec.add_dependency "temporalio", ">= 1.0"
+  spec.add_dependency "temporalio", ">= 1.4.1"
 
   spec.add_development_dependency "rake", "~> 13.2"
   spec.add_development_dependency "rspec", "~> 3.12"

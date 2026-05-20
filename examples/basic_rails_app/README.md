@@ -11,7 +11,7 @@ This is a minimal Rails 8 application that demonstrates the core features of the
 
 ## Prerequisites
 
-- **Ruby**: 3.2 or higher (3.3+ recommended)
+- **Ruby**: 4.0 or higher
 - **Rails**: 8.0+
 - **Docker**: For running Temporal server locally
 - **Docker Compose**: For orchestrating Temporal services

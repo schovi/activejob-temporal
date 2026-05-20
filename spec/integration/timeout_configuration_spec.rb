@@ -113,4 +113,25 @@ RSpec.describe "Per-job timeout configuration", :integration do
       stop_worker(@worker_thread)
     end
   end
+
+  private
+
+  def start_worker(task_queue)
+    Thread.new do
+      worker = Temporalio::Worker.new(
+        client: TemporalTestHelper.client,
+        task_queue: task_queue,
+        workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
+        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
+      )
+      worker.run
+    end
+  end
+
+  def stop_worker(thread)
+    return unless thread&.alive?
+
+    thread.kill
+    thread.join(5)
+  end
 end

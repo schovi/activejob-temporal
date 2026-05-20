@@ -23,7 +23,7 @@ end
 RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
   subject(:workflow) { described_class.new }
 
-  let(:activity_timeout) { ActiveJob::Temporal.config.default_activity_timeout }
+  let(:activity_timeout) { 900.0 }
   let(:retry_policy_hash) do
     {
       initial_interval: 30.0,
@@ -38,6 +38,9 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
       "job_id" => "abc-123",
       "queue_name" => "default",
       "arguments" => [],
+      "default_activity_options" => {
+        "start_to_close_timeout" => activity_timeout
+      },
       "retry_policy" => retry_policy_hash
     }
   end
@@ -119,6 +122,14 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
       end
     end
 
+    it "does not read process configuration during workflow execution" do
+      allow(ActiveJob::Temporal).to receive(:config).and_raise("workflow must use payload data")
+
+      workflow.execute(base_payload)
+
+      expect(Temporalio::Workflow).to have_received(:execute_activity)
+    end
+
     context "when temporal_options are present in payload" do
       it "overrides timeout values with per-job temporal_options" do
         temporal_options = {
@@ -167,7 +178,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         end
       end
 
-      it "uses global config defaults when temporal_options are not present" do
+      it "uses default activity options when temporal_options are not present" do
         workflow.execute(base_payload)
 
         expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
@@ -177,19 +188,19 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
       end
     end
 
-    context "when global timeout configuration is set" do
-      before do
-        ActiveJob::Temporal.config.default_heartbeat_timeout = 60
-        ActiveJob::Temporal.config.default_schedule_to_start_timeout = 120
+    context "when default activity options are present" do
+      let(:payload_with_defaults) do
+        base_payload.merge(
+          "default_activity_options" => {
+            "start_to_close_timeout" => activity_timeout,
+            "heartbeat_timeout" => 60,
+            "schedule_to_start_timeout" => 120
+          }
+        )
       end
 
-      after do
-        ActiveJob::Temporal.config.default_heartbeat_timeout = nil
-        ActiveJob::Temporal.config.default_schedule_to_start_timeout = nil
-      end
-
-      it "applies global timeout defaults" do
-        workflow.execute(base_payload)
+      it "applies default activity options" do
+        workflow.execute(payload_with_defaults)
 
         expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
           expect(options[:start_to_close_timeout]).to eq(activity_timeout)
@@ -202,13 +213,25 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         temporal_options = {
           heartbeat_timeout: 15.0
         }
-        payload = base_payload.merge("temporal_options" => temporal_options)
+        payload = payload_with_defaults.merge("temporal_options" => temporal_options)
 
         workflow.execute(payload)
 
         expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
           expect(options[:heartbeat_timeout]).to eq(15.0)
           expect(options[:schedule_to_start_timeout]).to eq(120)
+        end
+      end
+    end
+
+    context "when legacy payloads omit default activity options" do
+      it "falls back to the library default timeout" do
+        payload = base_payload.except("default_activity_options")
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
+          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
         end
       end
     end

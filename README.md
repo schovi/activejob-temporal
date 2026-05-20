@@ -38,7 +38,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 ## Installation
 
 **Requirements:**
-- Ruby >= 3.2
+- Ruby >= 4.0
 - Rails >= 7.2 (ActiveJob 7.2+ and 8.x)
 - Temporal cluster (self-hosted or [Temporal Cloud](https://temporal.io/cloud))
 
@@ -55,9 +55,11 @@ bundle install
 ```
 
 The gem will automatically install dependencies:
-- `activejob` (>= 6.1)
+- `activejob` (>= 7.2, < 9)
+- `activemodel` (>= 7.2, < 9)
+- `concurrent-ruby` (~> 1.1)
 - `globalid` (>= 0.3)
-- `temporalio` (>= 1.0) — the Temporal Ruby SDK
+- `temporalio` (>= 1.4.1) — the Temporal Ruby SDK
 
 ## Quick Start
 
@@ -103,7 +105,7 @@ tctl admin cluster add-search-attributes \
   --name ajQueue --type Keyword \
   --name ajJobId --type Keyword \
   --name ajEnqueuedAt --type Datetime \
-  --name ajTenantId --type Keyword
+  --name ajTenantId --type Int
 ```
 
 If using Temporal Cloud or `temporal` CLI instead of `tctl`, adjust the command accordingly. See [Observability](#observability) for details.
@@ -391,7 +393,7 @@ The gem attaches Temporal **Search Attributes** to every workflow, enabling powe
 | `ajQueue` | Keyword | ActiveJob queue name (e.g., `"billing"`). Falls back to `"default"`. |
 | `ajJobId` | Keyword | ActiveJob `job_id` (UUID) for correlation with application logs. |
 | `ajEnqueuedAt` | Datetime | Timestamp when the adapter enqueued the workflow. |
-| `ajTenantId` | Keyword (optional) | Tenant identifier extracted from job arguments when present. |
+| `ajTenantId` | Int (optional) | Tenant identifier extracted from job arguments when present. |
 
 ### Registering Search Attributes
 
@@ -403,7 +405,7 @@ tctl admin cluster add-search-attributes \
   --name ajQueue --type Keyword \
   --name ajJobId --type Keyword \
   --name ajEnqueuedAt --type Datetime \
-  --name ajTenantId --type Keyword
+  --name ajTenantId --type Int
 ```
 
 ### Querying Jobs in Temporal UI
@@ -412,7 +414,7 @@ After registration, you can filter workflows in the Temporal UI using search que
 
 **Example: Find all billing jobs for a specific tenant**
 ```
-ajQueue = "billing" AND ajTenantId = "tenant-456"
+ajQueue = "billing" AND ajTenantId = 456
 ```
 
 **Example: Find stale jobs enqueued before a certain date**
