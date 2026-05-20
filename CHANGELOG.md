@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Declare `concurrent-ruby` as an explicit runtime dependency.
 
 ### Added
+- Structured payload size logs at 80%, 90%, and over-limit thresholds.
 - Per-job timeout configuration via `temporal_options` class method
   - Support for `start_to_close_timeout`, `heartbeat_timeout`, `schedule_to_start_timeout`, and `schedule_to_close_timeout`
   - Timeout values accept both integers (seconds) and `ActiveSupport::Duration` objects (e.g., `2.hours`, `30.seconds`)

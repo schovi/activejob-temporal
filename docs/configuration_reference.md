@@ -125,6 +125,16 @@ end
 
 You can also set this via the `ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB` environment variable.
 
+### Monitoring Payload Size
+
+The adapter emits structured logs before payloads reach the hard limit:
+
+- `payload_size_large` from 80% up to less than 90% of `max_payload_size_kb`
+- `payload_size_near_limit` from 90% through the configured limit
+- `payload_size_exceeded` when the payload is over the limit, immediately before raising `ActiveJob::SerializationError`
+
+Each event includes `job_class`, `size_kb`, `limit_kb`, and `percentage` so you can identify jobs that are trending toward oversized payloads before they start failing.
+
 ### Handling Large Payloads
 
 If you encounter payload size errors, consider these strategies to reduce payload size:

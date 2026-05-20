@@ -19,6 +19,10 @@ RSpec.describe ActiveJob::Temporal::Payload do
     ActiveJob::Temporal.configure do |config|
       config.max_payload_size_kb = 250
     end
+
+    allow(ActiveJob::Temporal::Logger).to receive(:info)
+    allow(ActiveJob::Temporal::Logger).to receive(:warn)
+    allow(ActiveJob::Temporal::Logger).to receive(:error)
   end
 
   describe ".from_job" do
@@ -205,6 +209,174 @@ RSpec.describe ActiveJob::Temporal::Payload do
         expect { described_class.from_job(job_instance) }.not_to raise_error
       end
     end
+
+    context "payload size monitoring" do
+      it "does not log when payload size is below warning thresholds" do
+        monitored_job = job_for_payload_usage(0.75, max_size_kb: 2)
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 2
+        end
+
+        described_class.from_job(monitored_job)
+
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+      end
+
+      it "logs info when payload size reaches 80 percent of the limit" do
+        monitored_job = job_for_payload_usage(0.85, max_size_kb: 2)
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 2
+        end
+
+        described_class.from_job(monitored_job)
+
+        expect(ActiveJob::Temporal::Logger).to have_received(:info).with(
+          "payload_size_large",
+          hash_including(
+            job_class: monitored_job.class.name,
+            limit_kb: 2,
+            size_kb: be_between(1.6, 1.8),
+            percentage: be_between(80.0, 90.0)
+          )
+        )
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+      end
+
+      it "logs warn when payload size reaches 90 percent of the limit" do
+        monitored_job = job_for_payload_usage(0.95, max_size_kb: 2)
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 2
+        end
+
+        described_class.from_job(monitored_job)
+
+        expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+          "payload_size_near_limit",
+          hash_including(
+            job_class: monitored_job.class.name,
+            limit_kb: 2,
+            size_kb: be_between(1.8, 2.0),
+            percentage: be_between(90.0, 100.0)
+          )
+        )
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+      end
+
+      it "logs error with payload context when payload size exceeds the limit" do
+        monitored_job = job_for_payload_usage(1.10, max_size_kb: 2)
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 2
+        end
+
+        expect { described_class.from_job(monitored_job) }
+          .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+
+        expect(ActiveJob::Temporal::Logger).to have_received(:error).with(
+          "payload_size_exceeded",
+          hash_including(
+            job_class: monitored_job.class.name,
+            limit_kb: 2,
+            size_kb: be > 2.0,
+            percentage: be > 100.0
+          )
+        )
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+      end
+
+      it "logs info at exactly 80 percent of the limit" do
+        monitored_job = job_for_payload_size((2 * 1024 * 0.8).ceil)
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 2
+        end
+
+        described_class.from_job(monitored_job)
+
+        expect(ActiveJob::Temporal::Logger).to have_received(:info).with(
+          "payload_size_large",
+          hash_including(
+            job_class: monitored_job.class.name,
+            limit_kb: 2,
+            percentage: 80.0
+          )
+        )
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+      end
+
+      it "logs warn at exactly 90 percent of the limit" do
+        monitored_job = job_for_payload_size((2 * 1024 * 0.9).ceil)
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 2
+        end
+
+        described_class.from_job(monitored_job)
+
+        expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+          "payload_size_near_limit",
+          hash_including(
+            job_class: monitored_job.class.name,
+            limit_kb: 2,
+            percentage: 90.0
+          )
+        )
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+      end
+
+      it "logs warn and accepts payload at the exact size limit" do
+        monitored_job = job_for_payload_size(2 * 1024)
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 2
+        end
+
+        expect { described_class.from_job(monitored_job) }.not_to raise_error
+
+        expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+          "payload_size_near_limit",
+          hash_including(
+            job_class: monitored_job.class.name,
+            limit_kb: 2,
+            percentage: 100.0
+          )
+        )
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+      end
+
+      it "logs error when payload is one byte over the limit" do
+        monitored_job = job_for_payload_size((2 * 1024) + 1)
+
+        ActiveJob::Temporal.configure do |config|
+          config.max_payload_size_kb = 2
+        end
+
+        expect { described_class.from_job(monitored_job) }
+          .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+
+        expect(ActiveJob::Temporal::Logger).to have_received(:error).with(
+          "payload_size_exceeded",
+          hash_including(
+            job_class: monitored_job.class.name,
+            limit_kb: 2,
+            percentage: 100.0
+          )
+        )
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
+        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+      end
+    end
   end
 
   describe ".deserialize_args" do
@@ -234,5 +406,33 @@ RSpec.describe ActiveJob::Temporal::Payload do
 
       expect(described_class.deserialize_args(payload)).to eq([model])
     end
+  end
+
+  def job_for_payload_usage(target_usage, max_size_kb:)
+    job_for_payload_size((max_size_kb * 1024 * target_usage).ceil)
+  end
+
+  def job_for_payload_size(target_bytes)
+    baseline_job = SimpleJob.new([""])
+    baseline_size = serialized_payload_size(baseline_job)
+    argument_size = [target_bytes - baseline_size, 0].max
+    job = SimpleJob.new(["x" * argument_size])
+
+    return job if serialized_payload_size(job) == target_bytes
+
+    raise "Unable to build payload with target size #{target_bytes}"
+  end
+
+  def serialized_payload_size(job)
+    payload = {
+      job_class: job.class.name,
+      job_id: job.job_id,
+      queue_name: job.queue_name,
+      arguments: ActiveJob::Arguments.serialize(job.arguments || []),
+      executions: job.executions || 0,
+      exception_executions: job.exception_executions || {}
+    }
+
+    JSON.generate(payload).bytesize
   end
 end

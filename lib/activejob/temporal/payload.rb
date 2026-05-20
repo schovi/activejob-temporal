@@ -38,6 +38,9 @@ module ActiveJob
     module Payload
       extend self
 
+      PAYLOAD_WARNING_THRESHOLD = 0.8
+      PAYLOAD_NEAR_LIMIT_THRESHOLD = 0.9
+
       # Converts an ActiveJob instance into a serializable payload hash.
       #
       # @param job [ActiveJob::Base] The job instance to serialize
@@ -181,9 +184,12 @@ module ActiveJob
         json = JSON.generate(payload)
         max_size_kb = ActiveJob::Temporal.config.max_payload_size_kb || 250
         size_limit_bytes = max_size_kb * 1024
+        actual_size_kb = json.bytesize / 1024.0
+        usage_ratio = json.bytesize.to_f / size_limit_bytes
+
+        log_payload_size(payload, actual_size_kb, max_size_kb, usage_ratio)
         return if json.bytesize <= size_limit_bytes
 
-        actual_size_kb = (json.bytesize / 1024.0).round(1)
         message = format(
           "Job payload size (%<actual>.1f KB) exceeds maximum allowed size (%<max>d KB). " \
           "Consider reducing argument size or using references (e.g., database IDs).",
@@ -191,6 +197,29 @@ module ActiveJob
           max: max_size_kb
         )
         raise ActiveJob::SerializationError, message
+      end
+
+      def log_payload_size(payload, actual_size_kb, max_size_kb, usage_ratio)
+        return if usage_ratio < PAYLOAD_WARNING_THRESHOLD
+
+        attributes = payload_size_log_attributes(payload, actual_size_kb, max_size_kb, usage_ratio)
+
+        if usage_ratio > 1.0
+          ActiveJob::Temporal::Logger.error("payload_size_exceeded", attributes)
+        elsif usage_ratio >= PAYLOAD_NEAR_LIMIT_THRESHOLD
+          ActiveJob::Temporal::Logger.warn("payload_size_near_limit", attributes)
+        elsif usage_ratio >= PAYLOAD_WARNING_THRESHOLD
+          ActiveJob::Temporal::Logger.info("payload_size_large", attributes)
+        end
+      end
+
+      def payload_size_log_attributes(payload, actual_size_kb, max_size_kb, usage_ratio)
+        {
+          job_class: payload[:job_class] || payload["job_class"],
+          size_kb: actual_size_kb.round(1),
+          limit_kb: max_size_kb,
+          percentage: (usage_ratio * 100).round(1)
+        }
       end
 
       # Checks if a string is valid ISO8601 format.
