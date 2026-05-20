@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conditional enqueueing via `perform_later_if` for callable or class-method conditions.
 - Configuration validation levels via `validation_level` for strict, warning-only, or skipped validation.
 - Custom job search tags via `set(tags:)` and the `ajTags` Temporal search attribute.
+- Recurring job declarations and explicit Temporal Schedule registration via `schedule` and `create_temporal_schedule`.
 - Systemd worker deployment examples for VM and bare-metal hosts.
 - Docker Compose example configuration for the basic Rails app.
 - Structured payload size logs at 80%, 90%, and over-limit thresholds.

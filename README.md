@@ -27,6 +27,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 
 - ✅ **Immediate job execution:** Use `MyJob.perform_later(args)` to enqueue jobs for instant execution
 - ✅ **Scheduled execution:** Use `MyJob.set(wait: 5.minutes).perform_later(args)` or `MyJob.set(wait_until: Time.zone.now + 1.hour).perform_later(args)` for delayed jobs
+- ✅ **Recurring jobs:** Declare cron schedules on job classes and register them through Temporal Schedules
 - ✅ **Conditional enqueueing:** Use `MyJob.perform_later_if(condition, args)` to skip jobs when no work is needed
 - ✅ **Retry mapping:** ActiveJob `retry_on` declarations automatically map to Temporal retry policies with exponential backoff
 - ✅ **Discard mapping:** `discard_on` maps to non-retryable errors, preventing wasted retry attempts
@@ -288,7 +289,38 @@ SendInvoiceJob.set(wait_until: Time.zone.now + 1.hour).perform_later(invoice.id)
 
 Under the hood, the adapter starts a Temporal workflow that sleeps until the scheduled time before executing the activity.
 
-**Note:** Recurring jobs via Temporal's Schedules API are planned for v0.2. For now, use a separate scheduling mechanism (like `whenever` gem or cron) to enqueue jobs periodically.
+## Recurring Jobs
+
+Use Temporal Schedules for cron-style recurring jobs:
+
+```ruby
+class DailyReportJob < ApplicationJob
+  queue_as :reports
+
+  schedule cron: "0 2 * * *", timezone: "America/New_York", overlap_policy: :skip
+
+  def perform(account_id)
+    DailyReport.generate_for(account_id)
+  end
+end
+```
+
+The class declaration is side-effect free. Register schedules explicitly during deployment or from a Rails task:
+
+```ruby
+DailyReportJob.create_temporal_schedule(args: [account.id], id: "daily-report:#{account.id}")
+
+DailyReportJob.create_temporal_schedule(
+  cron: "0 */6 * * *",
+  timezone: "UTC",
+  overlap_policy: :allow_all,
+  args: [account.id],
+  queue: :reports,
+  id: "six-hour-report:#{account.id}"
+)
+```
+
+Use explicit IDs when creating one schedule per account, tenant, or report. See the [Recurring Jobs Guide](docs/recurring_jobs.md) for overlap policies, schedule handles, and deployment notes.
 
 ## Retries
 
@@ -642,7 +674,6 @@ Additional guides:
 The following features are **not yet implemented** in v0.1 but are planned for future releases:
 
 - **Multi-activity workflows** (job chains/pipelines) → Planned for v0.3
-- **Recurring jobs via Temporal Schedules API** → Planned for v0.2
 - **Signals, Queries, and Updates** → Planned for v0.3
 - **Child workflows** → Planned for v0.3
 - **Rails generators** (for scaffolding jobs, initializers, etc.) → Planned for v1.0

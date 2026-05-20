@@ -1,0 +1,167 @@
+# frozen_string_literal: true
+
+require "spec_helper"
+require "active_job"
+
+RSpec.describe ActiveJob::Temporal::Schedule do
+  let(:client) { instance_double(Temporalio::Client) }
+  let(:config) { build_configuration }
+  let(:job_class) do
+    Class.new(ActiveJob::Base) do
+      queue_as :reports
+
+      def self.name
+        "ScheduledReportJob"
+      end
+
+      def perform(*) = nil
+    end
+  end
+
+  before do
+    allow(client).to receive(:create_schedule).and_return("schedule-handle")
+    allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+  end
+
+  it "builds a Temporal schedule that starts the ActiveJob workflow" do
+    schedule = described_class.new(
+      job_class,
+      cron: "0 2 * * *",
+      timezone: "America/New_York",
+      args: ["daily"],
+      client: client,
+      config: config
+    )
+
+    temporal_schedule = schedule.to_temporal_schedule
+
+    expect(temporal_schedule.spec.cron_expressions).to eq(["0 2 * * *"])
+    expect(temporal_schedule.spec.time_zone_name).to eq("America/New_York")
+    expect(temporal_schedule.action.workflow).to eq("AjWorkflow")
+    expect(temporal_schedule.action.task_queue).to eq("reports")
+    expect(temporal_schedule.action.args.first[:job_class]).to eq("ScheduledReportJob")
+    expect(temporal_schedule.action.args.first[:arguments]).to eq(["daily"])
+  end
+
+  it "creates the schedule through the Temporal client" do
+    schedule = described_class.new(
+      job_class,
+      cron: "0 */6 * * *",
+      timezone: "UTC",
+      overlap_policy: :skip,
+      client: client,
+      config: config
+    )
+
+    result = schedule.create
+
+    expect(result).to eq("schedule-handle")
+    expect(client).to have_received(:create_schedule).with(
+      "ajsch:ScheduledReportJob",
+      instance_of(Temporalio::Client::Schedule),
+      trigger_immediately: false,
+      memo: nil,
+      search_attributes: nil
+    )
+  end
+
+  it "returns the existing schedule handle when the schedule already exists" do
+    existing_handle = instance_double(Temporalio::Client::ScheduleHandle)
+    allow(client).to receive(:create_schedule).and_raise(Temporalio::Error::ScheduleAlreadyRunningError.new)
+    allow(client).to receive(:schedule_handle).with("ajsch:ScheduledReportJob").and_return(existing_handle)
+
+    schedule = described_class.new(
+      job_class,
+      cron: "0 */6 * * *",
+      client: client,
+      config: config
+    )
+
+    expect(schedule.create).to be(existing_handle)
+  end
+
+  it "maps supported overlap policies" do
+    schedule = described_class.new(
+      job_class,
+      cron: "0 * * * *",
+      overlap_policy: :allow_all,
+      client: client,
+      config: config
+    )
+
+    expect(schedule.to_temporal_schedule.policy.overlap)
+      .to eq(Temporalio::Client::Schedule::OverlapPolicy::ALLOW_ALL)
+  end
+
+  it "treats buffer as buffer_one" do
+    schedule = described_class.new(
+      job_class,
+      cron: "0 * * * *",
+      overlap_policy: :buffer,
+      client: client,
+      config: config
+    )
+
+    expect(schedule.to_temporal_schedule.policy.overlap)
+      .to eq(Temporalio::Client::Schedule::OverlapPolicy::BUFFER_ONE)
+  end
+
+  it "uses explicit IDs and queues" do
+    schedule = described_class.new(
+      job_class,
+      id: "billing-reports",
+      cron: "0 3 * * *",
+      queue: "billing",
+      client: client,
+      config: config
+    )
+
+    temporal_schedule = schedule.to_temporal_schedule
+
+    expect(schedule.id).to eq("billing-reports")
+    expect(temporal_schedule.action.id).to eq("ajschwf:billing-reports")
+    expect(temporal_schedule.action.task_queue).to eq("billing")
+  end
+
+  it "logs schedule creation" do
+    schedule = described_class.new(
+      job_class,
+      cron: "0 2 * * *",
+      client: client,
+      config: config
+    )
+
+    schedule.create
+
+    expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
+      "schedule_created",
+      schedule_id: "ajsch:ScheduledReportJob",
+      job_class: "ScheduledReportJob",
+      cron: "0 2 * * *",
+      timezone: "UTC",
+      overlap_policy: :skip,
+      task_queue: "reports",
+      duplicate: false
+    )
+  end
+
+  it "rejects blank cron expressions" do
+    expect do
+      described_class.new(job_class, cron: "", client: client, config: config)
+    end.to raise_error(ArgumentError, /cron must be present/)
+  end
+
+  it "rejects unsupported overlap policies" do
+    expect do
+      described_class.new(job_class, cron: "0 * * * *", overlap_policy: :replace, client: client, config: config)
+    end.to raise_error(ArgumentError, /Unsupported overlap_policy/)
+  end
+
+  private
+
+  def build_configuration
+    config = ActiveJob::Temporal::Configuration.new
+    config.task_queue_prefix = nil
+    config
+  end
+end

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "job_payload_builder"
 require_relative "workflow_id_builder"
 
 module ActiveJob
@@ -19,22 +20,16 @@ module ActiveJob
     #   enqueuer = WorkflowEnqueuer.new(client, config)
     #   enqueuer.enqueue(job)
     class WorkflowEnqueuer
-      TIMEOUT_CONFIG_ATTRIBUTES = {
-        default_activity_timeout: :start_to_close_timeout,
-        default_schedule_to_close_timeout: :schedule_to_close_timeout,
-        default_schedule_to_start_timeout: :schedule_to_start_timeout,
-        default_heartbeat_timeout: :heartbeat_timeout
-      }.freeze
-
       # @param client [Temporalio::Client] Temporal client connection
       # @param config [ActiveJob::Temporal::Configuration] Configuration object
       # @param logger [Logger] Optional logger instance
       # @param workflow_id_builder [WorkflowIdBuilder] Builder for Temporal workflow IDs
-      def initialize(client, config, logger = nil, workflow_id_builder: nil)
+      def initialize(client, config, logger = nil, workflow_id_builder: nil, payload_builder: nil)
         @client = client
         @config = config
         @logger = logger || config.logger
         @workflow_id_builder = workflow_id_builder || WorkflowIdBuilder.new(configured_workflow_id_generator)
+        @payload_builder = payload_builder || JobPayloadBuilder.new(config)
       end
 
       # Enqueue a job as a Temporal workflow.
@@ -98,18 +93,7 @@ module ActiveJob
       # Includes the job's retry policy and temporal timeout options for use in the workflow.
       # @api private
       def build_payload(job, scheduled_at: nil)
-        payload = Payload.from_job(job, scheduled_at: scheduled_at)
-        payload[:default_activity_options] = default_activity_options
-
-        # Build and add retry policy from job class
-        retry_policy = RetryMapper.for(job.class)
-        payload[:retry_policy] = retry_policy
-
-        # Extract and add temporal timeout options from job class
-        temporal_options = extract_temporal_options(job.class)
-        payload[:temporal_options] = temporal_options if temporal_options.any?
-
-        payload
+        @payload_builder.build(job, scheduled_at: scheduled_at)
       end
 
       # Starts the Temporal workflow with the given options.
@@ -172,39 +156,6 @@ module ActiveJob
       # @api private
       def validate_job_for_enqueueing(job)
         raise ConfigurationError, "Job queue name cannot be blank" if job.queue_name.blank?
-      end
-
-      # Extracts temporal timeout options from job class.
-      #
-      # Calls the job class's +temporal_options+ method (if defined) to retrieve
-      # per-job timeout configuration. Returns an empty hash if no options are defined.
-      #
-      # @param job_class [Class] ActiveJob subclass
-      # @return [Hash] Timeout options hash (may be empty)
-      # @api private
-      def extract_temporal_options(job_class)
-        return {} unless job_class.respond_to?(:temporal_options)
-
-        job_class.temporal_options
-      end
-
-      # Extracts global timeout defaults before workflow execution so replay stays deterministic.
-      #
-      # @return [Hash] Timeout options hash
-      # @api private
-      def default_activity_options
-        TIMEOUT_CONFIG_ATTRIBUTES.each_with_object({}) do |(config_attribute, option_name), options|
-          value = @config.public_send(config_attribute)
-          options[option_name] = normalize_duration(value) if value
-        end
-      end
-
-      # Normalizes configuration durations to primitive values for workflow payloads.
-      # @api private
-      def normalize_duration(value)
-        return value.to_f if value.respond_to?(:to_f)
-
-        value
       end
     end
   end

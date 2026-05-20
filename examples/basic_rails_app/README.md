@@ -6,6 +6,7 @@ This is a minimal Rails 8 application that demonstrates the core features of the
 
 - **SimpleJob**: Basic job execution with no retry logic
 - **ScheduledJob**: Delayed execution using `set(wait:)`
+- **RecurringReportJob**: Cron-style schedule declaration using Temporal Schedules
 - **RetryableJob**: Automatic retry with exponential backoff using `retry_on`
 - **CancellableJob**: Long-running job with heartbeating for graceful cancellation
 
@@ -316,6 +317,26 @@ class ScheduledJob < ApplicationJob
     Rails.logger.info "ScheduledJob executed at #{Time.current}"
   end
 end
+```
+
+### RecurringReportJob
+
+```ruby
+class RecurringReportJob < ApplicationJob
+  queue_as :default
+
+  schedule cron: "0 2 * * *", timezone: "UTC", overlap_policy: :skip
+
+  def perform
+    Rails.logger.info "RecurringReportJob executed at #{Time.current}"
+  end
+end
+```
+
+Register the schedule explicitly during deployment or from a Rails task:
+
+```ruby
+RecurringReportJob.create_temporal_schedule
 ```
 
 ### RetryableJob

@@ -10,6 +10,7 @@ Use this index to find the main guides for activejob-temporal.
 - [Performance Tuning Guide](performance_tuning.md) covers workload-specific concurrency, payload optimization, timeouts, database pooling, benchmarks, and monitoring.
 - [Performance Benchmarks](benchmarks.md) describes the benchmark suite, covered operations, and baseline numbers.
 - [Middleware Guide](middleware.md) explains how to wrap job execution with tracing, metrics, logging, and tenant context middleware.
+- [Recurring Jobs Guide](recurring_jobs.md) explains cron schedules, registration, overlap policies, and schedule handles.
 - [Troubleshooting Guide](troubleshooting.md) covers common enqueue, execution, retry, cancellation, payload, connection, and performance issues.
 - [Security](security.md) covers dependency scanning, input validation, TLS notes, and payload handling.
 
