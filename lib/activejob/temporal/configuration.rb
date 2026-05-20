@@ -1,10 +1,22 @@
 # frozen_string_literal: true
 
+require "logger"
 require "active_support/core_ext/numeric/time"
 require "active_model"
 
 module ActiveJob
   module Temporal
+    LOCALE_PATH = File.expand_path("locales/en.yml", __dir__)
+    I18n.load_path << LOCALE_PATH unless I18n.load_path.include?(LOCALE_PATH)
+
+    # Base error class for all activejob-temporal errors.
+    class Error < StandardError; end
+
+    # Raised when configuration is invalid.
+    #
+    # @see Configuration#validate!
+    class ConfigurationError < Error; end
+
     # Central registry of all configuration attributes.
     #
     # This is the single source of truth for attribute names, types, defaults, and env vars.
@@ -146,6 +158,125 @@ module ActiveJob
         description: "Maximum concurrent workflow tasks per worker"
       }
     }.freeze
+
+    # Configuration object for the activejob-temporal gem.
+    #
+    # Holds connection settings, timeouts, retry policies, and operational flags.
+    # Use {ActiveJob::Temporal.configure} to set values with automatic validation.
+    #
+    # @note Thread Safety
+    #   The global configuration object is synchronized by {Configurable} while
+    #   configure blocks mutate it. Complete configuration during application boot.
+    #
+    # @note Environment Variable Defaults
+    #   ACTIVEJOB_TEMPORAL_TARGET, ACTIVEJOB_TEMPORAL_NAMESPACE,
+    #   ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX, ACTIVEJOB_TEMPORAL_TASK_QUEUE,
+    #   ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB,
+    #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES, and
+    #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS can provide defaults.
+    #
+    # @see ConfigValidator
+    # @see ActiveJob::Temporal.configure
+    # @api private
+    class Configuration
+      def initialize
+        @attributes = {}
+        @in_configure_block = false
+        CONFIGURATION_ATTRIBUTES.each do |attribute, metadata|
+          @attributes[attribute] = resolve_default_value(metadata)
+        end
+      end
+
+      attr_accessor :in_configure_block
+
+      def [](key)
+        @attributes[key]
+      end
+
+      def []=(key, value)
+        @attributes[key] = value
+      end
+
+      def method_missing(method, *args)
+        method_name = method.to_s
+        if method_name.end_with?("=")
+          handle_attribute_setter(method_name[0..-2].to_sym, args[0])
+        elsif args.empty?
+          handle_attribute_getter(method.to_sym)
+        else
+          super
+        end
+      end
+
+      def respond_to_missing?(method, include_private = false)
+        method_name = method.to_s
+        if method_name.end_with?("=")
+          attribute_name = method_name[0..-2].to_sym
+          return CONFIGURATION_ATTRIBUTES.key?(attribute_name)
+        end
+
+        attribute_name = method.to_sym
+        CONFIGURATION_ATTRIBUTES.key?(attribute_name) || super
+      end
+
+      def validate!
+        validator = ConfigValidator.new
+
+        CONFIGURATION_ATTRIBUTES.each_key do |attribute|
+          validator.public_send("#{attribute}=", @attributes[attribute])
+        end
+
+        raise ConfigurationError, self.class.format_validation_errors(validator.errors) unless validator.valid?
+      end
+
+      def self.format_validation_errors(errors)
+        messages = errors.full_messages
+        return messages.first if messages.size == 1
+
+        error_list = messages.each_with_index.map do |message, index|
+          "  #{index + 1}. #{message}"
+        end.join("\n")
+
+        plural = "s" if messages.size > 1
+        "Configuration validation failed with #{messages.size} error#{plural}:\n#{error_list}"
+      end
+
+      private
+
+      def handle_attribute_getter(attribute_name)
+        return @attributes[attribute_name] if CONFIGURATION_ATTRIBUTES.key?(attribute_name)
+
+        raise NoMethodError, "undefined method `#{attribute_name}' for #{self.class}"
+      end
+
+      def handle_attribute_setter(attribute_name, value)
+        return unless CONFIGURATION_ATTRIBUTES.key?(attribute_name)
+
+        @attributes[attribute_name] = value
+        validate! unless @in_configure_block
+
+        value
+      end
+
+      def resolve_default_value(metadata)
+        if metadata[:env_var] && ENV[metadata[:env_var]]
+          value = ENV[metadata[:env_var]]
+          return convert_env_value(value, metadata[:type])
+        end
+
+        default = metadata[:default]
+        default.is_a?(Proc) ? default.call : default
+      end
+
+      def convert_env_value(value, type)
+        case type
+        when :integer then value.to_i
+        when :float then value.to_f
+        when :boolean then value == "true"
+        else value
+        end
+      end
+    end
 
     # Validates ActiveJob::Temporal configuration.
     #

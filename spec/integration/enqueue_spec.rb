@@ -35,7 +35,7 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
 
     expect(TestJob.last_argument).to eq(42)
 
-    description = client.workflow_handle(workflow_id).describe
+    description = wait_for_workflow_terminal_status(workflow_id)
     expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
   ensure
     stop_worker(@worker_thread)
@@ -55,8 +55,7 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
     expect(TestJob.last_argument).to eq(42)
 
     # Query workflow description to access search attributes
-    handle = client.workflow_handle(workflow_id)
-    description = handle.describe
+    description = wait_for_workflow_terminal_status(workflow_id)
 
     # Verify workflow completed
     expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
@@ -192,6 +191,27 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
     Timeout.timeout(10) do
       loop do
         break if TestJob.last_argument == expected
+
+        sleep 0.1
+      end
+    end
+  end
+
+  def wait_for_workflow_terminal_status(workflow_id)
+    handle = client.workflow_handle(workflow_id)
+    terminal_statuses = [
+      Temporalio::Client::WorkflowExecutionStatus::COMPLETED,
+      Temporalio::Client::WorkflowExecutionStatus::FAILED,
+      Temporalio::Client::WorkflowExecutionStatus::CANCELED,
+      Temporalio::Client::WorkflowExecutionStatus::TERMINATED,
+      Temporalio::Client::WorkflowExecutionStatus::CONTINUED_AS_NEW,
+      Temporalio::Client::WorkflowExecutionStatus::TIMED_OUT
+    ]
+
+    Timeout.timeout(10) do
+      loop do
+        description = handle.describe
+        return description if terminal_statuses.include?(description.status)
 
         sleep 0.1
       end

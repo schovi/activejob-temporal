@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Migrate the supported Ruby baseline and CI validation target to Ruby 4.0+.
 - Require Temporal Ruby SDK 1.4.1+ for Ruby 4 compatibility.
+- Extract configuration state management into a dedicated `Configurable` concern.
 - Move SimpleCov configuration to `.simplecov` with coverage groups.
 - Document algorithmic wait strategy limitations for retry migration.
 - Serialize global activity timeout defaults into workflow payloads so workflows do not read mutable process configuration during replay.
