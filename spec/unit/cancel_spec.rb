@@ -28,6 +28,11 @@ RSpec.describe ActiveJob::Temporal::Cancel do
     let(:job_class) { SimpleJob }
     let(:job_id) { "550e8400-e29b-41d4-a716-446655440000" }
     let(:workflow_id) { "ajwf:#{job_class.name}:#{job_id}" }
+    let(:running_query) { "ajClass='#{job_class.name}' AND ajJobId='#{job_id}' AND ExecutionStatus='Running'" }
+    let(:closed_query) do
+      "ajClass='#{job_class.name}' AND ajJobId='#{job_id}' AND " \
+        "ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')"
+    end
     let(:temporal_client_class) do
       Class.new do
         def workflow_handle(_workflow_id); end
@@ -58,7 +63,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       before do
         # Mock running workflow
         allow(client).to receive(:list_workflows)
-          .with("ajJobId='#{job_id}' AND ExecutionStatus='Running'")
+          .with(running_query)
           .and_return([workflow_info])
       end
 
@@ -79,6 +84,22 @@ RSpec.describe ActiveJob::Temporal::Cancel do
           job_id: job_id
         )
       end
+
+      context "when the workflow uses a custom workflow ID" do
+        let(:custom_workflow_id) { "tenant-42:ajwf:#{job_class.name}:#{job_id}" }
+        let(:workflow_info) { double("WorkflowInfo", id: custom_workflow_id) }
+
+        before do
+          allow(client).to receive(:workflow_handle).with(custom_workflow_id).and_return(handle)
+        end
+
+        it "cancels the workflow returned by Temporal search" do
+          described_class.cancel(job_class, job_id)
+
+          expect(client).to have_received(:workflow_handle).with(custom_workflow_id)
+          expect(handle).to have_received(:cancel)
+        end
+      end
     end
 
     context "when the workflow is already completed" do
@@ -87,12 +108,11 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       before do
         # Not found in running workflows
         allow(client).to receive(:list_workflows)
-          .with("ajJobId='#{job_id}' AND ExecutionStatus='Running'")
+          .with(running_query)
           .and_return([])
         # Found in closed workflows
         allow(client).to receive(:list_workflows)
-          .with("ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', " \
-                "'Terminated', 'TimedOut', 'ContinuedAsNew')")
+          .with(closed_query)
           .and_return([workflow_info])
       end
 
@@ -120,18 +140,32 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       before do
         # Not found in running workflows
         allow(client).to receive(:list_workflows)
-          .with("ajJobId='#{job_id}' AND ExecutionStatus='Running'")
+          .with(running_query)
           .and_return([])
         # Not found in closed workflows
         allow(client).to receive(:list_workflows)
-          .with("ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', " \
-                "'Terminated', 'TimedOut', 'ContinuedAsNew')")
+          .with(closed_query)
           .and_return([])
       end
 
       it "raises WorkflowNotFoundError" do
         expect { described_class.cancel(job_class, job_id) }
           .to raise_error(ActiveJob::Temporal::WorkflowNotFoundError, /No workflow found for job_id #{job_id}/)
+      end
+
+      it "does not cancel a workflow from another job class with the same job ID" do
+        other_workflow_id = "ajwf:ScheduledJob:#{job_id}"
+        other_workflow_info = double("WorkflowInfo", id: other_workflow_id)
+        broad_running_query = "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
+
+        allow(client).to receive(:list_workflows)
+          .with(broad_running_query)
+          .and_return([other_workflow_info])
+        allow(client).to receive(:workflow_handle).with(other_workflow_id).and_return(handle)
+
+        expect { described_class.cancel(job_class, job_id) }
+          .to raise_error(ActiveJob::Temporal::WorkflowNotFoundError)
+        expect(client).not_to have_received(:workflow_handle).with(other_workflow_id)
       end
     end
 
@@ -140,7 +174,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
 
       before do
         allow(client).to receive(:list_workflows)
-          .with("ajJobId='#{job_id}' AND ExecutionStatus='Running'")
+          .with(running_query)
           .and_raise(connection_error)
       end
 
@@ -206,7 +240,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
 
         before do
           allow(client).to receive(:list_workflows)
-            .with("ajJobId='#{valid_uuid}' AND ExecutionStatus='Running'")
+            .with("ajClass='#{job_class.name}' AND ajJobId='#{valid_uuid}' AND ExecutionStatus='Running'")
             .and_return([workflow_info])
         end
 
@@ -222,7 +256,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
 
         before do
           allow(client).to receive(:list_workflows)
-            .with("ajJobId='#{valid_uuid_uppercase}' AND ExecutionStatus='Running'")
+            .with("ajClass='#{job_class.name}' AND ajJobId='#{valid_uuid_uppercase}' AND ExecutionStatus='Running'")
             .and_return([workflow_info])
           allow(client).to receive(:workflow_handle).with(workflow_id_uppercase).and_return(handle)
         end
@@ -239,7 +273,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
 
         before do
           allow(client).to receive(:list_workflows)
-            .with("ajJobId='#{valid_uuid_mixed}' AND ExecutionStatus='Running'")
+            .with("ajClass='#{job_class.name}' AND ajJobId='#{valid_uuid_mixed}' AND ExecutionStatus='Running'")
             .and_return([workflow_info])
           allow(client).to receive(:workflow_handle).with(workflow_id_mixed).and_return(handle)
         end

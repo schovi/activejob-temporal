@@ -19,7 +19,7 @@ System_Boundary(gem_boundary, "activejob-temporal Gem") {
   Container(payload, "Payload Serializer", "Ruby Module", "Serializes/deserializes ActiveJob::Arguments")
   Container(retry_mapper, "Retry Mapper", "Ruby Module", "Maps retry_on/discard_on → RetryPolicy")
   Container(search_attrs, "Search Attributes Builder", "Ruby Module", "Builds ajClass, ajQueue, ajJobId, etc.")
-  Container(cancel_api, "Cancellation API", "Ruby Module", "Exposes .cancel(job_id)")
+  Container(cancel_api, "Cancellation API", "Ruby Module", "Exposes .cancel(job_class, job_id)")
 
   Container(workflow, "AjWorkflow", "Temporal Workflow", "Orchestrates sleep + activity execution")
   Container(activity, "AjRunnerActivity", "Temporal Activity", "Executes job.perform(*args)")
@@ -63,8 +63,8 @@ Rel(activity, rails_app, "Instantiates & calls job.perform", "Ruby")
 Rel(rails_app, external, "Makes API calls", "HTTPS")
 
 ' Cancellation
-Rel(rails_app, cancel_api, "Calls .cancel(job_id)", "Ruby")
-Rel(cancel_api, client, "Gets workflow handle", "Ruby")
+Rel(rails_app, cancel_api, "Calls .cancel(job_class, job_id)", "Ruby")
+Rel(cancel_api, client, "Finds workflow by ajClass + ajJobId", "Ruby")
 Rel(cancel_api, temporal, "Calls handle.cancel", "gRPC")
 
 @enduml

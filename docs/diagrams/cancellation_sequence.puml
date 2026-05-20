@@ -12,10 +12,14 @@ participant "AjRunnerActivity" as Activity
 Dev -> Rails: ActiveJob::Temporal.cancel(SendInvoiceJob, "job-uuid-123")
 Rails -> Cancel: cancel(SendInvoiceJob, "job-uuid-123")
 activate Cancel
-Cancel -> Cancel: workflow_id = "ajwf:SendInvoiceJob:job-uuid-123"
-note right of Cancel: Deterministic workflow_id = "ajwf:#{job_class}:#{job_id}" ensures handle lookup
+Cancel -> Client: list_workflows(ajClass + ajJobId + running status)
+Client -> Temporal: visibility query
+Temporal --> Client: workflow info with workflow_id
+Client --> Cancel: matching workflow info
+Cancel -> Cancel: workflow_id = workflow_info.id
+note right of Cancel: Search attributes allow cancellation even when workflow IDs are custom
 Cancel -> Client: client.workflow_handle(workflow_id)
-note right of Client: Retrieves workflow handle by workflow_id only
+note right of Client: Retrieves workflow handle by discovered workflow_id
 Client -> Temporal: handle.cancel()
 note right of Client: Best-effort cancel request sent via Temporal API; no-op if workflow already finished
 Cancel --> Rails: request acknowledged

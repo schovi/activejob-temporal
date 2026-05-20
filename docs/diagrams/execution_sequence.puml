@@ -30,7 +30,7 @@ Worker -> Activity: execute(payload)
 activate Activity
 Activity -> Payload: deserialize_args(payload)
 Payload --> Activity: args/job metadata
-Activity -> Activity: set Thread.current[:aj_temporal_idempotency_key] = "ajwf:#{job_class}:#{job_id}/runner"
+Activity -> Activity: set Thread.current[:aj_temporal_idempotency_key] = "#{workflow_id}/runner"
 note right of Activity: Idempotency key set here so job replays remain idempotent
 Activity -> Job: perform(*args)
 Job -> External: call downstream API

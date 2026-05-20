@@ -53,6 +53,10 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "sets task_queue to 'default'" do
       expect(configuration.task_queue).to eq("default")
     end
+
+    it "uses the default workflow ID generator when none is configured" do
+      expect(configuration.workflow_id_generator).to be_nil
+    end
   end
 
   describe "environment variable support" do
@@ -231,6 +235,32 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "accepts nil values" do
       configuration.task_queue_prefix = nil
       expect(configuration.task_queue_prefix).to be_nil
+    end
+  end
+
+  describe "#workflow_id_generator=" do
+    it "accepts callable values" do
+      generator = ->(job) { "custom:#{job.job_id}" }
+
+      configuration.workflow_id_generator = generator
+
+      expect(configuration.workflow_id_generator).to be(generator)
+    end
+
+    it "accepts nil values" do
+      configuration.workflow_id_generator = nil
+
+      expect(configuration.workflow_id_generator).to be_nil
+    end
+
+    it "rejects non-callable values" do
+      expect { configuration.workflow_id_generator = "custom-id" }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Workflow id generator must respond to #call/)
+    end
+
+    it "rejects callables that cannot accept a job argument" do
+      expect { configuration.workflow_id_generator = -> { "custom-id" } }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must accept one ActiveJob argument/)
     end
   end
 

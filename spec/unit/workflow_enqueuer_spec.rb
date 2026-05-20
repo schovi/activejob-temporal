@@ -58,6 +58,27 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       enqueuer.enqueue(job)
     end
 
+    it "uses the configured workflow ID generator" do
+      config.workflow_id_generator = ->(job) { "custom:#{job.class.name}:#{job.job_id}" }
+      enqueuer = described_class.new(client, config, logger)
+
+      allow(client).to receive(:start_workflow) do |_klass, _payload, **options|
+        expect(options[:id]).to eq("custom:SimpleJob:test-job-id")
+        "handle"
+      end
+
+      enqueuer.enqueue(job)
+    end
+
+    it "rejects invalid configured workflow IDs before starting a workflow" do
+      config.workflow_id_generator = ->(_job) { "invalid workflow/id" }
+      enqueuer = described_class.new(client, config, logger)
+
+      expect { enqueuer.enqueue(job) }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /invalid workflow ID/)
+      expect(client).not_to have_received(:start_workflow)
+    end
+
     it "includes FAIL conflict policy" do
       allow(client).to receive(:start_workflow) do |_klass, _payload, **options|
         expect(options[:id_conflict_policy]).to eq(Temporalio::WorkflowIDConflictPolicy::FAIL)

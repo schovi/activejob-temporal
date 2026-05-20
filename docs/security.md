@@ -54,10 +54,10 @@ The gem takes the following security measures:
 
 #### Job Cancellation (Query Injection Prevention)
 
-The `Cancel` module builds Temporal search queries using job_id. To prevent query injection attacks:
+The `Cancel` module builds Temporal search queries using the job class name and job_id. To prevent query injection attacks:
 
 1. **UUID Validation**: All job_id values are validated to match RFC 4122 UUID format before use
-2. **Safe Character Set**: UUIDs contain only hexadecimal characters and hyphens `[0-9a-fA-F-]`, making them inherently safe for query interpolation
+2. **Safe Character Set**: UUIDs contain only hexadecimal characters and hyphens `[0-9a-fA-F-]`, making the job_id safe for query interpolation
 3. **Early Rejection**: Invalid job_id values raise `ArgumentError` before any queries are executed
 
 ```ruby

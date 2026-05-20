@@ -5,6 +5,7 @@ participant "Developer" as Dev
 participant "Rails App" as Rails
 participant "ActiveJob" as AJ
 participant "TemporalAdapter" as Adapter
+participant "WorkflowIdBuilder" as Builder
 participant "Payload Serializer" as Payload
 participant "RetryMapper" as Retry
 participant "SearchAttributes" as Search
@@ -30,9 +31,10 @@ Adapter -> Retry: for(job.class)
 note right of Retry: Maps retry_on/discard_on DSL to Temporal RetryPolicy
 Adapter -> Search: for(job)
 note right of Search: Adds ajClass/ajQueue/ajJobId/ajEnqueuedAt/(optional) ajTenantId
-Adapter -> Adapter: workflow_id = "ajwf:#{job.class}:#{job.job_id}"
+Adapter -> Builder: build(job)
+Builder --> Adapter: workflow_id from configured generator or "ajwf:#{job.class}:#{job.job_id}"
 Adapter -> Adapter: task_queue = ActiveJob::Temporal.config.queue_prefix + (job.queue_name || "default")
-note right of Adapter: Deterministic workflow_id + prefixed task_queue prevent duplicates and route to the correct workers
+note right of Adapter: Workflow ID + prefixed task_queue prevent duplicates and route to the correct workers
 Adapter -> Client: ActiveJob::Temporal.client.start_workflow(AjWorkflow, payload, workflow_id, task_queue, search_attributes, retry_policy, id_conflict_policy: :reject)
 activate Client
 Client -> Temporal: start_workflow(workflow_id, task_queue, payload)
@@ -45,5 +47,5 @@ deactivate Client
 Adapter --> AJ: job enqueued
 AJ --> Rails: enqueue success
 Rails --> Dev: job_id returned for visibility
-note over Adapter, Client: Deterministic workflow_id prevents duplicate starts
+note over Adapter, Client: Workflow ID conflict policy prevents duplicate starts
 @enduml

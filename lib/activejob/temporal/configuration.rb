@@ -64,6 +64,12 @@ module ActiveJob
         description: "Default task queue name for workers"
       },
 
+      workflow_id_generator: {
+        default: nil,
+        type: :callable,
+        description: "Optional callable for custom Temporal workflow IDs"
+      },
+
       # Timeouts (use Proc for lazy evaluation of ActiveSupport::Duration)
       default_activity_timeout: {
         default: -> { 15.minutes },
@@ -294,6 +300,7 @@ module ActiveJob
     # - `max_payload_size_kb`: Numericality 1..2GB
     # - `max_concurrent_activities`: Numericality > 0
     # - `max_concurrent_workflow_tasks`: Numericality > 0
+    # - `workflow_id_generator`: Optional callable
     #
     # @example Using ConfigValidator directly
     #   validator = ConfigValidator.new
@@ -375,6 +382,7 @@ module ActiveJob
       validate :validate_target_format
       validate :validate_namespace_format
       validate :validate_duration_values
+      validate :validate_workflow_id_generator
 
       private
 
@@ -404,6 +412,25 @@ module ActiveJob
         validate_duration_attribute(:default_heartbeat_timeout, required: false)
         validate_duration_attribute(:default_schedule_to_start_timeout, required: false)
         validate_duration_attribute(:default_schedule_to_close_timeout, required: false)
+      end
+
+      def validate_workflow_id_generator
+        return if workflow_id_generator.nil?
+
+        unless workflow_id_generator.respond_to?(:call)
+          errors.add(:workflow_id_generator, :not_callable, value: workflow_id_generator.inspect)
+          return
+        end
+
+        return if callable_accepts_positional_job?(workflow_id_generator)
+
+        errors.add(:workflow_id_generator, :wrong_arity, value: workflow_id_generator.inspect)
+      end
+
+      def callable_accepts_positional_job?(callable)
+        arity = callable.respond_to?(:arity) ? callable.arity : callable.method(:call).arity
+
+        arity == 1 || arity.negative?
       end
 
       def validate_duration_attribute(attr_name, required: true)

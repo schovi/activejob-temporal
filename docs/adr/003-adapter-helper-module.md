@@ -6,14 +6,14 @@ Accepted
 
 Updated by TASK.021: workflow ID construction now lives in `WorkflowIdBuilder`.
 `Adapter.build_workflow_id` remains as the public helper and delegates to that builder.
-`WorkflowEnqueuer` accepts an injected builder so future ID strategies do not need
+`WorkflowEnqueuer` accepts an injected builder and configured generators do not need
 to change enqueue orchestration.
 
 ## Context
 
 The `TemporalAdapter` class serves as the integration point between ActiveJob's queue adapter interface and Temporal's workflow client API. Two specific operations are central to its functionality:
 
-1. **Workflow ID Construction**: Creates deterministic workflow IDs from ActiveJob's job class and job ID, enabling idempotent enqueuing.
+1. **Workflow ID Construction**: Creates default or configured workflow IDs, enabling idempotent enqueuing.
 
 2. **Task Queue Resolution**: Translates ActiveJob's queue names into Temporal task queue names, optionally applying configured prefixes.
 
@@ -33,9 +33,9 @@ Workflow ID construction delegates to `ActiveJob::Temporal::WorkflowIdBuilder`:
 module ActiveJob::Temporal::Adapter
   module_function
 
-  # Builds deterministic workflow ID: "ajwf:<ClassName>:<job_id>"
+  # Builds default or configured workflow ID
   def build_workflow_id(job)
-    WorkflowIdBuilder.new.build(job)
+    WorkflowIdBuilder.new(configured_workflow_id_generator).build(job)
   end
 
   # Resolves task queue name, applying configured prefix if present
@@ -122,7 +122,9 @@ Implement logic directly at call site. **Why Not Chosen:** Duplication risk (log
 
 ### Alternative 4: Configuration-Based ID Generation
 
-Allow configurable custom ID generators. **Why Not Chosen:** YAGNI (no current requirement, deterministic `ajwf:ClassName:JobId` meets all use cases), adds configuration complexity and validation overhead, compatibility risk (might break logging, monitoring, cancellation assumptions). Module provides centralized location for future enhancement if needed.
+Allow configurable custom ID generators. **Original Why Not Chosen:** YAGNI (no current requirement, deterministic `ajwf:ClassName:JobId` meets all use cases), adds configuration complexity and validation overhead, compatibility risk (might break logging, monitoring, cancellation assumptions).
+
+`workflow_id_generator` was later added once multi-tenant and custom idempotency use cases became concrete. `WorkflowIdBuilder` now owns ID validation, while cancellation uses search attributes to discover the actual workflow ID before requesting cancellation.
 
 ## References
 

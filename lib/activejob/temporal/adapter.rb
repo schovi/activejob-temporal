@@ -39,8 +39,13 @@ module ActiveJob
       #
       # @see TemporalAdapter#enqueue
       def build_workflow_id(job)
-        WorkflowIdBuilder.new.build(job)
+        WorkflowIdBuilder.new(configured_workflow_id_generator).build(job)
       end
+
+      def configured_workflow_id_generator
+        ActiveJob::Temporal.config.workflow_id_generator if ActiveJob::Temporal.respond_to?(:config)
+      end
+      private_class_method :configured_workflow_id_generator
 
       # Resolves the Temporal task queue name for a given job.
       #

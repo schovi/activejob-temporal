@@ -5,6 +5,12 @@ require_relative "../fixtures/sample_jobs"
 
 RSpec.describe ActiveJob::Temporal::Adapter do
   describe ".build_workflow_id" do
+    let(:configuration) { ActiveJob::Temporal::Configuration.new }
+
+    before do
+      allow(ActiveJob::Temporal).to receive(:config).and_return(configuration)
+    end
+
     context "with a simple job" do
       let(:job) do
         job = SimpleJob.new
@@ -63,6 +69,16 @@ RSpec.describe ActiveJob::Temporal::Adapter do
         expect(id_one).to eq("ajwf:SimpleJob:id-1")
         expect(id_two).to eq("ajwf:SimpleJob:id-2")
         expect(id_one).not_to eq(id_two)
+      end
+    end
+
+    context "with a custom workflow ID generator configured" do
+      it "returns the configured workflow ID" do
+        configuration.workflow_id_generator = ->(job) { "custom:#{job.class.name}:#{job.job_id}" }
+        job = SimpleJob.new
+        job.job_id = "custom-id"
+
+        expect(described_class.build_workflow_id(job)).to eq("custom:SimpleJob:custom-id")
       end
     end
   end

@@ -42,6 +42,47 @@ RSpec.describe ActiveJob::Temporal::WorkflowIdBuilder do
 
       expect(custom_builder.build(job)).to eq("custom:abc-123")
     end
+
+    it "allows tenant-style workflow IDs" do
+      custom_builder = described_class.new(->(job) { "tenant-42:ajwf:#{job.class.name}:#{job.job_id}" })
+
+      expect(custom_builder.build(job)).to eq("tenant-42:ajwf:SimpleJob:abc-123")
+    end
+
+    it "rejects non-string strategy output" do
+      custom_builder = described_class.new(->(_job) { 123 })
+
+      expect { custom_builder.build(job) }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must return a String/)
+    end
+
+    it "rejects generators that cannot accept the job argument" do
+      custom_builder = described_class.new(-> { "custom-id" })
+
+      expect { custom_builder.build(job) }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must accept one ActiveJob argument/)
+    end
+
+    it "rejects blank workflow IDs" do
+      custom_builder = described_class.new(->(_job) { "" })
+
+      expect { custom_builder.build(job) }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must not be blank/)
+    end
+
+    it "rejects workflow IDs with unsupported characters" do
+      custom_builder = described_class.new(->(_job) { "bad workflow/id" })
+
+      expect { custom_builder.build(job) }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /only letters, numbers/)
+    end
+
+    it "rejects workflow IDs longer than 255 characters" do
+      custom_builder = described_class.new(->(_job) { "a" * 256 })
+
+      expect { custom_builder.build(job) }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /maximum length is 255/)
+    end
   end
 
   describe "#build_from_job_class" do

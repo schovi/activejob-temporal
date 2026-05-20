@@ -30,11 +30,11 @@ module ActiveJob
       # @param config [ActiveJob::Temporal::Configuration] Configuration object
       # @param logger [Logger] Optional logger instance
       # @param workflow_id_builder [WorkflowIdBuilder] Builder for Temporal workflow IDs
-      def initialize(client, config, logger = nil, workflow_id_builder: WorkflowIdBuilder.new)
+      def initialize(client, config, logger = nil, workflow_id_builder: nil)
         @client = client
         @config = config
         @logger = logger || config.logger
-        @workflow_id_builder = workflow_id_builder
+        @workflow_id_builder = workflow_id_builder || WorkflowIdBuilder.new(configured_workflow_id_generator)
       end
 
       # Enqueue a job as a Temporal workflow.
@@ -66,6 +66,12 @@ module ActiveJob
       end
 
       private
+
+      def configured_workflow_id_generator
+        return unless @config.respond_to?(:workflow_id_generator)
+
+        @config.workflow_id_generator
+      end
 
       # Enqueues a workflow with the given payload and options.
       # @api private

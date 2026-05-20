@@ -65,11 +65,11 @@ module ActiveJob
         # @see #find_workflow
         def cancel(job_class, job_id)
           validate_job_id!(job_id)
-          workflow_id = build_workflow_id(job_class, job_id)
           client = ActiveJob::Temporal.client
           workflow_state = find_workflow(client, job_class, job_id)
+          workflow_id = workflow_state[:workflow_id]
 
-          case workflow_state
+          case workflow_state[:status]
           when :closed
             log_workflow_already_completed(job_class, job_id, workflow_id)
             false
@@ -118,46 +118,63 @@ module ActiveJob
         # Checks running workflows first, then closed workflows.
         #
         # @param client [Temporalio::Client] The Temporal client instance
-        # @param _job_class [Class] The ActiveJob class (unused, kept for future extensibility)
+        # @param job_class [Class] The ActiveJob class for fallback workflow ID generation
         # @param job_id [String] The job identifier
         # @return [Symbol] :running, :closed, or :not_found
         # @raise [TemporalConnectionError] if connection to Temporal fails
-        def find_workflow(client, _job_class, job_id)
+        def find_workflow(client, job_class, job_id)
           # Query running workflows first
-          running_query = running_workflows_query(job_id)
+          running_query = running_workflows_query(job_class, job_id)
           running = client.list_workflows(running_query).first
-          return :running if running
+          return workflow_state(:running, running, job_class, job_id) if running
 
           # Query closed workflows (completed, failed, cancelled, etc.)
-          closed_query = closed_workflows_query(job_id)
+          closed_query = closed_workflows_query(job_class, job_id)
           closed = client.list_workflows(closed_query).first
-          return :closed if closed
+          return workflow_state(:closed, closed, job_class, job_id) if closed
 
-          :not_found
+          { status: :not_found, workflow_id: build_workflow_id(job_class, job_id) }
         rescue StandardError => e
           raise ActiveJob::Temporal::TemporalConnectionError,
                 "Failed to query Temporal workflows for job_id #{job_id}: #{e.message}"
         end
 
-        # Builds Temporal query for running workflows by job_id.
-        #
-        # Note: job_id is validated as a UUID before reaching this method, ensuring it
-        # contains only safe characters ([0-9a-fA-F-]) for direct query interpolation.
-        #
-        # @api private
-        def running_workflows_query(job_id)
-          "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
+        def workflow_state(status, workflow_info, job_class, job_id)
+          workflow_id = if workflow_info.respond_to?(:id) && workflow_info.id
+                          workflow_info.id
+                        else
+                          build_workflow_id(job_class, job_id)
+                        end
+
+          { status: status, workflow_id: workflow_id }
         end
 
-        # Builds Temporal query for closed workflows by job_id.
+        # Builds Temporal query for running workflows by job class and job_id.
         #
         # Note: job_id is validated as a UUID before reaching this method, ensuring it
         # contains only safe characters ([0-9a-fA-F-]) for direct query interpolation.
         #
         # @api private
-        def closed_workflows_query(job_id)
-          "ajJobId='#{job_id}' AND ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', " \
-            "'Terminated', 'TimedOut', 'ContinuedAsNew')"
+        def running_workflows_query(job_class, job_id)
+          workflow_search_query(job_class, job_id, "ExecutionStatus='Running'")
+        end
+
+        # Builds Temporal query for closed workflows by job class and job_id.
+        #
+        # Note: job_id is validated as a UUID before reaching this method, ensuring it
+        # contains only safe characters ([0-9a-fA-F-]) for direct query interpolation.
+        #
+        # @api private
+        def closed_workflows_query(job_class, job_id)
+          workflow_search_query(
+            job_class,
+            job_id,
+            "ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')"
+          )
+        end
+
+        def workflow_search_query(job_class, job_id, status_query)
+          "ajClass='#{job_class.name}' AND ajJobId='#{job_id}' AND #{status_query}"
         end
 
         # Logs cancellation request event.

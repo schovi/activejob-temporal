@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Codecov coverage badge and CI coverage uploads.
+- Configurable `workflow_id_generator` hook for custom Temporal workflow IDs.
 - Structured payload size logs at 80%, 90%, and over-limit thresholds.
 - Retry policy guide with ActiveJob-to-Temporal mapping examples.
 - Per-job timeout configuration via `temporal_options` class method
