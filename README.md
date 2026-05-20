@@ -404,6 +404,30 @@ end
 
 Without heartbeating, the activity will run to completion even after cancellation is requested.
 
+## Status Inspection
+
+You can inspect job state without opening the Temporal UI:
+
+```ruby
+status = ActiveJob::Temporal.status(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
+# => {
+#      state: :running,
+#      workflow_id: "ajwf:SendInvoiceJob:550e8400-e29b-41d4-a716-446655440000",
+#      run_id: "abc123",
+#      started_at: 2026-05-20 13:00:00 UTC,
+#      closed_at: nil,
+#      attempt: 2,
+#      last_failure: "NetworkError: timeout"
+#    }
+
+ActiveJob::Temporal.running?(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
+ActiveJob::Temporal.completed?(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
+ActiveJob::Temporal.failed?(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
+```
+
+`status` returns `nil` when no workflow exists for the given job ID. Predicates return `false` for missing jobs.
+`attempt` and `last_failure` are best-effort details from pending activities, so closed workflows may return `nil` for both.
+
 ## Observability
 
 The gem attaches Temporal **Search Attributes** to every workflow, enabling powerful filtering and debugging in the Temporal UI.

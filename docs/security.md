@@ -72,6 +72,8 @@ ActiveJob::Temporal.cancel(MyJob, "test' OR '1'='1")  # Query injection attempt 
 
 Batch cancellation accepts only the gem's known search attributes (`ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`, `ajTenantId`). String values are quoted before query construction, and `ajTenantId` must be an integer.
 
+Status inspection uses the same UUID validation for job IDs before building Temporal visibility queries.
+
 #### General Security Practices
 
 The gem does **not**:

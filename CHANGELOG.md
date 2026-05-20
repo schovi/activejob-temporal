@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Codecov coverage badge and CI coverage uploads.
 - Configurable `workflow_id_generator` hook for custom Temporal workflow IDs.
 - Batch cancellation APIs via `ActiveJob::Temporal.cancel_all` and `ActiveJob::Temporal.cancel_where`.
+- Job status inspection APIs via `ActiveJob::Temporal.status` and status predicates.
 - Structured payload size logs at 80%, 90%, and over-limit thresholds.
 - Retry policy guide with ActiveJob-to-Temporal mapping examples.
 - Per-job timeout configuration via `temporal_options` class method

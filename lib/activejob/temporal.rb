@@ -18,6 +18,7 @@ require_relative "temporal/adapter"
 require_relative "temporal/workflows/aj_workflow"
 require_relative "temporal/activities/aj_runner_activity"
 require_relative "temporal/cancel"
+require_relative "temporal/inspect"
 
 module ActiveJob
   # ActiveJob adapter for Temporal workflow orchestration.
@@ -150,6 +151,22 @@ module ActiveJob
 
       def cancel_where(filters)
         Cancel.cancel_where(filters)
+      end
+
+      def status(job_class, job_id)
+        Inspect.status(job_class, job_id)
+      end
+
+      def running?(job_class, job_id)
+        Inspect.running?(job_class, job_id)
+      end
+
+      def completed?(job_class, job_id)
+        Inspect.completed?(job_class, job_id)
+      end
+
+      def failed?(job_class, job_id)
+        Inspect.failed?(job_class, job_id)
       end
     end
   end
