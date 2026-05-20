@@ -221,6 +221,8 @@ Under the hood, the adapter starts a Temporal workflow that sleeps until the sch
 
 ActiveJob's `retry_on` and `discard_on` declarations are automatically translated to Temporal retry policies.
 
+> **Note:** Algorithmic wait strategies (`:exponentially_longer`, `:polynomially_longer`, and custom Procs) are not directly supported. Use static `wait:` values and Temporal's backoff configuration instead. See [Migration Guide - Known Limitations](docs/migration_guide.md#known-limitations) for details and examples.
+
 ### Basic Retry
 
 ```ruby

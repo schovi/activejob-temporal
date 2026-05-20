@@ -71,6 +71,37 @@ end
 
 **Key changes:** Replace `sidekiq_options` with `retry_on`/`discard_on` DSL. Specify `wait:` explicitly.
 
+### Known Limitations
+
+#### Algorithmic Wait Strategies
+
+ActiveJob accepts algorithmic wait strategies such as `:exponentially_longer`, `:polynomially_longer`, and custom Procs. activejob-temporal does not execute those functions directly. When `retry_on` uses a Symbol or Proc for `wait:`, the gem uses `default_retry_initial_interval` and lets Temporal apply its configured backoff coefficient.
+
+**ActiveJob example:**
+```ruby
+class SendInvoiceJob < ApplicationJob
+  retry_on StandardError, wait: :exponentially_longer, attempts: 5
+end
+```
+
+**Temporal behavior with default retry settings:**
+- Starts with `default_retry_initial_interval` (`30.seconds`)
+- Applies `default_retry_backoff` (`2.0`)
+- For `attempts: 5`, allows five total activity attempts with retry delays starting at 30s, 60s, 120s, and 240s
+
+This limitation exists because Temporal RetryPolicy stores deterministic numeric intervals and a fixed backoff coefficient. Arbitrary Ruby wait functions cannot be represented directly in that policy.
+
+Use static wait values for per-job retry timing, and tune `default_retry_backoff` globally when you need a different exponential curve:
+
+```ruby
+class SendInvoiceJob < ApplicationJob
+  temporal_options start_to_close_timeout: 5.minutes
+  retry_on StandardError, wait: 15.seconds, attempts: 5
+end
+```
+
+With the default backoff coefficient and `attempts: 5`, this allows five total activity attempts with retry delays of 15s, 30s, 60s, and 120s. Use `temporal_options` for activity timeout tuning on long-running jobs, not for custom retry delay functions.
+
 ### Transaction Safety
 
 activejob-temporal defers enqueue until DB transaction commits (safer than Sidekiq's immediate enqueue). This **may expose existing race conditions** but is generally beneficial.
