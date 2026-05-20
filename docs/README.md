@@ -5,6 +5,7 @@ Use this index to find the main guides for activejob-temporal.
 ## Operations
 
 - [Worker Setup Guide](worker_setup.md) covers worker startup, deployment patterns, concurrency tuning, and expected logs.
+- [Systemd Worker Examples](../examples/systemd/) provide VM and bare-metal service units, restart policy, file logging, and log rotation.
 - [Performance Tuning Guide](performance_tuning.md) covers workload-specific concurrency, payload optimization, timeouts, database pooling, benchmarks, and monitoring.
 - [Performance Benchmarks](benchmarks.md) describes the benchmark suite, covered operations, and baseline numbers.
 - [Middleware Guide](middleware.md) explains how to wrap job execution with tracing, metrics, logging, and tenant context middleware.

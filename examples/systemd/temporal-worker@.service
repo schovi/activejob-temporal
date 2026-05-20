@@ -1,0 +1,32 @@
+[Unit]
+Description=ActiveJob Temporal Worker (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/var/www/myapp/current
+
+Environment=RAILS_ENV=production
+Environment=ACTIVEJOB_TEMPORAL_TARGET=temporal.example.com:7233
+Environment=ACTIVEJOB_TEMPORAL_NAMESPACE=production
+EnvironmentFile=-/etc/activejob-temporal/temporal-worker.env
+Environment=ACTIVEJOB_TEMPORAL_TASK_QUEUE=%i
+Environment=ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=100
+Environment=ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=5
+
+ExecStart=/usr/bin/env bundle exec temporal-worker
+KillSignal=SIGTERM
+TimeoutStopSec=60
+
+Restart=always
+RestartSec=5
+
+LogsDirectory=activejob-temporal
+StandardOutput=append:/var/log/activejob-temporal/worker-%i.log
+StandardError=append:/var/log/activejob-temporal/worker-%i-error.log
+
+[Install]
+WantedBy=multi-user.target

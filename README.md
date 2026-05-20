@@ -579,6 +579,8 @@ bundle exec temporal-worker
 
 The worker automatically detects your Rails app (by checking for `config/application.rb`) and loads your environment, making job classes and initializers available.
 
+For VM or bare-metal deployments, see the [systemd worker examples](examples/systemd/). They include a single worker service, a template for one worker per task queue, restart policy, file logging, and log rotation.
+
 ### Example Application
 
 See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete working Rails application demonstrating:

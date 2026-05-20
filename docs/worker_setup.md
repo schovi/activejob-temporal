@@ -210,16 +210,12 @@ spec:
         cpu: "2000m"
 ```
 
-#### EC2/VPS (Self-hosted)
-```bash
-#!/bin/bash
-# /etc/systemd/system/temporal-worker.service
+#### EC2/VPS (Systemd)
 
-[Service]
-Environment="ACTIVEJOB_TEMPORAL_TARGET=temporal.prod.internal:7233"
-Environment="ACTIVEJOB_TEMPORAL_NAMESPACE=production"
-Environment="ACTIVEJOB_TEMPORAL_TASK_QUEUE=default"
-Environment="ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=200"
-Environment="ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=20"
-ExecStart=/usr/local/bin/temporal-worker
+Use the [systemd worker examples](../examples/systemd/) for VM or bare-metal deployments. The examples include a single worker service, a template unit for one worker per task queue, restart policy, file logging, log rotation, and SELinux notes.
+
+```bash
+sudo install -D -m 0644 examples/systemd/temporal-worker.service /etc/systemd/system/temporal-worker.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now temporal-worker
 ```
