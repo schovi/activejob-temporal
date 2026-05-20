@@ -611,6 +611,19 @@ bundle exec temporal-worker
 
 The worker automatically detects your Rails app (by checking for `config/application.rb`) and loads your environment, making job classes and initializers available.
 
+Enable an optional health endpoint for load balancers or orchestrators:
+
+```bash
+bundle exec temporal-worker --health-check-port 8080
+curl http://localhost:8080/health
+```
+
+For container probes or remote load balancers, bind the endpoint outside localhost:
+
+```bash
+bundle exec temporal-worker --health-check-bind 0.0.0.0 --health-check-port 8080
+```
+
 For VM or bare-metal deployments, see the [systemd worker examples](examples/systemd/). They include a single worker service, a template for one worker per task queue, restart policy, file logging, and log rotation.
 
 ### Example Application

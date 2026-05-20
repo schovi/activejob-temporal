@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require_relative "../lib/activejob/temporal"
+require "optparse"
 
 begin
   require "temporalio/worker"
@@ -9,6 +10,26 @@ rescue LoadError => e
   warn("temporalio-worker gem is required to run this worker: #{e.message}")
   exit(1)
 end
+
+options = {
+  health_check_bind: ENV.fetch(
+    "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND",
+    ActiveJob::Temporal::HealthCheckServer::DEFAULT_BIND_ADDRESS
+  ),
+  health_check_port: ENV.fetch("ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT", nil)
+}
+
+OptionParser.new do |parser|
+  parser.banner = "Usage: temporal-worker [options]"
+
+  parser.on("--health-check-port PORT", Integer, "Expose GET /health on PORT") do |port|
+    options[:health_check_port] = port
+  end
+
+  parser.on("--health-check-bind HOST", "Bind health endpoint to HOST") do |host|
+    options[:health_check_bind] = host
+  end
+end.parse!(ARGV)
 
 # Auto-detect and load Rails application if present
 rails_root = ENV.fetch("RAILS_ROOT", ".")
@@ -38,6 +59,13 @@ max_concurrent_activities = config.max_concurrent_activities
 max_concurrent_workflows = config.max_concurrent_workflow_tasks
 
 client = ActiveJob::Temporal.client
+worker_health = ActiveJob::Temporal::WorkerHealth.new(
+  task_queue: task_queue,
+  namespace: ActiveJob::Temporal.config.namespace,
+  target: ActiveJob::Temporal.config.target,
+  max_concurrent_activities: max_concurrent_activities,
+  max_concurrent_workflows: max_concurrent_workflows
+)
 
 worker = Temporalio::Worker.new(
   client: client,
@@ -45,7 +73,8 @@ worker = Temporalio::Worker.new(
   workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
   activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
   max_concurrent_activity_task_polls: max_concurrent_activities,
-  max_concurrent_workflow_task_polls: max_concurrent_workflows
+  max_concurrent_workflow_task_polls: max_concurrent_workflows,
+  interceptors: [worker_health]
 )
 
 ActiveJob::Temporal::Logger.log_event(
@@ -57,7 +86,23 @@ ActiveJob::Temporal::Logger.log_event(
   target: ActiveJob::Temporal.config.target
 )
 
+health_check_server = nil
+if options[:health_check_port]
+  health_check_server = ActiveJob::Temporal::HealthCheckServer.new(
+    port: options[:health_check_port],
+    bind_address: options[:health_check_bind],
+    state: worker_health
+  ).start
+
+  ActiveJob::Temporal::Logger.log_event(
+    "health_check_server_started",
+    bind_address: health_check_server.bind_address,
+    port: health_check_server.port
+  )
+end
+
 begin
+  worker_health.mark_started!
   Temporalio::Worker.run_all(
     worker,
     shutdown_signals: %w[SIGINT SIGTERM]
@@ -65,6 +110,8 @@ begin
 rescue Interrupt
   # Temporal worker raises Interrupt on shutdown signals; swallow to allow clean exit.
 ensure
+  worker_health.mark_stopped!
+  health_check_server&.stop
   ActiveJob::Temporal::Logger.log_event(
     "worker_shutdown",
     task_queue: task_queue

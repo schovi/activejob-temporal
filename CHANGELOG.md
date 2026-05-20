@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Batch cancellation APIs via `ActiveJob::Temporal.cancel_all` and `ActiveJob::Temporal.cancel_where`.
 - Job status inspection APIs via `ActiveJob::Temporal.status` and status predicates.
 - Conditional enqueueing via `perform_later_if` for callable or class-method conditions.
+- Optional worker health check endpoint via `temporal-worker --health-check-port PORT`.
 - Configuration validation levels via `validation_level` for strict, warning-only, or skipped validation.
 - Custom job search tags via `set(tags:)` and the `ajTags` Temporal search attribute.
 - Recurring job declarations and explicit Temporal Schedule registration via `schedule` and `create_temporal_schedule`.

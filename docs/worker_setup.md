@@ -17,6 +17,8 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | Yes | Task queue the worker will poll for jobs. | `default` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity (defaults to `100`). | `50` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` |
+| `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT` | No | Expose `GET /health` on the given port. Off by default. | `8080` |
+| `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND` | No | Bind address for the health endpoint. Defaults to localhost. | `0.0.0.0` |
 
 ## Starting the Worker
 
@@ -38,6 +40,8 @@ The worker automatically detects your Rails environment and loads your job class
 - **`ACTIVEJOB_TEMPORAL_TASK_QUEUE`**: Task queue name. Defaults to `default`.
 - **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`**: Maximum activity task poll capacity. Defaults to `100`.
 - **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum workflow task poll capacity. Defaults to `5`.
+- **`--health-check-port PORT`**: Optional HTTP health endpoint at `GET /health`. Can also be set with `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT`.
+- **`--health-check-bind HOST`**: Health endpoint bind address. Defaults to `127.0.0.1`; set `0.0.0.0` when an orchestrator must reach the port from outside the process namespace.
 - **`RAILS_ROOT`**: Optional path to Rails app. Auto-detected if omitted (uses current directory).
 
 ### Examples
@@ -57,6 +61,38 @@ RAILS_ROOT=/opt/myapp bundle exec temporal-worker
 RAILS_ROOT=/opt/myapp ACTIVEJOB_TEMPORAL_TASK_QUEUE=high_priority bundle exec temporal-worker &
 RAILS_ROOT=/opt/myapp ACTIVEJOB_TEMPORAL_TASK_QUEUE=default bundle exec temporal-worker &
 ```
+
+**Worker health endpoint for local checks:**
+```bash
+bundle exec temporal-worker --health-check-port 8080
+curl http://localhost:8080/health
+```
+
+**Worker health endpoint for container probes:**
+```bash
+bundle exec temporal-worker --health-check-bind 0.0.0.0 --health-check-port 8080
+```
+
+The endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, poll capacity settings, PID, start time, and uptime:
+
+```json
+{
+  "status": "ok",
+  "worker_running": true,
+  "started_at": "2026-05-20T18:30:00Z",
+  "last_poll": "2026-05-20T18:30:15Z",
+  "active_tasks": 2,
+  "uptime_seconds": 42,
+  "task_queue": "default",
+  "namespace": "default",
+  "target": "localhost:7233",
+  "max_concurrent_activities": 100,
+  "max_concurrent_workflows": 5,
+  "pid": 12345
+}
+```
+
+`last_poll` tracks the last activity task started by this worker process, not a raw Temporal SDK long-poll cycle. `active_tasks` tracks active activity attempts currently executing in the worker process.
 
 ## Expected Log Output
 The worker emits structured JSON logs. On startup you should see output similar to:
@@ -196,11 +232,23 @@ environment:
 spec:
   containers:
   - name: temporal-worker
+    args: ["--health-check-bind", "0.0.0.0", "--health-check-port", "8080"]
     env:
     - name: ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES
       value: "300"
     - name: ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS
       value: "50"
+    ports:
+    - name: health
+      containerPort: 8080
+    readinessProbe:
+      httpGet:
+        path: /health
+        port: health
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: health
     resources:
       requests:
         memory: "256Mi"
