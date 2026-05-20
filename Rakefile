@@ -26,5 +26,10 @@ RuboCop::RakeTask.new(:rubocop)
 
 YARD::Rake::YardocTask.new(:yard)
 
+desc "Run performance benchmarks"
+task :benchmark do
+  ruby "spec/benchmarks/activejob_temporal_benchmark.rb"
+end
+
 desc "Default: run rubocop and specs"
 task default: %i[rubocop spec]

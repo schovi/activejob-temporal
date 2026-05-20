@@ -2,6 +2,8 @@
 
 Use this guide when Temporal task queues grow, job latency increases, or worker processes saturate CPU, memory, database connections, or downstream services.
 
+For repeatable repository-level measurements, see [Performance Benchmarks](benchmarks.md).
+
 Start with the defaults, measure, then change one setting at a time. The defaults are:
 
 ```bash
