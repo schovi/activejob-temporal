@@ -27,6 +27,7 @@ RSpec.describe "ActiveJob Temporal batch cancellation", :integration do
     jobs = 2.times.map { LongRunningJob.set(queue: task_queue).perform_later }
     @workflow_ids = jobs.map { |job| ActiveJob::Temporal::Adapter.build_workflow_id(job) }
     @workflow_ids.each { |workflow_id| wait_for_workflow_running(workflow_id) }
+    wait_for_workflows_visible(@workflow_ids, task_queue)
 
     result = ActiveJob::Temporal.cancel_where(ajQueue: task_queue)
 
@@ -42,6 +43,19 @@ RSpec.describe "ActiveJob Temporal batch cancellation", :integration do
 
   def wait_for_workflow_terminated(workflow_id)
     wait_for_workflow_status(workflow_id, Temporalio::Client::WorkflowExecutionStatus::TERMINATED)
+  end
+
+  def wait_for_workflows_visible(workflow_ids, task_queue)
+    query = "ajQueue='#{task_queue}' AND ExecutionStatus='Running'"
+
+    Timeout.timeout(5) do
+      loop do
+        visible_workflow_ids = client.list_workflow_page(query, page_size: 100).executions.map(&:id)
+        break if (workflow_ids - visible_workflow_ids).empty?
+
+        sleep 0.1
+      end
+    end
   end
 
   def wait_for_workflow_status(workflow_id, expected_status)
