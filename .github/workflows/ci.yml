@@ -147,7 +147,8 @@ jobs:
               --name ajQueue --type Keyword \
               --name ajJobId --type Keyword \
               --name ajEnqueuedAt --type Datetime \
-              --name ajTenantId --type Int; then
+              --name ajTenantId --type Int \
+              --name ajTags --type KeywordList; then
               break
             fi
             sleep 1

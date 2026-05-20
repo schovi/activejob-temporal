@@ -56,7 +56,8 @@ services:
           --name ajQueue --type Keyword \
           --name ajJobId --type Keyword \
           --name ajEnqueuedAt --type Datetime \
-          --name ajTenantId --type Keyword
+          --name ajTenantId --type Int \
+          --name ajTags --type KeywordList
 
         echo "✅ Search attributes initialization complete"
         exit 0

@@ -18,6 +18,7 @@ Instead of relying on Redis, PostgreSQL, or other queue backends, your backgroun
 - **Durable execution:** Jobs survive process restarts, infrastructure failures, and deployment rollouts
 - **Built-in fault tolerance:** Temporal's battle-tested retry policies handle transient failures automatically
 - **Superior observability:** Use Temporal UI and search attributes to track, filter, and debug job execution in real time
+- **Custom job tags:** Use `set(tags:)` to add searchable tags to Temporal workflows
 - **Simplified operations:** No separate queue infrastructure needed—Temporal handles persistence, scheduling, and coordination
 
 The gem is designed as a **drop-in replacement** for existing ActiveJob adapters like Sidekiq or Resque. Change your queue adapter to `:temporal`, configure the Temporal client, and your jobs gain all the benefits of durable execution.
@@ -31,7 +32,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Discard mapping:** `discard_on` maps to non-retryable errors, preventing wasted retry attempts
 - ✅ **Per-job timeout configuration:** Configure activity timeouts per job using `temporal_options` class method
 - ✅ **Job cancellation:** Cancel in-flight jobs via `ActiveJob::Temporal.cancel(JobClass, job_id)` API
-- ✅ **Search attributes:** Filter and debug jobs in Temporal UI using job class, queue, job ID, tenant ID, and enqueue timestamp
+- ✅ **Search attributes:** Filter and debug jobs in Temporal UI using job class, queue, job ID, tenant ID, custom tags, and enqueue timestamp
 - ✅ **Transactional enqueue:** Jobs automatically defer enqueue until the current database transaction commits (via `enqueue_after_transaction_commit?`)
 - ✅ **GlobalID support:** Seamless serialization of ActiveRecord models and other GlobalID-compatible objects
 - ✅ **Configurable timeouts and retries:** Fine-tune activity timeouts, retry intervals, and backoff coefficients globally
@@ -107,7 +108,8 @@ tctl admin cluster add-search-attributes \
   --name ajQueue --type Keyword \
   --name ajJobId --type Keyword \
   --name ajEnqueuedAt --type Datetime \
-  --name ajTenantId --type Int
+  --name ajTenantId --type Int \
+  --name ajTags --type KeywordList
 ```
 
 If using Temporal Cloud or `temporal` CLI instead of `tctl`, adjust the command accordingly. See [Observability](#observability) for details.
@@ -511,6 +513,7 @@ The gem attaches Temporal **Search Attributes** to every workflow, enabling powe
 | `ajJobId` | Keyword | ActiveJob `job_id` (UUID) for correlation with application logs. |
 | `ajEnqueuedAt` | Datetime | Timestamp when the adapter enqueued the workflow. |
 | `ajTenantId` | Int (optional) | Tenant identifier extracted from job arguments when present. |
+| `ajTags` | KeywordList (optional) | Custom tags configured with `set(tags:)`. |
 
 ### Registering Search Attributes
 
@@ -522,7 +525,14 @@ tctl admin cluster add-search-attributes \
   --name ajQueue --type Keyword \
   --name ajJobId --type Keyword \
   --name ajEnqueuedAt --type Datetime \
-  --name ajTenantId --type Int
+  --name ajTenantId --type Int \
+  --name ajTags --type KeywordList
+```
+
+Add custom tags when enqueueing jobs:
+
+```ruby
+SendInvoiceJob.set(tags: [:urgent, :customer_123]).perform_later(invoice.id)
 ```
 
 ### Querying Jobs in Temporal UI
@@ -542,6 +552,11 @@ ajEnqueuedAt < "2025-01-01T00:00:00Z"
 **Example: Find all instances of a specific job class**
 ```
 ajClass = "SendInvoiceJob"
+```
+
+**Example: Find jobs with a custom tag**
+```
+ajTags = "urgent"
 ```
 
 See the [Configuration Reference](docs/configuration_reference.md) for full search attributes documentation.

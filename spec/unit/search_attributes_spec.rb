@@ -47,6 +47,12 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
 
         expect(attributes[aj_tenant_id_key]).to be_nil
       end
+
+      it "omits ajTags when no tags are configured" do
+        aj_tags_key = Temporalio::SearchAttributes::Key.new("ajTags", Temporalio::SearchAttributes::IndexedValueType::KEYWORD_LIST)
+
+        expect(attributes[aj_tags_key]).to be_nil
+      end
     end
 
     context "when queue name is not set" do
@@ -108,6 +114,22 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
 
         expect { attributes }.not_to raise_error
         expect(attributes[aj_tenant_id_key]).to be_nil
+      end
+    end
+
+    context "when job has tags" do
+      let(:job) { SimpleJob.new(["arg"]) }
+
+      before do
+        job.job_id = "job-tagged"
+        job.queue_name = "billing"
+        job.define_singleton_method(:temporal_tags) { %w[urgent customer_123] }
+      end
+
+      it "includes ajTags as a keyword list" do
+        aj_tags_key = Temporalio::SearchAttributes::Key.new("ajTags", Temporalio::SearchAttributes::IndexedValueType::KEYWORD_LIST)
+
+        expect(attributes[aj_tags_key]).to eq(%w[urgent customer_123])
       end
     end
   end

@@ -179,7 +179,7 @@ attributes:
       validation_rules:
         - "Must be boolean (true or false)"
         - "No other validation performed"
-      description: "Enable Temporal search attributes for job metadata. When enabled, workflows are tagged with ajClass, ajQueue, ajJobId, ajEnqueuedAt, and ajTenantId for filtering in Temporal UI."
+      description: "Enable Temporal search attributes for job metadata. When enabled, workflows are tagged with ajClass, ajQueue, ajJobId, ajEnqueuedAt, ajTenantId, and custom ajTags for filtering in Temporal UI."
       env_var_name: null
       example: false
 

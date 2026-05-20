@@ -102,7 +102,8 @@ temporal operator search-attribute create \
   --name ajQueue --type Keyword \
   --name ajJobId --type Keyword \
   --name ajEnqueuedAt --type Datetime \
-  --name ajTenantId --type Keyword
+  --name ajTenantId --type Int \
+  --name ajTags --type KeywordList
 ```
 
 **Note**: If you don't have the `temporal` CLI installed, you can run this inside the Docker container:
@@ -114,7 +115,8 @@ docker exec -it temporal temporal operator search-attribute create \
   --name ajQueue --type Keyword \
   --name ajJobId --type Keyword \
   --name ajEnqueuedAt --type Datetime \
-  --name ajTenantId --type Keyword
+  --name ajTenantId --type Int \
+  --name ajTags --type KeywordList
 ```
 
 #### 4. Start the Temporal Worker

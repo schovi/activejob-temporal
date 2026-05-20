@@ -172,6 +172,7 @@ ajQueue
 ajJobId
 ajEnqueuedAt
 ajTenantId
+ajTags
 ```
 
 **Fix**
@@ -184,7 +185,8 @@ temporal operator search-attribute create --namespace default \
   --name ajQueue --type Keyword \
   --name ajJobId --type Keyword \
   --name ajEnqueuedAt --type Datetime \
-  --name ajTenantId --type Int
+  --name ajTenantId --type Int \
+  --name ajTags --type KeywordList
 ```
 
 Some Temporal deployments need a short delay before new search attributes are queryable.

@@ -106,6 +106,18 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       enqueuer.enqueue(job)
     end
 
+    it "includes job tags in search attributes" do
+      job.define_singleton_method(:temporal_tags) { %w[urgent customer_123] }
+      aj_tags_key = Temporalio::SearchAttributes::Key.new("ajTags", Temporalio::SearchAttributes::IndexedValueType::KEYWORD_LIST)
+
+      allow(client).to receive(:start_workflow) do |_klass, _payload, **options|
+        expect(options[:search_attributes][aj_tags_key]).to eq(%w[urgent customer_123])
+        "handle"
+      end
+
+      enqueuer.enqueue(job)
+    end
+
     it "returns nil for duplicate workflows" do
       error = Class.new(StandardError)
       stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)

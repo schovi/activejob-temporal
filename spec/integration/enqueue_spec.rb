@@ -28,7 +28,7 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
     @worker_thread = start_worker(task_queue)
     sleep 0.5
 
-    job = TestJob.set(queue: task_queue).perform_later(42)
+    job = TestJob.set(queue: task_queue, tags: %w[urgent customer_123]).perform_later(42)
     workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
 
     wait_for_result(42)
@@ -68,11 +68,13 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
     aj_queue_key = Temporalio::SearchAttributes::Key.new("ajQueue", Temporalio::SearchAttributes::IndexedValueType::KEYWORD)
     aj_job_id_key = Temporalio::SearchAttributes::Key.new("ajJobId", Temporalio::SearchAttributes::IndexedValueType::KEYWORD)
     aj_enqueued_at_key = Temporalio::SearchAttributes::Key.new("ajEnqueuedAt", Temporalio::SearchAttributes::IndexedValueType::TIME)
+    aj_tags_key = Temporalio::SearchAttributes::Key.new("ajTags", Temporalio::SearchAttributes::IndexedValueType::KEYWORD_LIST)
 
     # Verify search attributes
     expect(search_attrs[aj_class_key]).to eq("TestJob")
     expect(search_attrs[aj_queue_key]).to eq(task_queue)
     expect(search_attrs[aj_job_id_key]).to eq(job.job_id)
+    expect(search_attrs[aj_tags_key]).to eq(%w[urgent customer_123])
 
     # Verify ajEnqueuedAt is a recent timestamp
     enqueued_at = search_attrs[aj_enqueued_at_key]

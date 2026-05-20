@@ -18,6 +18,7 @@ module ActiveJob
     #     tctl admin cluster add-search-attributes --name ajJobId --type Keyword
     #     tctl admin cluster add-search-attributes --name ajEnqueuedAt --type Datetime
     #     tctl admin cluster add-search-attributes --name ajTenantId --type Int
+    #     tctl admin cluster add-search-attributes --name ajTags --type KeywordList
     #
     # @note Tenant ID Extraction
     #   The module automatically extracts tenant_id from the first job argument if it
@@ -30,6 +31,7 @@ module ActiveJob
     #   - ajJobId: KEYWORD (unique job ID)
     #   - ajEnqueuedAt: TIME (enqueue timestamp)
     #   - ajTenantId: INTEGER (optional, if first argument responds to :tenant_id)
+    #   - ajTags: KEYWORD_LIST (optional, if tags are configured)
     #
     # @example Querying with search attributes (Temporal CLI)
     #   # Find all jobs in the "mailers" queue
@@ -40,6 +42,9 @@ module ActiveJob
     #
     #   # Find all tenant jobs enqueued today
     #   tctl workflow list --query "ajTenantId=42 AND ajEnqueuedAt > '2025-10-31T00:00:00Z'"
+    #
+    #   # Find jobs tagged as urgent
+    #   tctl workflow list --query "ajTags='urgent'"
     #
     # @see https://docs.temporal.io/visibility Search Attributes documentation
     module SearchAttributes
@@ -90,6 +95,9 @@ module ActiveJob
         # Add tenant ID if available
         add_tenant_attribute(attributes, job)
 
+        # Add job tags if available
+        add_tags_attribute(attributes, job)
+
         attributes
       end
 
@@ -119,6 +127,14 @@ module ActiveJob
         attributes[aj_tenant_id_key] = tenant_id
       end
 
+      def add_tags_attribute(attributes, job)
+        tags = extract_tags(job)
+        return if tags.empty?
+
+        aj_tags_key = create_key("ajTags", :KEYWORD_LIST)
+        attributes[aj_tags_key] = tags
+      end
+
       # Creates a typed Temporal search attribute key.
       # @api private
       def create_key(name, type)
@@ -133,6 +149,12 @@ module ActiveJob
         return unless first_argument.respond_to?(:tenant_id)
 
         first_argument.tenant_id
+      end
+
+      def extract_tags(job)
+        return [] unless job.respond_to?(:temporal_tags)
+
+        job.temporal_tags || []
       end
     end
   end
