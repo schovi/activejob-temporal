@@ -535,6 +535,18 @@ bundle exec temporal-worker
 
 See [docs/worker_setup.md](docs/worker_setup.md) for detailed tuning guidance.
 
+## Documentation
+
+Additional guides:
+
+- [Documentation Index](docs/README.md)
+- [Troubleshooting Guide](docs/troubleshooting.md)
+- [Configuration Reference](docs/configuration_reference.md)
+- [Retry Policy Guide](docs/retry_policies.md)
+- [Worker Setup Guide](docs/worker_setup.md)
+- [Migration Guide](docs/migration_guide.md)
+- [Security](docs/security.md)
+
 ## Limitations (v0.1)
 
 The following features are **not yet implemented** in v0.1 but are planned for future releases:

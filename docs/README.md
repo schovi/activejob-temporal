@@ -1,0 +1,26 @@
+# Documentation
+
+Use this index to find the main guides for activejob-temporal.
+
+## Operations
+
+- [Worker Setup Guide](worker_setup.md) covers worker startup, deployment patterns, concurrency tuning, and expected logs.
+- [Troubleshooting Guide](troubleshooting.md) covers common enqueue, execution, retry, cancellation, payload, connection, and performance issues.
+- [Security](security.md) covers dependency scanning, input validation, TLS notes, and payload handling.
+
+## Configuration And Migration
+
+- [Configuration Reference](configuration_reference.md) lists configuration options, environment variables, search attributes, and payload size settings.
+- [Configuration Schema](config_schema.yaml) is the machine-readable configuration schema.
+- [Migration Guide](migration_guide.md) covers migration from Sidekiq, Resque, Delayed Job, and other queue adapters.
+- [Retry Policy Guide](retry_policies.md) explains how ActiveJob retry and discard declarations map to Temporal retry policies.
+
+## Release And Publishing
+
+- [Publishing](publishing.md) covers release and gem publishing steps.
+- [Release Checklist](release_checklist.md) captures release validation status.
+
+## Architecture
+
+- [Architecture Decision Records](adr/README.md) collects design decisions.
+- [Diagrams](diagrams/) contains component, sequence, cancellation, and data model diagrams.
