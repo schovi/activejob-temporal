@@ -46,7 +46,7 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
     @worker_thread = start_worker(task_queue)
     sleep 0.5
 
-    job = TestJob.set(queue: task_queue).perform_later(42)
+    job = TestJob.set(queue: task_queue, tags: %w[urgent customer_123]).perform_later(42)
     workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
 
     wait_for_result(42)
