@@ -4,6 +4,11 @@
 
 Accepted
 
+Updated by TASK.021: workflow ID construction now lives in `WorkflowIdBuilder`.
+`Adapter.build_workflow_id` remains as the public helper and delegates to that builder.
+`WorkflowEnqueuer` accepts an injected builder so future ID strategies do not need
+to change enqueue orchestration.
+
 ## Context
 
 The `TemporalAdapter` class serves as the integration point between ActiveJob's queue adapter interface and Temporal's workflow client API. Two specific operations are central to its functionality:
@@ -20,7 +25,8 @@ We extract workflow ID building and task queue resolution into a **separate `Ada
 
 ### Implementation
 
-The `ActiveJob::Temporal::Adapter` module provides two public utility functions:
+The `ActiveJob::Temporal::Adapter` module provides two public utility functions.
+Workflow ID construction delegates to `ActiveJob::Temporal::WorkflowIdBuilder`:
 
 ```ruby
 # lib/activejob/temporal/adapter.rb (lines 11-53)
@@ -29,7 +35,7 @@ module ActiveJob::Temporal::Adapter
 
   # Builds deterministic workflow ID: "ajwf:<ClassName>:<job_id>"
   def build_workflow_id(job)
-    "ajwf:#{job.class.name}:#{job.job_id}"
+    WorkflowIdBuilder.new.build(job)
   end
 
   # Resolves task queue name, applying configured prefix if present
@@ -106,7 +112,9 @@ end
 
 ### Alternative 2: Dedicated Utility Classes
 
-Create separate `WorkflowIdBuilder` and `TaskQueueResolver` classes. **Why Not Chosen:** Over-engineering (two classes for two simple functions), namespace proliferation (two new top-level classes vs. single module), unnecessary boilerplate. Module functions provide same benefits with less complexity.
+Create separate `WorkflowIdBuilder` and `TaskQueueResolver` classes. **Original Why Not Chosen:** Over-engineering (two classes for two simple functions), namespace proliferation (two new top-level classes vs. single module), unnecessary boilerplate. Module functions provide same benefits with less complexity.
+
+`WorkflowIdBuilder` was later extracted once workflow ID behavior needed its own extension point. Task queue resolution remains in the adapter helper.
 
 ### Alternative 3: Include Helper Logic Inline
 

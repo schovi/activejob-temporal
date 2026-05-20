@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "workflow_id_builder"
+
 module ActiveJob
   module Temporal
     # Service object for enqueueing jobs as Temporal workflows.
@@ -27,10 +29,12 @@ module ActiveJob
       # @param client [Temporalio::Client] Temporal client connection
       # @param config [ActiveJob::Temporal::Configuration] Configuration object
       # @param logger [Logger] Optional logger instance
-      def initialize(client, config, logger = nil)
+      # @param workflow_id_builder [WorkflowIdBuilder] Builder for Temporal workflow IDs
+      def initialize(client, config, logger = nil, workflow_id_builder: WorkflowIdBuilder.new)
         @client = client
         @config = config
         @logger = logger || config.logger
+        @workflow_id_builder = workflow_id_builder
       end
 
       # Enqueue a job as a Temporal workflow.
@@ -66,7 +70,7 @@ module ActiveJob
       # Enqueues a workflow with the given payload and options.
       # @api private
       def enqueue_with_payload(job, payload)
-        workflow_id = Adapter.build_workflow_id(job)
+        workflow_id = @workflow_id_builder.build(job)
         task_queue = Adapter.resolve_task_queue(job)
 
         options = {

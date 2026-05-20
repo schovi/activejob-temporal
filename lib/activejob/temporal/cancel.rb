@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "workflow_id_builder"
+
 module ActiveJob
   module Temporal
     # Job cancellation with query-based workflow discovery.
@@ -109,7 +111,7 @@ module ActiveJob
         # Builds deterministic workflow ID from job class and job ID.
         # @api private
         def build_workflow_id(job_class, job_id)
-          "ajwf:#{job_class.name}:#{job_id}"
+          WorkflowIdBuilder.new.build_from_job_class(job_class, job_id)
         end
 
         # Queries Temporal to determine the current state of the workflow.

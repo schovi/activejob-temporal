@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "active_job"
+require_relative "workflow_id_builder"
 
 module ActiveJob
   module Temporal
@@ -13,7 +14,9 @@ module ActiveJob
 
       # Builds deterministic workflow ID used for Temporal workflows.
       #
-      # Creates a unique, reproducible workflow ID from the job class and job ID.
+      # Delegates ID construction to WorkflowIdBuilder while preserving the public
+      # helper used by integrations and tests. Creates a unique, reproducible
+      # workflow ID from the job class and job ID.
       # This enables idempotent enqueuing: duplicate enqueue calls with the same job_id
       # will be rejected by Temporal's FAIL conflict policy (returning nil, not raising).
       #
@@ -36,7 +39,7 @@ module ActiveJob
       #
       # @see TemporalAdapter#enqueue
       def build_workflow_id(job)
-        "ajwf:#{job.class.name}:#{job.job_id}"
+        WorkflowIdBuilder.new.build(job)
       end
 
       # Resolves the Temporal task queue name for a given job.

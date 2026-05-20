@@ -45,6 +45,19 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       enqueuer.enqueue(job)
     end
 
+    it "uses the injected workflow ID builder" do
+      workflow_id_builder = instance_double(ActiveJob::Temporal::WorkflowIdBuilder)
+      enqueuer = described_class.new(client, config, logger, workflow_id_builder: workflow_id_builder)
+
+      allow(workflow_id_builder).to receive(:build).with(job).and_return("custom-workflow-id")
+      allow(client).to receive(:start_workflow) do |_klass, _payload, **options|
+        expect(options[:id]).to eq("custom-workflow-id")
+        "handle"
+      end
+
+      enqueuer.enqueue(job)
+    end
+
     it "includes FAIL conflict policy" do
       allow(client).to receive(:start_workflow) do |_klass, _payload, **options|
         expect(options[:id_conflict_policy]).to eq(Temporalio::WorkflowIDConflictPolicy::FAIL)
