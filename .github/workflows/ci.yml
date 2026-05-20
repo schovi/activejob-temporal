@@ -126,12 +126,27 @@ jobs:
         run: |
           docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1 ||
             docker compose exec -T temporal temporal operator namespace create test
-          docker compose exec -T temporal temporal operator search-attribute create -n test \
-            --name ajClass --type Keyword \
-            --name ajQueue --type Keyword \
-            --name ajJobId --type Keyword \
-            --name ajEnqueuedAt --type Datetime \
-            --name ajTenantId --type Int || true
+          for i in {1..60}; do
+            if docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          for i in {1..60}; do
+            if docker compose exec -T temporal temporal operator search-attribute list -n test | grep -q "ajClass"; then
+              break
+            fi
+            if docker compose exec -T temporal temporal operator search-attribute create -n test \
+              --name ajClass --type Keyword \
+              --name ajQueue --type Keyword \
+              --name ajJobId --type Keyword \
+              --name ajEnqueuedAt --type Datetime \
+              --name ajTenantId --type Int; then
+              break
+            fi
+            sleep 1
+          done
+          docker compose exec -T temporal temporal operator search-attribute list -n test | grep -q "ajClass"
 
       - name: Run integration tests
         run: bundle exec rake spec:integration

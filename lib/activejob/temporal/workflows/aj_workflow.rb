@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "time"
+require "active_support/core_ext/hash/keys"
+require "temporalio/workflow"
 
 module ActiveJob
   module Temporal

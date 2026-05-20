@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "active_support/core_ext/string/inflections"
+require "temporalio/activity"
 
 require_relative "../payload"
 require_relative "../retry_mapper"

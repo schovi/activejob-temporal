@@ -11,7 +11,8 @@ module TemporalTestHelper
   DEFAULT_TARGET = "127.0.0.1:7233"
   INTEGRATION_PATH_SEGMENT = File.join("spec", "integration")
 
-  ServerNotAvailableError = Class.new(RuntimeError)
+  class ServerNotAvailableError < RuntimeError
+  end
 
   class << self
     def client

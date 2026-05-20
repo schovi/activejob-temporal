@@ -2,6 +2,9 @@
 
 require "json"
 require "time"
+require "active_support"
+require "active_support/core_ext/numeric/time"
+require "active_job/serializers"
 require "active_job/arguments"
 
 module ActiveJob
