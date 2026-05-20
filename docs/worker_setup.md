@@ -15,8 +15,8 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` |
 | `ACTIVEJOB_TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` |
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | Yes | Task queue the worker will poll for jobs. | `default` |
-| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum concurrent activity executions (defaults to `100`). | `50` |
-| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum concurrent workflow task polls (defaults to `5`). | `20` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity (defaults to `100`). | `50` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` |
 
 ## Starting the Worker
 
@@ -36,8 +36,8 @@ The worker automatically detects your Rails environment and loads your job class
 ### Options
 
 - **`ACTIVEJOB_TEMPORAL_TASK_QUEUE`**: Task queue name. Defaults to `default`.
-- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`**: Maximum concurrent activity executions. Defaults to `100`.
-- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum concurrent workflow task polls. Defaults to `5`.
+- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`**: Maximum activity task poll capacity. Defaults to `100`.
+- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum workflow task poll capacity. Defaults to `5`.
 - **`RAILS_ROOT`**: Optional path to Rails app. Auto-detected if omitted (uses current directory).
 
 ### Examples
@@ -94,35 +94,35 @@ You should see:
 
 ## Worker Performance Tuning
 
-The worker process can be tuned for different deployment scenarios by adjusting concurrency settings via environment variables.
+The worker process can be tuned for different deployment scenarios by adjusting poll settings via environment variables. Use this section for startup mechanics. Use the [Performance Tuning Guide](performance_tuning.md) for workload-specific recommendations, payload benchmarking, database pooling, and monitoring.
 
 ### Concurrency Configuration
 
 #### Activity Task Concurrency
 
-Controls how many jobs execute in parallel:
+Controls activity task polling capacity for the worker process:
 
 ```bash
 ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=200 bundle exec temporal-worker
 ```
 
 - **Default:** 100
-- **Higher values:** More jobs execute in parallel (higher throughput)
+- **Higher values:** More activity poll capacity when jobs and dependencies have headroom
 - **Lower values:** Less resource consumption, better for constrained environments
 - **Recommended:** 50-200 for typical workloads
 
 #### Workflow Task Concurrency
 
-Controls how many workflows can be orchestrated concurrently:
+Controls workflow task polling capacity for the worker process:
 
 ```bash
 ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=50 bundle exec temporal-worker
 ```
 
 - **Default:** 5
-- **Higher values:** More workflows being orchestrated concurrently
+- **Higher values:** More workflow orchestration capacity
 - **Lower values:** Lower CPU overhead, better for resource-constrained environments
-- **Typical Range:** 5-100
+- **Typical Range:** 5-50
 
 **Why adjust this?** Workflow tasks are CPU-bound and determine:
 - Which activities to schedule
@@ -172,12 +172,14 @@ Use Temporal UI (http://localhost:8080 in development) to monitor:
 - **Worker Health**: Shows worker availability and last heartbeat
 
 **Tuning Process:**
-1. Deploy with default settings (100 activities, 5 workflows)
+1. Deploy with default settings (100 activity polls, 5 workflow task polls)
 2. Monitor queue depths in Temporal UI
 3. If Workflow Task Queue is growing: increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`
 4. If Activity Task Queue is growing: increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`
 5. Monitor CPU/Memory usage after each adjustment
 6. Iterate until balanced
+
+For a full tuning checklist, scenario-specific starting points, payload benchmarks, and database pool guidance, see the [Performance Tuning Guide](performance_tuning.md).
 
 ### Deployment Scenarios
 

@@ -113,14 +113,15 @@ activejob-temporal defers enqueue until DB transaction commits (safer than Sidek
 Temporal workers run as **separate processes** (not part of web app).
 
 ```bash
-export TEMPORAL_TARGET=temporal.example.com:7233
-export TEMPORAL_NAMESPACE=production
-export AJ_TEMPORAL_WORKER_QUEUE=default
-export AJ_TEMPORAL_MAX_ACT=50
-bin/temporal-worker
+export ACTIVEJOB_TEMPORAL_TARGET=temporal.example.com:7233
+export ACTIVEJOB_TEMPORAL_NAMESPACE=production
+export ACTIVEJOB_TEMPORAL_TASK_QUEUE=default
+export ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=50
+export ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=5
+bundle exec temporal-worker
 ```
 
-**Deployment:** Use Kubernetes, systemd, or Docker. Run 2-5 workers per queue for redundancy. Tune `AJ_TEMPORAL_MAX_ACT` for concurrency. See [Worker Setup Guide](worker_setup.md) for full details.
+**Deployment:** Use Kubernetes, systemd, or Docker. Run 2-5 workers per queue for redundancy. Tune `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` for activity poll capacity. See [Worker Setup Guide](worker_setup.md) for startup details and [Performance Tuning Guide](performance_tuning.md) for workload-specific recommendations.
 
 ## 6. Draining Old Queue
 
@@ -163,7 +164,7 @@ PaymentGateway.charge(idempotency_key: Thread.current[:aj_temporal_idempotency_k
 **Issue:** Temporal UI search fails. **Solution:** Register once per cluster: `tctl admin cluster add-search-attributes --name ajClass --type Keyword ...`
 
 ### 6. Workers Not Polling Correct Queue
-**Issue:** Jobs never execute. **Solution:** Match worker queue to job: `AJ_TEMPORAL_WORKER_QUEUE=billing` and `queue_as :billing`.
+**Issue:** Jobs never execute. **Solution:** Match worker queue to job: `ACTIVEJOB_TEMPORAL_TASK_QUEUE=billing` and `queue_as :billing`.
 
 ## 9. Testing Checklist
 

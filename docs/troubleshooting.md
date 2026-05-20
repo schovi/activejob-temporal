@@ -523,7 +523,7 @@ Tune one bottleneck at a time:
 - Reduce large payloads before increasing concurrency.
 - Scale workers horizontally by running more worker processes on the same task queue.
 
-See [Worker Setup Guide](worker_setup.md) for tuning examples.
+See [Performance Tuning Guide](performance_tuning.md) for workload-specific tuning and [Worker Setup Guide](worker_setup.md) for worker startup examples.
 
 ## Configuration Checklist
 

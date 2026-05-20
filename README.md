@@ -84,7 +84,7 @@ Create an initializer to configure the Temporal client connection:
 ActiveJob::Temporal.configure do |config|
   config.target = ENV.fetch("ACTIVEJOB_TEMPORAL_TARGET", "127.0.0.1:7233")
   config.namespace = ENV.fetch("ACTIVEJOB_TEMPORAL_NAMESPACE", "default")
-  config.task_queue_prefix = ENV.fetch("TEMPORAL_TASK_QUEUE_PREFIX", nil)
+  config.task_queue_prefix = ENV.fetch("ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX", nil)
 
   # Optional: customize timeouts and retries
   config.default_activity_timeout = 15.minutes
@@ -510,14 +510,14 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` or `temporal.example.com:7233` |
 | `ACTIVEJOB_TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` or `production` |
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | No | Task queue the worker will poll for jobs. | `default` (if omitted) |
-| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum concurrent activity executions (defaults to `100`). | `50` or `200` |
-| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum concurrent workflow task polls (defaults to `5`). | `20` or `50` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity (defaults to `100`). | `50` or `200` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` or `50` |
 
 ### Performance Tuning
 
 By default, the worker runs with:
-- 100 concurrent activity tasks (job executions)
-- 5 concurrent workflow tasks (orchestration)
+- 100 activity task polls
+- 5 workflow task polls
 
 For different workloads, adjust via environment variables:
 
@@ -533,7 +533,7 @@ ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=2 \
 bundle exec temporal-worker
 ```
 
-See [docs/worker_setup.md](docs/worker_setup.md) for detailed tuning guidance.
+See [docs/performance_tuning.md](docs/performance_tuning.md) for workload-specific tuning and [docs/worker_setup.md](docs/worker_setup.md) for worker startup details.
 
 ## Documentation
 
@@ -541,6 +541,7 @@ Additional guides:
 
 - [Documentation Index](docs/README.md)
 - [Troubleshooting Guide](docs/troubleshooting.md)
+- [Performance Tuning Guide](docs/performance_tuning.md)
 - [Configuration Reference](docs/configuration_reference.md)
 - [Retry Policy Guide](docs/retry_policies.md)
 - [Worker Setup Guide](docs/worker_setup.md)
