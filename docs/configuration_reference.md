@@ -24,6 +24,7 @@ The canonical machine-readable schema for all configuration options is available
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
 | `logger` | `Logger` | `Rails.logger` (if available) or `Logger.new($stdout)` | Destination for adapter log output. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
+| `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 | `identity` | String or `nil` | `nil` | Optional worker identity string for observability and debugging. Useful in multi-worker deployments. |
 | `max_concurrent_activities` | Integer | `100` | Maximum activity task poll capacity per worker process. |
@@ -93,6 +94,27 @@ end
 ```
 
 Generated IDs must be strings from 1 to 255 characters and may only contain letters, numbers, underscores, hyphens, periods, and colons. Invalid IDs raise `ActiveJob::Temporal::ConfigurationError` before the workflow is started.
+
+## Middleware
+
+Use `config.add_middleware` to wrap job execution inside `AjRunnerActivity` with cross-cutting behavior:
+
+```ruby
+class TracingMiddleware
+  def call(job)
+    span = Tracer.start_span(job.class.name)
+    yield
+  ensure
+    span&.finish
+  end
+end
+
+ActiveJob::Temporal.configure do |config|
+  config.add_middleware TracingMiddleware
+end
+```
+
+Middleware runs in registration order and receives the ActiveJob instance. Exceptions raised by middleware or the job still flow through the activity's existing retry and `discard_on` handling. See the [Middleware Guide](middleware.md) for ordering, constructor arguments, and examples.
 
 ## Search Attributes
 

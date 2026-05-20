@@ -7,7 +7,7 @@
 
 metadata:
   schema_version: "1.0"
-  last_updated: "2025-10-31"
+  last_updated: "2026-05-20"
   contact: "ruby@temporal.io"
   repository: "https://github.com/temporalio/activejob-temporal"
   documentation: "https://github.com/temporalio/activejob-temporal/blob/main/docs/configuration_reference.md"
@@ -139,6 +139,16 @@ attributes:
       env_var_name: null
       example: false
 
+    - name: middleware_chain
+      type: Middleware::Chain
+      default: "ActiveJob::Temporal::Middleware::Chain.new"
+      validation_rules:
+        - "Must respond to #add for registration"
+        - "Must respond to #call for activity execution"
+      description: "Ordered middleware chain used by config.add_middleware to wrap job execution inside AjRunnerActivity. Middleware receives the ActiveJob instance and yields to continue execution."
+      env_var_name: null
+      example: "config.add_middleware TracingMiddleware"
+
     - name: max_payload_size_kb
       type: Integer
       default: 250
@@ -216,6 +226,7 @@ examples:
       default_retry_max_attempts: 1
       logger: "Rails.logger"
       enable_tracing: true
+      middleware_chain: "empty"
       max_payload_size_kb: 250
       enable_search_attributes: true
       identity: null
@@ -241,6 +252,7 @@ examples:
       default_retry_max_attempts: 3
       logger: "Rails.logger"
       enable_tracing: true
+      middleware_chain: "empty"
       max_payload_size_kb: 250
       enable_search_attributes: true
       identity: "worker-01-us-east-1"
@@ -271,6 +283,7 @@ examples:
       default_retry_max_attempts: 5
       logger: "Rails.logger"
       enable_tracing: true
+      middleware_chain: "empty"
       max_payload_size_kb: 512
       max_concurrent_activities: 300
       max_concurrent_workflow_tasks: 25
@@ -320,6 +333,7 @@ validation:
     - "max_payload_size_kb - Must be between 1 and 2,097,152 KB"
     - "max_concurrent_activities - Must be > 0"
     - "max_concurrent_workflow_tasks - Must be > 0"
+    - "middleware_chain - Must respond to #add and #call"
 
   error_handling: "All validation errors raise ActiveJob::Temporal::ConfigurationError with helpful, i18n-ready error messages that include examples and guidance"
 
@@ -331,6 +345,7 @@ type_reference:
   Boolean: "Ruby true or false"
   Duration: "Numeric (seconds) or ActiveSupport::Duration object (e.g., 15.minutes, 30.seconds)"
   Logger: "Ruby Logger or Logger-compatible object with standard logging interface"
+  Middleware::Chain: "Callable object that responds to #add and #call"
 
 # Environment variable priority
 environment_variables:

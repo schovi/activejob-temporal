@@ -181,6 +181,7 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
 | `logger` | `Logger` | `Rails.logger` or `Logger.new($stdout)` | Destination for adapter log output. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
+| `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 
 ### Example Configuration
@@ -201,6 +202,27 @@ end
 ```
 
 For detailed configuration documentation, see [Configuration Reference](docs/configuration_reference.md).
+
+### Middleware
+
+Register middleware to wrap job execution for tracing, metrics, custom logging, or tenant context:
+
+```ruby
+class TracingMiddleware
+  def call(job)
+    span = Tracer.start_span(job.class.name)
+    yield
+  ensure
+    span&.finish
+  end
+end
+
+ActiveJob::Temporal.configure do |config|
+  config.add_middleware TracingMiddleware
+end
+```
+
+Middleware runs inside the activity, after payload deserialization and before `job.perform`. The first registered middleware wraps the rest of the chain. See the [Middleware Guide](docs/middleware.md) for ordering and examples.
 
 ## Scheduled Jobs
 

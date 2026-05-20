@@ -106,7 +106,7 @@ module ActiveJob
           job = job_class.new
 
           set_idempotency_key
-          job.perform(*args)
+          perform_job(job, args)
         rescue StandardError => e
           handle_exception(job_class, e)
         ensure
@@ -122,6 +122,12 @@ module ActiveJob
           raise ArgumentError, "payload missing job_class" unless job_class_name
 
           job_class_name.constantize
+        end
+
+        def perform_job(job, args)
+          ActiveJob::Temporal.config.middleware_chain.call(job) do
+            job.perform(*args)
+          end
         end
 
         # Sets thread-local idempotency key from workflow ID.

@@ -57,6 +57,11 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "uses the default workflow ID generator when none is configured" do
       expect(configuration.workflow_id_generator).to be_nil
     end
+
+    it "sets an empty middleware chain" do
+      expect(configuration.middleware_chain).to be_a(ActiveJob::Temporal::Middleware::Chain)
+      expect(configuration.middleware_chain.to_a).to be_empty
+    end
   end
 
   describe "environment variable support" do
@@ -260,6 +265,34 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects callables that cannot accept a job argument" do
       expect { configuration.workflow_id_generator = -> { "custom-id" } }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /must accept one ActiveJob argument/)
+    end
+  end
+
+  describe "#add_middleware" do
+    it "registers middleware in the configured chain" do
+      events = []
+      middleware_class = Class.new do
+        def initialize(events)
+          @events = events
+        end
+
+        def call(_job)
+          @events << :before
+          result = yield
+          @events << :after
+          result
+        end
+      end
+
+      registered = configuration.add_middleware(middleware_class, events)
+
+      expect(configuration.middleware_chain.to_a).to eq([registered])
+      expect(configuration.middleware_chain.call(:job) { events << :perform }).to eq(%i[before perform after])
+    end
+
+    it "rejects invalid middleware chain replacements" do
+      expect { configuration.middleware_chain = Object.new }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Middleware chain must respond to #add and #call/)
     end
   end
 

@@ -4,6 +4,8 @@ require "logger"
 require "active_support/core_ext/numeric/time"
 require "active_model"
 
+require_relative "middleware"
+
 module ActiveJob
   module Temporal
     LOCALE_PATH = File.expand_path("locales/en.yml", __dir__)
@@ -130,6 +132,12 @@ module ActiveJob
         description: "Enable OpenTelemetry distributed tracing"
       },
 
+      middleware_chain: {
+        default: -> { Middleware::Chain.new },
+        type: :object,
+        description: "Ordered middleware chain for activity job execution"
+      },
+
       identity: {
         default: nil,
         type: :string,
@@ -216,6 +224,10 @@ module ActiveJob
         @attributes[key] = value
       end
 
+      def add_middleware(middleware, ...)
+        middleware_chain.add(middleware, ...)
+      end
+
       def validate!
         validator = ConfigValidator.new
 
@@ -277,6 +289,7 @@ module ActiveJob
     # - `max_concurrent_activities`: Numericality > 0
     # - `max_concurrent_workflow_tasks`: Numericality > 0
     # - `workflow_id_generator`: Optional callable
+    # - `middleware_chain`: Callable chain with registration support
     #
     # @example Using ConfigValidator directly
     #   validator = ConfigValidator.new
@@ -359,6 +372,7 @@ module ActiveJob
       validate :validate_namespace_format
       validate :validate_duration_values
       validate :validate_workflow_id_generator
+      validate :validate_middleware_chain
 
       private
 
@@ -401,6 +415,12 @@ module ActiveJob
         return if callable_accepts_positional_job?(workflow_id_generator)
 
         errors.add(:workflow_id_generator, :wrong_arity, value: workflow_id_generator.inspect)
+      end
+
+      def validate_middleware_chain
+        return if middleware_chain.respond_to?(:add) && middleware_chain.respond_to?(:call)
+
+        errors.add(:middleware_chain, :invalid, value: middleware_chain.inspect)
       end
 
       def callable_accepts_positional_job?(callable)
