@@ -32,8 +32,9 @@ RSpec.describe "Recurring schedules", :integration do
     wait_for { TestJob.last_argument == 42 }
 
     description = @schedule_handle.describe
-    expect(description.schedule.spec.cron_expressions).to include("0 0 1 1 *")
     expect(description.schedule.spec.time_zone_name).to eq("UTC")
+    expect(description.info.num_actions).to be >= 1
+    expect(description.info.next_action_times).not_to be_empty
   end
 
   private
