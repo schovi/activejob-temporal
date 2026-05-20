@@ -26,6 +26,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 
 - ✅ **Immediate job execution:** Use `MyJob.perform_later(args)` to enqueue jobs for instant execution
 - ✅ **Scheduled execution:** Use `MyJob.set(wait: 5.minutes).perform_later(args)` or `MyJob.set(wait_until: Time.zone.now + 1.hour).perform_later(args)` for delayed jobs
+- ✅ **Conditional enqueueing:** Use `MyJob.perform_later_if(condition, args)` to skip jobs when no work is needed
 - ✅ **Retry mapping:** ActiveJob `retry_on` declarations automatically map to Temporal retry policies with exponential backoff
 - ✅ **Discard mapping:** `discard_on` maps to non-retryable errors, preventing wasted retry attempts
 - ✅ **Per-job timeout configuration:** Configure activity timeouts per job using `temporal_options` class method
@@ -140,6 +141,12 @@ SendInvoiceJob.perform_later(invoice.id)
 
 # Scheduled execution
 SendInvoiceJob.set(wait: 5.minutes).perform_later(invoice.id)
+
+# Conditional execution
+SendInvoiceJob.perform_later_if(
+  ->(arguments) { Invoice.find(arguments.first).ready? },
+  invoice.id
+)
 ```
 
 ### Step 6: Start a Temporal worker
@@ -223,6 +230,43 @@ end
 ```
 
 Middleware runs inside the activity, after payload deserialization and before `job.perform`. The first registered middleware wraps the rest of the chain. See the [Middleware Guide](docs/middleware.md) for ordering and examples.
+
+## Conditional Enqueueing
+
+Use `perform_later_if` when a job should only be enqueued if a runtime condition matches. The condition receives the job arguments as an array. If the condition returns a falsey value, the method returns `nil` and does not call the queue adapter.
+
+```ruby
+ProcessAccountJob.perform_later_if(
+  ->(arguments) { Account.find(arguments.first).active? },
+  account.id
+)
+```
+
+You can also reference a public class method by symbol:
+
+```ruby
+class ProcessAccountJob < ApplicationJob
+  def self.should_enqueue?(arguments)
+    Account.find(arguments.first).active?
+  end
+
+  def perform(account_id)
+    # Job logic
+  end
+end
+
+ProcessAccountJob.perform_later_if(:should_enqueue?, account.id)
+```
+
+Configured jobs from `set` are supported, so options are preserved when the condition passes:
+
+```ruby
+ProcessAccountJob
+  .set(queue: :low_priority)
+  .perform_later_if(:should_enqueue?, account.id)
+```
+
+When the condition returns true, `perform_later_if` returns the normal ActiveJob instance returned by `perform_later`.
 
 ## Scheduled Jobs
 
