@@ -263,19 +263,31 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
   end
 
-  describe "dynamic attribute methods" do
+  describe "configuration attribute methods" do
+    it "defines getter and setter methods for every configuration attribute" do
+      explicit_methods = described_class.instance_methods(false)
+
+      ActiveJob::Temporal::CONFIGURATION_ATTRIBUTES.each_key do |attribute|
+        expect(explicit_methods).to include(attribute)
+        expect(explicit_methods).to include(:"#{attribute}=")
+      end
+    end
+
+    it "does not define dynamic dispatch hooks for configuration attributes" do
+      explicit_methods = described_class.instance_methods(false)
+
+      expect(explicit_methods).not_to include(:method_missing)
+      expect(explicit_methods).not_to include(:respond_to_missing?)
+    end
+
     it "raises NoMethodError for unknown attribute getter" do
       expect { configuration.unknown_attribute }
         .to raise_error(NoMethodError, /undefined method.*unknown_attribute/)
     end
 
-    it "silently ignores unknown attribute setters" do
-      # Unknown setters don't raise errors but also don't store the value
-      expect { configuration.unknown_attribute = "value" }.not_to raise_error
-
-      # Verify the value was not stored (getter still raises NoMethodError)
-      expect { configuration.unknown_attribute }
-        .to raise_error(NoMethodError, /undefined method.*unknown_attribute/)
+    it "raises NoMethodError for unknown attribute setter" do
+      expect { configuration.unknown_attribute = "value" }
+        .to raise_error(NoMethodError, /undefined method.*unknown_attribute=/)
     end
 
     it "returns false for respond_to? with unknown attribute" do

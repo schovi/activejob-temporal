@@ -185,6 +185,21 @@ module ActiveJob
     # @see ActiveJob::Temporal.configure
     # @api private
     class Configuration
+      attr_accessor :in_configure_block
+
+      CONFIGURATION_ATTRIBUTES.each_key do |attribute|
+        define_method(attribute) do
+          @attributes[attribute]
+        end
+
+        define_method("#{attribute}=") do |value|
+          @attributes[attribute] = value
+          validate! unless @in_configure_block
+
+          value
+        end
+      end
+
       def initialize
         @attributes = {}
         @in_configure_block = false
@@ -193,36 +208,12 @@ module ActiveJob
         end
       end
 
-      attr_accessor :in_configure_block
-
       def [](key)
         @attributes[key]
       end
 
       def []=(key, value)
         @attributes[key] = value
-      end
-
-      def method_missing(method, *args)
-        method_name = method.to_s
-        if method_name.end_with?("=")
-          handle_attribute_setter(method_name[0..-2].to_sym, args[0])
-        elsif args.empty?
-          handle_attribute_getter(method.to_sym)
-        else
-          super
-        end
-      end
-
-      def respond_to_missing?(method, include_private = false)
-        method_name = method.to_s
-        if method_name.end_with?("=")
-          attribute_name = method_name[0..-2].to_sym
-          return CONFIGURATION_ATTRIBUTES.key?(attribute_name)
-        end
-
-        attribute_name = method.to_sym
-        CONFIGURATION_ATTRIBUTES.key?(attribute_name) || super
       end
 
       def validate!
@@ -248,21 +239,6 @@ module ActiveJob
       end
 
       private
-
-      def handle_attribute_getter(attribute_name)
-        return @attributes[attribute_name] if CONFIGURATION_ATTRIBUTES.key?(attribute_name)
-
-        raise NoMethodError, "undefined method `#{attribute_name}' for #{self.class}"
-      end
-
-      def handle_attribute_setter(attribute_name, value)
-        return unless CONFIGURATION_ATTRIBUTES.key?(attribute_name)
-
-        @attributes[attribute_name] = value
-        validate! unless @in_configure_block
-
-        value
-      end
 
       def resolve_default_value(metadata)
         if metadata[:env_var] && ENV[metadata[:env_var]]
