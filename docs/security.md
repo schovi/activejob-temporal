@@ -70,6 +70,8 @@ ActiveJob::Temporal.cancel(MyJob, "test' OR '1'='1")  # Query injection attempt 
 
 **Rationale**: While ActiveJob auto-generates UUIDs, the `cancel()` method is a public API that accepts arbitrary job_id values. Validation prevents search query injection in multi-tenant environments.
 
+Batch cancellation accepts only the gem's known search attributes (`ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`, `ajTenantId`). String values are quoted before query construction, and `ajTenantId` must be an integer.
+
 #### General Security Practices
 
 The gem does **not**:

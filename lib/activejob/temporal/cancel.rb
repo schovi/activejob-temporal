@@ -83,12 +83,28 @@ module ActiveJob
           end
         end
 
+        def cancel_all(job_class)
+          validate_job_class!(job_class)
+
+          cancel_where(ajClass: job_class.name)
+        end
+
+        def cancel_where(filters)
+          BatchCanceller.new(ActiveJob::Temporal.client).cancel_where(filters)
+        end
+
         # UUID format regex (compliant with RFC 4122).
         # Matches standard UUID format: 8-4-4-4-12 hexadecimal characters.
         # @api private
         UUID_REGEX = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
 
         private
+
+        def validate_job_class!(job_class)
+          return if job_class.respond_to?(:name) && !job_class.name.to_s.empty?
+
+          raise ArgumentError, "job_class must be a named class"
+        end
 
         # Validates that job_id is a valid UUID format.
         #
@@ -203,3 +219,5 @@ module ActiveJob
     end
   end
 end
+
+require_relative "cancel/batch_canceller"

@@ -357,9 +357,20 @@ You can cancel in-flight jobs using the cancellation API:
 ActiveJob::Temporal.cancel(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
 ```
 
+You can also terminate groups of running jobs by their ActiveJob search attributes:
+
+```ruby
+ActiveJob::Temporal.cancel_all(SendInvoiceJob)
+
+ActiveJob::Temporal.cancel_where(ajQueue: "low_priority")
+ActiveJob::Temporal.cancel_where(ajClass: "ReportJob", ajTenantId: 123)
+# => { terminated: 45, failed: 2, errors: [...] }
+```
+
 **Parameters:**
 - `job_class` — The job class constant (e.g., `SendInvoiceJob`)
 - `job_id` — The ActiveJob job ID (UUID string)
+- `cancel_where` filters — Exact matches for `ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`, or `ajTenantId`
 
 **Behavior:**
 - Finds the workflow by `ajClass` and `ajJobId` search attributes
@@ -367,8 +378,12 @@ ActiveJob::Temporal.cancel(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000
 - Calls `handle.cancel` to request cancellation
 - Returns `false` when the workflow already completed
 - Raises `ActiveJob::Temporal::WorkflowNotFoundError` when no matching workflow exists
+- Batch cancellation lists running workflows with Temporal visibility pagination
+- Batch cancellation calls `handle.terminate` for each match and returns `{ terminated:, failed:, errors: }`
 
 **Important:** For prompt cancellation, long-running jobs should periodically call `Temporalio::Activity::Context.current.heartbeat` to signal they are still alive. Temporal checks for cancellation requests during heartbeats.
+
+Batch cancellation is forceful and only targets workflows that are currently `Running`.
 
 ### Example: Cancellable Job
 

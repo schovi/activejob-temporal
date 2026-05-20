@@ -107,9 +107,9 @@ module ActiveJob
 
       # Cancels a running or scheduled job by job ID.
       #
-      # This method terminates the Temporal workflow associated with the job.
-      # Cancellation is asynchronous and best-effort: the job will stop only if
-      # it is actively heartbeating. See Cancel module documentation for details.
+      # This method requests cancellation for the Temporal workflow associated with the job.
+      # Cancellation is asynchronous and best-effort: the job will stop only if it is actively
+      # heartbeating. See Cancel module documentation for details.
       #
       # @param job_class [Class] the ActiveJob class (used to determine task queue)
       # @param job_id [String] the unique job identifier
@@ -142,6 +142,14 @@ module ActiveJob
       # @see Cancel.cancel
       def cancel(job_class, job_id)
         Cancel.cancel(job_class, job_id)
+      end
+
+      def cancel_all(job_class)
+        Cancel.cancel_all(job_class)
+      end
+
+      def cancel_where(filters)
+        Cancel.cancel_where(filters)
       end
     end
   end
