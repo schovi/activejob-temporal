@@ -587,6 +587,7 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 
 - Job enqueuing and execution (simple, scheduled, retryable, cancellable jobs)
 - Full ActiveJob Temporal configuration
+- Docker Compose setup for Rails, Temporal, Temporal UI, search attributes, and the worker
 - Worker setup and testing
 - How the auto-detection feature works
 

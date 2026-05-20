@@ -42,15 +42,15 @@ ActiveJob::Temporal.configure do |config|
 
   # Maximum payload size in KB (default: 250)
   # Defaults to ENV["ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB"] if not set
-  config.max_payload_size_kb = 250
+  config.max_payload_size_kb = ENV.fetch("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB", 250).to_i
 
   # Maximum concurrent activities per worker (default: 100)
   # Defaults to ENV["ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES"] if not set
-  config.max_concurrent_activities = 100
+  config.max_concurrent_activities = ENV.fetch("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES", 100).to_i
 
   # Maximum concurrent workflow tasks per worker (default: 5)
   # Defaults to ENV["ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS"] if not set
-  config.max_concurrent_workflow_tasks = 5
+  config.max_concurrent_workflow_tasks = ENV.fetch("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS", 5).to_i
 
   # Validation happens automatically at the end of this block!
 end

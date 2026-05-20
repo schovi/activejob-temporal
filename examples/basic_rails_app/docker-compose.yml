@@ -89,9 +89,9 @@ services:
       - "3000:3000"
     environment:
       RAILS_ENV: development
-      TEMPORAL_TARGET: temporal:7233
-      TEMPORAL_NAMESPACE: default
-      AJ_TEMPORAL_WORKER_QUEUE: default
+      ACTIVEJOB_TEMPORAL_TARGET: temporal:7233
+      ACTIVEJOB_TEMPORAL_NAMESPACE: default
+      ACTIVEJOB_TEMPORAL_TASK_QUEUE: default
       RAILS_LOG_TO_STDOUT: 1
     volumes:
       # Mount project root for live code changes (Dockerfile.dev expects /workspace)
@@ -121,9 +121,9 @@ services:
         condition: service_completed_successfully
     environment:
       RAILS_ENV: development
-      TEMPORAL_TARGET: temporal:7233
-      TEMPORAL_NAMESPACE: default
-      AJ_TEMPORAL_WORKER_QUEUE: default
+      ACTIVEJOB_TEMPORAL_TARGET: temporal:7233
+      ACTIVEJOB_TEMPORAL_NAMESPACE: default
+      ACTIVEJOB_TEMPORAL_TASK_QUEUE: default
       RAILS_LOG_TO_STDOUT: 1
       RUBY_UNBUFFERED: 1
     volumes:

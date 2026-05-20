@@ -125,9 +125,9 @@ The worker processes jobs from the Temporal task queue. From the **example app d
 
 ```bash
 cd examples/basic_rails_app
-TEMPORAL_TARGET=localhost:7233 \
-TEMPORAL_NAMESPACE=default \
-AJ_TEMPORAL_WORKER_QUEUE=default \
+ACTIVEJOB_TEMPORAL_TARGET=localhost:7233 \
+ACTIVEJOB_TEMPORAL_NAMESPACE=default \
+ACTIVEJOB_TEMPORAL_TASK_QUEUE=default \
 bundle exec temporal-worker
 ```
 
@@ -280,8 +280,9 @@ The connection settings are in `config/initializers/activejob_temporal.rb`:
 
 ```ruby
 ActiveJob::Temporal.configure do |config|
-  config.target = ENV.fetch("TEMPORAL_TARGET", "127.0.0.1:7233")
-  config.namespace = ENV.fetch("TEMPORAL_NAMESPACE", "default")
+  config.target = ENV.fetch("ACTIVEJOB_TEMPORAL_TARGET", "127.0.0.1:7233")
+  config.namespace = ENV.fetch("ACTIVEJOB_TEMPORAL_NAMESPACE", "default")
+  config.task_queue = ENV.fetch("ACTIVEJOB_TEMPORAL_TASK_QUEUE", "default")
   config.default_activity_timeout = 15.minutes
   config.default_retry_initial_interval = 30.seconds
   config.default_retry_backoff = 2.0

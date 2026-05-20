@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration validation levels via `validation_level` for strict, warning-only, or skipped validation.
 - Custom job search tags via `set(tags:)` and the `ajTags` Temporal search attribute.
 - Systemd worker deployment examples for VM and bare-metal hosts.
+- Docker Compose example configuration for the basic Rails app.
 - Structured payload size logs at 80%, 90%, and over-limit thresholds.
 - Retry policy guide with ActiveJob-to-Temporal mapping examples.
 - Per-job timeout configuration via `temporal_options` class method
