@@ -95,7 +95,7 @@ git push origin v0.1.0
 # Enable Multi-Factor Authentication (REQUIRED by gemspec)
 
 # Sign in locally
-gem signin
+rvm 4.0.3 do gem signin
 
 # Enter your RubyGems credentials when prompted
 # This creates ~/.gem/credentials with your API key
@@ -104,15 +104,15 @@ gem signin
 **Verification:**
 - [ ] RubyGems.org account created
 - [ ] MFA/2FA enabled on account
-- [ ] Successfully signed in via `gem signin`
+- [ ] Successfully signed in via `rvm 4.0.3 do gem signin`
 - [ ] File `~/.gem/credentials` exists
 
 ### 3. Verify Gemspec Metadata
 
 ```bash
 # Extract and verify gemspec metadata
-gem specification activejob-temporal-0.1.0.gem | grep -A 2 "homepage"
-gem specification activejob-temporal-0.1.0.gem | grep -A 2 "source_code_uri"
+rvm 4.0.3 do gem specification activejob-temporal-0.1.0.gem | grep -A 2 "homepage"
+rvm 4.0.3 do gem specification activejob-temporal-0.1.0.gem | grep -A 2 "source_code_uri"
 
 # Expected output:
 #   homepage: https://github.com/temporalio/activejob-temporal
@@ -153,7 +153,7 @@ git ls-remote --tags origin | grep v0.1.0
 
 ```bash
 # Test publishing without actually publishing
-gem push activejob-temporal-0.1.0.gem --dry-run
+rvm 4.0.3 do gem push activejob-temporal-0.1.0.gem --dry-run
 
 # This will validate:
 # - Your RubyGems credentials
@@ -166,7 +166,7 @@ gem push activejob-temporal-0.1.0.gem --dry-run
 
 ```bash
 # Push the gem (THIS IS IRREVERSIBLE)
-gem push activejob-temporal-0.1.0.gem
+rvm 4.0.3 do gem push activejob-temporal-0.1.0.gem
 
 # Expected output:
 # Pushing gem to https://rubygems.org...
@@ -179,7 +179,7 @@ gem push activejob-temporal-0.1.0.gem
 
 ```bash
 # Search for the gem
-gem search activejob-temporal
+rvm 4.0.3 do gem search activejob-temporal
 
 # Expected output:
 # activejob-temporal (0.1.0)
@@ -196,7 +196,7 @@ rvm 4.0.3 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VE
 ```
 
 **Verification Checklist:**
-- [ ] Gem is searchable: `gem search activejob-temporal` returns results
+- [ ] Gem is searchable: `rvm 4.0.3 do gem search activejob-temporal` returns results
 - [ ] Gem page loads: `https://rubygems.org/gems/activejob-temporal`
 - [ ] Gem can be installed: `rvm 4.0.3 do gem install activejob-temporal` succeeds
 - [ ] Homepage link works (click "Homepage" on gem page)
@@ -248,10 +248,10 @@ gem install activejob-temporal
 
 ```bash
 # Yank a specific version (makes it unavailable for new installs)
-gem yank activejob-temporal -v 0.1.0
+rvm 4.0.3 do gem yank activejob-temporal -v 0.1.0
 
 # To undo a yank:
-gem unyank activejob-temporal -v 0.1.0
+rvm 4.0.3 do gem unyank activejob-temporal -v 0.1.0
 ```
 
 **⚠️ Important:**
@@ -286,7 +286,7 @@ Use this checklist when you're ready to publish:
 ### RubyGems Account
 - [ ] RubyGems.org account created
 - [ ] Multi-Factor Authentication enabled
-- [ ] Signed in locally: `gem signin` completed
+- [ ] Signed in locally: `rvm 4.0.3 do gem signin` completed
 - [ ] Credentials file exists: `~/.gem/credentials`
 
 ### Quality Gates
@@ -303,11 +303,11 @@ Use this checklist when you're ready to publish:
 - [ ] Gem file exists: `activejob-temporal-0.1.0.gem`
 
 ### Publication
-- [ ] Dry run successful: `gem push --dry-run` passes
-- [ ] Gem published: `gem push activejob-temporal-0.1.0.gem`
-- [ ] Gem searchable: `gem search activejob-temporal` returns results
+- [ ] Dry run successful: `rvm 4.0.3 do gem push activejob-temporal-0.1.0.gem --dry-run` passes
+- [ ] Gem published: `rvm 4.0.3 do gem push activejob-temporal-0.1.0.gem`
+- [ ] Gem searchable: `rvm 4.0.3 do gem search activejob-temporal` returns results
 - [ ] Gem page loads: Visit `https://rubygems.org/gems/activejob-temporal`
-- [ ] Installation works: `gem install activejob-temporal` succeeds
+- [ ] Installation works: `rvm 4.0.3 do gem install activejob-temporal` succeeds
 - [ ] All links work: Homepage, Source Code, Changelog, Documentation
 
 ### Post-Publication
@@ -325,12 +325,12 @@ Use this checklist when you're ready to publish:
 git remote -v                              # Should show origin
 git ls-remote --tags origin                # Should show v0.1.0
 ls -lh activejob-temporal-0.1.0.gem       # Should show gem file
-gem specification activejob-temporal-0.1.0.gem | grep homepage
+rvm 4.0.3 do gem specification activejob-temporal-0.1.0.gem | grep homepage
 
 # Publishing commands
-gem signin                                 # Sign in to RubyGems
-gem push --dry-run activejob-temporal-0.1.0.gem  # Test publish
-gem push activejob-temporal-0.1.0.gem     # Publish (IRREVERSIBLE)
+rvm 4.0.3 do gem signin                   # Sign in to RubyGems
+rvm 4.0.3 do gem push activejob-temporal-0.1.0.gem --dry-run # Test publish
+rvm 4.0.3 do gem push activejob-temporal-0.1.0.gem # Publish (IRREVERSIBLE)
 
 # Verification commands
 rvm 4.0.3 do gem search activejob-temporal # Search RubyGems
@@ -338,8 +338,8 @@ rvm 4.0.3 do gem install activejob-temporal # Install from RubyGems
 rvm 4.0.3 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
 
 # Emergency commands (use with caution)
-gem yank activejob-temporal -v 0.1.0      # Remove from new installs
-gem unyank activejob-temporal -v 0.1.0    # Restore yanked gem
+rvm 4.0.3 do gem yank activejob-temporal -v 0.1.0 # Remove from new installs
+rvm 4.0.3 do gem unyank activejob-temporal -v 0.1.0 # Restore yanked gem
 ```
 
 ---

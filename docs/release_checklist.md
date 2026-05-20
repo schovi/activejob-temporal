@@ -155,7 +155,7 @@ Publishing to RubyGems.org is a one-way operation. Publishing with broken source
 2. Push code and tag: `git push origin master && git push origin v0.1.0`
 3. Verify repository is publicly accessible
 4. Set up RubyGems.org account with MFA enabled
-5. Sign in: `gem signin`
-6. Publish: `gem push activejob-temporal-0.1.0.gem`
+5. Sign in: `rvm 4.0.3 do gem signin`
+6. Publish: `rvm 4.0.3 do gem push activejob-temporal-0.1.0.gem`
 
 **Complete publishing documentation:** See `docs/publishing.md` for detailed step-by-step instructions, verification procedures, and troubleshooting guidance.
