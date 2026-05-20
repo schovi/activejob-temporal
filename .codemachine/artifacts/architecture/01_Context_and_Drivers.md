@@ -24,7 +24,7 @@ The activejob-temporal gem bridges Ruby on Rails' ActiveJob framework with Tempo
 - **Idempotency & Deduplication**: Prevent duplicate job execution through deterministic workflow IDs and Temporal's conflict resolution policies
 - **Operational Visibility**: Expose job metadata (class, queue, ID, timestamps) as Temporal Search Attributes for real-time monitoring and historical analysis
 - **Graceful Cancellation**: Provide programmatic job cancellation with proper cleanup through Temporal's cancellation propagation
-- **Rails Ecosystem Compatibility**: Support Rails 6.1+ with Ruby 3.2+ and integrate with standard Rails patterns (transactional callbacks, GlobalID serialization)
+- **Rails Ecosystem Compatibility**: Support Rails 7.2+ with Ruby 4.0+ and integrate with standard Rails patterns (transactional callbacks, GlobalID serialization)
 
 <!-- anchor: scope -->
 ### 1.3. Scope
@@ -41,7 +41,7 @@ The activejob-temporal gem bridges Ruby on Rails' ActiveJob framework with Tempo
 - Worker bootstrap script for registering workflows/activities
 - Logging and optional OpenTelemetry tracing integration
 - Transactional enqueueing (`enqueue_after_transaction_commit`)
-- Support for Rails 6.1+ and Ruby 3.2+ with the official `temporalio` gem (GA October 2025)
+- Support for Rails 7.2+ and Ruby 4.0+ with the official `temporalio` gem (GA October 2025)
 
 **Out of Scope for v0.1:**
 
@@ -65,7 +65,7 @@ The activejob-temporal gem bridges Ruby on Rails' ActiveJob framework with Tempo
 
 1. **Temporal Infrastructure Available**: Applications using this gem will have access to a Temporal cluster (self-hosted or Temporal Cloud) with appropriate namespace and task queue configuration.
 
-2. **Ruby/Rails Version Constraints**: Target applications run on Ruby 3.2+ (3.3+ recommended for Fiber scheduler benefits) and Rails 6.1+ (ActiveJob API stability).
+2. **Ruby/Rails Version Constraints**: Target applications run on Ruby 4.0+ and Rails 7.2+, matching the repository gemspec baseline.
 
 3. **Official Temporal SDK**: The `temporalio` gem (GA as of October 2025) provides stable, feature-complete Ruby bindings for Temporal's workflow and activity APIs.
 
@@ -264,8 +264,8 @@ The activejob-temporal gem bridges Ruby on Rails' ActiveJob framework with Tempo
 #### 2.3.1. Technological Constraints
 
 1. **Ruby & Rails Version Compatibility**:
-   - **Constraint**: Must support Rails 6.1+ (earliest version with stable ActiveJob API) and Ruby 3.2+ (for performance and language features).
-   - **Impact**: Cannot use Ruby 3.3+-only syntax or Rails 7+ features; must test against matrix of versions.
+   - **Constraint**: Must support Rails 7.2+ and Ruby 4.0+ as the current gemspec baseline.
+   - **Impact**: Use Ruby 4.0-compatible syntax and validate on the repository Ruby 4 CI target.
 
 2. **Temporal SDK Dependency**:
    - **Constraint**: Must use official `temporalio` gem (GA October 2025); cannot use third-party or forked SDKs.

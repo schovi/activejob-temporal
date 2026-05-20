@@ -64,8 +64,8 @@ This is **not** a microservices architecture (no network-based service boundarie
 
 | Component | Technology | Version | Rationale |
 |-----------|-----------|---------|-----------|
-| **Language** | Ruby | >= 3.2 (3.3+ preferred) | Modern Fiber scheduler, performance improvements, Rails compatibility |
-| **Framework** | Rails (ActiveJob) | >= 6.1 | ActiveJob API stability, broad adoption, transactional callback support |
+| **Language** | Ruby | >= 4.0 | Modern Fiber scheduler, performance improvements, Rails compatibility |
+| **Framework** | Rails (ActiveJob) | >= 7.2 | ActiveJob API stability, broad adoption, transactional callback support |
 | **Orchestration Engine** | Temporal | Server 1.22+ | Production-proven durable execution, rich observability, strong consistency |
 | **Temporal SDK** | `temporalio` | GA (Oct 2025+) | Official Ruby SDK with workflow/activity primitives, native code performance |
 
@@ -138,7 +138,7 @@ Unlike Sidekiq/Resque/Delayed Job stacks, this gem does **NOT** require:
 
 - **Rails Ecosystem Fit**: Native Ruby integration with ActiveJob, no FFI overhead
 - **Developer Familiarity**: Rails teams already use Ruby; no polyglot complexity
-- **Fiber-Based Concurrency**: Ruby 3.3's Fiber scheduler enables efficient async I/O in activities
+- **Fiber-Based Concurrency**: Ruby 4 keeps worker execution aligned with the repository runtime baseline
 
 **Why Single Workflow/Activity (v0.1)?**
 

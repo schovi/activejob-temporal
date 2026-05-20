@@ -75,7 +75,7 @@ The activejob-temporal gem employs a comprehensive, multi-layered testing strate
 **Continuous Integration (GitHub Actions)**
 
 - **Trigger**: On push to main branch, pull requests
-- **Ruby Versions**: Test on Ruby 3.2 and 3.3 (matrix)
+- **Ruby Versions**: Test on Ruby 4.0
 - **Jobs**:
   1. **Lint**: Run Rubocop (`bundle exec rubocop`), fail build on offenses
   2. **Unit Tests**: Run RSpec unit tests (`bundle exec rake spec:unit`), fail on test failures
@@ -112,7 +112,7 @@ The activejob-temporal gem employs a comprehensive, multi-layered testing strate
 - **Custom Rules**:
   - Max line length: 120 characters (configurable)
   - Max method complexity: 10 (cyclomatic complexity)
-  - Enforce Ruby 3.2+ syntax features
+  - Enforce Ruby 4.0-compatible syntax
 - **Exclusions**: `spec/fixtures/` (sample jobs may intentionally violate style for testing)
 
 **SimpleCov (Code Coverage)**
@@ -222,10 +222,10 @@ The gem is built in iterative layers, with each iteration integrating new compon
 **Dependency Management**
 
 - **temporalio**: Core dependency, tightly coupled
-  - **Version Pinning**: Lock to `~> 1.0` (or appropriate GA version)
+  - **Version Requirement**: Require `>= 1.4.1` for Ruby 4 compatibility
   - **Testing**: Integration tests verify SDK usage (workflow, activity, client APIs)
 - **activejob**: Interface dependency, loosely coupled
-  - **Version Requirement**: `>= 6.1` (support Rails 6.1+)
+  - **Version Requirement**: `>= 7.2` (support Rails 7.2+)
   - **Testing**: Unit tests verify adapter interface compliance
 - **globalid**: Used for job argument serialization
   - **Version Requirement**: Provided by Rails
@@ -244,7 +244,7 @@ The gem is built in iterative layers, with each iteration integrating new compon
 - ✅ Duplicate enqueue (same job_id) is rejected (no duplicate workflows)
 - ✅ `ActiveJob::Temporal.cancel(job_class, job_id)` cancels a running workflow
 - ✅ Search attributes (`ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`) are persisted
-- ✅ Works on Ruby 3.2+ and Rails 6.1+ with temporalio GA
+- ✅ Works on Ruby 4.0+ and Rails 7.2+ with temporalio 1.4.1+
 
 **Quality Requirements (MUST PASS)**
 
@@ -364,7 +364,7 @@ All items in release checklist (I5.T7) must be marked complete before release.
 
 **Temporal Worker**: Process that polls Temporal task queues and executes workflow/activity code. This gem provides `bin/temporal-worker` script to bootstrap workers. Workers are stateless and horizontally scalable.
 
-**Transactional Enqueue**: Rails feature (6.1+) where `enqueue_after_transaction_commit? => true` tells ActiveJob to defer job enqueue until after database transaction commits. Prevents jobs from being enqueued for rolled-back transactions. This gem supports this by returning `true` from adapter method.
+**Transactional Enqueue**: Rails 7.2+ ActiveJob behavior where `enqueue_after_transaction_commit? => true` tells ActiveJob to defer job enqueue until after database transaction commits. Prevents jobs from being enqueued for rolled-back transactions. This gem supports this by returning `true` from adapter method.
 
 **Workflow**: Deterministic function that coordinates activities, timers, and child workflows. In activejob-temporal, `AjWorkflow` orchestrates job execution (optionally sleeps for scheduled jobs, then executes `AjRunnerActivity`). Workflows are durable and resumable after failures.
 

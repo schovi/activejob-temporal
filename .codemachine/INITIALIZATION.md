@@ -11,8 +11,8 @@ This document guides the setup of the activejob-temporal gem development environ
 |--------|-------------------|-------------------|
 | **Gem Source** | `vendor/temporalio-sdk` (local path) | `https://rubygems.org/` |
 | **Gem Name** | `temporalio-sdk` | `temporalio` |
-| **Version Spec** | `~> 1.0` | `>= 1.0` |
-| **Installation** | Manual vendor directory | Standard `bundle install` |
+| **Version Spec** | `~> 1.0` | `>= 1.4.1` |
+| **Installation** | Manual vendor directory | `rvm 4.0.3 do bundle install` |
 | **Gemfile** | Conditional path gem loading | Direct gemspec dependency |
 | **Status** | Temporary shim (deprecated) | Production-ready |
 
@@ -29,8 +29,8 @@ The following files were updated to reference the real gem:
 
 ### Prerequisites
 
-- **Ruby**: 3.2+ (3.3+ recommended for Fiber scheduler)
-- **Rails**: 6.1+ (for ActiveJob)
+- **Ruby**: 4.0+
+- **Rails**: 7.2+ (for ActiveJob)
 - **Bundler**: 2.0+ (standard gem manager)
 
 ### Installation
@@ -40,22 +40,22 @@ The following files were updated to reference the real gem:
 cd /Users/schovi/work/activejob-temporal
 
 # 2. Install all gems (including temporalio from RubyGems)
-bundle install
+rvm 4.0.3 do bundle install
 
 # 3. Verify temporalio gem is installed
-bundle show temporalio
-# Output: /path/to/.../gems/temporalio-1.0.0/lib
+rvm 4.0.3 do bundle show temporalio
+# Output: /path/to/.../gems/temporalio-1.4.1/lib
 
 # 4. Verify you can require it
-ruby -e "require 'temporalio/client'; puts 'Temporalio SDK loaded successfully'"
+rvm 4.0.3 do ruby -e "require 'temporalio/client'; puts 'Temporalio SDK loaded successfully'"
 ```
 
 ### Expected Bundle Output
 
-When running `bundle install`, you should see:
+When running `rvm 4.0.3 do bundle install`, you should see:
 
 ```
-Using temporalio (1.0.0) from https://rubygems.org/
+Using temporalio (1.4.1) from https://rubygems.org/
 ```
 
 ## Development Workflow
@@ -64,36 +64,36 @@ Using temporalio (1.0.0) from https://rubygems.org/
 
 ```bash
 # Run all tests
-bundle exec rake spec
+rvm 4.0.3 do bundle exec rake spec
 
 # Run specific test file
-bundle exec rspec spec/unit/client_spec.rb
+rvm 4.0.3 do bundle exec rspec spec/unit/client_spec.rb
 
 # Run with coverage
-COVERAGE=true bundle exec rake spec
+rvm 4.0.3 do env COVERAGE=true bundle exec rake spec
 ```
 
 ### Code Quality Checks
 
 ```bash
 # Run RuboCop
-bundle exec rake rubocop
+rvm 4.0.3 do bundle exec rake rubocop
 
 # Run RuboCop with auto-fix
-bundle exec rubocop -A
+rvm 4.0.3 do bundle exec rubocop -A
 ```
 
 ### Building & Installing Locally
 
 ```bash
 # Build the gem
-gem build activejob-temporal.gemspec
+rvm 4.0.3 do gem build activejob-temporal.gemspec
 
 # Install locally
-gem install activejob-temporal-0.1.0.gem
+rvm 4.0.3 do gem install activejob-temporal-0.1.0.gem
 
 # Or install from git (in another project)
-bundle add activejob-temporal --git https://github.com/temporalio/activejob-temporal
+rvm 4.0.3 do bundle add activejob-temporal --git https://github.com/temporalio/activejob-temporal
 ```
 
 ## Configuration for Temporal Server
@@ -138,9 +138,9 @@ The real `temporalio` gem provides these core modules:
 
 **Solution**:
 ```bash
-bundle install
+rvm 4.0.3 do bundle install
 # OR
-gem install temporalio
+rvm 4.0.3 do gem install temporalio
 ```
 
 ### Error: "No such file or directory -- vendor/temporalio-sdk"
@@ -163,7 +163,7 @@ gemspec
 **Solution**:
 ```bash
 rm Gemfile.lock
-bundle install
+rvm 4.0.3 do bundle install
 ```
 
 ## Documentation References
@@ -192,14 +192,14 @@ lib/
 
 ## Next Steps for Development
 
-1. **Ensure gems are installed**: `bundle install`
-2. **Run tests**: `bundle exec rake spec`
+1. **Ensure gems are installed**: `rvm 4.0.3 do bundle install`
+2. **Run tests**: `rvm 4.0.3 do bundle exec rake spec`
 3. **Start Temporal server** (for integration tests):
    ```bash
    docker run -it --rm -p 7233:7233 temporalio/auto-setup:latest
    ```
 4. **Implement features** as defined in `.codemachine/artifacts/plan/` iterations
-5. **Check your work** with: `bundle exec rake rubocop && bundle exec rake spec`
+5. **Check your work** with: `rvm 4.0.3 do bundle exec rake rubocop && rvm 4.0.3 do bundle exec rake spec`
 
 ## Summary
 
@@ -207,7 +207,7 @@ The activejob-temporal gem now uses the **official, published `temporalio` gem**
 
 ✅ **Cleaner dependencies** - No vendor directory to manage
 ✅ **Official support** - Direct from Temporal Technologies
-✅ **Easy updates** - Standard `bundle update temporalio`
+✅ **Easy updates** - Standard `rvm 4.0.3 do bundle update temporalio`
 ✅ **Production-ready** - GA release with stable API
 
 For questions or issues, refer to the `.codemachine/` planning documents or the official Temporal Ruby SDK repository.

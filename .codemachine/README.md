@@ -12,11 +12,11 @@ Before implementing any tasks, ensure the development environment is properly co
 2. **Run environment setup**:
    ```bash
    cd /Users/schovi/work/activejob-temporal
-   bundle install
+   rvm 4.0.3 do bundle install
    ```
 3. **Verify Temporal gem is installed**:
    ```bash
-   bundle exec ruby -e "require 'temporalio/client'; puts 'Ready!'"
+   rvm 4.0.3 do bundle exec ruby -e "require 'temporalio/client'; puts 'Ready!'"
    ```
 
 ## Directory Structure
@@ -68,8 +68,8 @@ The project previously used a **vendored copy** of the Temporal Ruby SDK:
 The project now uses the **official, published `temporalio` gem**:
 - Source: https://rubygems.org/gems/temporalio
 - Gem name: `temporalio` (NOT `temporalio-sdk`)
-- Installation: Standard `bundle install`
-- Version: >= 1.0 (GA October 2025+)
+- Installation: `rvm 4.0.3 do bundle install`
+- Version: >= 1.4.1
 - Status: Production-ready
 
 ### Updated Files
@@ -141,8 +141,8 @@ The workflow can resume from the last incomplete step. Check `template.json` for
    - Test examples and edge cases
 4. **Agent implements** the task in the codebase
 5. **Agent verifies**:
-   - All tests pass: `bundle exec rake spec`
-   - Code quality: `bundle exec rake rubocop`
+   - All tests pass: `rvm 4.0.3 do bundle exec rake spec`
+   - Code quality: `rvm 4.0.3 do bundle exec rake rubocop`
    - Acceptance criteria met
 6. **System marks task complete** in the task JSON
 7. **Workflow continues** to next task (or iteration)
@@ -210,9 +210,9 @@ Maps iterations to files: `{ "I1": "tasks_I1.json", ... }`
 ## CI/CD Expectations
 
 The codebase includes:
-- **Linting**: `bundle exec rake rubocop`
-- **Testing**: `bundle exec rake spec`
-- **Documentation**: `bundle exec rake yard`
+- **Linting**: `rvm 4.0.3 do bundle exec rake rubocop`
+- **Testing**: `rvm 4.0.3 do bundle exec rake spec`
+- **Documentation**: `rvm 4.0.3 do bundle exec rake yard`
 
 All must pass before merging.
 
@@ -230,16 +230,16 @@ All must pass before merging.
 ## Troubleshooting
 
 ### "cannot load such file -- temporalio"
-- Run: `bundle install`
-- Check: `bundle show temporalio`
+- Run: `rvm 4.0.3 do bundle install`
+- Check: `rvm 4.0.3 do bundle show temporalio`
 
 ### "vendor/temporalio-sdk not found"
 - Your Gemfile is outdated. Update it to remove the vendor path check.
-- Delete `Gemfile.lock` and run `bundle install`
+- Delete `Gemfile.lock` and run `rvm 4.0.3 do bundle install`
 
 ### Tests failing due to missing SDK
-- Ensure `bundle install` completed successfully
-- Verify: `bundle exec ruby -e "require 'temporalio/client'"`
+- Ensure `rvm 4.0.3 do bundle install` completed successfully
+- Verify: `rvm 4.0.3 do bundle exec ruby -e "require 'temporalio/client'"`
 
 ## Questions?
 

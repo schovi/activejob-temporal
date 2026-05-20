@@ -39,7 +39,7 @@
         - `rake spec` runs without errors (no specs yet, but RSpec loads)
         - All files listed in "Target Files" exist with valid content
         - `.gitignore` includes standard patterns (`*.gem`, `Gemfile.lock`, `.bundle/`, `coverage/`, `.yardoc/`)
-        - Gemspec declares dependencies: `temporalio`, `activejob` (>= 6.1), `globalid`
+        - Gemspec declares dependencies: `temporalio`, `activejob` (>= 7.2), `globalid`
         - Gemspec declares development dependencies: `rspec`, `rubocop`, `simplecov`, `yard`
     *   **Dependencies:** None
     *   **Parallelizable:** No (first task, establishes foundation)

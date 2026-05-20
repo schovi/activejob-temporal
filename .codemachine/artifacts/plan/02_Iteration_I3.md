@@ -77,7 +77,7 @@
 <!-- anchor: task-i3-t3 -->
 *   **Task 3.3: Implement TemporalAdapter enqueue_after_transaction_commit? method**
     *   **Task ID:** `I3.T3`
-    *   **Description:** Add `enqueue_after_transaction_commit?` method to `TemporalAdapter` class. This method should return `true` to tell ActiveJob to defer enqueue until after database transaction commits (Rails 6.1+ feature). This prevents jobs from being enqueued for rolled-back transactions. Implementation is trivial: `def enqueue_after_transaction_commit?; true; end`. Write unit test in `spec/unit/adapter_spec.rb` verifying this method returns `true`.
+    *   **Description:** Add `enqueue_after_transaction_commit?` method to `TemporalAdapter` class. This method should return `true` to tell ActiveJob to defer enqueue until after database transaction commits (Rails 7.2+ ActiveJob behavior). This prevents jobs from being enqueued for rolled-back transactions. Implementation is trivial: `def enqueue_after_transaction_commit?; true; end`. Write unit test in `spec/unit/adapter_spec.rb` verifying this method returns `true`.
     *   **Agent Type Hint:** `BackendAgent`
     *   **Inputs:** ActiveJob adapter interface documentation (enqueue_after_transaction_commit? feature)
     *   **Input Files:**

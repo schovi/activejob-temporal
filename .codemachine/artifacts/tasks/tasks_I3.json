@@ -50,7 +50,7 @@
     "task_id": "I3.T3",
     "iteration_id": "I3",
     "iteration_goal": "Implement the ActiveJob adapter (TemporalAdapter) that integrates with Rails, and the cancellation API. This connects all previous components to enable actual job enqueue and cancellation.",
-    "description": "Add `enqueue_after_transaction_commit?` method to `TemporalAdapter` class. This method should return `true` to tell ActiveJob to defer enqueue until after database transaction commits (Rails 6.1+ feature). This prevents jobs from being enqueued for rolled-back transactions. Implementation is trivial: `def enqueue_after_transaction_commit?; true; end`. Write unit test in `spec/unit/adapter_spec.rb` verifying this method returns `true`.",
+    "description": "Add `enqueue_after_transaction_commit?` method to `TemporalAdapter` class. This method should return `true` to tell ActiveJob to defer enqueue until after database transaction commits (Rails 7.2+ ActiveJob behavior). This prevents jobs from being enqueued for rolled-back transactions. Implementation is trivial: `def enqueue_after_transaction_commit?; true; end`. Write unit test in `spec/unit/adapter_spec.rb` verifying this method returns `true`.",
     "agent_type_hint": "BackendAgent",
     "inputs": "ActiveJob adapter interface documentation (enqueue_after_transaction_commit? feature)",
     "target_files": [

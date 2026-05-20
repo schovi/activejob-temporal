@@ -13,7 +13,7 @@ This is the full specification of the task you must complete.
   "task_id": "I6.T10",
   "iteration_id": "I6",
   "iteration_goal": "Enhance Version 2 with robust validation, better error handling, and comprehensive documentation from Version 1 analysis while maintaining Version 2's superior architecture.",
-  "description": "Run `rake spec` to execute all tests including new tests written in Iteration 6. Verify that SimpleCov reports >= 90% code coverage for all modules modified or created in this iteration (Configuration validation methods, Cancel enhancements, Payload size validation, new exception classes). If coverage is below 90%, write additional tests to cover edge cases and error paths: (1) Configuration validation: test each validation method independently, test validate! calling all validators, test valid and invalid inputs for each setting; (2) Cancel: test find_workflow with running workflows, closed workflows, non-existent workflows, test connection errors; (3) Payload: test size validation with payloads at 249KB (pass), 250KB (pass), 251KB (fail), test validation skip when max_payload_size_kb is nil; (4) Exception classes: test exception inheritance (ConfigurationError < Error), test raising and catching. Generate coverage report in `coverage/index.html`. Review coverage report to identify uncovered lines and add targeted tests. Acceptance: All tests pass, coverage >= 90% for all modified files.",
+  "description": "Run `rvm 4.0.3 do bundle exec rake spec` to execute all tests including new tests written in Iteration 6. Verify that SimpleCov reports >= 90% code coverage for all modules modified or created in this iteration (Configuration validation methods, Cancel enhancements, Payload size validation, new exception classes). If coverage is below 90%, write additional tests to cover edge cases and error paths: (1) Configuration validation: test each validation method independently, test validate! calling all validators, test valid and invalid inputs for each setting; (2) Cancel: test find_workflow with running workflows, closed workflows, non-existent workflows, test connection errors; (3) Payload: test size validation with payloads at 249KB (pass), 250KB (pass), 251KB (fail), test validation skip when max_payload_size_kb is nil; (4) Exception classes: test exception inheritance (ConfigurationError < Error), test raising and catching. Generate coverage report in `coverage/index.html`. Review coverage report to identify uncovered lines and add targeted tests. Acceptance: All tests pass, coverage >= 90% for all modified files.",
   "agent_type_hint": "BackendAgent",
   "inputs": "RSpec configuration, SimpleCov configuration, unit tests from I6.T1-I6.T8",
   "target_files": [
@@ -31,7 +31,7 @@ This is the full specification of the task you must complete.
     "lib/activejob/temporal/payload.rb"
   ],
   "deliverables": "Passing test suite with >= 90% coverage for all Iteration 6 changes, coverage report",
-  "acceptance_criteria": "`rake spec` exits with status 0 (all tests pass); SimpleCov report shows >= 90% coverage for: lib/activejob/temporal.rb (Configuration class and exception classes), lib/activejob/temporal/cancel.rb (enhanced cancel logic), lib/activejob/temporal/payload.rb (size validation); Coverage report generated in `coverage/index.html`; No skipped or pending tests (all tests implemented); Test suite includes: 15+ new tests for configuration validation (one per validation method, one for validate!, edge cases), 10+ new tests for cancel enhancements (find_workflow, error handling, return values), 5+ new tests for payload size validation (under limit, at limit, over limit, skip validation, error message format); All edge cases covered: nil values, boundary conditions, exception hierarchies; Test descriptions are clear and follow consistent naming (e.g., 'raises ConfigurationError when target is invalid', 'returns false when workflow already completed'); Running `rake spec` completes in reasonable time (< 30 seconds for unit tests)",
+  "acceptance_criteria": "`rvm 4.0.3 do bundle exec rake spec` exits with status 0 (all tests pass); SimpleCov report shows >= 90% coverage for: lib/activejob/temporal.rb (Configuration class and exception classes), lib/activejob/temporal/cancel.rb (enhanced cancel logic), lib/activejob/temporal/payload.rb (size validation); Coverage report generated in `coverage/index.html`; No skipped or pending tests (all tests implemented); Test suite includes: 15+ new tests for configuration validation (one per validation method, one for validate!, edge cases), 10+ new tests for cancel enhancements (find_workflow, error handling, return values), 5+ new tests for payload size validation (under limit, at limit, over limit, skip validation, error message format); All edge cases covered: nil values, boundary conditions, exception hierarchies; Test descriptions are clear and follow consistent naming (e.g., 'raises ConfigurationError when target is invalid', 'returns false when workflow already completed'); Running `rvm 4.0.3 do bundle exec rake spec` completes in reasonable time (< 30 seconds for unit tests)",
   "dependencies": ["I6.T1", "I6.T2", "I6.T3", "I6.T4", "I6.T8", "I6.T9"],
   "parallelizable": false,
   "done": false
@@ -67,7 +67,7 @@ The activejob-temporal gem employs a multi-level testing strategy to ensure corr
 - **Tool**: simplecov gem
 - **Configuration**: `spec/spec_helper.rb`
 - **Target**: >= 90% line coverage for all lib/ files
-- **Command**: `rake spec` (coverage report generated automatically)
+- **Command**: `rvm 4.0.3 do bundle exec rake spec` (coverage report generated automatically)
 - **Report Location**: `coverage/index.html`
 - **Exclusions**: None (all production code must be covered)
 - **Enforcement**: CI/CD pipeline blocks merge if coverage drops below 90%
@@ -189,10 +189,10 @@ The following analysis is based on my direct review of the current codebase. Use
 
 ### Implementation Tips & Notes
 
-*   **Critical: Bundler Error:** The earlier attempt to run `rake spec` failed with a bundler error: "uninitialized constant Gem::Resolver::APISet::GemParser". This is a Ruby/Bundler version mismatch. You MUST resolve this before running tests. Possible solutions:
-    1. Try running RSpec directly: `rspec spec/unit/` (bypasses rake)
-    2. Check Ruby version: `ruby -v` (should be 3.2+)
-    3. Try `bundle exec rspec spec/unit/` to use bundled versions
+*   **Critical: Bundler Error:** The earlier attempt to run `rvm 4.0.3 do bundle exec rake spec` failed with a bundler error: "uninitialized constant Gem::Resolver::APISet::GemParser". This is a Ruby/Bundler version mismatch. You MUST resolve this before running tests. Possible solutions:
+    1. Try running RSpec directly: `rvm 4.0.3 do bundle exec rspec spec/unit/` (bypasses rake)
+    2. Check Ruby version through the repository toolchain: `rvm 4.0.3 do ruby -v`
+    3. Try `rvm 4.0.3 do bundle exec rspec spec/unit/` to use bundled versions
 
 *   **Tip:** Based on my code review, the existing test files are extremely comprehensive. The task asks for "15+ new tests for configuration validation" but configuration_spec.rb already has 50+ validation tests. These tests were likely written in I6.T1. You should verify this by checking if those tests already exist before adding duplicates.
 
@@ -235,7 +235,7 @@ The following analysis is based on my direct review of the current codebase. Use
    - Try alternative methods to run tests if rake fails
 
 2. **Second Priority: Run Tests and Get Coverage Report**
-   - Execute the test suite: `rake spec` or `rspec spec/unit/`
+   - Execute the test suite: `rvm 4.0.3 do bundle exec rake spec` or `rvm 4.0.3 do bundle exec rspec spec/unit/`
    - Capture coverage metrics from SimpleCov output
    - Identify which files have coverage below 90%
 
@@ -296,7 +296,7 @@ Before you start, ensure you:
 
 Your implementation will be considered successful when:
 
-- `rake spec` exits with status 0 (all tests pass)
+- `rvm 4.0.3 do bundle exec rake spec` exits with status 0 (all tests pass)
 - SimpleCov reports >= 90% coverage for:
   - `lib/activejob/temporal.rb` (Configuration class and exception classes)
   - `lib/activejob/temporal/cancel.rb` (enhanced cancel logic)

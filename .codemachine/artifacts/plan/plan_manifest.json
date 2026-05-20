@@ -22,7 +22,7 @@
       "key": "key-assumptions",
       "file": "01_Plan_Overview_and_Setup.md",
       "start_anchor": "<!-- anchor: key-assumptions -->",
-      "description": "Platform, operational, and scope assumptions for the project (Ruby >= 3.2, Rails >= 6.1, Temporal SDK GA, etc.)."
+      "description": "Platform, operational, and scope assumptions for the project (Ruby >= 4.0, Rails >= 7.2, Temporal SDK GA, etc.)."
     },
     {
       "key": "core-architecture",
