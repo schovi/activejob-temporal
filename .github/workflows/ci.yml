@@ -73,6 +73,17 @@ jobs:
         env:
           TEST_SUITE: unit
 
+      - name: Upload unit coverage to Codecov
+        if: matrix.ruby == '4.0'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          disable_search: true
+          flags: unit
+          name: ruby-${{ matrix.ruby }}-unit
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
       - name: Upload unit test coverage
         if: matrix.ruby == '4.0'
         uses: actions/upload-artifact@v4
@@ -126,6 +137,17 @@ jobs:
         run: bundle exec rake spec:integration
         env:
           TEST_SUITE: integration
+
+      - name: Upload integration coverage to Codecov
+        if: matrix.ruby == '4.0'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          disable_search: true
+          flags: integration
+          name: ruby-${{ matrix.ruby }}-integration
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
       - name: Upload integration test coverage
         if: matrix.ruby == '4.0'

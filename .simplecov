@@ -1,6 +1,24 @@
 # frozen_string_literal: true
 
+if ENV["CI"]
+  require "simplecov-lcov"
+
+  SimpleCov::Formatter::LcovFormatter.config do |config|
+    config.report_with_single_file = true
+    config.single_report_path = "coverage/lcov.info"
+  end
+end
+
 SimpleCov.start do
+  if ENV["CI"]
+    ci_formatters = [
+      SimpleCov::Formatter::HTMLFormatter,
+      SimpleCov::Formatter::LcovFormatter
+    ]
+
+    formatter SimpleCov::Formatter::MultiFormatter.new(ci_formatters)
+  end
+
   add_filter "/spec/"
   enable_coverage :branch
 
