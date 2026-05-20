@@ -546,6 +546,7 @@ Additional guides:
 - [Retry Policy Guide](docs/retry_policies.md)
 - [Worker Setup Guide](docs/worker_setup.md)
 - [Migration Guide](docs/migration_guide.md)
+- [Comparison Guide](docs/comparison.md)
 - [Security](docs/security.md)
 
 ## Limitations (v0.1)

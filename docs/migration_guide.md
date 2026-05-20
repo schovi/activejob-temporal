@@ -183,7 +183,7 @@ PaymentGateway.charge(idempotency_key: Thread.current[:aj_temporal_idempotency_k
 
 ## 10. Resources
 
-**Documentation:** [README](../README.md) | [Configuration Reference](configuration_reference.md) | [Worker Setup Guide](worker_setup.md) | [Temporal Ruby SDK](https://docs.temporal.io/dev-guide/ruby)
+**Documentation:** [README](../README.md) | [Comparison Guide](comparison.md) | [Configuration Reference](configuration_reference.md) | [Worker Setup Guide](worker_setup.md) | [Temporal Ruby SDK](https://docs.temporal.io/dev-guide/ruby)
 
 **Community:** [Temporal Slack](https://temporal.io/slack) (#ruby-sdk) | [GitHub Issues](https://github.com/temporalio/activejob-temporal/issues) | [Temporal Docs](https://docs.temporal.io/)
 
