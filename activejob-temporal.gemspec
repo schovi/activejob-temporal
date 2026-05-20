@@ -41,6 +41,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "temporalio", ">= 1.4.1"
 
   spec.add_development_dependency "benchmark-ips", "~> 2.14"
+  spec.add_development_dependency "github_changelog_generator", "~> 1.18"
   spec.add_development_dependency "rake", "~> 13.2"
   spec.add_development_dependency "rspec", "~> 3.12"
   spec.add_development_dependency "rubocop", "~> 1.50"

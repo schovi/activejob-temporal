@@ -1,0 +1,9 @@
+user=schovi
+project=activejob-temporal
+output=CHANGELOG.md
+since-tag=v0.1.0
+future-release=Unreleased
+exclude-labels=duplicate,question,invalid,wontfix
+enhancement-labels=enhancement
+bug-labels=bug
+verbose=false
