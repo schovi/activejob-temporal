@@ -100,8 +100,10 @@ module ActiveJob
         #   # If RecordNotFound is raised, activity raises non-retryable ApplicationError
         def execute(payload)
           job_class = nil
+          audit_context = nil
+          audit_context = audit_started(payload)
 
-          Metrics.instrument_perform(payload) do
+          result = Metrics.instrument_perform(payload) do
             args = Payload.deserialize_args(payload)
             job_class = constantize_job_class(payload)
             job = job_class.new
@@ -109,7 +111,10 @@ module ActiveJob
             set_idempotency_key
             perform_job(job, args)
           end
+          audit_completed(audit_context)
+          result
         rescue StandardError => e
+          audit_failed(audit_context || empty_audit_context, e)
           Metrics.record_retry(payload, e)
           handle_exception(job_class, e)
         ensure
@@ -131,6 +136,39 @@ module ActiveJob
           ActiveJob::Temporal.config.middleware_chain.call(job) do
             job.perform(*args)
           end
+        end
+
+        def audit_started(payload)
+          attributes = AuditLog.activity_attributes_from_payload(payload)
+          AuditLog.record("job.started", attributes)
+
+          { started_at: AuditLog.monotonic_time, attributes: attributes }
+        end
+
+        def audit_completed(audit_context)
+          AuditLog.record(
+            "job.completed",
+            audit_context[:attributes].merge(duration_ms: audit_duration(audit_context))
+          )
+        end
+
+        def audit_failed(audit_context, error)
+          cancelled = AuditLog.cancelled_error?(error)
+          AuditLog.record(
+            cancelled ? "job.cancelled" : "job.failed",
+            audit_context[:attributes]
+              .merge(duration_ms: audit_duration(audit_context))
+              .merge(status: ("observed" if cancelled))
+              .merge(AuditLog.error_attributes(error))
+          )
+        end
+
+        def empty_audit_context
+          { started_at: AuditLog.monotonic_time, attributes: {} }
+        end
+
+        def audit_duration(audit_context)
+          AuditLog.elapsed_milliseconds(audit_context[:started_at])
         end
 
         # Sets thread-local idempotency key from workflow ID.

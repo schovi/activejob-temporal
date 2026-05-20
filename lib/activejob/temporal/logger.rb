@@ -17,9 +17,9 @@ module ActiveJob
     # - Custom attributes (Hash)
     #
     # @note SemanticLogger Detection
-    #   If the SemanticLogger constant is defined, log entries are passed directly as hashes
-    #   to SemanticLogger (which handles JSON formatting). Otherwise, the module JSON-stringifies
-    #   the payload before passing it to the configured Ruby Logger instance.
+    #   If the configured logger is a SemanticLogger instance, log entries are passed directly
+    #   as hashes. Otherwise, the module JSON-stringifies the payload before passing it to the
+    #   configured Ruby Logger instance.
     #
     # @example Basic logging
     #   Logger.info("job.enqueued", job_id: "123", queue: "default")
@@ -29,7 +29,7 @@ module ActiveJob
     #   Logger.error("job.failed", job_id: "123", error: "NetworkError")
     #
     # @example With SemanticLogger
-    #   # If SemanticLogger is available, structured hash is passed directly
+    #   # If the configured logger is SemanticLogger, structured hash is passed directly
     #   Logger.info("workflow.started", workflow_id: "wf-123")
     #   # SemanticLogger formats as structured JSON
     #
@@ -103,19 +103,22 @@ module ActiveJob
         log(:error, event_name, attributes)
       end
 
+      def log_to(configured_logger, level, event_name, attributes = {})
+        log(level, event_name, attributes, configured_logger: configured_logger)
+      end
+
       private
 
       # Internal logging method that handles all log levels.
       # @api private
-      def log(level, event_name, attributes)
+      def log(level, event_name, attributes, configured_logger: ActiveJob::Temporal.config.logger)
         validate_event!(event_name)
         attributes = normalize_attributes(attributes)
 
         payload = build_payload(event_name, attributes)
-        configured_logger = ActiveJob::Temporal.config.logger
         return unless configured_logger.respond_to?(level)
 
-        if semantic_logger_available?
+        if semantic_logger?(configured_logger)
           configured_logger.public_send(level, payload)
         else
           configured_logger.public_send(level, JSON.generate(payload))
@@ -153,10 +156,17 @@ module ActiveJob
         raise ArgumentError, "event_name must be a String or Symbol"
       end
 
-      # Checks if SemanticLogger is available.
+      # Checks if the configured logger handles structured payloads itself.
       # @api private
-      def semantic_logger_available?
-        defined?(SemanticLogger)
+      def semantic_logger?(configured_logger)
+        return false unless defined?(SemanticLogger)
+        return true if semantic_logger_instance?(configured_logger)
+
+        configured_logger.class.name.to_s.start_with?("SemanticLogger::")
+      end
+
+      def semantic_logger_instance?(configured_logger)
+        defined?(SemanticLogger::Logger) && configured_logger.is_a?(SemanticLogger::Logger)
       end
     end
   end

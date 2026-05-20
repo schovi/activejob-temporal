@@ -21,6 +21,7 @@ RSpec.describe ActiveJob::Temporal::Schedule do
   before do
     allow(client).to receive(:create_schedule).and_return("schedule-handle")
     allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+    allow(ActiveJob::Temporal::AuditLog).to receive(:record)
   end
 
   it "builds a Temporal schedule that starts the ActiveJob workflow" do
@@ -162,6 +163,28 @@ RSpec.describe ActiveJob::Temporal::Schedule do
 
     expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
       "schedule_created",
+      schedule_id: "ajsch:ScheduledReportJob",
+      job_class: "ScheduledReportJob",
+      cron: "0 2 * * *",
+      timezone: "UTC",
+      overlap_policy: :skip,
+      task_queue: "reports",
+      duplicate: false
+    )
+  end
+
+  it "records a schedule audit event" do
+    schedule = described_class.new(
+      job_class,
+      cron: "0 2 * * *",
+      client: client,
+      config: config
+    )
+
+    schedule.create
+
+    expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+      "schedule.created",
       schedule_id: "ajsch:ScheduledReportJob",
       job_class: "ScheduledReportJob",
       cron: "0 2 * * *",

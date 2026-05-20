@@ -144,6 +144,25 @@ attributes:
       env_var_name: null
       example: "Logger.new('log/temporal.log')"
 
+    - name: audit_log
+      type: Boolean
+      default: false
+      validation_rules:
+        - "Must be true or false"
+      description: "Enables structured audit events for job lifecycle changes. Emits job.enqueued, job.started, job.completed, job.failed, job.cancelled, and schedule.created."
+      env_var_name: ACTIVEJOB_TEMPORAL_AUDIT_LOG
+      example: true
+
+    - name: audit_logger
+      type: Logger
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must respond to #info"
+      description: "Optional logger destination for audit events. Falls back to logger when nil."
+      env_var_name: null
+      example: "Logger.new('log/activejob_temporal_audit.log')"
+
     - name: validation_level
       type: Symbol
       default: ":strict"
@@ -284,6 +303,8 @@ examples:
       default_retry_backoff: 2.0
       default_retry_max_attempts: 1
       logger: "Rails.logger"
+      audit_log: false
+      audit_logger: null
       validation_level: ":strict"
       enable_tracing: true
       metrics_provider: ":none"
@@ -317,6 +338,8 @@ examples:
       default_retry_backoff: 2.0
       default_retry_max_attempts: 3
       logger: "Rails.logger"
+      audit_log: true
+      audit_logger: "Logger.new('log/activejob_temporal_audit.log')"
       validation_level: ":strict"
       enable_tracing: true
       metrics_provider: ":prometheus"
@@ -336,6 +359,8 @@ examples:
         config.priority_task_queues = { 10 => "high_priority", 90 => "low_priority" }
         config.validation_level = :strict
         config.default_retry_max_attempts = 3
+        config.audit_log = true
+        config.audit_logger = Logger.new("log/activejob_temporal_audit.log")
         config.metrics_provider = :prometheus
         config.metrics_port = 9394
         config.identity = ENV.fetch('HOSTNAME', 'unknown-worker')
@@ -356,6 +381,8 @@ examples:
       default_retry_backoff: 1.5
       default_retry_max_attempts: 5
       logger: "Rails.logger"
+      audit_log: true
+      audit_logger: null
       validation_level: ":strict"
       enable_tracing: true
       metrics_provider: ":prometheus"
@@ -424,6 +451,8 @@ validation:
     - "metrics_provider - Must be :none or :prometheus"
     - "metrics_port - Optional, but when set must be between 1 and 65535"
     - "metrics_bind - Must be present"
+    - "audit_log - Must be true or false"
+    - "audit_logger - Optional, but when set must respond to #info"
     - "middleware_chain - Must respond to #add and #call"
 
   error_handling: "Validation errors raise ActiveJob::Temporal::ConfigurationError by default. Set validation_level to :warn to log warnings and continue, or :none to skip validation."
@@ -488,3 +517,8 @@ environment_variables:
     - name: ACTIVEJOB_TEMPORAL_METRICS_BIND
       maps_to: metrics_bind
       example: "0.0.0.0"
+
+    - name: ACTIVEJOB_TEMPORAL_AUDIT_LOG
+      maps_to: audit_log
+      example: "true"
+      note: "Must be converted to boolean"

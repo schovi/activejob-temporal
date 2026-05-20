@@ -23,6 +23,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     allow(ActiveJob::Temporal.config).to receive(:middleware_chain).and_return(middleware_chain)
     allow(ActiveJob::Temporal::Metrics).to receive(:instrument_perform).and_call_original
     allow(ActiveJob::Temporal::Metrics).to receive(:record_retry)
+    allow(ActiveJob::Temporal::AuditLog).to receive(:record)
   end
 
   describe "#execute" do
@@ -102,6 +103,45 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(payload)
     end
 
+    it "records started and completed audit events without raw arguments or result" do
+      job_instance = instance_double("AuditRunnerJob")
+      class_double("AuditRunnerJob", new: job_instance).as_stubbed_const
+      payload = {
+        "job_class" => "AuditRunnerJob",
+        "job_id" => "job-1",
+        "queue_name" => "critical",
+        "arguments" => ["secret"]
+      }
+      allow(job_instance).to receive(:perform).and_return("secret-result")
+
+      expect(activity.execute(payload)).to eq("secret-result")
+
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.started",
+        hash_including(
+          job_class: "AuditRunnerJob",
+          job_id: "job-1",
+          queue: "critical",
+          workflow_id: workflow_id
+        )
+      )
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.completed",
+        hash_including(
+          job_class: "AuditRunnerJob",
+          job_id: "job-1",
+          queue: "critical",
+          duration_ms: a_kind_of(Numeric)
+        )
+      )
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.completed",
+        satisfy do |attributes|
+          !attributes.key?(:arguments) && !attributes.key?(:result)
+        end
+      )
+    end
+
     it "records failed metrics for setup failures before perform starts" do
       previous_provider = ActiveJob::Temporal.config.metrics_provider
       payload = { "job_class" => "SetupFailureJob", "queue_name" => "critical" }
@@ -118,6 +158,54 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     ensure
       ActiveJob::Temporal.config.metrics_provider = previous_provider if previous_provider
       ActiveJob::Temporal::Metrics.reset!
+    end
+
+    it "records failed audit events with error metadata" do
+      payload = { "job_class" => "RetryableJob", "job_id" => "job-1", "queue_name" => "critical" }
+      job_instance = instance_double(RetryableJob.name)
+      allow(RetryableJob).to receive(:new).and_return(job_instance)
+      error = SampleJobError.new("boom")
+      allow(job_instance).to receive(:perform).and_raise(error)
+
+      expect { activity.execute(payload) }.to raise_error(error)
+
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.failed",
+        hash_including(
+          job_class: "RetryableJob",
+          job_id: "job-1",
+          queue: "critical",
+          error_class: "SampleJobError",
+          error_fingerprint: a_string_matching(/\A[0-9a-f]{64}\z/),
+          duration_ms: a_kind_of(Numeric)
+        )
+      )
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.failed",
+        satisfy do |attributes|
+          !attributes.key?(:error_message) && !attributes.key?(:backtrace)
+        end
+      )
+    end
+
+    it "records cancelled audit events for Temporal cancellation errors" do
+      payload = { "job_class" => "RetryableJob", "job_id" => "job-1", "queue_name" => "critical" }
+      job_instance = instance_double(RetryableJob.name)
+      allow(RetryableJob).to receive(:new).and_return(job_instance)
+      error = Temporalio::Error::CanceledError.new("cancelled")
+      allow(job_instance).to receive(:perform).and_raise(error)
+
+      expect { activity.execute(payload) }.to raise_error(error)
+
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.cancelled",
+        hash_including(
+          job_class: "RetryableJob",
+          job_id: "job-1",
+          queue: "critical",
+          status: "observed"
+        )
+      )
     end
 
     it "routes middleware exceptions through Temporal retry handling" do

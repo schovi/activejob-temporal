@@ -135,6 +135,19 @@ module ActiveJob
         description: "Logger instance for gem output"
       },
 
+      audit_log: {
+        default: false,
+        env_var: "ACTIVEJOB_TEMPORAL_AUDIT_LOG",
+        type: :boolean,
+        description: "Enable structured audit events for job lifecycle changes"
+      },
+
+      audit_logger: {
+        default: nil,
+        type: :object,
+        description: "Optional logger instance for audit events; falls back to logger"
+      },
+
       validation_level: {
         default: :strict,
         type: :symbol,
@@ -444,6 +457,7 @@ module ActiveJob
       validate :validate_middleware_chain
       validate :validate_priority_task_queues
       validate :validate_metrics_settings
+      validate :validate_audit_settings
 
       private
 
@@ -534,6 +548,23 @@ module ActiveJob
         return if metrics_bind.to_s.strip.present?
 
         errors.add(:metrics_bind, :blank)
+      end
+
+      def validate_audit_settings
+        validate_audit_log
+        validate_audit_logger
+      end
+
+      def validate_audit_log
+        return if [true, false].include?(audit_log)
+
+        errors.add(:audit_log, :not_boolean, value: audit_log.inspect)
+      end
+
+      def validate_audit_logger
+        return if audit_logger.nil? || audit_logger.respond_to?(:info)
+
+        errors.add(:audit_logger, :invalid, value: audit_logger.inspect)
       end
 
       def callable_accepts_positional_job?(callable)

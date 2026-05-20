@@ -4,6 +4,7 @@ require "active_job"
 require "temporalio/client/schedule"
 
 require_relative "adapter"
+require_relative "audit_log"
 require_relative "job_payload_builder"
 require_relative "logger"
 require_relative "schedule_options"
@@ -147,8 +148,7 @@ module ActiveJob
       end
 
       def log_created(task_queue:, duplicate:)
-        Logger.log_event(
-          "schedule_created",
+        attributes = {
           schedule_id: id,
           job_class: job_class.name,
           cron: cron,
@@ -156,7 +156,10 @@ module ActiveJob
           overlap_policy: overlap_policy,
           task_queue: task_queue,
           duplicate: duplicate
-        )
+        }
+
+        Logger.log_event("schedule_created", attributes)
+        AuditLog.record("schedule.created", attributes)
       end
     end
   end

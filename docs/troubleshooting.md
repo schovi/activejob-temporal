@@ -572,6 +572,6 @@ When opening an issue, include:
 - Job class with `queue_as`, `set(priority:)` if used, `retry_on`, `discard_on`, and `temporal_options`
 - Exact error message
 - Workflow ID and run ID if available
-- Relevant structured log events such as `workflow_enqueued`, `payload_size_exceeded`, or `cancellation_requested`
+- Relevant structured log events such as `workflow_enqueued`, `payload_size_exceeded`, `cancellation_requested`, or audit events like `job.failed`
 
 Do not include credentials, TLS private keys, customer data, or full job arguments containing sensitive data.

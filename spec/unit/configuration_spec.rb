@@ -64,6 +64,11 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.metrics_bind).to eq("127.0.0.1")
     end
 
+    it "disables audit logging by default" do
+      expect(configuration.audit_log).to be(false)
+      expect(configuration.audit_logger).to be_nil
+    end
+
     it "uses the default workflow ID generator when none is configured" do
       expect(configuration.workflow_id_generator).to be_nil
     end
@@ -246,6 +251,14 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(config.metrics_bind).to eq("0.0.0.0")
     end
 
+    it "reads audit logging from ACTIVEJOB_TEMPORAL_AUDIT_LOG" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_AUDIT_LOG").and_return("true")
+
+      config = described_class.new
+      expect(config.audit_log).to be(true)
+    end
+
     it "uses default (5) when ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS is not set" do
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return(nil)
@@ -330,6 +343,38 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects invalid ports" do
       expect { configuration.metrics_port = 70_000 }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /Metrics port must be between 1 and 65535/)
+    end
+  end
+
+  describe "#audit_log=" do
+    it "accepts boolean values" do
+      configuration.audit_log = true
+      expect(configuration.audit_log).to be(true)
+
+      configuration.audit_log = false
+      expect(configuration.audit_log).to be(false)
+    end
+
+    it "rejects non-boolean values" do
+      expect { configuration.audit_log = "true" }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Audit log must be true or false/)
+    end
+  end
+
+  describe "#audit_logger=" do
+    it "accepts nil and logger-compatible values" do
+      logger = Logger.new(StringIO.new)
+
+      configuration.audit_logger = logger
+      expect(configuration.audit_logger).to be(logger)
+
+      configuration.audit_logger = nil
+      expect(configuration.audit_logger).to be_nil
+    end
+
+    it "rejects values that cannot receive info logs" do
+      expect { configuration.audit_logger = Object.new }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Audit logger must respond to #info/)
     end
   end
 

@@ -120,6 +120,13 @@ module ActiveJob
           run_id = workflow_execution.respond_to?(:run_id) ? workflow_execution.run_id : nil
 
           client.workflow_handle(workflow_id, run_id: run_id).terminate(TERMINATION_REASON)
+          ActiveJob::Temporal::AuditLog.record(
+            "job.cancelled",
+            workflow_id: workflow_id,
+            run_id: run_id,
+            status: "terminated",
+            reason: TERMINATION_REASON
+          )
           summary[:terminated] += 1
         rescue StandardError => e
           summary[:failed] += 1

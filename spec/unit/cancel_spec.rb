@@ -55,6 +55,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       allow(ActiveJob::Temporal::Logger).to receive(:log_event)
       allow(ActiveJob::Temporal::Logger).to receive(:info)
       allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      allow(ActiveJob::Temporal::AuditLog).to receive(:record)
     end
 
     context "when the workflow is running" do
@@ -82,6 +83,18 @@ RSpec.describe ActiveJob::Temporal::Cancel do
           workflow_id: workflow_id,
           job_class: job_class.name,
           job_id: job_id
+        )
+      end
+
+      it "records a cancellation audit event" do
+        described_class.cancel(job_class, job_id)
+
+        expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+          "job.cancelled",
+          workflow_id: workflow_id,
+          job_class: job_class.name,
+          job_id: job_id,
+          status: "requested"
         )
       end
 
@@ -353,6 +366,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
     before do
       allow(ActiveJob::Temporal).to receive(:client).and_return(client)
       allow(handle).to receive(:terminate)
+      allow(ActiveJob::Temporal::AuditLog).to receive(:record)
     end
 
     it "terminates running workflows matching job class" do
@@ -368,6 +382,13 @@ RSpec.describe ActiveJob::Temporal::Cancel do
 
       expect(result).to eq(terminated: 1, failed: 0, errors: [])
       expect(handle).to have_received(:terminate).with("ActiveJob::Temporal.cancel_where")
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.cancelled",
+        workflow_id: "workflow-1",
+        run_id: "run-1",
+        status: "terminated",
+        reason: "ActiveJob::Temporal.cancel_where"
+      )
     end
 
     it "supports queue and tenant search attributes" do

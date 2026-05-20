@@ -19,6 +19,7 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
     before do
       allow(client).to receive(:start_workflow).and_return("workflow-handle")
       allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+      allow(ActiveJob::Temporal::AuditLog).to receive(:record)
       allow(ActiveJob::Temporal::Metrics).to receive(:record_enqueue)
     end
 
@@ -34,6 +35,22 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
         job: job,
         duplicate: false
+      )
+    end
+
+    it "records an audit event after a workflow starts" do
+      enqueuer.enqueue(job)
+
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.enqueued",
+        hash_including(
+          workflow_id: "ajwf:SimpleJob:test-job-id",
+          job_class: "SimpleJob",
+          job_id: "test-job-id",
+          queue: "default",
+          task_queue: "default",
+          duplicate: false
+        )
       )
     end
 
@@ -186,6 +203,13 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
         job: job,
         duplicate: true
+      )
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.enqueued",
+        hash_including(
+          job_id: "test-job-id",
+          duplicate: true
+        )
       )
     end
 

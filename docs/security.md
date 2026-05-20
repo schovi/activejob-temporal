@@ -121,7 +121,11 @@ We use structured JSON logging to avoid leaking sensitive data in plaintext logs
 
 Logs include:
 - ✅ workflow_id, job_class, job_id, queue, status
+- ✅ audit lifecycle events when `config.audit_log = true`
+- ✅ failure `error_class` and SHA256 `error_fingerprint`
 - ❌ Job arguments (too sensitive)
+- ❌ Job return values (application data)
+- ❌ Raw exception messages or backtraces in audit events
 - ❌ Retry backoff details (implementation detail)
 
 ## Security Reporting

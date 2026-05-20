@@ -66,6 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Changelog generation configuration and `rake changelog:generate` release task.
+- Structured audit logging for job enqueue, execution, failure, and cancellation lifecycle events.
 - Codecov coverage badge and CI coverage uploads.
 - Configurable `workflow_id_generator` hook for custom Temporal workflow IDs.
 - Batch cancellation APIs via `ActiveJob::Temporal.cancel_all` and `ActiveJob::Temporal.cancel_where`.

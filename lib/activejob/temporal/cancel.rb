@@ -79,6 +79,7 @@ module ActiveJob
           when :running
             client.workflow_handle(workflow_id).cancel
             log_cancellation_requested(job_class, job_id, workflow_id)
+            log_audit_cancellation_requested(job_class, job_id, workflow_id)
             nil
           end
         end
@@ -213,6 +214,16 @@ module ActiveJob
             job_class: job_class.name,
             job_id: job_id,
             status: "completed"
+          )
+        end
+
+        def log_audit_cancellation_requested(job_class, job_id, workflow_id)
+          ActiveJob::Temporal::AuditLog.record(
+            "job.cancelled",
+            workflow_id: workflow_id,
+            job_class: job_class.name,
+            job_id: job_id,
+            status: "requested"
           )
         end
       end

@@ -24,6 +24,8 @@ The canonical machine-readable schema for all configuration options is available
 | `default_retry_backoff` | Float | `2.0` | Exponential factor used when calculating retry delays. |
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
 | `logger` | `Logger` | `Rails.logger` (if available) or `Logger.new($stdout)` | Destination for adapter log output. |
+| `audit_log` | Boolean | `false` | Enables structured job lifecycle audit events. |
+| `audit_logger` | `Logger` or `nil` | `nil` | Optional destination for audit events. Falls back to `logger`. |
 | `validation_level` | Symbol | `:strict` | Controls configuration validation: `:strict` raises, `:warn` logs warnings, `:none` skips validation. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
 | `metrics_provider` | Symbol | `:none` | Metrics provider. Set to `:prometheus` to collect built-in Prometheus metrics. |
@@ -51,6 +53,7 @@ Configuration can also be set via environment variables for 12-factor app compli
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | `metrics_provider` | Symbol | `:none` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | `metrics_port` | Integer | `nil` |
 | `ACTIVEJOB_TEMPORAL_METRICS_BIND` | `metrics_bind` | String | `"127.0.0.1"` |
+| `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | `audit_log` | Boolean | `false` |
 
 **Example:** Setting `ACTIVEJOB_TEMPORAL_TARGET=temporal.production.com:7233` before your Rails app boots will configure the adapter to connect to that Temporal server, unless you override it in an initializer.
 
@@ -78,6 +81,8 @@ ActiveJob::Temporal.configure do |config|
   # Other settings
   config.validation_level = :strict
   config.enable_tracing = false
+  config.audit_log = true
+  config.audit_logger = Logger.new("log/activejob_temporal_audit.log")
   config.metrics_provider = :prometheus
   config.metrics_port = 9394
   config.max_payload_size_kb = 512
@@ -150,6 +155,32 @@ bundle exec temporal-worker --metrics-port 9394
 `metrics_provider` accepts `:none` or `:prometheus`. `metrics_port` is optional; when set, the worker exposes `GET /metrics`. `metrics_bind` defaults to localhost. Use `0.0.0.0` only when Prometheus runs outside the worker process namespace. Enqueue and payload size metrics are recorded by the process that calls `perform_later`, so expose `ActiveJob::Temporal::Metrics.render` from that process if Prometheus should scrape those series.
 
 See the [Metrics Guide](metrics.md) for metric names, scrape configuration, and Grafana dashboard setup.
+
+## Audit Logging
+
+Set `audit_log` to `true` to emit structured job lifecycle events:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.audit_log = true
+  config.audit_logger = Logger.new("log/activejob_temporal_audit.log")
+end
+```
+
+If `audit_logger` is `nil`, audit events use the normal `logger`. The logger must respond to `#info`. `ACTIVEJOB_TEMPORAL_AUDIT_LOG=true` enables audit logging from the environment.
+
+Audit events use the same JSON payload format as adapter logs and include an `event` field. Emitted event names are:
+
+| Event | When Emitted |
+| --- | --- |
+| `job.enqueued` | A `perform_later` workflow is started or duplicate enqueue is detected. |
+| `job.started` | The Temporal activity starts executing a job. |
+| `job.completed` | The job returns successfully. |
+| `job.failed` | The job or setup path raises an error. |
+| `job.cancelled` | A cancellation is requested, a batch termination is sent, or a cancellation error is observed in the activity. |
+| `schedule.created` | A Temporal Schedule is created or an existing schedule is reused. |
+
+Audit attributes include correlation fields such as `workflow_id`, `run_id`, `job_class`, `job_id`, `queue`, `attempt`, and `worker_id` when available. Failure events include `error_class` and a SHA256 `error_fingerprint`, not raw exception messages or backtraces. The audit logger intentionally excludes raw job arguments, payloads, and return values. Use explicit application-level logging if a compliance process needs a redacted business identifier.
 
 ## Validation Levels
 

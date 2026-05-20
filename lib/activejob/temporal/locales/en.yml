@@ -47,6 +47,12 @@ en:
             metrics_bind:
               blank: "must be present when metrics are configured"
 
+            audit_log:
+              not_boolean: "must be true or false, got: %{value}"
+
+            audit_logger:
+              invalid: "must respond to #info, got: %{value}"
+
             workflow_id_generator:
               not_callable: "must respond to #call (for example, ->(job) { \"custom-#{job.job_id}\" }), got: %{value}"
               wrong_arity: "must accept one ActiveJob argument (for example, ->(job) { \"custom-#{job.job_id}\" }), got: %{value}"

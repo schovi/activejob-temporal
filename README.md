@@ -191,6 +191,8 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `default_retry_backoff` | Float | `2.0` | Exponential factor used when calculating retry delays. |
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
 | `logger` | `Logger` | `Rails.logger` or `Logger.new($stdout)` | Destination for adapter log output. |
+| `audit_log` | Boolean | `false` | Enables structured job lifecycle audit events. |
+| `audit_logger` | `Logger` or `nil` | `nil` | Optional destination for audit events. Falls back to `logger`. |
 | `validation_level` | Symbol | `:strict` | Controls configuration validation: `:strict` raises, `:warn` logs warnings, `:none` skips validation. |
 | `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
 | `metrics_provider` | Symbol | `:none` | Metrics provider to use. Set to `:prometheus` to collect built-in Prometheus metrics. |
@@ -214,6 +216,8 @@ ActiveJob::Temporal.configure do |config|
   config.default_retry_max_attempts = 5
   config.validation_level = :strict
   config.enable_tracing = false
+  config.audit_log = true
+  config.audit_logger = Logger.new("log/activejob_temporal_audit.log")
   config.metrics_provider = :prometheus
   config.metrics_port = 9394
   config.max_payload_size_kb = 512
@@ -296,6 +300,19 @@ curl http://localhost:9394/metrics
 ```
 
 The exporter includes completed and failed job counters, job duration histograms, retry counters, and worker gauges. Enqueue counters and payload size histograms are recorded in the process that calls `perform_later`; scrape that process too if you need those series. See the [Metrics Guide](docs/metrics.md) for metric names, Prometheus scrape config, and the Grafana dashboard example.
+
+### Audit Logging
+
+Enable audit logging when you need a structured lifecycle trail for enqueue, start, completion, failure, and cancellation events:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.audit_log = true
+  config.audit_logger = Logger.new("log/activejob_temporal_audit.log")
+end
+```
+
+Audit events are JSON-formatted through the configured logger. Event names include `job.enqueued`, `job.started`, `job.completed`, `job.failed`, `job.cancelled`, and `schedule.created`. Events include correlation fields such as `workflow_id`, `run_id`, `job_class`, `job_id`, `queue`, `attempt`, and `worker_id` when available. Failure events include `error_class` and a SHA256 `error_fingerprint`, not raw exception messages or backtraces. Raw job arguments, payloads, and return values are not logged.
 
 ## Conditional Enqueueing
 
@@ -714,6 +731,7 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. | `9394` |
 | `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | No | Enable structured lifecycle audit events. | `true` |
 
 ### Performance Tuning
 

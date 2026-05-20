@@ -86,6 +86,20 @@ RSpec.describe ActiveJob::Temporal::Logger do
   end
 
   describe "logger backends" do
+    it "can write to a provided logger instead of the global logger" do
+      custom_io = StringIO.new
+      custom_logger = Logger.new(custom_io)
+      custom_logger.formatter = proc { |_severity, _datetime, _progname, msg| "#{msg}\n" }
+
+      logger_helper.log_to(custom_logger, :info, "audit.event", job_id: "job-1")
+
+      expect(log_io.string).to eq("")
+      expect(JSON.parse(custom_io.string)).to include(
+        "event" => "audit.event",
+        "job_id" => "job-1"
+      )
+    end
+
     it "skips logging when the configured logger does not implement the level" do
       null_logger = double("NullLogger")
       ActiveJob::Temporal.config.logger = null_logger
@@ -95,22 +109,26 @@ RSpec.describe ActiveJob::Temporal::Logger do
       expect(log_io.string).to eq("")
     end
 
-    it "emits structured payloads when SemanticLogger is available" do
-      stub_const("SemanticLogger", Module.new)
-      semantic_logger = instance_double("SemanticLoggerLogger")
-      ActiveJob::Temporal.config.logger = semantic_logger
-
-      expect(semantic_logger).to receive(:info) do |payload|
-        expect(payload[:event]).to eq(:structured_event)
-        expect(payload[:workflow_id]).to eq("abc123")
-      end
+    it "emits structured payloads when the configured logger is SemanticLogger" do
+      semantic_logger = build_semantic_logger
 
       logger_helper.info(:structured_event, workflow_id: "abc123")
+
+      expect(semantic_logger.payload[:event]).to eq(:structured_event)
+      expect(semantic_logger.payload[:workflow_id]).to eq("abc123")
+    end
+
+    it "JSON serializes for Ruby Logger when SemanticLogger is loaded" do
+      stub_const("SemanticLogger", Module.new)
+
+      logger_helper.info("ruby_logger_event", job_id: "job-1")
+
+      payload = parsed_lines.first
+      expect(payload["event"]).to eq("ruby_logger_event")
+      expect(payload["job_id"]).to eq("job-1")
     end
 
     it "falls back to JSON serialization when SemanticLogger is not available" do
-      # Without defining SemanticLogger, semantic_logger_available? should return false
-      # This tests the JSON serialization fallback path
       logger_helper.info("fallback_event", workflow_id: "xyz789")
 
       payload = parsed_lines.first
@@ -120,11 +138,9 @@ RSpec.describe ActiveJob::Temporal::Logger do
     end
 
     it "JSON serializes payload without SemanticLogger" do
-      # When SemanticLogger is not defined, messages should be JSON strings
       logger_helper.info("json_test", key: "value")
 
       logged_output = log_io.string.strip
-      # Should be valid JSON when no SemanticLogger
       parsed = JSON.parse(logged_output)
       expect(parsed["event"]).to eq("json_test")
       expect(parsed["key"]).to eq("value")
@@ -132,26 +148,18 @@ RSpec.describe ActiveJob::Temporal::Logger do
   end
 
   describe "SemanticLogger detection" do
-    it "properly detects when SemanticLogger is defined" do
-      stub_const("SemanticLogger", Module.new)
-      # semantic_logger_available? is a private method, but we test through behavior
-      semantic_logger = instance_double("SemanticLoggerLogger")
-      ActiveJob::Temporal.config.logger = semantic_logger
-
-      expect(semantic_logger).to receive(:info) do |payload|
-        # When SemanticLogger is available, payload should be a Hash, not a JSON string
-        expect(payload).to be_a(Hash)
-        expect(payload[:event]).to eq(:hash_event)
-      end
+    it "properly detects SemanticLogger instances" do
+      semantic_logger = build_semantic_logger
 
       logger_helper.info(:hash_event, data: "test")
+
+      expect(semantic_logger.payload).to be_a(Hash)
+      expect(semantic_logger.payload[:event]).to eq(:hash_event)
     end
 
     it "properly detects when SemanticLogger is not defined" do
-      # When SemanticLogger constant is not defined, should emit JSON string
       logger_helper.info("no_semantic", test: true)
 
-      # The output should be JSON stringified when SemanticLogger is not available
       logged = log_io.string.strip
       parsed = JSON.parse(logged)
       expect(parsed).to be_a(Hash)
@@ -160,5 +168,20 @@ RSpec.describe ActiveJob::Temporal::Logger do
 
   def parsed_lines
     log_io.string.lines.map { |line| JSON.parse(line) }
+  end
+
+  def build_semantic_logger
+    stub_const("SemanticLogger", Module.new)
+    semantic_logger_class = Class.new do
+      attr_reader :payload
+
+      def info(payload)
+        @payload = payload
+      end
+    end
+    stub_const("SemanticLogger::Logger", semantic_logger_class)
+    semantic_logger_class.new.tap do |logger|
+      ActiveJob::Temporal.config.logger = logger
+    end
   end
 end
