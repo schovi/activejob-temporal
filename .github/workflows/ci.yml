@@ -53,6 +53,9 @@ jobs:
   test-unit:
     name: Unit Tests (Ruby ${{ matrix.ruby }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +84,7 @@ jobs:
           disable_search: true
           flags: unit
           name: ruby-${{ matrix.ruby }}-unit
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           fail_ci_if_error: false
 
       - name: Upload unit test coverage
@@ -95,6 +98,9 @@ jobs:
   test-integration:
     name: Integration Tests (Ruby ${{ matrix.ruby }})
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -161,7 +167,7 @@ jobs:
           disable_search: true
           flags: integration
           name: ruby-${{ matrix.ruby }}-integration
-          token: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
           fail_ci_if_error: false
 
       - name: Upload integration test coverage
