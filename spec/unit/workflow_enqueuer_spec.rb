@@ -88,6 +88,27 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       enqueuer.enqueue(job)
     end
 
+    it "uses the configured task queue for job priority" do
+      config.priority_task_queues = { 10 => "high_priority" }
+      priority_job_class = Class.new(ActiveJob::Base) do
+        self.queue_adapter = :test
+
+        def self.name = "PriorityEnqueueJob"
+
+        def perform; end
+      end
+      priority_job = priority_job_class.set(priority: 10).perform_later
+      priority_job.job_id = "priority-job-id"
+      priority_job.queue_name = "default"
+
+      allow(client).to receive(:start_workflow) do |_klass, _payload, **options|
+        expect(options[:task_queue]).to eq("high_priority")
+        "handle"
+      end
+
+      enqueuer.enqueue(priority_job)
+    end
+
     it "includes global activity timeout defaults in the payload" do
       config.default_heartbeat_timeout = 45.seconds
       config.default_schedule_to_start_timeout = 2.minutes

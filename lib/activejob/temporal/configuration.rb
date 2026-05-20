@@ -68,6 +68,12 @@ module ActiveJob
         description: "Default task queue name for workers"
       },
 
+      priority_task_queues: {
+        default: -> { {} },
+        type: :hash,
+        description: "Optional mapping from numeric ActiveJob priority values to Temporal task queues"
+      },
+
       workflow_id_generator: {
         default: nil,
         type: :callable,
@@ -404,6 +410,7 @@ module ActiveJob
       validate :validate_duration_values
       validate :validate_workflow_id_generator
       validate :validate_middleware_chain
+      validate :validate_priority_task_queues
 
       private
 
@@ -452,6 +459,30 @@ module ActiveJob
         return if middleware_chain.respond_to?(:add) && middleware_chain.respond_to?(:call)
 
         errors.add(:middleware_chain, :invalid, value: middleware_chain.inspect)
+      end
+
+      def validate_priority_task_queues
+        unless priority_task_queues.is_a?(Hash)
+          errors.add(:priority_task_queues, :not_a_hash, value: priority_task_queues.inspect)
+          return
+        end
+
+        if non_integer_priority_key
+          errors.add(:priority_task_queues, :non_integer_priority, value: non_integer_priority_key.inspect)
+          return
+        end
+
+        return unless blank_priority_task_queue
+
+        errors.add(:priority_task_queues, :blank_queue, value: blank_priority_task_queue.inspect)
+      end
+
+      def non_integer_priority_key
+        priority_task_queues.keys.find { |priority| !priority.is_a?(Integer) }
+      end
+
+      def blank_priority_task_queue
+        priority_task_queues.values.find { |task_queue| task_queue.to_s.strip.empty? }
       end
 
       def callable_accepts_positional_job?(callable)

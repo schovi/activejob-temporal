@@ -72,7 +72,7 @@ module ActiveJob
       # @api private
       def enqueue_with_payload(job, payload)
         workflow_id = @workflow_id_builder.build(job)
-        task_queue = Adapter.resolve_task_queue(job)
+        task_queue = Adapter.resolve_task_queue(job, config: @config)
 
         options = {
           id: workflow_id,

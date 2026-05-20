@@ -54,6 +54,10 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.task_queue).to eq("default")
     end
 
+    it "sets priority task queue mappings to an empty hash" do
+      expect(configuration.priority_task_queues).to eq({})
+    end
+
     it "uses the default workflow ID generator when none is configured" do
       expect(configuration.workflow_id_generator).to be_nil
     end
@@ -243,6 +247,29 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "accepts nil values" do
       configuration.task_queue_prefix = nil
       expect(configuration.task_queue_prefix).to be_nil
+    end
+  end
+
+  describe "#priority_task_queues=" do
+    it "accepts priority to task queue mappings" do
+      configuration.priority_task_queues = { 10 => "high_priority", 90 => "low_priority" }
+
+      expect(configuration.priority_task_queues).to eq(10 => "high_priority", 90 => "low_priority")
+    end
+
+    it "rejects non-hash values" do
+      expect { configuration.priority_task_queues = "high_priority" }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Priority task queues must be a hash/)
+    end
+
+    it "rejects non-integer priority keys" do
+      expect { configuration.priority_task_queues = { high: "high_priority" } }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /priority keys must be integers/)
+    end
+
+    it "rejects blank task queue names" do
+      expect { configuration.priority_task_queues = { 10 => " " } }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /task queue names must be present/)
     end
   end
 

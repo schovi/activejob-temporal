@@ -61,15 +61,28 @@ module ActiveJob
       #   ActiveJob::Temporal.config.task_queue_prefix = "myapp-"
       #   job.queue_name # => "mailers"
       #   resolve_task_queue(job) # => "myapp-mailers"
-      def resolve_task_queue(job)
-        queue_name = job.queue_name.to_s.strip
+      def resolve_task_queue(job, config: ActiveJob::Temporal.config)
+        queue_name = priority_task_queue(job, config) || job.queue_name.to_s.strip
         queue_name = "default" if queue_name.empty?
 
-        prefix = ActiveJob::Temporal.config.task_queue_prefix
+        prefix = config.task_queue_prefix
         return queue_name if prefix.nil? || prefix.to_s.strip.empty?
 
         "#{prefix}#{queue_name}"
       end
+
+      def priority_task_queue(job, config)
+        priority_task_queues = config.respond_to?(:priority_task_queues) ? config.priority_task_queues : {}
+        return unless priority_task_queues.is_a?(Hash) && priority_task_queues.any?
+
+        return unless job.respond_to?(:priority)
+
+        job_priority = job.priority
+        return unless job_priority.is_a?(Integer)
+
+        priority_task_queues[job_priority]&.to_s&.strip
+      end
+      private_class_method :priority_task_queue
     end
   end
 end

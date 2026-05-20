@@ -67,17 +67,29 @@ RSpec.describe ActiveJob::Temporal::Schedule do
 
   it "returns the existing schedule handle when the schedule already exists" do
     existing_handle = instance_double(Temporalio::Client::ScheduleHandle)
+    config.task_queue_prefix = "prod-"
     allow(client).to receive(:create_schedule).and_raise(Temporalio::Error::ScheduleAlreadyRunningError.new)
     allow(client).to receive(:schedule_handle).with("ajsch:ScheduledReportJob").and_return(existing_handle)
 
     schedule = described_class.new(
       job_class,
       cron: "0 */6 * * *",
+      queue: "billing",
       client: client,
       config: config
     )
 
     expect(schedule.create).to be(existing_handle)
+    expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
+      "schedule_created",
+      schedule_id: "ajsch:ScheduledReportJob",
+      job_class: "ScheduledReportJob",
+      cron: "0 */6 * * *",
+      timezone: "UTC",
+      overlap_policy: :skip,
+      task_queue: "prod-billing",
+      duplicate: true
+    )
   end
 
   it "maps supported overlap policies" do
@@ -121,6 +133,21 @@ RSpec.describe ActiveJob::Temporal::Schedule do
     expect(schedule.id).to eq("billing-reports")
     expect(temporal_schedule.action.id).to eq("ajschwf:billing-reports")
     expect(temporal_schedule.action.task_queue).to eq("billing")
+  end
+
+  it "uses injected configuration when resolving task queues" do
+    config.task_queue_prefix = "prod-"
+    schedule = described_class.new(
+      job_class,
+      cron: "0 3 * * *",
+      queue: "billing",
+      client: client,
+      config: config
+    )
+
+    temporal_schedule = schedule.to_temporal_schedule
+
+    expect(temporal_schedule.action.task_queue).to eq("prod-billing")
   end
 
   it "logs schedule creation" do

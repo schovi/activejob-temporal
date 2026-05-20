@@ -87,7 +87,9 @@ If you configured `task_queue_prefix`, include the prefix when starting workers.
 
 ```bash
 bundle exec rails runner 'job = Class.new(ActiveJob::Base).new; job.queue_name = "billing"; puts ActiveJob::Temporal::Adapter.resolve_task_queue(job)'
+bundle exec rails runner 'job = Class.new(ActiveJob::Base).new; job.queue_name = "billing"; job.priority = 10; puts ActiveJob::Temporal::Adapter.resolve_task_queue(job)'
 bundle exec rails runner 'puts ActiveJob::Temporal.config.task_queue_prefix.inspect'
+bundle exec rails runner 'puts ActiveJob::Temporal.config.priority_task_queues.inspect'
 ```
 
 **Fix**
@@ -95,6 +97,7 @@ bundle exec rails runner 'puts ActiveJob::Temporal.config.task_queue_prefix.insp
 Align all three places:
 
 - The job queue, for example `queue_as :billing`
+- Any configured `priority_task_queues` mapping when the job uses `set(priority:)`
 - The adapter task queue after any `task_queue_prefix`
 - The worker `ACTIVEJOB_TEMPORAL_TASK_QUEUE`
 
@@ -537,6 +540,7 @@ bundle exec rails runner 'puts "target=#{ActiveJob::Temporal.config.target}"'
 bundle exec rails runner 'puts "namespace=#{ActiveJob::Temporal.config.namespace}"'
 bundle exec rails runner 'puts "task_queue=#{ActiveJob::Temporal.config.task_queue}"'
 bundle exec rails runner 'puts "task_queue_prefix=#{ActiveJob::Temporal.config.task_queue_prefix.inspect}"'
+bundle exec rails runner 'puts "priority_task_queues=#{ActiveJob::Temporal.config.priority_task_queues.inspect}"'
 bundle exec rails runner 'puts "max_payload_size_kb=#{ActiveJob::Temporal.config.max_payload_size_kb}"'
 ```
 
@@ -563,7 +567,7 @@ When opening an issue, include:
 - Ruby and Rails versions
 - Temporal server or Temporal Cloud version
 - Worker command and environment variables with secrets removed
-- Job class with `queue_as`, `retry_on`, `discard_on`, and `temporal_options`
+- Job class with `queue_as`, `set(priority:)` if used, `retry_on`, `discard_on`, and `temporal_options`
 - Exact error message
 - Workflow ID and run ID if available
 - Relevant structured log events such as `workflow_enqueued`, `payload_size_exceeded`, or `cancellation_requested`

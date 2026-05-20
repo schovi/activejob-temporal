@@ -119,6 +119,21 @@ attributes:
       env_var_name: ACTIVEJOB_TEMPORAL_TASK_QUEUE
       example: "default"
 
+    - name: priority_task_queues
+      type: Hash
+      default: {}
+      validation_rules:
+        - "Must be a hash"
+        - "Priority keys must be integers"
+        - "Task queue names must be present"
+        - "Applied before task_queue_prefix"
+      description: "Optional mapping from numeric ActiveJob priority values to Temporal task queue names. When a job priority is mapped, that task queue is used instead of the job's queue_as value."
+      env_var_name: null
+      example:
+        10: "high_priority"
+        50: "bulk_priority"
+        90: "low_priority"
+
     - name: logger
       type: Logger
       default: "Rails.logger or Logger.new($stdout)"
@@ -232,6 +247,7 @@ examples:
       namespace: "default"
       task_queue: "default"
       task_queue_prefix: null
+      priority_task_queues: {}
       default_activity_timeout: "15.minutes"
       default_retry_initial_interval: "30.seconds"
       default_retry_backoff: 2.0
@@ -259,6 +275,9 @@ examples:
       namespace: "production"
       task_queue: "default"
       task_queue_prefix: null
+      priority_task_queues:
+        10: "high_priority"
+        90: "low_priority"
       default_activity_timeout: "15.minutes"
       default_retry_initial_interval: "30.seconds"
       default_retry_backoff: 2.0
@@ -277,6 +296,7 @@ examples:
         config.namespace = 'production'
         config.task_queue = ENV.fetch("ACTIVEJOB_TEMPORAL_TASK_QUEUE", "default")
         config.task_queue_prefix = nil
+        config.priority_task_queues = { 10 => "high_priority", 90 => "low_priority" }
         config.validation_level = :strict
         config.default_retry_max_attempts = 3
         config.identity = ENV.fetch('HOSTNAME', 'unknown-worker')

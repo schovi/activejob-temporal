@@ -84,11 +84,16 @@ RSpec.describe ActiveJob::Temporal::Adapter do
   end
 
   describe ".resolve_task_queue" do
+    let(:configuration) { ActiveJob::Temporal::Configuration.new }
     let(:job) { SimpleJob.new }
+
+    before do
+      allow(ActiveJob::Temporal).to receive(:config).and_return(configuration)
+    end
 
     context "when no prefix is configured" do
       before do
-        allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return(nil)
+        configuration.task_queue_prefix = nil
       end
 
       it "returns the job queue name" do
@@ -112,7 +117,7 @@ RSpec.describe ActiveJob::Temporal::Adapter do
 
     context "when a prefix is configured" do
       before do
-        allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return("prod-")
+        configuration.task_queue_prefix = "prod-"
       end
 
       it "prepends the prefix to the queue name" do
@@ -136,13 +141,81 @@ RSpec.describe ActiveJob::Temporal::Adapter do
 
     context "when the prefix is an empty string" do
       before do
-        allow(ActiveJob::Temporal.config).to receive(:task_queue_prefix).and_return("")
+        configuration.task_queue_prefix = ""
       end
 
       it "treats an empty prefix as absent" do
         job.queue_name = "exports"
 
         expect(described_class.resolve_task_queue(job)).to eq("exports")
+      end
+    end
+
+    context "when priority task queues are not configured" do
+      it "does not evaluate dynamic job priorities" do
+        job.queue_name = "mailers"
+        job.define_singleton_method(:priority) { raise "priority evaluated" }
+
+        expect(described_class.resolve_task_queue(job)).to eq("mailers")
+      end
+    end
+
+    context "when priority task queues are configured" do
+      before do
+        configuration.priority_task_queues = {
+          10 => "high_priority",
+          90 => "low_priority"
+        }
+      end
+
+      it "routes numeric priorities to the configured task queue" do
+        job.queue_name = "default"
+        job.define_singleton_method(:priority) { 10 }
+
+        expect(described_class.resolve_task_queue(job)).to eq("high_priority")
+      end
+
+      it "routes priorities assigned through ActiveJob set" do
+        priority_job_class = Class.new(ActiveJob::Base) do
+          self.queue_adapter = :test
+
+          def self.name = "PriorityRoutingJob"
+
+          def perform; end
+        end
+        job = priority_job_class.set(priority: 10).perform_later
+        job.queue_name = "default"
+
+        expect(described_class.resolve_task_queue(job)).to eq("high_priority")
+      end
+
+      it "routes other numeric priorities to the configured task queue" do
+        job.queue_name = "default"
+        job.define_singleton_method(:priority) { 90 }
+
+        expect(described_class.resolve_task_queue(job)).to eq("low_priority")
+      end
+
+      it "falls back to the job queue when priority is unmapped" do
+        job.queue_name = "mailers"
+        job.define_singleton_method(:priority) { 50 }
+
+        expect(described_class.resolve_task_queue(job)).to eq("mailers")
+      end
+
+      it "falls back to the job queue when priority is not an integer" do
+        job.queue_name = "mailers"
+        job.define_singleton_method(:priority) { "10" }
+
+        expect(described_class.resolve_task_queue(job)).to eq("mailers")
+      end
+
+      it "applies task queue prefixes to priority task queues" do
+        configuration.task_queue_prefix = "prod-"
+        job.queue_name = "default"
+        job.define_singleton_method(:priority) { 10 }
+
+        expect(described_class.resolve_task_queue(job)).to eq("prod-high_priority")
       end
     end
   end

@@ -95,7 +95,7 @@ module ActiveJob
           Workflows::AjWorkflow,
           @payload_builder.build(job),
           id: workflow_id_prefix,
-          task_queue: Adapter.resolve_task_queue(job),
+          task_queue: Adapter.resolve_task_queue(job, config: @config),
           search_attributes: search_attributes_for(job)
         )
       end
@@ -142,7 +142,7 @@ module ActiveJob
 
       def handle_existing_schedule
         existing_handle = handle
-        log_created(task_queue: Adapter.resolve_task_queue(build_job), duplicate: true)
+        log_created(task_queue: Adapter.resolve_task_queue(build_job, config: @config), duplicate: true)
         existing_handle
       end
 
