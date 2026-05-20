@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require "active_support/core_ext/string/inflections"
+require_relative "active_job_handler_source"
+require_relative "logger"
 
 module ActiveJob
   module Temporal
@@ -14,6 +16,12 @@ module ActiveJob
     # The extractor is used by RetryMapper to separate handler extraction logic
     # from retry policy building logic, improving testability and maintainability.
     #
+    # @note ActiveJob Compatibility
+    #   ActiveJob does not expose retry_on or discard_on metadata through a
+    #   public API. If retry metadata cannot be read, the extractor logs a warning
+    #   and returns nil retry values so RetryMapper can use configured defaults
+    #   instead of failing during enqueue.
+    #
     # @example Extracting retry handlers
     #   extractor = RetryHandlerExtractor.new
     #   retry_handlers = extractor.retry_handlers(MyJob)
@@ -26,9 +34,8 @@ module ActiveJob
       # Extracts retry handler entries from a job class's rescue_handlers.
       #
       # Iterates through the job class's rescue_handlers and filters for retry_on
-      # declarations (identified by the presence of an :attempts local variable in
-      # the handler's binding). Returns structured handler entries with exception
-      # class, wait strategy, and attempt limit.
+      # declarations. Binding metadata is used when available; source-location
+      # fallback keeps enqueue working if ActiveJob changes closure locals.
       #
       # @param job_class [Class] ActiveJob class with retry_on declarations
       #
@@ -47,26 +54,16 @@ module ActiveJob
       #   handlers = extractor.retry_handlers(MyJob)
       #   # => [{ exception: StandardError, wait: 5.0, attempts: 3, handler: #<Proc> }]
       def retry_handlers(job_class)
-        handler_entries(job_class) do |handler|
-          next unless handler.respond_to?(:binding)
-
-          binding = handler.binding
-          next unless retry_handler_binding?(binding)
-
-          {
-            handler: handler,
-            wait: binding.local_variable_get(:wait),
-            attempts: binding.local_variable_get(:attempts)
-          }
+        handler_entries(job_class) do |class_or_name, handler|
+          retry_handler_payload(job_class, class_or_name, handler)
         end
       end
 
       # Extracts discard handler entries from a job class's rescue_handlers.
       #
       # Iterates through the job class's rescue_handlers and filters for discard_on
-      # declarations (identified by the presence of :report but absence of :attempts
-      # in the handler's binding). Returns structured handler entries with exception
-      # classes that should not be retried.
+      # declarations. Returns structured handler entries with exception classes
+      # that should not be retried.
       #
       # @param job_class [Class] ActiveJob class with discard_on declarations
       #
@@ -83,13 +80,8 @@ module ActiveJob
       #   handlers = extractor.discard_handlers(MyJob)
       #   # => [{ exception: ActiveRecord::RecordNotFound, handler: #<Proc> }]
       def discard_handlers(job_class)
-        handler_entries(job_class) do |handler|
-          next unless handler.respond_to?(:binding)
-
-          binding = handler.binding
-          next unless discard_handler_binding?(binding)
-
-          { handler: handler }
+        handler_entries(job_class) do |class_or_name, handler|
+          discard_handler_payload(job_class, class_or_name, handler)
         end
       end
 
@@ -141,7 +133,7 @@ module ActiveJob
 
         entries = []
         handlers.reverse_each do |class_or_name, handler|
-          payload = yield(handler)
+          payload = yield(class_or_name, handler)
           next unless payload
 
           exception_class = constantize_handler_class(job_class, class_or_name)
@@ -152,30 +144,99 @@ module ActiveJob
         entries
       end
 
-      # Checks if a binding represents a retry handler.
-      #
-      # Retry handlers are identified by the presence of an :attempts local variable
-      # in the handler proc's binding. This is how ActiveJob internally stores
-      # retry_on declarations.
-      #
-      # @api private
-      # @param binding [Binding] Handler proc's binding
-      # @return [Boolean] true if binding represents a retry handler
-      def retry_handler_binding?(binding)
-        binding&.local_variable_defined?(:attempts)
+      def retry_handler_payload(job_class, class_or_name, handler)
+        return nil unless retry_handler_source?(handler)
+
+        binding = handler_binding(handler)
+        payload = retry_payload_from_binding(binding)
+        return payload.merge(handler: handler) if payload.is_a?(Hash)
+
+        log_metadata_fallback("retry", job_class, class_or_name, "retry_on_metadata_unavailable")
+
+        {
+          handler: handler,
+          wait: fallback_binding_value(binding, :wait),
+          attempts: fallback_binding_value(binding, :attempts)
+        }
+      end
+
+      def discard_handler_payload(job_class, class_or_name, handler)
+        return nil unless ActiveJobHandlerSource.match?(handler, :discard_on)
+
+        binding = handler_binding(handler)
+        return { handler: handler } if discard_handler_binding?(binding)
+
+        log_metadata_fallback("discard", job_class, class_or_name, "discard_on_metadata_unavailable")
+
+        { handler: handler }
+      end
+
+      def handler_binding(handler)
+        return nil unless handler.respond_to?(:binding)
+
+        handler.binding
+      rescue StandardError
+        nil
+      end
+
+      def retry_payload_from_binding(binding)
+        return nil unless binding
+        return nil unless local_variable_defined?(binding, :attempts)
+
+        {
+          wait: binding.local_variable_get(:wait),
+          attempts: binding.local_variable_get(:attempts)
+        }
+      rescue StandardError
+        nil
+      end
+
+      def fallback_binding_value(binding, name)
+        return nil unless binding
+        return nil unless local_variable_defined?(binding, name)
+
+        binding.local_variable_get(name)
+      rescue StandardError
+        nil
+      end
+
+      def retry_handler_source?(handler)
+        ActiveJobHandlerSource.match?(handler, :retry_on)
+      end
+
+      def log_metadata_fallback(handler_type, job_class, class_or_name, reason)
+        warning_key = [handler_type, job_class.name, class_or_name.to_s, reason]
+        @metadata_fallback_warnings ||= {}
+        return if @metadata_fallback_warnings[warning_key]
+
+        @metadata_fallback_warnings[warning_key] = true
+        ActiveJob::Temporal::Logger.warn(
+          "active_job_handler_metadata_fallback",
+          handler_type: handler_type,
+          job_class: job_class.name,
+          exception: class_or_name.to_s,
+          reason: reason
+        )
+      rescue StandardError
+        nil
       end
 
       # Checks if a binding represents a discard handler.
       #
-      # Discard handlers are identified by the presence of :report but absence of
-      # :attempts in the handler proc's binding. This is how ActiveJob internally
-      # stores discard_on declarations.
+      # Current ActiveJob exposes :report in discard_on handler bindings. Older
+      # versions did not, so source-location fallback handles those declarations.
       #
       # @api private
       # @param binding [Binding] Handler proc's binding
       # @return [Boolean] true if binding represents a discard handler
       def discard_handler_binding?(binding)
-        binding&.local_variable_defined?(:report) && !binding.local_variable_defined?(:attempts)
+        local_variable_defined?(binding, :report) && !local_variable_defined?(binding, :attempts)
+      end
+
+      def local_variable_defined?(binding, name)
+        binding&.local_variable_defined?(name)
+      rescue StandardError
+        false
       end
 
       # Constantizes exception class from symbol/string/module.

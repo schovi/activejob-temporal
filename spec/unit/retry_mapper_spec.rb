@@ -94,6 +94,29 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
       expect(policy[:maximum_attempts]).to eq(1)
     end
 
+    it "uses configured defaults when ActiveJob retry metadata falls back" do
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      handler = handler_with(failing_binding, active_job_handler_source_location(:retry_on))
+      job_class = job_class_with_rescue_handlers([[SampleJobError, handler]])
+
+      policy = described_class.for(job_class)
+
+      expect(policy).to include(
+        initial_interval: 30,
+        maximum_attempts: 1
+      )
+    end
+
+    it "collects discard handlers when ActiveJob discard metadata falls back" do
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      handler = handler_with(binding_double, active_job_handler_source_location(:discard_on))
+      job_class = job_class_with_rescue_handlers([[FatalJobError, handler]])
+
+      policy = described_class.for(job_class)
+
+      expect(policy[:non_retryable_error_types]).to eq(["FatalJobError"])
+    end
+
     it "constantizes handler names when defined outside the job class" do
       policy = described_class.for(ExternalConstantRetryJob, NetworkTimeoutError.new("boom"))
 
@@ -129,6 +152,42 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
 
     it "returns false when exception is nil" do
       expect(described_class.discard_exception?(DiscardableJob, nil)).to be(false)
+    end
+  end
+
+  def active_job_handler_source_location(method_name)
+    ActiveJob::Exceptions::ClassMethods.instance_method(method_name).source_location
+  end
+
+  def failing_binding
+    instance_double(Binding).tap do |handler_binding|
+      allow(handler_binding).to receive(:local_variable_defined?).and_raise(NameError, "attempts")
+    end
+  end
+
+  def binding_double(variables = {})
+    instance_double(Binding).tap do |handler_binding|
+      allow(handler_binding).to receive(:local_variable_defined?) do |name|
+        variables.key?(name)
+      end
+      allow(handler_binding).to receive(:local_variable_get) do |name|
+        variables.fetch(name)
+      end
+    end
+  end
+
+  def handler_with(handler_binding, source_location)
+    Struct.new(:handler_binding, :source_location) do
+      def binding
+        handler_binding
+      end
+    end.new(handler_binding, source_location)
+  end
+
+  def job_class_with_rescue_handlers(rescue_handlers)
+    Class.new.tap do |job_class|
+      job_class.define_singleton_method(:name) { "FallbackRetryMapperJob" }
+      job_class.define_singleton_method(:rescue_handlers) { rescue_handlers }
     end
   end
 end

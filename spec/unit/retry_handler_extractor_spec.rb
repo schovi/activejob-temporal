@@ -54,6 +54,41 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
       expect(handlers.first[:attempts]).to eq("five")
     end
 
+    it "falls back to available metadata when ActiveJob retry handler locals change" do
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      handler_binding = binding_double(wait: 12.seconds)
+      handler = handler_with(handler_binding, active_job_handler_source_location(:retry_on))
+      job_class = job_class_with_rescue_handlers([[SampleJobError, handler]])
+
+      handlers = extractor.retry_handlers(job_class)
+
+      expect(handlers).to contain_exactly(
+        hash_including(exception: SampleJobError, wait: 12.seconds, attempts: nil)
+      )
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "active_job_handler_metadata_fallback",
+        hash_including(handler_type: "retry", job_class: "FallbackRetryJob", exception: "SampleJobError")
+      )
+    end
+
+    it "falls back to default metadata when ActiveJob retry handler binding access fails" do
+      handler_binding = instance_double(Binding)
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      allow(handler_binding).to receive(:local_variable_defined?).and_raise(NameError, "attempts")
+      handler = handler_with(handler_binding, active_job_handler_source_location(:retry_on))
+      job_class = job_class_with_rescue_handlers([[SampleJobError, handler]])
+
+      handlers = extractor.retry_handlers(job_class)
+
+      expect(handlers).to contain_exactly(
+        hash_including(exception: SampleJobError, wait: nil, attempts: nil)
+      )
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "active_job_handler_metadata_fallback",
+        hash_including(handler_type: "retry", job_class: "FallbackRetryJob", exception: "SampleJobError")
+      )
+    end
+
     it "constantizes handler names when defined outside the job class" do
       handlers = extractor.retry_handlers(ExternalConstantRetryJob)
 
@@ -111,6 +146,50 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
       expect(handlers.map { |h| h[:exception] }).not_to include(SampleJobError)
     end
 
+    it "falls back to source location when ActiveJob discard handler locals change" do
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      handler = handler_with(binding_double, active_job_handler_source_location(:discard_on))
+      job_class = job_class_with_rescue_handlers([[FatalJobError, handler]])
+
+      handlers = extractor.discard_handlers(job_class)
+
+      expect(handlers).to contain_exactly(
+        hash_including(exception: FatalJobError)
+      )
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "active_job_handler_metadata_fallback",
+        hash_including(handler_type: "discard", job_class: "FallbackRetryJob", exception: "FatalJobError")
+      )
+    end
+
+    it "does not classify custom rescue handlers as retry or discard fallbacks" do
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      handler = handler_with(binding_double, [__FILE__, __LINE__])
+      job_class = job_class_with_rescue_handlers([[SampleJobError, handler]])
+
+      expect(extractor.retry_handlers(job_class)).to be_empty
+      expect(extractor.discard_handlers(job_class)).to be_empty
+      expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+    end
+
+    it "does not classify custom rescue handlers that capture retry-like locals" do
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      handler = handler_with(binding_double(wait: 3.seconds, attempts: 4), [__FILE__, __LINE__])
+      job_class = job_class_with_rescue_handlers([[SampleJobError, handler]])
+
+      expect(extractor.retry_handlers(job_class)).to be_empty
+      expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+    end
+
+    it "does not classify custom rescue handlers that capture discard-like locals" do
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      handler = handler_with(binding_double(report: true), [__FILE__, __LINE__])
+      job_class = job_class_with_rescue_handlers([[FatalJobError, handler]])
+
+      expect(extractor.discard_handlers(job_class)).to be_empty
+      expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+    end
+
     it "returns empty array for job class with no discard_on" do
       handlers = extractor.discard_handlers(RetryableJob)
 
@@ -151,6 +230,36 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
 
     it "returns false when exception is nil" do
       expect(extractor.discard_exception?(DiscardableJob, nil)).to be(false)
+    end
+  end
+
+  def active_job_handler_source_location(method_name)
+    ActiveJob::Exceptions::ClassMethods.instance_method(method_name).source_location
+  end
+
+  def binding_double(variables = {})
+    instance_double(Binding).tap do |handler_binding|
+      allow(handler_binding).to receive(:local_variable_defined?) do |name|
+        variables.key?(name)
+      end
+      allow(handler_binding).to receive(:local_variable_get) do |name|
+        variables.fetch(name)
+      end
+    end
+  end
+
+  def handler_with(handler_binding, source_location)
+    Struct.new(:handler_binding, :source_location) do
+      def binding
+        handler_binding
+      end
+    end.new(handler_binding, source_location)
+  end
+
+  def job_class_with_rescue_handlers(rescue_handlers)
+    Class.new.tap do |job_class|
+      job_class.define_singleton_method(:name) { "FallbackRetryJob" }
+      job_class.define_singleton_method(:rescue_handlers) { rescue_handlers }
     end
   end
 end

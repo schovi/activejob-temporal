@@ -18,6 +18,8 @@ end
 
 `attempts:` maps to Temporal `maximum_attempts`, which is the total number of activity attempts, including the first execution. For example, `attempts: 5` allows one initial activity attempt plus four retries.
 
+activejob-temporal reads `retry_on` and `discard_on` declarations from ActiveJob handler metadata because ActiveJob does not currently expose a public retry configuration API. If retry metadata cannot be read after a framework change, the gem logs a warning and uses the configured retry defaults instead of failing during enqueue. If `discard_on` binding metadata changes, the gem falls back to ActiveJob handler source information when available.
+
 ## Quick Mapping
 
 | ActiveJob pattern | Temporal policy fields | Retry delays after the initial failed attempt |
