@@ -1,0 +1,16 @@
+usage: opensource
+includes:
+  - lib
+requires:
+  - activejob/temporal
+integration:
+  name: rspec
+  arguments:
+    - --fail-fast
+    - spec/unit
+matcher:
+  subjects:
+    - ActiveJob::Temporal::WorkflowIdBuilder#build
+    - ActiveJob::Temporal::WorkflowIdBuilder.default_for
+mutation:
+  timeout: 5.0

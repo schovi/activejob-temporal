@@ -857,15 +857,19 @@ Contributions are welcome! To contribute:
 5. Ensure unit tests pass: `rvm 4.0.3 do bundle exec rake spec:unit`
 6. Ensure code is linted: `rvm 4.0.3 do bundle exec rubocop`
 7. Ensure the gem builds: `rvm 4.0.3 do bundle exec rake build`
-8. Commit your changes (`git commit -am 'Add new feature'`)
-9. Push to the branch (`git push origin my-feature`)
-10. Open a Pull Request
+8. For changes near configured mutation subjects, run `rvm 4.0.3 do bundle exec rake mutation`
+9. Commit your changes (`git commit -am 'Add new feature'`)
+10. Push to the branch (`git push origin my-feature`)
+11. Open a Pull Request
 
 Please ensure:
 - **Tests pass** (`rvm 4.0.3 do bundle exec rake spec:unit`) with >= 90% code coverage
 - **Code is linted** (`rvm 4.0.3 do bundle exec rubocop`) with no offenses
 - **Gem builds** (`rvm 4.0.3 do bundle exec rake build`) successfully
+- **Mutation tests pass** (`rvm 4.0.3 do bundle exec rake mutation`) for the scoped Mutant baseline when touching covered code
 - **Documentation is updated** (YARD comments, README, etc.) for new features
+
+The scoped mutation task runs on Ruby 4. Mutant 0.16 may warn that its parser dependency is loading the Ruby 3.3 parser; keep using the Ruby 4 toolchain and treat parser failures on new Ruby syntax as a mutation tooling limitation.
 
 For bug reports and feature requests, please [open an issue](https://github.com/temporalio/activejob-temporal/issues).
 

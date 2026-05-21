@@ -111,6 +111,11 @@ task :benchmark do
   ruby "spec/benchmarks/activejob_temporal_benchmark.rb"
 end
 
+desc "Run the scoped mutation test suite"
+task :mutation do
+  sh "bundle", "exec", "mutant", "run"
+end
+
 namespace :changelog do
   desc "Generate CHANGELOG.md from GitHub issues and pull requests"
   task :generate do

@@ -49,6 +49,23 @@ jobs:
       - name: Check for vulnerabilities
         run: bundle-audit check --update
 
+  mutation:
+    name: Mutation Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+          bundler-cache: true
+
+      - name: Run mutation tests
+        run: bundle exec rake mutation
+
   # Unit tests - runs on Ruby matrix
   test-unit:
     name: Unit Tests (Ruby ${{ matrix.ruby }})
