@@ -13,6 +13,8 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       global_config.encrypt_payload = false
       global_config.encryption_key = nil
       global_config.encryption_old_keys = []
+      global_config.rate_limiter = nil
+      global_config.global_rate_limit = nil
     end
 
     allow(ActiveJob::Temporal::Logger).to receive(:info)
@@ -47,6 +49,62 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     payload = described_class.new(config).build(job)
 
     expect(payload[:temporal_options]).to eq(start_to_close_timeout: 7200.0)
+  end
+
+  it "includes per-job rate limits with a job-specific key" do
+    config.rate_limiter = ->(_rate_limits) { 0 }
+    job_class = Class.new(ActiveJob::Base) do
+      def self.name = "RateLimitedJob"
+
+      rate_limit 100, per: :second
+    end
+    job = job_class.new
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:rate_limits]).to eq([
+                                          {
+                                            limit: 100,
+                                            interval: 1.0,
+                                            key: "activejob-temporal:job:RateLimitedJob"
+                                          }
+                                        ])
+  end
+
+  it "requires a limiter backend when per-job rate limits are configured" do
+    job_class = Class.new(ActiveJob::Base) do
+      def self.name = "MissingLimiterRateLimitedJob"
+
+      rate_limit 100, per: :second
+    end
+
+    expect { described_class.new(config).build(job_class.new) }
+      .to raise_error(ActiveJob::Temporal::ConfigurationError, /rate_limiter is required/)
+  end
+
+  it "includes global and per-job rate limits" do
+    config.rate_limiter = ->(_rate_limits) { 0 }
+    config.global_rate_limit = { limit: 1000, per: :minute }
+    job_class = Class.new(ActiveJob::Base) do
+      def self.name = "GlobalAndJobRateLimitedJob"
+
+      rate_limit 100, per: :second, key: "external-api"
+    end
+
+    payload = described_class.new(config).build(job_class.new)
+
+    expect(payload[:rate_limits]).to eq([
+                                          {
+                                            limit: 1000,
+                                            interval: 60.0,
+                                            key: "activejob-temporal:global"
+                                          },
+                                          {
+                                            limit: 100,
+                                            interval: 1.0,
+                                            key: "external-api"
+                                          }
+                                        ])
   end
 
   it "adds dead letter metadata when a dead letter queue is configured" do
@@ -110,6 +168,8 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     config.encrypt_payload = true
     config.dead_letter_queue = "failed_jobs"
     config.dead_letter_after_attempts = 3
+    config.rate_limiter = ->(_rate_limits) { 0 }
+    config.global_rate_limit = { limit: 1000, per: :minute }
 
     payload = described_class.new(config).build(job)
 
@@ -119,6 +179,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       encrypted_data: a_kind_of(String),
       default_activity_options: hash_including(start_to_close_timeout: 900.0),
       retry_policy: hash_including(maximum_attempts: 3),
+      rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
       dead_letter: hash_including(
         queue: "failed_jobs",
         after_attempts: 3,
@@ -131,6 +192,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       job_class: "EncryptedBuilderJob",
       default_activity_options: hash_including(start_to_close_timeout: 900.0),
       retry_policy: hash_including(maximum_attempts: 3),
+      rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
       dead_letter: hash_including(queue: "failed_jobs")
     )
   end

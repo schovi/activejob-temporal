@@ -3,8 +3,10 @@
 require "time"
 require "active_support/core_ext/hash/keys"
 require "temporalio/error"
+require "temporalio/retry_policy"
 require "temporalio/workflow"
 
+require_relative "../activities/rate_limit_activity"
 require_relative "dead_letter_support"
 
 module ActiveJob
@@ -46,6 +48,8 @@ module ActiveJob
         include DeadLetterSupport
 
         DEFAULT_START_TO_CLOSE_TIMEOUT = 900.0
+        RATE_LIMIT_ACTIVITY_TIMEOUT = 30.0
+        RATE_LIMIT_RETRY_POLICY = Temporalio::RetryPolicy.new(max_attempts: 1)
 
         # Executes the workflow: optionally sleeps until scheduled time, then runs the activity.
         #
@@ -97,6 +101,7 @@ module ActiveJob
         def execute(payload)
           scheduled_time = extract_scheduled_time(payload)
           sleep_until(scheduled_time) if scheduled_time
+          wait_for_rate_limit(payload)
 
           Temporalio::Workflow.execute_activity(
             ActiveJob::Temporal::Activities::AjRunnerActivity,
@@ -127,6 +132,27 @@ module ActiveJob
           return unless delay.positive?
 
           Temporalio::Workflow.sleep(delay)
+        end
+
+        def wait_for_rate_limit(payload)
+          return unless rate_limits?(payload)
+
+          loop do
+            wait_time = Temporalio::Workflow.execute_activity(
+              ActiveJob::Temporal::Activities::RateLimitActivity,
+              payload,
+              schedule_to_close_timeout: RATE_LIMIT_ACTIVITY_TIMEOUT,
+              start_to_close_timeout: RATE_LIMIT_ACTIVITY_TIMEOUT,
+              retry_policy: RATE_LIMIT_RETRY_POLICY
+            ).to_f
+            break unless wait_time.positive?
+
+            Temporalio::Workflow.sleep(wait_time)
+          end
+        end
+
+        def rate_limits?(payload)
+          Array(payload[:rate_limits] || payload["rate_limits"]).any?
         end
 
         # Builds activity execution options with timeout configuration and retry policy.

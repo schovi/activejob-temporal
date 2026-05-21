@@ -76,6 +76,14 @@ en:
               non_integer_priority: "priority keys must be integers because ActiveJob priorities are numeric, got: %{value}"
               blank_queue: "task queue names must be present, got: %{value}"
 
+            rate_limiter:
+              invalid: "must respond to #wait_time_for or #call, got: %{value}"
+              wrong_arity: "must accept one rate_limits argument, got: %{value}"
+
+            global_rate_limit:
+              requires_rate_limiter: "requires rate_limiter"
+              invalid: "must be a hash like { limit: 100, per: :second }, got: %{value}"
+
             dead_letter_queue:
               blank: "must be present when configured"
 

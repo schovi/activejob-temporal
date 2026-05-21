@@ -32,6 +32,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Retry mapping:** ActiveJob `retry_on` declarations automatically map to Temporal retry policies with exponential backoff
 - ✅ **Discard mapping:** `discard_on` maps to non-retryable errors, preventing wasted retry attempts
 - ✅ **Per-job timeout configuration:** Configure activity timeouts per job using `temporal_options` class method
+- ✅ **Rate limiting:** Enforce global and per-job throughput limits through a pluggable limiter backend
 - ✅ **Job cancellation:** Cancel in-flight jobs via `ActiveJob::Temporal.cancel(JobClass, job_id)` API
 - ✅ **Search attributes:** Filter and debug jobs in Temporal UI using job class, queue, job ID, tenant ID, custom tags, and enqueue timestamp
 - ✅ **Transactional enqueue:** Jobs automatically defer enqueue until the current database transaction commits (via `enqueue_after_transaction_commit?`)
@@ -348,7 +349,7 @@ Generate keys as Base64-encoded 32-byte values:
 SecureRandom.base64(32)
 ```
 
-Encryption uses `ActiveSupport::MessageEncryptor` with AES-256-GCM and JSON serialization. The encrypted data contains job class, job ID, queue name, serialized arguments, and execution counters. Workflow-control fields such as `scheduled_at`, activity timeout options, retry policy metadata, and per-job Temporal options stay plaintext so workflow replay remains deterministic.
+Encryption uses `ActiveSupport::MessageEncryptor` with AES-256-GCM and JSON serialization. The encrypted data contains job class, job ID, queue name, serialized arguments, and execution counters. Workflow-control fields such as `scheduled_at`, activity timeout options, retry policy metadata, per-job Temporal options, and rate-limit metadata stay plaintext so workflow replay remains deterministic.
 
 Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, and search attributes can expose job class, queue, job ID, tenant ID, and tags. For privacy-sensitive workloads, configure a `workflow_id_generator` that does not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags.
 
@@ -604,6 +605,40 @@ end
 - At least one of `start_to_close_timeout` or `schedule_to_close_timeout` must be specified (either via `temporal_options` or global configuration)
 - Per-job timeouts override global configuration defaults
 - For long-running jobs, use `heartbeat_timeout` with regular `Temporalio::Activity::Context.current.heartbeat` calls to enable responsive cancellation
+
+## Rate Limiting
+
+Use `rate_limit` on a job class for per-job throughput and `config.global_rate_limit` for a process-wide rule that applies to every job payload. Rate limiting requires a backend object so applications can choose process-local, Redis, or another shared implementation.
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.rate_limiter = ActiveJob::Temporal::RateLimiters::Memory.new
+  config.global_rate_limit = { limit: 1_000, per: :minute }
+end
+
+class ApiSyncJob < ApplicationJob
+  rate_limit 100, per: :second, key: "external-api"
+
+  def perform(account_id)
+    ExternalApi.sync_account(account_id)
+  end
+end
+```
+
+The built-in `ActiveJob::Temporal::RateLimiters::Memory` limiter is useful for development, tests, and single-worker deployments. It is process-local, so use a shared backend for multi-process or multi-host workers.
+
+A custom limiter can respond to `wait_time_for(rate_limits)` or `call(rate_limits)`. It receives an array of normalized hashes:
+
+```ruby
+[
+  { "limit" => 1_000, "interval" => 60.0, "key" => "activejob-temporal:global" },
+  { "limit" => 100, "interval" => 1.0, "key" => "external-api" }
+]
+```
+
+Return `0` when the job can run now, or a finite positive number of seconds to wait. The check runs inside a Temporal activity, and the workflow uses a durable `Workflow.sleep` before rechecking, so limiter I/O stays out of deterministic workflow code and delayed jobs do not occupy the job activity slot while waiting.
+
+Supported periods are `:second`, `:minute`, `:hour`, finite numeric seconds, or finite `ActiveSupport::Duration` values. Rate-limit keys stay plaintext in workflow payloads, including when payload encryption is enabled, so do not put secrets or customer data in custom keys.
 
 ## Cancellation
 

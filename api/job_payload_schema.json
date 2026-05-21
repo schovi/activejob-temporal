@@ -2,6 +2,22 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ActiveJob Temporal Payload",
   "type": "object",
+  "definitions": {
+    "rate_limit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["limit", "interval", "key"],
+      "properties": {
+        "limit": { "type": "integer", "minimum": 1 },
+        "interval": { "type": "number", "exclusiveMinimum": 0 },
+        "key": { "type": "string", "minLength": 1 }
+      }
+    },
+    "rate_limits": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/rate_limit" }
+    }
+  },
   "oneOf": [
     {
       "additionalProperties": false,
@@ -19,7 +35,8 @@
         "scheduled_at": { "type": "string", "format": "date-time" },
         "default_activity_options": { "type": "object" },
         "retry_policy": { "type": "object" },
-        "temporal_options": { "type": "object" }
+        "temporal_options": { "type": "object" },
+        "rate_limits": { "$ref": "#/definitions/rate_limits" }
       }
     },
     {
@@ -32,7 +49,8 @@
         "scheduled_at": { "type": "string", "format": "date-time" },
         "default_activity_options": { "type": "object" },
         "retry_policy": { "type": "object" },
-        "temporal_options": { "type": "object" }
+        "temporal_options": { "type": "object" },
+        "rate_limits": { "$ref": "#/definitions/rate_limits" }
       }
     }
   ]

@@ -230,6 +230,31 @@ attributes:
         50: "bulk_priority"
         90: "low_priority"
 
+    - name: rate_limiter
+      type: Object
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must respond to wait_time_for(rate_limits) or call(rate_limits)"
+        - "The limiter method must accept one rate_limits argument"
+      description: "Limiter backend used by RateLimitActivity. Return 0 to run now, or a finite positive number of seconds to wait before the workflow rechecks."
+      env_var_name: null
+      example: "ActiveJob::Temporal::RateLimiters::Memory.new"
+
+    - name: global_rate_limit
+      type: Hash
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, rate_limiter must also be configured"
+        - "Must include a positive integer limit"
+        - "Must include a finite positive period via per or interval"
+      description: "Global throughput rule applied to every job payload before per-job rate limits. Serialized rate-limit metadata remains plaintext for deterministic replay."
+      env_var_name: null
+      example:
+        limit: 1000
+        per: ":minute"
+
     - name: logger
       type: Logger
       default: "Rails.logger or Logger.new($stdout)"
@@ -340,7 +365,7 @@ attributes:
       validation_rules:
         - "Must be true or false"
         - "When true, encryption_key must be present and valid"
-      description: "Encrypt serialized job execution payloads before sending them to Temporal. Workflow-control metadata remains plaintext for deterministic replay."
+      description: "Encrypt serialized job execution payloads before sending them to Temporal. Workflow-control metadata, including rate limits, remains plaintext for deterministic replay."
       env_var_name: ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD
       example: true
 

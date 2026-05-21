@@ -14,6 +14,7 @@ module ActiveJob
           metadata = dead_letter_metadata(payload)
           return false unless metadata
           return false unless metadata_value(metadata, :queue).to_s.strip.present?
+          return false unless job_execution_activity_failure?(error)
 
           error.retry_state == Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
         end
@@ -95,6 +96,10 @@ module ActiveJob
 
         def dead_letter_metadata(payload)
           payload[:dead_letter] || payload["dead_letter"]
+        end
+
+        def job_execution_activity_failure?(error)
+          error.respond_to?(:activity_type) && error.activity_type == "AjRunnerActivity"
         end
 
         def metadata_value(metadata, key)

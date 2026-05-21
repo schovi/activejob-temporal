@@ -96,6 +96,11 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.workflow_id_generator).to be_nil
     end
 
+    it "disables rate limiting by default" do
+      expect(configuration.rate_limiter).to be_nil
+      expect(configuration.global_rate_limit).to be_nil
+    end
+
     it "sets an empty middleware chain" do
       expect(configuration.middleware_chain).to be_a(ActiveJob::Temporal::Middleware::Chain)
       expect(configuration.middleware_chain.to_a).to be_empty
@@ -580,6 +585,58 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects callables that cannot accept a job argument" do
       expect { configuration.workflow_id_generator = -> { "custom-id" } }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /must accept one ActiveJob argument/)
+    end
+  end
+
+  describe "#rate_limiter=" do
+    it "accepts nil and limiter backends" do
+      limiter = instance_double("RateLimiter", wait_time_for: 0)
+
+      configuration.rate_limiter = limiter
+      expect(configuration.rate_limiter).to be(limiter)
+
+      configuration.rate_limiter = nil
+      expect(configuration.rate_limiter).to be_nil
+    end
+
+    it "accepts callable limiter backends" do
+      limiter = ->(_rate_limits) { 0 }
+
+      configuration.rate_limiter = limiter
+
+      expect(configuration.rate_limiter).to be(limiter)
+    end
+
+    it "rejects unsupported limiter backends" do
+      expect { configuration.rate_limiter = Object.new }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Rate limiter must respond to #wait_time_for or #call/)
+    end
+
+    it "rejects limiter backends that do not accept rate limits" do
+      expect { configuration.rate_limiter = -> { 0 } }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Rate limiter must accept one rate_limits argument/)
+    end
+  end
+
+  describe "#global_rate_limit=" do
+    it "accepts normalized global rate limit hashes when a limiter is configured" do
+      configuration.rate_limiter = ->(_rate_limits) { 0 }
+
+      configuration.global_rate_limit = { limit: 100, per: :second }
+
+      expect(configuration.global_rate_limit).to eq(limit: 100, per: :second)
+    end
+
+    it "requires a limiter backend" do
+      expect { configuration.global_rate_limit = { limit: 100, per: :second } }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Global rate limit requires rate_limiter/)
+    end
+
+    it "rejects invalid global rate limit hashes" do
+      configuration.rate_limiter = ->(_rate_limits) { 0 }
+
+      expect { configuration.global_rate_limit = { limit: 0, per: :second } }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Global rate limit must be a hash/)
     end
   end
 

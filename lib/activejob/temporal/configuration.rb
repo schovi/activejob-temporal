@@ -6,6 +6,7 @@ require "active_model"
 
 require_relative "middleware"
 require_relative "payload_encryption"
+require_relative "rate_limit_options"
 
 # rubocop:disable Metrics/ModuleLength
 module ActiveJob
@@ -130,6 +131,18 @@ module ActiveJob
         default: nil,
         type: :callable,
         description: "Optional callable for custom Temporal workflow IDs"
+      },
+
+      rate_limiter: {
+        default: nil,
+        type: :object,
+        description: "Optional limiter backend responding to #wait_time_for or #call"
+      },
+
+      global_rate_limit: {
+        default: nil,
+        type: :hash,
+        description: "Optional global rate limit hash, for example { limit: 1000, per: :minute }"
       },
 
       # Timeouts (use Proc for lazy evaluation of ActiveSupport::Duration)
@@ -541,6 +554,7 @@ module ActiveJob
       validate :validate_workflow_id_generator
       validate :validate_middleware_chain
       validate :validate_priority_task_queues
+      validate :validate_rate_limit_settings
       validate :validate_dead_letter_settings
       validate :validate_metrics_settings
       validate :validate_audit_settings
@@ -618,6 +632,37 @@ module ActiveJob
 
       def blank_priority_task_queue
         priority_task_queues.values.find { |task_queue| task_queue.to_s.strip.empty? }
+      end
+
+      def validate_rate_limit_settings
+        validate_rate_limiter
+        validate_global_rate_limit
+      end
+
+      def validate_rate_limiter
+        return if rate_limiter.nil?
+
+        unless rate_limiter.respond_to?(:wait_time_for) || rate_limiter.respond_to?(:call)
+          errors.add(:rate_limiter, :invalid, value: rate_limiter.inspect)
+          return
+        end
+
+        return if rate_limiter_accepts_rate_limits_argument?
+
+        errors.add(:rate_limiter, :wrong_arity, value: rate_limiter.inspect)
+      end
+
+      def validate_global_rate_limit
+        return if global_rate_limit.nil?
+
+        if rate_limiter.nil?
+          errors.add(:global_rate_limit, :requires_rate_limiter)
+          return
+        end
+
+        RateLimitOptions.normalize_hash(global_rate_limit)
+      rescue ArgumentError
+        errors.add(:global_rate_limit, :invalid, value: global_rate_limit.inspect)
       end
 
       def validate_dead_letter_settings
@@ -778,6 +823,20 @@ module ActiveJob
       end
 
       def callable_accepts_positional_job?(callable)
+        callable_accepts_one_positional_argument?(callable)
+      end
+
+      def rate_limiter_accepts_rate_limits_argument?
+        callable = if rate_limiter.respond_to?(:wait_time_for)
+                     rate_limiter.method(:wait_time_for)
+                   else
+                     rate_limiter
+                   end
+
+        callable_accepts_one_positional_argument?(callable)
+      end
+
+      def callable_accepts_one_positional_argument?(callable)
         arity = callable.respond_to?(:arity) ? callable.arity : callable.method(:call).arity
 
         arity == 1 || arity.negative?

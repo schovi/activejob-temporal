@@ -85,7 +85,10 @@ worker = Temporalio::Worker.new(
     ActiveJob::Temporal::Workflows::AjWorkflow,
     ActiveJob::Temporal::Workflows::DeadLetterWorkflow
   ],
-  activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
+  activities: [
+    ActiveJob::Temporal::Activities::RateLimitActivity,
+    ActiveJob::Temporal::Activities::AjRunnerActivity
+  ],
   max_concurrent_activity_task_polls: max_concurrent_activities,
   max_concurrent_workflow_task_polls: max_concurrent_workflows,
   interceptors: [worker_health]

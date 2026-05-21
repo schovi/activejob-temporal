@@ -155,6 +155,49 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
       expect(Temporalio::Workflow).to have_received(:execute_activity)
     end
 
+    context "when rate limits are present" do
+      let(:rate_limited_payload) do
+        base_payload.merge(
+          "rate_limits" => [
+            { "limit" => 100, "interval" => 1.0, "key" => "global" }
+          ]
+        )
+      end
+
+      it "checks rate limits before executing the job activity" do
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, payload_arg, options|
+          calls << [activity_class, payload_arg, options]
+          activity_class == ActiveJob::Temporal::Activities::RateLimitActivity ? 0.0 : :activity_result
+        end
+
+        workflow.execute(rate_limited_payload)
+
+        expect(calls.map(&:first)).to eq([
+                                           ActiveJob::Temporal::Activities::RateLimitActivity,
+                                           ActiveJob::Temporal::Activities::AjRunnerActivity
+                                         ])
+        expect(calls.first[1]).to eq(rate_limited_payload)
+        expect(calls.first[2][:schedule_to_close_timeout]).to eq(described_class::RATE_LIMIT_ACTIVITY_TIMEOUT)
+        expect(calls.first[2][:start_to_close_timeout]).to eq(described_class::RATE_LIMIT_ACTIVITY_TIMEOUT)
+        expect(calls.first[2][:retry_policy].max_attempts).to eq(1)
+      end
+
+      it "sleeps durably and rechecks when the limiter returns a wait time" do
+        waits = [3.5, 0.0]
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, _payload_arg, _options|
+          activity_class == ActiveJob::Temporal::Activities::RateLimitActivity ? waits.shift : :activity_result
+        end
+
+        workflow.execute(rate_limited_payload)
+
+        expect(Temporalio::Workflow).to have_received(:sleep).with(3.5)
+        expect(Temporalio::Workflow).to have_received(:execute_activity)
+          .with(ActiveJob::Temporal::Activities::RateLimitActivity, rate_limited_payload, anything)
+          .twice
+      end
+    end
+
     context "when temporal_options are present in payload" do
       it "overrides timeout values with per-job temporal_options" do
         temporal_options = {
@@ -355,6 +398,32 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
 
         expect { workflow.execute(base_payload) }.to raise_error(error)
+
+        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+      end
+
+      it "does not dead-letter rate limit activity failures before the job runs" do
+        error = Temporalio::Error::ActivityError.new(
+          "activity failed",
+          scheduled_event_id: 1,
+          started_event_id: 2,
+          identity: "worker-1",
+          activity_type: "RateLimitActivity",
+          activity_id: "activity-1",
+          retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+        )
+        payload = base_payload.merge(
+          "rate_limits" => [{ "limit" => 100, "interval" => 1.0, "key" => "global" }],
+          "dead_letter" => {
+            "queue" => "failed_jobs",
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "queue_name" => "default"
+          }
+        )
+        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+
+        expect { workflow.execute(payload) }.to raise_error(error)
 
         expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
       end

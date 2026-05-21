@@ -440,6 +440,20 @@ RSpec.describe ActiveJob::Temporal::Payload do
         expect(described_class.deserialize_args(payload)).to eq(job.arguments)
       end
 
+      it "preserves rate limit metadata outside encrypted job execution fields" do
+        payload = described_class.from_job(job).merge(
+          rate_limits: [
+            { limit: 100, interval: 1.0, key: "global" }
+          ]
+        )
+
+        decrypted_payload = described_class.deserialize_payload(payload)
+
+        expect(decrypted_payload[:rate_limits]).to eq([
+                                                        { limit: 100, interval: 1.0, key: "global" }
+                                                      ])
+      end
+
       it "records encrypted payload size with plaintext metric labels" do
         payload = described_class.from_job(job)
 

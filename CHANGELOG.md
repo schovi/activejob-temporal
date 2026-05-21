@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Implemented enhancements:**
 
+- TASK.035 - Add rate limiting support [\#22](https://github.com/schovi/activejob-temporal/issues/22)
 - TASK.056 - Immediate Ruby 4+ migration task [\#56](https://github.com/schovi/activejob-temporal/issues/56)
 - TASK.053 - Immediate Ruby 4+ migration follow-up [\#53](https://github.com/schovi/activejob-temporal/issues/53)
 - TASK.052 - Reconfirm Ruby 4+ migration baseline [\#52](https://github.com/schovi/activejob-temporal/issues/52)
@@ -67,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Declare `concurrent-ruby` as an explicit runtime dependency.
 
 ### Added
+- Global and per-job rate limiting with a pluggable limiter backend and durable workflow waits.
 - Changelog generation configuration and `rake changelog:generate` release task.
 - Structured audit logging for job enqueue, execution, failure, and cancellation lifecycle events.
 - Optional AES-256-GCM payload encryption with key rotation support for job execution payloads.
