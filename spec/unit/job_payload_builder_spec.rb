@@ -49,12 +49,67 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload[:temporal_options]).to eq(start_to_close_timeout: 7200.0)
   end
 
+  it "adds dead letter metadata when a dead letter queue is configured" do
+    config.dead_letter_queue = "failed_jobs"
+    config.dead_letter_after_attempts = 3
+    job = build_job("DeadLetterBuilderJob")
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:dead_letter]).to eq(
+      queue: "failed_jobs",
+      after_attempts: 3,
+      job_class: "DeadLetterBuilderJob",
+      job_id: job.job_id,
+      queue_name: "default"
+    )
+  end
+
+  it "omits dead letter metadata when dead letter routing is disabled" do
+    job = build_job("NoDeadLetterBuilderJob")
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload).not_to have_key(:dead_letter)
+  end
+
+  it "uses dead_letter_after_attempts as the activity retry limit" do
+    config.dead_letter_queue = "failed_jobs"
+    config.dead_letter_after_attempts = 2
+    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return(
+      initial_interval: 30.0,
+      backoff_coefficient: 2.0,
+      maximum_attempts: 5,
+      non_retryable_error_types: []
+    )
+
+    payload = described_class.new(config).build(build_job("DeadLetterAttemptsBuilderJob"))
+
+    expect(payload[:retry_policy][:maximum_attempts]).to eq(2)
+  end
+
+  it "records the retry policy attempt limit when no dead letter threshold is configured" do
+    config.dead_letter_queue = "failed_jobs"
+    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return(
+      initial_interval: 30.0,
+      backoff_coefficient: 2.0,
+      maximum_attempts: 4,
+      non_retryable_error_types: []
+    )
+
+    payload = described_class.new(config).build(build_job("DeadLetterPolicyLimitBuilderJob"))
+
+    expect(payload[:dead_letter][:after_attempts]).to eq(4)
+  end
+
   it "keeps workflow-control fields readable when payload encryption is enabled" do
     job = build_job("EncryptedBuilderJob")
 
     config.encryption_key = encryption_key
     config.encryption_old_keys = []
     config.encrypt_payload = true
+    config.dead_letter_queue = "failed_jobs"
+    config.dead_letter_after_attempts = 3
 
     payload = described_class.new(config).build(job)
 
@@ -63,13 +118,20 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       encrypted_payload_version: 1,
       encrypted_data: a_kind_of(String),
       default_activity_options: hash_including(start_to_close_timeout: 900.0),
-      retry_policy: a_kind_of(Hash)
+      retry_policy: hash_including(maximum_attempts: 3),
+      dead_letter: hash_including(
+        queue: "failed_jobs",
+        after_attempts: 3,
+        job_class: "EncryptedBuilderJob",
+        job_id: job.job_id
+      )
     )
     expect(payload).not_to have_key(:job_class)
     expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
       job_class: "EncryptedBuilderJob",
       default_activity_options: hash_including(start_to_close_timeout: 900.0),
-      retry_policy: a_kind_of(Hash)
+      retry_policy: hash_including(maximum_attempts: 3),
+      dead_letter: hash_including(queue: "failed_jobs")
     )
   end
 

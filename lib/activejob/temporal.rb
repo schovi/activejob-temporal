@@ -31,9 +31,11 @@ require_relative "temporal/workflow_id_builder"
 require_relative "temporal/workflow_enqueuer"
 require_relative "temporal/adapter"
 require_relative "temporal/workflows/aj_workflow"
+require_relative "temporal/workflows/dead_letter_workflow"
 require_relative "temporal/activities/aj_runner_activity"
 require_relative "temporal/cancel"
 require_relative "temporal/inspect"
+require_relative "temporal/dead_letter_queue"
 
 module ActiveJob
   # ActiveJob adapter for Temporal workflow orchestration.
@@ -195,6 +197,22 @@ module ActiveJob
 
       def failed?(job_class, job_id)
         Inspect.failed?(job_class, job_id)
+      end
+
+      def dead_letter_entry(job_class, job_id)
+        DeadLetterQueue.entry(job_class, job_id)
+      end
+
+      def dead_letter_entries(queue: nil, limit: DeadLetterQueue::DEFAULT_ENTRIES_LIMIT)
+        DeadLetterQueue.entries(queue: queue, limit: limit)
+      end
+
+      def retry_dead_letter(job_class, job_id, queue: nil)
+        DeadLetterQueue.retry(job_class, job_id, queue: queue)
+      end
+
+      def discard_dead_letter(job_class, job_id, reason: nil)
+        DeadLetterQueue.discard(job_class, job_id, reason: reason)
       end
 
       private

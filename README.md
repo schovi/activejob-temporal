@@ -198,6 +198,8 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `default_retry_initial_interval` | `ActiveSupport::Duration` | `30.seconds` | Initial interval used by automatic retry logic before exponential backoff is applied. Must be positive. |
 | `default_retry_backoff` | Float | `2.0` | Exponential factor used when calculating retry delays. |
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
+| `dead_letter_queue` | String or `nil` | `nil` | Optional Temporal task queue for parked dead letter workflows. |
+| `dead_letter_after_attempts` | Integer or `nil` | `nil` | Optional retry attempt limit before a job is routed to the dead letter queue. |
 | `logger` | `Logger` | `Rails.logger` or `Logger.new($stdout)` | Destination for adapter log output. |
 | `audit_log` | Boolean | `false` | Enables structured job lifecycle audit events. |
 | `audit_logger` | `Logger` or `nil` | `nil` | Optional destination for audit events. Falls back to `logger`. |
@@ -225,6 +227,8 @@ ActiveJob::Temporal.configure do |config|
   config.default_retry_initial_interval = 10.seconds
   config.default_retry_backoff = 1.5
   config.default_retry_max_attempts = 5
+  config.dead_letter_queue = "failed_jobs"
+  config.dead_letter_after_attempts = 3
   config.validation_level = :strict
   config.enable_tracing = false
   config.audit_log = true
@@ -508,6 +512,32 @@ Temporal automatically applies exponential backoff using the `default_retry_back
 
 `attempts:` counts total activity attempts, including the initial run. For example, `attempts: 5` allows four retry delays after the first failed attempt.
 
+### Dead Letter Queue
+
+Configure a dead letter queue when permanently failed jobs should remain inspectable for manual action:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.dead_letter_queue = "failed_jobs"
+  config.dead_letter_after_attempts = 3
+end
+```
+
+When activity retries are exhausted, the workflow starts an `ActiveJobTemporalDeadLetterWorkflow` on the configured queue and then fails normally. Run a worker polling that queue, for example `ACTIVEJOB_TEMPORAL_TASK_QUEUE=failed_jobs bundle exec temporal-worker`, so the DLQ workflow can initialize and answer queries. The DLQ workflow stores the original payload, failure class/message/fingerprint, job class, job ID, original queue, original workflow ID, attempt threshold, and failure time.
+
+```ruby
+entries = ActiveJob::Temporal.dead_letter_entries(queue: "failed_jobs", limit: 50)
+entry = ActiveJob::Temporal.dead_letter_entry(SendInvoiceJob, job_id)
+ActiveJob::Temporal.retry_dead_letter(SendInvoiceJob, job_id)
+ActiveJob::Temporal.discard_dead_letter(SendInvoiceJob, job_id, reason: "handled manually")
+```
+
+Manual retry uses a deterministic retry workflow ID. Repeating the same retry request returns or marks the same retry workflow instead of starting another copy of the job.
+
+`dead_letter_after_attempts` overrides the activity retry `maximum_attempts` for DLQ-enabled jobs so the configured DLQ threshold is authoritative. If you configure only `dead_letter_queue`, jobs move to the DLQ after their normal `retry_on` or default retry policy is exhausted.
+
+DLQ metadata is plaintext Temporal workflow metadata, even when payload encryption is enabled. The original job execution payload remains encrypted when `encrypt_payload` is true, but DLQ inspection fields such as job class, job ID, queue, failure class, and failure message remain visible.
+
 ## Per-Job Timeout Configuration
 
 You can configure activity timeouts on a per-job basis using the `temporal_options` class method. This overrides the global timeout defaults for specific jobs.
@@ -784,6 +814,8 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. | `9394` |
 | `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. | `0.0.0.0` |
 | `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | No | Enable structured lifecycle audit events. | `true` |
+| `ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE` | No | Task queue for parked dead letter workflows. | `failed_jobs` |
+| `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS` | No | Retry attempt limit before routing to the dead letter queue. | `3` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD` | No | Encrypt job execution payloads before sending them to Temporal. | `true` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY` | Required when encryption is enabled | Base64-encoded 32-byte AES-256-GCM encryption key. | `SecureRandom.base64(32)` |
 | `ACTIVEJOB_TEMPORAL_TLS_CERT_PATH` | Required for mTLS client certs | Client certificate file path. | `/etc/certs/client.pem` |

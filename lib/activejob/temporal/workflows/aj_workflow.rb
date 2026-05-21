@@ -2,7 +2,10 @@
 
 require "time"
 require "active_support/core_ext/hash/keys"
+require "temporalio/error"
 require "temporalio/workflow"
+
+require_relative "dead_letter_support"
 
 module ActiveJob
   module Temporal
@@ -40,6 +43,8 @@ module ActiveJob
       # @see https://docs.temporal.io/workflows#deterministic-constraints Temporal Determinism Guide
       # @see https://docs.temporal.io/workflows#timers Temporal Durable Timers
       class AjWorkflow < Temporalio::Workflow::Definition
+        include DeadLetterSupport
+
         DEFAULT_START_TO_CLOSE_TIMEOUT = 900.0
 
         # Executes the workflow: optionally sleeps until scheduled time, then runs the activity.
@@ -98,6 +103,9 @@ module ActiveJob
             payload,
             **activity_options(payload)
           )
+        rescue Temporalio::Error::ActivityError => e
+          start_dead_letter_workflow(payload, e) if dead_letterable_failure?(payload, e)
+          raise
         end
 
         private

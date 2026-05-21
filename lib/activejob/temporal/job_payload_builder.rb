@@ -22,7 +22,9 @@ module ActiveJob
         payload[:default_activity_options] = default_activity_options
 
         retry_policy = RetryMapper.for(job.class)
+        apply_dead_letter_attempt_limit(retry_policy)
         payload[:retry_policy] = retry_policy
+        payload[:dead_letter] = dead_letter_metadata(job, retry_policy) if dead_letter_enabled?
 
         temporal_options = extract_temporal_options(job.class)
         payload[:temporal_options] = temporal_options if temporal_options.any?
@@ -45,6 +47,37 @@ module ActiveJob
         return {} unless job_class.respond_to?(:temporal_options)
 
         job_class.temporal_options
+      end
+
+      def dead_letter_enabled?
+        @config.respond_to?(:dead_letter_queue) && @config.dead_letter_queue.to_s.strip.present?
+      end
+
+      def apply_dead_letter_attempt_limit(retry_policy)
+        return unless dead_letter_enabled?
+        return unless @config.dead_letter_after_attempts
+
+        retry_policy[:maximum_attempts] = @config.dead_letter_after_attempts
+      end
+
+      def dead_letter_metadata(job, retry_policy)
+        metadata = {
+          queue: @config.dead_letter_queue,
+          job_class: job.class.name,
+          job_id: job.job_id,
+          queue_name: job.queue_name
+        }
+        after_attempts = dead_letter_attempt_limit(retry_policy)
+        metadata[:after_attempts] = after_attempts if after_attempts
+        metadata
+      end
+
+      def dead_letter_attempt_limit(retry_policy)
+        configured_limit = @config.dead_letter_after_attempts
+        return configured_limit if configured_limit
+
+        attempts = retry_policy[:maximum_attempts] || retry_policy["maximum_attempts"]
+        attempts if attempts.respond_to?(:positive?) && attempts.positive?
       end
 
       def default_activity_options

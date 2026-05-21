@@ -73,6 +73,11 @@ RAILS_ROOT=/opt/myapp ACTIVEJOB_TEMPORAL_TASK_QUEUE=high_priority bundle exec te
 RAILS_ROOT=/opt/myapp ACTIVEJOB_TEMPORAL_TASK_QUEUE=default bundle exec temporal-worker &
 ```
 
+**Dead letter queue worker:**
+```bash
+RAILS_ROOT=/opt/myapp ACTIVEJOB_TEMPORAL_TASK_QUEUE=failed_jobs bundle exec temporal-worker
+```
+
 **Worker health endpoint for local checks:**
 ```bash
 bundle exec temporal-worker --health-check-port 8080

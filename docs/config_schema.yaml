@@ -171,6 +171,28 @@ attributes:
       env_var_name: null
       example: 3
 
+    - name: dead_letter_queue
+      type: String
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must not be blank"
+      description: "Temporal task queue for parked dead letter workflows after activity retries are exhausted."
+      env_var_name: ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE
+      example: "failed_jobs"
+
+    - name: dead_letter_after_attempts
+      type: Integer
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, dead_letter_queue must also be configured"
+        - "Must be greater than 0"
+        - "Overrides generated activity retry maximum_attempts for DLQ-enabled jobs"
+      description: "Retry attempt threshold before routing failed jobs to the configured dead letter queue."
+      env_var_name: ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS
+      example: 3
+
   # Operational settings control runtime behavior and observability
   operational:
     - name: task_queue_prefix
@@ -589,6 +611,8 @@ validation:
     - "default_retry_initial_interval - Must be a positive duration"
     - "default_retry_backoff - Must be >= 1.0"
     - "default_retry_max_attempts - Must be >= 0"
+    - "dead_letter_queue - Optional, but when set must not be blank"
+    - "dead_letter_after_attempts - Optional, but when set must be > 0 and requires dead_letter_queue"
     - "max_payload_size_kb - Must be between 1 and 2,097,152 KB"
     - "encrypt_payload - Must be true or false"
     - "encryption_key - Required when encrypt_payload is true; when present, must be a Base64-encoded 32-byte key"
@@ -670,6 +694,15 @@ environment_variables:
       maps_to: audit_log
       example: "true"
       note: "Must be converted to boolean"
+
+    - name: ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE
+      maps_to: dead_letter_queue
+      example: "failed_jobs"
+
+    - name: ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS
+      maps_to: dead_letter_after_attempts
+      example: "3"
+      note: "Must be converted to integer"
 
     - name: ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD
       maps_to: encrypt_payload

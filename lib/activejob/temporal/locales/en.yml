@@ -76,6 +76,13 @@ en:
               non_integer_priority: "priority keys must be integers because ActiveJob priorities are numeric, got: %{value}"
               blank_queue: "task queue names must be present, got: %{value}"
 
+            dead_letter_queue:
+              blank: "must be present when configured"
+
+            dead_letter_after_attempts:
+              requires_queue: "requires dead_letter_queue"
+              invalid: "must be greater than 0, got: %{value}"
+
             tls_cert_path:
               requires_key_path: "requires tls_key_path so the client certificate and private key rotate together"
               invalid_path: "must be a non-empty file path, got: %{value}"

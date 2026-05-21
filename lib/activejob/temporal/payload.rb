@@ -203,7 +203,7 @@ module ActiveJob
       end
 
       def preserve_workflow_control_fields(source_payload, decrypted_payload)
-        %i[scheduled_at default_activity_options retry_policy temporal_options].each do |key|
+        %i[scheduled_at default_activity_options retry_policy temporal_options dead_letter].each do |key|
           value = source_payload[key] || source_payload[key.to_s]
           decrypted_payload[key] = value if value
         end

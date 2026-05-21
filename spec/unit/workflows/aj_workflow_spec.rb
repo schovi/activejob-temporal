@@ -49,6 +49,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
     stub_const("SampleJob", Class.new)
     allow(Temporalio::Workflow).to receive(:execute_activity).and_return(:activity_result)
     allow(Temporalio::Workflow).to receive(:sleep)
+    allow(Temporalio::Workflow).to receive(:start_child_workflow)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return({})
   end
 
@@ -257,6 +258,105 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
           expect(options[:start_to_close_timeout]).to eq(activity_timeout)
         end
+      end
+    end
+
+    context "when activity retries are exhausted and dead letter metadata is present" do
+      it "starts a dead letter workflow on the configured DLQ task queue" do
+        error = Temporalio::Error::ActivityError.new(
+          "activity failed",
+          scheduled_event_id: 1,
+          started_event_id: 2,
+          identity: "worker-1",
+          activity_type: "AjRunnerActivity",
+          activity_id: "activity-1",
+          retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+        )
+        application_error = Temporalio::Error::ApplicationError.new(
+          "permanent failure",
+          type: "StandardError"
+        )
+        payload = base_payload.merge(
+          "dead_letter" => {
+            "queue" => "failed_jobs",
+            "after_attempts" => 3,
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "queue_name" => "default"
+          }
+        )
+        allow(error).to receive(:cause).and_return(application_error)
+        allow(Temporalio::Workflow).to receive(:now).and_return(Time.utc(2026, 5, 21, 10, 0, 0))
+        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+
+        expect { workflow.execute(payload) }.to raise_error(error)
+
+        expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
+          ActiveJob::Temporal::Workflows::DeadLetterWorkflow,
+          hash_including(
+            "id" => "ajdlq:SampleJob:abc-123",
+            "state" => "pending",
+            "payload" => payload,
+            "metadata" => hash_including(
+              "job_class" => "SampleJob",
+              "job_id" => "abc-123",
+              "original_queue_name" => "default",
+              "original_task_queue" => "default",
+              "workflow_id" => "ajwf:SampleJob:abc-123",
+              "failed_at" => "2026-05-21T10:00:00Z"
+            ),
+            "failure" => hash_including(
+              "class" => "StandardError",
+              "message" => "permanent failure",
+              "retry_state" => Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+            )
+          ),
+          id: "ajdlq:SampleJob:abc-123",
+          task_queue: "failed_jobs",
+          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+        )
+      end
+
+      it "does not dead-letter non-exhausted activity failures" do
+        error = Temporalio::Error::ActivityError.new(
+          "activity failed",
+          scheduled_event_id: 1,
+          started_event_id: 2,
+          identity: "worker-1",
+          activity_type: "AjRunnerActivity",
+          activity_id: "activity-1",
+          retry_state: Temporalio::Error::RetryState::IN_PROGRESS
+        )
+        payload = base_payload.merge(
+          "dead_letter" => {
+            "queue" => "failed_jobs",
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "queue_name" => "default"
+          }
+        )
+        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+
+        expect { workflow.execute(payload) }.to raise_error(error)
+
+        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+      end
+
+      it "does not dead-letter when workflow payload lacks DLQ metadata" do
+        error = Temporalio::Error::ActivityError.new(
+          "activity failed",
+          scheduled_event_id: 1,
+          started_event_id: 2,
+          identity: "worker-1",
+          activity_type: "AjRunnerActivity",
+          activity_id: "activity-1",
+          retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+        )
+        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+
+        expect { workflow.execute(base_payload) }.to raise_error(error)
+
+        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
       end
     end
   end

@@ -30,6 +30,8 @@ The canonical machine-readable schema for all configuration options is available
 | `default_retry_initial_interval` | `ActiveSupport::Duration` | `30.seconds` | Initial interval used by automatic retry logic before exponential backoff is applied. Must be positive. |
 | `default_retry_backoff` | Float | `2.0` | Exponential factor used when calculating retry delays. |
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
+| `dead_letter_queue` | String or `nil` | `nil` | Optional Temporal task queue for parked dead letter workflows. |
+| `dead_letter_after_attempts` | Integer or `nil` | `nil` | Optional retry attempt limit before a job is routed to the dead letter queue. |
 | `logger` | `Logger` | `Rails.logger` (if available) or `Logger.new($stdout)` | Destination for adapter log output. |
 | `audit_log` | Boolean | `false` | Enables structured job lifecycle audit events. |
 | `audit_logger` | `Logger` or `nil` | `nil` | Optional destination for audit events. Falls back to `logger`. |
@@ -64,6 +66,8 @@ Configuration can also be set via environment variables for 12-factor app compli
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | `metrics_port` | Integer | `nil` |
 | `ACTIVEJOB_TEMPORAL_METRICS_BIND` | `metrics_bind` | String | `"127.0.0.1"` |
 | `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | `audit_log` | Boolean | `false` |
+| `ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE` | `dead_letter_queue` | String | `nil` |
+| `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS` | `dead_letter_after_attempts` | Integer | `nil` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD` | `encrypt_payload` | Boolean | `false` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY` | `encryption_key` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_TLS_CERT_PATH` | `tls_cert_path` | String | `nil` |
@@ -95,6 +99,8 @@ ActiveJob::Temporal.configure do |config|
   config.default_retry_initial_interval = 10.seconds
   config.default_retry_backoff = 1.5
   config.default_retry_max_attempts = 5
+  config.dead_letter_queue = "failed_jobs"
+  config.dead_letter_after_attempts = 3
 
   # Other settings
   config.validation_level = :strict
@@ -217,6 +223,32 @@ end
 ```
 
 If `audit_logger` is `nil`, audit events use the normal `logger`. The logger must respond to `#info`. `ACTIVEJOB_TEMPORAL_AUDIT_LOG=true` enables audit logging from the environment.
+
+## Dead Letter Queue
+
+Set `dead_letter_queue` to park permanently failed jobs in a Temporal-backed DLQ workflow:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.dead_letter_queue = "failed_jobs"
+  config.dead_letter_after_attempts = 3
+end
+```
+
+When an activity failure reaches Temporal's maximum attempts, `AjWorkflow` starts an `ActiveJobTemporalDeadLetterWorkflow` on the configured task queue with `parent_close_policy: ABANDON`, then re-raises the original activity failure. The original workflow still fails. Run a worker polling the DLQ queue, for example `ACTIVEJOB_TEMPORAL_TASK_QUEUE=failed_jobs bundle exec temporal-worker`, so the DLQ workflow can initialize and remain queryable.
+
+```ruby
+entries = ActiveJob::Temporal.dead_letter_entries(queue: "failed_jobs", limit: 50)
+entry = ActiveJob::Temporal.dead_letter_entry(MyJob, job_id)
+ActiveJob::Temporal.retry_dead_letter(MyJob, job_id)
+ActiveJob::Temporal.discard_dead_letter(MyJob, job_id, reason: "handled manually")
+```
+
+Manual retry uses a deterministic retry workflow ID. Repeating the same retry request returns or marks the same retry workflow instead of starting another copy of the job.
+
+`dead_letter_after_attempts` is optional. When present, it overrides the job's activity retry `maximum_attempts` so the DLQ threshold is authoritative. When omitted, the job dead-letters after its normal `retry_on` or default retry policy is exhausted.
+
+DLQ metadata is intentionally plaintext Temporal workflow metadata. Payload encryption still encrypts the original job execution payload, but DLQ fields such as job class, job ID, queue, failure class, failure message, and failure fingerprint remain inspectable.
 
 Audit events use the same JSON payload format as adapter logs and include an `event` field. Emitted event names are:
 

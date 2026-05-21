@@ -176,6 +176,20 @@ module ActiveJob
         description: "Maximum retry attempts for activities"
       },
 
+      dead_letter_queue: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE",
+        type: :string,
+        description: "Optional Temporal task queue for failed job dead letter workflows"
+      },
+
+      dead_letter_after_attempts: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS",
+        type: :integer,
+        description: "Optional retry attempt limit before routing jobs to the dead letter queue"
+      },
+
       # Observability
       logger: {
         default: lambda {
@@ -527,6 +541,7 @@ module ActiveJob
       validate :validate_workflow_id_generator
       validate :validate_middleware_chain
       validate :validate_priority_task_queues
+      validate :validate_dead_letter_settings
       validate :validate_metrics_settings
       validate :validate_audit_settings
       validate :validate_encryption_settings
@@ -603,6 +618,30 @@ module ActiveJob
 
       def blank_priority_task_queue
         priority_task_queues.values.find { |task_queue| task_queue.to_s.strip.empty? }
+      end
+
+      def validate_dead_letter_settings
+        validate_dead_letter_queue
+        validate_dead_letter_after_attempts
+      end
+
+      def validate_dead_letter_queue
+        return if dead_letter_queue.nil? || dead_letter_queue.to_s.strip.present?
+
+        errors.add(:dead_letter_queue, :blank)
+      end
+
+      def validate_dead_letter_after_attempts
+        return if dead_letter_after_attempts.nil?
+
+        unless dead_letter_queue.to_s.strip.present?
+          errors.add(:dead_letter_after_attempts, :requires_queue)
+          return
+        end
+
+        return if dead_letter_after_attempts.is_a?(Integer) && dead_letter_after_attempts.positive?
+
+        errors.add(:dead_letter_after_attempts, :invalid, value: dead_letter_after_attempts.inspect)
       end
 
       def validate_metrics_settings

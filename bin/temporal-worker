@@ -81,7 +81,10 @@ worker_health = ActiveJob::Temporal::WorkerHealth.new(
 worker = Temporalio::Worker.new(
   client: client,
   task_queue: task_queue,
-  workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
+  workflows: [
+    ActiveJob::Temporal::Workflows::AjWorkflow,
+    ActiveJob::Temporal::Workflows::DeadLetterWorkflow
+  ],
   activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
   max_concurrent_activity_task_polls: max_concurrent_activities,
   max_concurrent_workflow_task_polls: max_concurrent_workflows,

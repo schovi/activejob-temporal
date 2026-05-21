@@ -20,6 +20,8 @@ end
 
 activejob-temporal reads `retry_on` and `discard_on` declarations from ActiveJob handler metadata because ActiveJob does not currently expose a public retry configuration API. If retry metadata cannot be read after a framework change, the gem logs a warning and uses the configured retry defaults instead of failing during enqueue. If `discard_on` binding metadata changes, the gem falls back to ActiveJob handler source information when available.
 
+When `dead_letter_queue` is enabled, jobs move to a Temporal-backed DLQ workflow after activity retries are exhausted. If `dead_letter_after_attempts` is configured, it overrides the generated `maximum_attempts` so the DLQ threshold controls when the job is parked.
+
 ## Quick Mapping
 
 | ActiveJob pattern | Temporal policy fields | Retry delays after the initial failed attempt |
@@ -33,6 +35,7 @@ activejob-temporal reads `retry_on` and `discard_on` declarations from ActiveJob
 | Multiple `retry_on` declarations | First handler in ActiveJob precedence order, usually the last declared rule | Depends on the selected handler |
 | Symbol or Proc `wait:` | Falls back to `default_retry_initial_interval` | Uses the configured Temporal backoff curve |
 | Non-numeric `attempts:` | Falls back to `default_retry_max_attempts` | Depends on the configured default |
+| `dead_letter_after_attempts = 3` | Sets `maximum_attempts: 3` for DLQ-enabled jobs | 2 retry delays, then parks the failed job in the DLQ |
 
 ## Common Patterns
 

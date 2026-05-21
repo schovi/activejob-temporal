@@ -73,6 +73,7 @@ module ActiveJob
       def enqueue_with_payload(job, payload)
         workflow_id = @workflow_id_builder.build(job)
         task_queue = Adapter.resolve_task_queue(job, config: @config)
+        add_dead_letter_task_queue(payload, task_queue)
 
         options = {
           id: workflow_id,
@@ -87,6 +88,14 @@ module ActiveJob
         end
 
         start_workflow(job, payload, options)
+      end
+
+      def add_dead_letter_task_queue(payload, task_queue)
+        dead_letter = payload[:dead_letter] || payload["dead_letter"]
+        return unless dead_letter
+
+        dead_letter[:task_queue] = task_queue if dead_letter.key?(:queue)
+        dead_letter["task_queue"] = task_queue if dead_letter.key?("queue")
       end
 
       # Builds a payload hash from a job instance.

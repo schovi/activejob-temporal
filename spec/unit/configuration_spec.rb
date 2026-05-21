@@ -70,6 +70,11 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.priority_task_queues).to eq({})
     end
 
+    it "disables dead letter queue routing by default" do
+      expect(configuration.dead_letter_queue).to be_nil
+      expect(configuration.dead_letter_after_attempts).to be_nil
+    end
+
     it "disables metrics by default" do
       expect(configuration.metrics_provider).to be(:none)
       expect(configuration.metrics_port).to be_nil
@@ -269,6 +274,16 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(config.metrics_bind).to eq("0.0.0.0")
     end
 
+    it "reads dead letter queue settings from environment variables" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE").and_return("failed_jobs")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS").and_return("3")
+
+      config = described_class.new
+      expect(config.dead_letter_queue).to eq("failed_jobs")
+      expect(config.dead_letter_after_attempts).to eq(3)
+    end
+
     it "reads audit logging from ACTIVEJOB_TEMPORAL_AUDIT_LOG" do
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_AUDIT_LOG").and_return("true")
@@ -372,6 +387,47 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects blank task queue names" do
       expect { configuration.priority_task_queues = { 10 => " " } }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /task queue names must be present/)
+    end
+  end
+
+  describe "#dead_letter_queue=" do
+    it "accepts nil and non-blank task queue names" do
+      configuration.dead_letter_queue = "failed_jobs"
+      expect(configuration.dead_letter_queue).to eq("failed_jobs")
+
+      configuration.dead_letter_queue = nil
+      expect(configuration.dead_letter_queue).to be_nil
+    end
+
+    it "rejects blank task queue names" do
+      expect { configuration.dead_letter_queue = " " }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter queue must be present/)
+    end
+  end
+
+  describe "#dead_letter_after_attempts=" do
+    it "accepts nil and positive integer thresholds" do
+      configuration.dead_letter_queue = "failed_jobs"
+      configuration.dead_letter_after_attempts = 3
+      expect(configuration.dead_letter_after_attempts).to eq(3)
+
+      configuration.dead_letter_after_attempts = nil
+      expect(configuration.dead_letter_after_attempts).to be_nil
+    end
+
+    it "rejects zero and negative thresholds" do
+      configuration.dead_letter_queue = "failed_jobs"
+
+      expect { configuration.dead_letter_after_attempts = 0 }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter after attempts must be greater than 0/)
+
+      expect { configuration.dead_letter_after_attempts = -1 }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter after attempts must be greater than 0/)
+    end
+
+    it "requires a dead letter queue when a threshold is configured" do
+      expect { configuration.dead_letter_after_attempts = 3 }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /requires dead_letter_queue/)
     end
   end
 
