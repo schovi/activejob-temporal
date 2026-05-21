@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Implemented enhancements:**
 
+- TASK.056 - Immediate Ruby 4+ migration task [\#56](https://github.com/schovi/activejob-temporal/issues/56)
 - TASK.053 - Immediate Ruby 4+ migration follow-up [\#53](https://github.com/schovi/activejob-temporal/issues/53)
 - TASK.052 - Reconfirm Ruby 4+ migration baseline [\#52](https://github.com/schovi/activejob-temporal/issues/52)
 - TASK.051 - Enforce Ruby 4+ migration baseline [\#51](https://github.com/schovi/activejob-temporal/issues/51)
@@ -52,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- github_changelog_generator:end -->
 
 ### Changed
+- Reconfirm Ruby 4.0+ as the active repository baseline for local tooling, CI, dependency setup, and validation.
 - Migrate the supported Ruby baseline and CI validation target to Ruby 4.0+.
 - Pin the repository Ruby version for local development and document Ruby 4.0.3 validation commands.
 - Require Temporal Ruby SDK 1.4.1+ for Ruby 4 compatibility.
