@@ -44,10 +44,12 @@ class JobsController < ApplicationController
   # Query params: should_fail (true/false, default: false)
   def retryable
     should_fail = params[:should_fail] == "true"
+    attempt_key = SecureRandom.uuid
 
     job = RetryableJob.perform_later(
       "Hello from Retryable Job at #{Time.current}",
-      should_fail: should_fail
+      should_fail: should_fail,
+      attempt_key: attempt_key
     )
 
     render json: {
@@ -56,6 +58,7 @@ class JobsController < ApplicationController
       job_id: job.job_id,
       queue: job.queue_name,
       will_fail: should_fail,
+      attempt_key: attempt_key,
       message: should_fail ? "Job will fail and retry up to 5 times" : "Job will execute successfully"
     }
   end
@@ -103,18 +106,18 @@ class JobsController < ApplicationController
   # Cancels a running or pending job
   # Required params: job_class, job_id
   def cancel
-    job_class = params[:job_class]
+    job_class_name = params[:job_class]
     job_id = params[:job_id]
 
-    if job_class.blank? || job_id.blank?
+    if job_class_name.blank? || job_id.blank?
       return render json: {
         error: "Missing required parameters",
         message: "Both job_class and job_id are required"
       }, status: :bad_request
     end
 
-    # Validate job class
-    unless valid_job_class?(job_class)
+    job_class = job_class_for(job_class_name)
+    unless job_class
       return render json: {
         error: "Invalid job class",
         message: "Job class must be one of: SimpleJob, ScheduledJob, RetryableJob, CancellableJob, SendCampaignEmailJob"
@@ -126,7 +129,7 @@ class JobsController < ApplicationController
 
       render json: {
         status: "cancelled",
-        job_class: job_class,
+        job_class: job_class.name,
         job_id: job_id,
         message: "Cancellation request sent. The job will stop at the next heartbeat."
       }
@@ -148,7 +151,13 @@ class JobsController < ApplicationController
     end
   end
 
-  def valid_job_class?(job_class)
-    %w[SimpleJob ScheduledJob RetryableJob CancellableJob SendCampaignEmailJob].include?(job_class)
+  def job_class_for(job_class_name)
+    {
+      "SimpleJob" => SimpleJob,
+      "ScheduledJob" => ScheduledJob,
+      "RetryableJob" => RetryableJob,
+      "CancellableJob" => CancellableJob,
+      "SendCampaignEmailJob" => SendCampaignEmailJob
+    }[job_class_name]
   end
 end

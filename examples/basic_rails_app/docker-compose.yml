@@ -51,13 +51,23 @@ services:
 
         echo "Registering ActiveJob search attributes..."
 
-        tctl --address temporal:7233 --auto_confirm admin cluster add-search-attributes \
+        output=$$(tctl --address temporal:7233 --auto_confirm admin cluster add-search-attributes \
           --name ajClass --type Keyword \
           --name ajQueue --type Keyword \
           --name ajJobId --type Keyword \
           --name ajEnqueuedAt --type Datetime \
           --name ajTenantId --type Int \
-          --name ajTags --type KeywordList
+          --name ajTags --type KeywordList 2>&1) || {
+          status=$$?
+          echo "$$output"
+          if echo "$$output" | grep -Eiq "already exists|already registered"; then
+            echo "Search attributes already registered"
+          else
+            exit "$$status"
+          fi
+        }
+
+        echo "$$output"
 
         echo "✅ Search attributes initialization complete"
         exit 0
@@ -100,8 +110,6 @@ services:
       - bundle_cache:/usr/local/bundle
       # Share the Rails database with the web container for GlobalID deserialization
       - rails_storage:/workspace/examples/basic_rails_app/storage
-      # Preserve database
-      - rails_storage:/workspace/examples/basic_rails_app/storage
     command: bash -lc "bin/rails db:prepare db:seed && bundle exec rails server -b 0.0.0.0"
     networks:
       - temporal-network
@@ -133,6 +141,8 @@ services:
       - ../../:/workspace
       # Preserve bundle cache across runs
       - bundle_cache:/usr/local/bundle
+      # Share the Rails database with the web container for GlobalID deserialization
+      - rails_storage:/workspace/examples/basic_rails_app/storage
     command: ./bin/temporal-worker
     networks:
       - temporal-network

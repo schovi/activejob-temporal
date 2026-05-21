@@ -4,12 +4,16 @@ This is a Rails 8 application that demonstrates the core features of the `active
 
 ## Features Demonstrated
 
-- **SimpleJob**: Basic job execution with no retry logic
-- **ScheduledJob**: Delayed execution using `set(wait:)`
-- **RecurringReportJob**: Cron-style schedule declaration using Temporal Schedules
-- **RetryableJob**: Automatic retry with exponential backoff using `retry_on`
-- **CancellableJob**: Long-running job with per-job timeouts and heartbeating for graceful cancellation
-- **SendCampaignEmailJob**: ActiveRecord/GlobalID job arguments using seeded email subscribers
+- **Configuration**: Rails ActiveJob adapter setup plus Temporal target, namespace, task queue, timeout, and retry configuration
+- **Simple jobs**: Immediate execution with `SimpleJob.perform_later`
+- **Scheduled jobs**: Delayed execution using `set(wait:)`
+- **Recurring schedules**: Cron-style schedule declarations using Temporal Schedules
+- **Retry policies**: Automatic retry behavior using `retry_on`
+- **Cancellation**: API-driven cancellation of running jobs by class and job ID
+- **Long-running heartbeats**: Heartbeating for responsive cancellation and liveness on multi-step work
+- **GlobalID serialization**: ActiveRecord model arguments passed through ActiveJob GlobalID serialization
+- **Per-job timeouts**: `temporal_options` activity timeout declarations on a job class
+- **Temporal UI navigation**: Workflow list, history, and search attribute screenshots from the running stack
 
 ## Prerequisites
 
@@ -218,7 +222,20 @@ curl -X POST http://localhost:3000/jobs/retryable
 curl -X POST "http://localhost:3000/jobs/retryable?should_fail=true"
 ```
 
-This job will fail on the first 2 attempts and succeed on the 3rd, demonstrating automatic retry with exponential backoff.
+This job will fail on the first 2 attempts and succeed on the 3rd, demonstrating automatic retry behavior.
+
+Response includes a stable `attempt_key` that the demo job uses to track transient attempts across Temporal activity retries:
+```json
+{
+  "status": "enqueued",
+  "job_type": "RetryableJob",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "queue": "default",
+  "will_fail": true,
+  "attempt_key": "78e5c3b7-1bf8-4ecb-9f4c-45585b8d4fc0",
+  "message": "Job will fail and retry up to 5 times"
+}
+```
 
 ### Enqueue a Long-Running Cancellable Job
 
@@ -231,7 +248,7 @@ Response includes the `job_id` you'll need for cancellation:
 {
   "status": "enqueued",
   "job_type": "CancellableJob",
-  "job_id": "abc123",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "queue": "default",
   "iterations": 20,
   "estimated_duration": "40 seconds",
@@ -271,7 +288,7 @@ Response:
 ### Cancel a Running Job
 
 ```bash
-curl -X DELETE "http://localhost:3000/jobs/cancel?job_class=CancellableJob&job_id=abc123"
+curl -X DELETE "http://localhost:3000/jobs/cancel?job_class=CancellableJob&job_id=550e8400-e29b-41d4-a716-446655440000"
 ```
 
 Response:
@@ -279,7 +296,7 @@ Response:
 {
   "status": "cancelled",
   "job_class": "CancellableJob",
-  "job_id": "abc123",
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "message": "Cancellation request sent. The job will stop at the next heartbeat."
 }
 ```
@@ -310,6 +327,16 @@ ajJobId = "specific-job-id"
 ajEnqueuedAt > "2025-10-29T00:00:00Z"
 ```
 
+### Temporal UI Screenshots
+
+These screenshots were captured from the Docker Compose stack after enqueueing the example jobs.
+
+![Temporal UI workflow list showing ActiveJob workflows](docs/temporal-ui/workflow-list.png)
+
+![Temporal UI workflow history showing a GlobalID campaign email job](docs/temporal-ui/workflow-history.png)
+
+![Temporal UI search attributes for a campaign email workflow](docs/temporal-ui/search-attributes.png)
+
 ## Configuration
 
 ### ActiveJob Adapter
@@ -317,7 +344,7 @@ ajEnqueuedAt > "2025-10-29T00:00:00Z"
 The adapter is configured in `config/initializers/active_job.rb`:
 
 ```ruby
-Rails.application.config.active_job.queue_adapter = :temporal
+ActiveJob::Base.queue_adapter = :temporal unless Rails.env.test?
 ```
 
 ### Temporal Connection
@@ -390,11 +417,16 @@ RecurringReportJob.create_temporal_schedule
 class RetryableJob < ApplicationJob
   queue_as :default
 
-  retry_on RetryableJobError, wait: 30.seconds, attempts: 5
+  retry_on RetryableJobError, wait: 5.seconds, attempts: 5
 
-  def perform(message, should_fail: false)
-    raise RetryableJobError if should_fail && executions < 3
-    # Job logic here
+  def perform(message, should_fail: false, attempt_key: job_id)
+    cache_key = "retryable_job_attempts/#{attempt_key}"
+    attempt = Rails.cache.fetch(cache_key) { 0 } + 1
+    Rails.cache.write(cache_key, attempt, expires_in: 10.minutes)
+
+    raise RetryableJobError if should_fail && attempt < 3
+
+    Rails.cache.delete(cache_key) if should_fail
   end
 end
 ```

@@ -49,5 +49,7 @@ USER 1000:1000
 # Expose Rails default port
 EXPOSE 3000
 
+ENTRYPOINT ["./bin/docker-entrypoint"]
+
 # Default to running Rails server
 CMD ["bundle", "exec", "rails", "server", "-b", "0.0.0.0"]
