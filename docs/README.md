@@ -29,6 +29,10 @@ Use this index to find the main guides for activejob-temporal.
 - [Publishing](publishing.md) covers release and gem publishing steps.
 - [Release Checklist](release_checklist.md) captures release validation status.
 
+## Project Management
+
+- [Issue Triage Handoff](issue_triage.md) records the project sorting model, blocked issue queue, and resume checklist.
+
 ## Architecture
 
 - [Architecture Decision Records](adr/README.md) collects design decisions.
