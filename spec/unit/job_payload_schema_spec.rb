@@ -16,8 +16,24 @@ RSpec.describe "job payload schema" do
           "retry_policy" => { "type" => "object" },
           "temporal_options" => { "type" => "object" },
           "dead_letter" => { "type" => "object" },
+          "workflow_interactions" => { "$ref" => "#/definitions/workflow_interactions" },
           "rate_limits" => { "$ref" => "#/definitions/rate_limits" }
         )
+      )
+    )
+  end
+
+  it "defines workflow interaction metadata" do
+    interaction_schema = schema.fetch("definitions").fetch("workflow_interactions")
+
+    expect(interaction_schema).to include(
+      "type" => "object",
+      "additionalProperties" => false,
+      "required" => contain_exactly("job_class", "signals", "queries"),
+      "properties" => include(
+        "job_class" => { "type" => "string", "minLength" => 1 },
+        "signals" => include("type" => "array", "uniqueItems" => true),
+        "queries" => include("type" => "array", "uniqueItems" => true)
       )
     )
   end

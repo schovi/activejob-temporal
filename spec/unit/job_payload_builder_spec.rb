@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "active_job"
+require "activejob/temporal/signal_query_options"
 require "base64"
 
 RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
@@ -49,6 +50,26 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     payload = described_class.new(config).build(job)
 
     expect(payload[:temporal_options]).to eq(start_to_close_timeout: 7200.0)
+  end
+
+  it "includes workflow interaction metadata for declared signals and queries" do
+    job_class = Class.new(ActiveJob::Base) do
+      def self.name = "WorkflowInteractionJob"
+
+      temporal_signal :progress
+      temporal_signal(:append_event) { |state, event| (state["events"] ||= []) << event }
+      temporal_query(:progress) { |state| state["progress"] }
+      temporal_query(:events) { |state| state["events"] || [] }
+    end
+    job = job_class.new
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:workflow_interactions]).to eq(
+      job_class: "WorkflowInteractionJob",
+      signals: %w[append_event progress],
+      queries: %w[events progress]
+    )
   end
 
   it "includes per-job rate limits with a job-specific key" do
@@ -161,7 +182,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
   end
 
   it "keeps workflow-control fields readable when payload encryption is enabled" do
-    job = build_job("EncryptedBuilderJob")
+    job = build_job("EncryptedBuilderJob", workflow_interactions: true)
 
     config.encryption_key = encryption_key
     config.encryption_old_keys = []
@@ -185,6 +206,11 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         after_attempts: 3,
         job_class: "EncryptedBuilderJob",
         job_id: job.job_id
+      ),
+      workflow_interactions: hash_including(
+        job_class: "EncryptedBuilderJob",
+        signals: ["pause"],
+        queries: ["paused"]
       )
     )
     expect(payload).not_to have_key(:job_class)
@@ -203,7 +229,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     config.dead_letter_after_attempts = 3
     config.rate_limiter = ->(_rate_limits) { 0 }
     config.global_rate_limit = { limit: 1000, per: :minute }
-    job = build_job("SerializedBuilderJob")
+    job = build_job("SerializedBuilderJob", workflow_interactions: true)
 
     payload = described_class.new(config).build(job)
 
@@ -220,6 +246,11 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         after_attempts: 3,
         job_class: "SerializedBuilderJob",
         job_id: job.job_id
+      ),
+      workflow_interactions: hash_including(
+        job_class: "SerializedBuilderJob",
+        signals: ["pause"],
+        queries: ["paused"]
       )
     )
     expect(payload).not_to have_key(:job_class)
@@ -249,9 +280,13 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
 
   private
 
-  def build_job(name)
+  def build_job(name, workflow_interactions: false)
     Class.new(ActiveJob::Base) do
       define_singleton_method(:name) { name }
+      if workflow_interactions
+        define_singleton_method(:temporal_signal_handler_names) { ["pause"] }
+        define_singleton_method(:temporal_query_handler_names) { ["paused"] }
+      end
     end.new
   end
 

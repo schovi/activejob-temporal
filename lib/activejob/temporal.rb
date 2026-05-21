@@ -24,6 +24,7 @@ require_relative "temporal/payload_encryption"
 require_relative "temporal/payload"
 require_relative "temporal/search_attributes"
 require_relative "temporal/retry_mapper"
+require_relative "temporal/signal_query_options"
 require_relative "temporal/job_payload_builder"
 require_relative "temporal/schedule_options"
 require_relative "temporal/conditional_enqueue"
@@ -40,6 +41,7 @@ require_relative "temporal/activities/rate_limit_activity"
 require_relative "temporal/activities/aj_runner_activity"
 require_relative "temporal/cancel"
 require_relative "temporal/inspect"
+require_relative "temporal/signal_query"
 require_relative "temporal/dead_letter_queue"
 
 module ActiveJob
@@ -190,6 +192,14 @@ module ActiveJob
 
       def status(job_class, job_id)
         Inspect.status(job_class, job_id)
+      end
+
+      def signal(job_class, job_id, signal_name, *)
+        SignalQuery.signal(job_class, job_id, signal_name, *)
+      end
+
+      def query(job_class, job_id, query_name, *, reject_condition: SignalQuery::DEFAULT_REJECT_CONDITION)
+        SignalQuery.query(job_class, job_id, query_name, *, reject_condition: reject_condition)
       end
 
       def running?(job_class, job_id)

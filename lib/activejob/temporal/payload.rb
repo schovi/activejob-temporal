@@ -4,6 +4,7 @@ require "json"
 require "time"
 require "active_support"
 require "active_support/core_ext/numeric/time"
+require "active_support/core_ext/string/conversions"
 require "active_job/serializers"
 require "active_job/arguments"
 
@@ -213,7 +214,15 @@ module ActiveJob
       end
 
       def preserve_workflow_control_fields(source_payload, decrypted_payload)
-        %i[scheduled_at default_activity_options retry_policy temporal_options dead_letter rate_limits].each do |key|
+        %i[
+          scheduled_at
+          default_activity_options
+          retry_policy
+          temporal_options
+          dead_letter
+          rate_limits
+          workflow_interactions
+        ].each do |key|
           value = source_payload[key] || source_payload[key.to_s]
           decrypted_payload[key] = value if value
         end

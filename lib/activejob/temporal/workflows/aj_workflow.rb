@@ -8,6 +8,7 @@ require "temporalio/workflow"
 
 require_relative "../activities/rate_limit_activity"
 require_relative "dead_letter_support"
+require_relative "workflow_interactions"
 
 module ActiveJob
   module Temporal
@@ -46,10 +47,36 @@ module ActiveJob
       # @see https://docs.temporal.io/workflows#timers Temporal Durable Timers
       class AjWorkflow < Temporalio::Workflow::Definition
         include DeadLetterSupport
+        include WorkflowInteractions
 
         DEFAULT_START_TO_CLOSE_TIMEOUT = 900.0
         RATE_LIMIT_ACTIVITY_TIMEOUT = 30.0
         RATE_LIMIT_RETRY_POLICY = Temporalio::RetryPolicy.new(max_attempts: 1)
+
+        workflow_signal dynamic: true
+        def handle_dynamic_signal(signal_name, *args)
+          handler_name = normalize_handler_name!(signal_name, "signal")
+
+          case handler_name
+          when "pause" then pause_workflow(args)
+          when "resume" then resume_workflow(args)
+          else dispatch_custom_signal(handler_name, args)
+          end
+        end
+
+        workflow_query dynamic: true
+        def handle_dynamic_query(query_name, *args)
+          handler_name = normalize_handler_name!(query_name, "query")
+
+          case handler_name
+          when "state" then deep_copy(workflow_state)
+          when "paused" then workflow_state["paused"]
+          when "pause_reason" then workflow_state["pause_reason"]
+          when "phase" then workflow_state["phase"]
+          when "signals" then deep_copy(workflow_state["signals"])
+          else dispatch_custom_query(handler_name, args)
+          end
+        end
 
         # Executes the workflow: optionally sleeps until scheduled time, then runs the activity.
         #
@@ -99,16 +126,27 @@ module ActiveJob
         #
         # @see Activities::AjRunnerActivity#execute
         def execute(payload)
-          scheduled_time = extract_scheduled_time(payload)
-          sleep_until(scheduled_time) if scheduled_time
-          wait_for_rate_limit(payload)
+          configure_workflow_state(payload)
+          configure_workflow_interactions(payload)
 
-          Temporalio::Workflow.execute_activity(
+          scheduled_time = extract_scheduled_time(payload)
+          workflow_state["phase"] = "scheduled" if scheduled_time
+          sleep_until(scheduled_time) if scheduled_time
+          wait_while_paused
+
+          wait_for_rate_limit(payload)
+          wait_while_paused
+
+          workflow_state["phase"] = "running_activity"
+          result = Temporalio::Workflow.execute_activity(
             ActiveJob::Temporal::Activities::AjRunnerActivity,
             payload,
             **activity_options(payload)
           )
+          workflow_state["phase"] = "completed"
+          result
         rescue Temporalio::Error::ActivityError => e
+          workflow_state["phase"] = "failed"
           start_dead_letter_workflow(payload, e) if dead_letterable_failure?(payload, e)
           raise
         end
@@ -137,7 +175,9 @@ module ActiveJob
         def wait_for_rate_limit(payload)
           return unless rate_limits?(payload)
 
+          workflow_state["phase"] = "waiting_rate_limit"
           loop do
+            wait_while_paused
             wait_time = Temporalio::Workflow.execute_activity(
               ActiveJob::Temporal::Activities::RateLimitActivity,
               payload,

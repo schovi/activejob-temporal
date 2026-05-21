@@ -34,6 +34,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Per-job timeout configuration:** Configure activity timeouts per job using `temporal_options` class method
 - ✅ **Rate limiting:** Enforce global and per-job throughput limits through a pluggable limiter backend
 - ✅ **Job cancellation:** Cancel in-flight jobs via `ActiveJob::Temporal.cancel(JobClass, job_id)` API
+- ✅ **Signals and queries:** Send workflow signals and query workflow-owned state
 - ✅ **Search attributes:** Filter and debug jobs in Temporal UI using job class, queue, job ID, tenant ID, custom tags, and enqueue timestamp
 - ✅ **Transactional enqueue:** Jobs automatically defer enqueue until the current database transaction commits (via `enqueue_after_transaction_commit?`)
 - ✅ **GlobalID support:** Seamless serialization of ActiveRecord models and other GlobalID-compatible objects
@@ -738,6 +739,63 @@ ActiveJob::Temporal.failed?(SendInvoiceJob, "550e8400-e29b-41d4-a716-44665544000
 `status` returns `nil` when no workflow exists for the given job ID. Predicates return `false` for missing jobs.
 `attempt` and `last_failure` are best-effort details from pending activities, so closed workflows may return `nil` for both.
 
+## Signals and Queries
+
+Signals mutate workflow-owned state. Queries read it without opening the Temporal UI:
+
+```ruby
+job_id = "550e8400-e29b-41d4-a716-446655440000"
+
+ActiveJob::Temporal.signal(ImportJob, job_id, :pause, "maintenance")
+ActiveJob::Temporal.query(ImportJob, job_id, :paused)
+# => true
+
+ActiveJob::Temporal.signal(ImportJob, job_id, :resume)
+```
+
+Built-in signals:
+
+- `pause` marks the workflow paused at workflow checkpoints before the job activity starts and between workflow-owned waits
+- `resume` clears the paused state
+
+Built-in queries:
+
+- `state` returns workflow-owned state such as phase, pause state, job class, job ID, queue name, and received signals
+- `paused` returns a boolean
+- `pause_reason` returns the latest pause reason when one was provided
+- `phase` returns the workflow phase
+- `signals` returns the latest received signal metadata by signal name
+
+Jobs can declare custom workflow signal and query handlers:
+
+```ruby
+class ImportJob < ApplicationJob
+  temporal_signal :set_progress do |state, completed, total|
+    state["progress"] = {
+      "completed" => completed,
+      "total" => total,
+      "percentage" => total.to_i.zero? ? 0 : ((completed.to_f / total) * 100).round
+    }
+  end
+
+  temporal_query :progress do |state|
+    state["progress"] || { "completed" => 0, "total" => nil, "percentage" => 0 }
+  end
+
+  def perform(account_id)
+    import_account(account_id)
+  end
+end
+
+ActiveJob::Temporal.signal(ImportJob, job_id, :set_progress, 450, 1_000)
+ActiveJob::Temporal.query(ImportJob, job_id, :progress)
+# => { "completed" => 450, "total" => 1000, "percentage" => 45 }
+```
+
+Custom handlers run inside Temporal workflow code. Keep them deterministic: update only the provided state hash, avoid database calls, network calls, random values, process time, and other I/O. Built-in names (`pause`, `resume`, `state`, `paused`, `pause_reason`, `phase`, and `signals`) are reserved.
+
+Pause/resume does not suspend Ruby code that is already executing inside `perform`, and it does not interrupt an active Temporal timer. ActiveJob execution runs in `AjRunnerActivity`, so a running activity needs cooperative behavior such as heartbeats, cancellation checks, or application-level checkpoint state.
+
 ## Observability
 
 The gem attaches Temporal **Search Attributes** to every workflow, enabling powerful filtering and debugging in the Temporal UI.
@@ -931,7 +989,7 @@ Additional guides:
 The following features are **not yet implemented** in v0.1 but are planned for future releases:
 
 - **Multi-activity workflows** (job chains/pipelines) → Planned for v0.3
-- **Signals, Queries, and Updates** → Planned for v0.3
+- **Updates** → Planned for v0.3
 - **Child workflows** → Planned for v0.3
 - **Rails generators** (for scaffolding jobs, initializers, etc.) → Planned for v1.0
 - **ActiveRecord callback interception** (e.g., automatic transactional enqueue) → Deferred

@@ -16,6 +16,8 @@ module Temporalio
       def execute_activity(*)
         nil
       end
+
+      def wait_condition; end
     end
   end
 end
@@ -289,6 +291,91 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           expect(options[:heartbeat_timeout]).to eq(15.0)
           expect(options[:schedule_to_start_timeout]).to eq(120)
         end
+      end
+    end
+
+    context "when workflow interactions are present" do
+      it "supports built-in pause, resume, paused, and state handlers" do
+        payload = base_payload.merge(
+          "workflow_interactions" => {
+            "signals" => %w[pause resume],
+            "queries" => %w[paused state]
+          }
+        )
+
+        workflow.execute(payload)
+
+        expect(workflow.handle_dynamic_query("paused")).to be(false)
+
+        workflow.handle_dynamic_signal("pause")
+
+        expect(workflow.handle_dynamic_query("paused")).to be(true)
+        expect(workflow.handle_dynamic_query("state")).to include(
+          "job_class" => "SampleJob",
+          "job_id" => "abc-123",
+          "paused" => true
+        )
+
+        workflow.handle_dynamic_signal("resume")
+
+        expect(workflow.handle_dynamic_query("paused")).to be(false)
+      end
+
+      it "waits while paused before executing the job activity" do
+        allow(Temporalio::Workflow).to receive(:wait_condition) do |&condition|
+          workflow.handle_dynamic_signal("resume")
+          condition.call
+        end
+
+        workflow.handle_dynamic_signal("pause", "manual hold")
+        workflow.execute(base_payload)
+
+        expect(Temporalio::Workflow).to have_received(:wait_condition)
+        expect(Temporalio::Workflow).to have_received(:execute_activity)
+          .with(ActiveJob::Temporal::Activities::AjRunnerActivity, base_payload, anything)
+        expect(workflow.handle_dynamic_query("paused")).to be(false)
+      end
+
+      it "routes declared custom interactions to the ActiveJob handlers" do
+        signal_handler = lambda do |state, value|
+          state["progress"] = value
+        end
+        query_handler = lambda do |state|
+          state.fetch("progress", 0)
+        end
+        job_class = Class.new do
+          define_singleton_method(:temporal_signal_handlers) { { "progress" => signal_handler } }
+          define_singleton_method(:temporal_query_handlers) { { "progress" => query_handler } }
+        end
+        stub_const("SampleJob", job_class)
+        payload = base_payload.merge(
+          "workflow_interactions" => {
+            "job_class" => "SampleJob",
+            "signals" => ["progress"],
+            "queries" => ["progress"]
+          }
+        )
+
+        workflow.execute(payload)
+        workflow.handle_dynamic_signal("progress", 75)
+
+        expect(workflow.handle_dynamic_query("progress")).to eq(75)
+      end
+
+      it "rejects undeclared custom interactions" do
+        payload = base_payload.merge(
+          "workflow_interactions" => {
+            "signals" => ["progress"],
+            "queries" => ["progress"]
+          }
+        )
+
+        workflow.execute(payload)
+
+        expect { workflow.handle_dynamic_signal("missing") }
+          .to raise_error(ArgumentError, /Unknown workflow signal/)
+        expect { workflow.handle_dynamic_query("missing") }
+          .to raise_error(ArgumentError, /Unknown workflow query/)
       end
     end
 

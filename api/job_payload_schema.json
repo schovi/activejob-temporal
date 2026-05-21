@@ -16,6 +16,24 @@
     "rate_limits": {
       "type": "array",
       "items": { "$ref": "#/definitions/rate_limit" }
+    },
+    "workflow_interactions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_class", "signals", "queries"],
+      "properties": {
+        "job_class": { "type": "string", "minLength": 1 },
+        "signals": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "queries": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      }
     }
   },
   "oneOf": [
@@ -37,7 +55,8 @@
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
-        "rate_limits": { "$ref": "#/definitions/rate_limits" }
+        "rate_limits": { "$ref": "#/definitions/rate_limits" },
+        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" }
       }
     },
     {
@@ -53,7 +72,8 @@
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
-        "rate_limits": { "$ref": "#/definitions/rate_limits" }
+        "rate_limits": { "$ref": "#/definitions/rate_limits" },
+        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" }
       }
     },
     {
@@ -70,7 +90,8 @@
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
-        "rate_limits": { "$ref": "#/definitions/rate_limits" }
+        "rate_limits": { "$ref": "#/definitions/rate_limits" },
+        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" }
       },
       "dependencies": {
         "payload_serializer": ["payload_serializer_version"],

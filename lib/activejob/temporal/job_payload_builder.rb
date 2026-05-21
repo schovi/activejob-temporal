@@ -1,12 +1,15 @@
 # frozen_string_literal: true
 
 require_relative "payload"
+require_relative "job_payload_workflow_interactions"
 require_relative "rate_limit_options"
 require_relative "retry_mapper"
 
 module ActiveJob
   module Temporal
     class JobPayloadBuilder
+      include JobPayloadWorkflowInteractions
+
       TIMEOUT_CONFIG_ATTRIBUTES = {
         default_activity_timeout: :start_to_close_timeout,
         default_schedule_to_close_timeout: :schedule_to_close_timeout,
@@ -22,22 +25,33 @@ module ActiveJob
         payload = Payload.from_job(job, scheduled_at: scheduled_at, enforce_size: false, config: @config)
         payload[:default_activity_options] = default_activity_options
 
-        retry_policy = RetryMapper.for(job.class)
-        apply_dead_letter_attempt_limit(retry_policy)
-        payload[:retry_policy] = retry_policy
-        payload[:dead_letter] = dead_letter_metadata(job, retry_policy) if dead_letter_enabled?
-
-        temporal_options = extract_temporal_options(job.class)
-        payload[:temporal_options] = temporal_options if temporal_options.any?
-
-        rate_limits = rate_limits_for(job)
-        payload[:rate_limits] = rate_limits if rate_limits.any?
+        apply_retry_policy(payload, job)
+        apply_temporal_options(payload, job.class)
+        apply_rate_limits(payload, job)
+        apply_workflow_interactions(payload, job.class)
 
         Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job), config: @config)
         payload
       end
 
       private
+
+      def apply_retry_policy(payload, job)
+        retry_policy = RetryMapper.for(job.class)
+        apply_dead_letter_attempt_limit(retry_policy)
+        payload[:retry_policy] = retry_policy
+        payload[:dead_letter] = dead_letter_metadata(job, retry_policy) if dead_letter_enabled?
+      end
+
+      def apply_temporal_options(payload, job_class)
+        temporal_options = extract_temporal_options(job_class)
+        payload[:temporal_options] = temporal_options if temporal_options.any?
+      end
+
+      def apply_rate_limits(payload, job)
+        rate_limits = rate_limits_for(job)
+        payload[:rate_limits] = rate_limits if rate_limits.any?
+      end
 
       def metrics_payload_for(job)
         {
