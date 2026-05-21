@@ -16,8 +16,8 @@ RSpec.describe "ActiveJob Temporal dead letter queue", :integration do
     example.run
   ensure
     ActiveJob::Base.queue_adapter = original_adapter
-    ActiveJob::Temporal.config.dead_letter_queue = original_dead_letter_queue
     ActiveJob::Temporal.config.dead_letter_after_attempts = original_dead_letter_after_attempts
+    ActiveJob::Temporal.config.dead_letter_queue = original_dead_letter_queue
     stop_worker(@worker_thread)
     stop_worker(@dead_letter_worker_thread)
     TestState.instance.reset!
