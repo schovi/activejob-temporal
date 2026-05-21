@@ -17,6 +17,7 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | Yes | Task queue the worker will poll for jobs. | `default` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity (defaults to `100`). | `50` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` |
+| `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE` | No | Number of child worker processes for `temporal-worker` to supervise. Defaults to `1`. | `3` |
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT` | No | Expose `GET /health` on the given port. Off by default. | `8080` |
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND` | No | Bind address for the health endpoint. Defaults to localhost. | `0.0.0.0` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
@@ -49,6 +50,7 @@ The worker automatically detects your Rails environment and loads your job class
 - **`ACTIVEJOB_TEMPORAL_TASK_QUEUE`**: Task queue name. Defaults to `default`.
 - **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`**: Maximum activity task poll capacity. Defaults to `100`.
 - **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum workflow task poll capacity. Defaults to `5`.
+- **`--pool-size SIZE`**: Start a parent process that supervises `SIZE` worker processes. Can also be set with `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE`.
 - **`--health-check-port PORT`**: Optional HTTP health endpoint at `GET /health`. Can also be set with `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT`.
 - **`--health-check-bind HOST`**: Health endpoint bind address. Defaults to `127.0.0.1`; set `0.0.0.0` when an orchestrator must reach the port from outside the process namespace.
 - **`--metrics-port PORT`**: Optional Prometheus metrics endpoint at `GET /metrics`. Can also be set with `ACTIVEJOB_TEMPORAL_METRICS_PORT`.
@@ -96,6 +98,25 @@ curl http://localhost:9394/metrics
 ```
 
 The metrics endpoint returns Prometheus text format from `GET /metrics`. It is not a health probe.
+
+**Supervised worker pool:**
+```bash
+bundle exec temporal-worker --pool-size 3 --health-check-port 8080 --metrics-port 9394
+```
+
+The parent process starts three child workers and restarts a child if it exits unexpectedly. Health and metrics ports are per worker and increment from the base ports, so this example uses health ports `8080`, `8081`, and `8082`, and metrics ports `9394`, `9395`, and `9396`. Send `SIGTERM` or `SIGINT` to the parent process to stop all children gracefully.
+
+You can also create a pool directly from Ruby:
+
+```ruby
+pool = ActiveJob::Temporal::WorkerPool.new(
+  size: 3,
+  health_check_port: 8080,
+  metrics_port: 9394,
+  max_concurrent_activities: 200
+)
+pool.start.wait
+```
 
 **mTLS certificate reload:**
 ```bash

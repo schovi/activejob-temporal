@@ -837,6 +837,14 @@ bundle exec temporal-worker --metrics-bind 0.0.0.0 --metrics-port 9394
 curl http://localhost:9394/metrics
 ```
 
+Run a supervised local worker pool when you want multiple worker processes without an external process manager:
+
+```bash
+bundle exec temporal-worker --pool-size 3 --health-check-port 8080 --metrics-port 9394
+```
+
+The pool starts three child worker processes and restarts any child that exits unexpectedly. Health and metrics ports are assigned per worker from the base ports, so the example exposes health checks on `8080`, `8081`, and `8082`, and metrics on `9394`, `9395`, and `9396`. `SIGTERM` or `SIGINT` on the parent pool requests graceful shutdown for all children.
+
 Workers reload TLS client certificates without restart when `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true` and TLS file paths are configured. You can also trigger a manual reload with `SIGHUP`:
 
 ```bash
@@ -864,6 +872,7 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | No | Task queue the worker will poll for jobs. | `default` (if omitted) |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity (defaults to `100`). | `50` or `200` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` or `50` |
+| `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE` | No | Number of child worker processes for `temporal-worker` to supervise. Defaults to `1`. | `3` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. | `9394` |
 | `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. | `0.0.0.0` |

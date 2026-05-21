@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **Implemented enhancements:**
 
+- TASK.017 - Worker pool management [\#17](https://github.com/schovi/activejob-temporal/issues/17)
 - TASK.035 - Add rate limiting support [\#22](https://github.com/schovi/activejob-temporal/issues/22)
 - TASK.022 - Add payload serialization options [\#19](https://github.com/schovi/activejob-temporal/issues/19)
 - TASK.056 - Immediate Ruby 4+ migration task [\#56](https://github.com/schovi/activejob-temporal/issues/56)
@@ -70,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Global and per-job rate limiting with a pluggable limiter backend and durable workflow waits.
+- Supervised worker pools via `ActiveJob::Temporal::WorkerPool` and `temporal-worker --pool-size`.
 - Configurable payload serializer envelopes for MessagePack and Marshal while keeping JSON as the default wire format.
 - Changelog generation configuration and `rake changelog:generate` release task.
 - Structured audit logging for job enqueue, execution, failure, and cancellation lifecycle events.

@@ -16,7 +16,10 @@ options = {
     "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND",
     ActiveJob::Temporal::HealthCheckServer::DEFAULT_BIND_ADDRESS
   ),
-  health_check_port: ENV.fetch("ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT", nil)
+  health_check_port: ENV.fetch("ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT", nil),
+  metrics_bind: ENV.fetch("ACTIVEJOB_TEMPORAL_METRICS_BIND", nil),
+  metrics_port: ENV.fetch("ACTIVEJOB_TEMPORAL_METRICS_PORT", nil),
+  pool_size: ENV.fetch("ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE", 1)
 }
 
 OptionParser.new do |parser|
@@ -36,6 +39,10 @@ OptionParser.new do |parser|
 
   parser.on("--metrics-bind HOST", "Bind metrics endpoint to HOST") do |host|
     options[:metrics_bind] = host
+  end
+
+  parser.on("--pool-size SIZE", Integer, "Run SIZE worker processes under a supervising pool") do |size|
+    options[:pool_size] = size
   end
 end.parse!(ARGV)
 
@@ -66,8 +73,42 @@ config.metrics_provider = :prometheus if options[:metrics_port] && config.metric
 task_queue = config.task_queue
 max_concurrent_activities = config.max_concurrent_activities
 max_concurrent_workflows = config.max_concurrent_workflow_tasks
-metrics_port = options.key?(:metrics_port) ? options[:metrics_port] : config.metrics_port
-metrics_bind = options.key?(:metrics_bind) ? options[:metrics_bind] : config.metrics_bind
+metrics_port = options[:metrics_port] || config.metrics_port
+metrics_bind = options[:metrics_bind] || config.metrics_bind
+begin
+  pool_size = Integer(options[:pool_size])
+rescue ArgumentError, TypeError
+  warn "Error: --pool-size must be a positive integer"
+  exit(1)
+end
+
+if pool_size < 1
+  warn "Error: --pool-size must be a positive integer"
+  exit(1)
+end
+
+if pool_size > 1
+  pool = ActiveJob::Temporal::WorkerPool.new(
+    size: pool_size,
+    health_check_port: options[:health_check_port],
+    health_check_bind: options[:health_check_bind],
+    metrics_port: metrics_port,
+    metrics_bind: metrics_bind,
+    max_concurrent_activities: max_concurrent_activities,
+    max_concurrent_workflows: max_concurrent_workflows
+  )
+
+  ActiveJob::Temporal::Logger.log_event(
+    "worker_pool_started",
+    size: pool_size,
+    task_queue: task_queue,
+    health_check_port: options[:health_check_port],
+    metrics_port: metrics_port
+  )
+
+  pool.start.wait
+  exit
+end
 
 client = ActiveJob::Temporal.client
 worker_health = ActiveJob::Temporal::WorkerHealth.new(
