@@ -13,5 +13,6 @@ class ActiveSupport::TestCase
   setup do
     ActiveJob::Base.queue_adapter.enqueued_jobs.clear
     ActiveJob::Base.queue_adapter.performed_jobs.clear
+    EmailSubscriber.delete_all
   end
 end
