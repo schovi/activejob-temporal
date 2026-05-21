@@ -92,6 +92,10 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.encryption_old_keys).to eq([])
     end
 
+    it "uses JSON payload serialization by default" do
+      expect(configuration.payload_serializer).to be(:json)
+    end
+
     it "uses the default workflow ID generator when none is configured" do
       expect(configuration.workflow_id_generator).to be_nil
     end
@@ -186,6 +190,14 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       config = described_class.new
       expect(config.max_payload_size_kb).to eq(512)
+    end
+
+    it "reads payload serializer from ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER").and_return("message_pack")
+
+      config = described_class.new
+      expect(config.payload_serializer).to be(:message_pack)
     end
 
     it "uses default max_payload_size_kb when ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB is not set" do
@@ -559,6 +571,27 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects arrays containing invalid keys" do
       expect { configuration.encryption_old_keys = [valid_encryption_key, "invalid"] }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption old keys must contain only/)
+    end
+  end
+
+  describe "#payload_serializer=" do
+    it "accepts built-in payload serializers" do
+      configuration.payload_serializer = :message_pack
+      expect(configuration.payload_serializer).to be(:message_pack)
+
+      configuration.payload_serializer = :msgpack
+      expect(configuration.payload_serializer).to be(:msgpack)
+
+      configuration.payload_serializer = :marshal
+      expect(configuration.payload_serializer).to be(:marshal)
+
+      configuration.payload_serializer = :json
+      expect(configuration.payload_serializer).to be(:json)
+    end
+
+    it "rejects unsupported payload serializers" do
+      expect { configuration.payload_serializer = :yaml }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Payload serializer is not supported/)
     end
   end
 

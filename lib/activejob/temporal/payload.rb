@@ -8,6 +8,7 @@ require "active_job/serializers"
 require "active_job/arguments"
 
 require_relative "payload_encryption"
+require_relative "payload_serializers"
 
 module ActiveJob
   module Temporal
@@ -120,7 +121,10 @@ module ActiveJob
         }
         payload[:scheduled_at] = iso8601_timestamp(scheduled_at) if scheduled_at
 
-        final_payload = encrypt_payload_if_configured(payload, config)
+        scheduled_timestamp = payload.delete(:scheduled_at)
+        final_payload = serializer_for(config).dump(payload)
+        final_payload[:scheduled_at] = scheduled_timestamp if scheduled_timestamp
+        final_payload = encrypt_payload_if_configured(final_payload, config)
         enforce_size!(final_payload, metrics_payload: payload, config: config) if enforce_size
         final_payload
       end
@@ -163,10 +167,15 @@ module ActiveJob
       end
 
       def deserialize_payload(payload, config: ActiveJob::Temporal.config)
-        return payload unless PayloadEncryption.encrypted?(payload)
+        transport_payload = if PayloadEncryption.encrypted?(payload)
+                              decrypted_payload = PayloadEncryption.decrypt(payload, config)
+                              preserve_workflow_control_fields(payload, decrypted_payload)
+                            else
+                              payload
+                            end
 
-        decrypted_payload = PayloadEncryption.decrypt(payload, config)
-        preserve_workflow_control_fields(payload, decrypted_payload)
+        execution_payload = serializer_for_transport_payload(transport_payload).load(transport_payload)
+        preserve_workflow_control_fields(transport_payload, execution_payload)
       end
 
       def enforce_size!(payload, metrics_payload: payload, config: ActiveJob::Temporal.config)
@@ -198,6 +207,7 @@ module ActiveJob
 
         execution_payload = payload.except(:scheduled_at)
         encrypted_payload = PayloadEncryption.encrypt(execution_payload, config)
+        copy_payload_serializer_metadata(payload, encrypted_payload)
         encrypted_payload[:scheduled_at] = payload[:scheduled_at] if payload[:scheduled_at]
         encrypted_payload
       end
@@ -209,6 +219,32 @@ module ActiveJob
         end
 
         decrypted_payload
+      end
+
+      def serializer_for(config)
+        PayloadSerializers.fetch(config.payload_serializer)
+      end
+
+      def serializer_for_transport_payload(payload)
+        serializer_name = payload[:payload_serializer] || payload["payload_serializer"]
+        return PayloadSerializers.fetch(:json) unless serializer_name
+
+        validate_payload_serializer_version!(payload)
+        PayloadSerializers.fetch(serializer_name)
+      end
+
+      def validate_payload_serializer_version!(payload)
+        version = payload[:payload_serializer_version] || payload["payload_serializer_version"]
+        return if version == PayloadSerializers::ENVELOPE_VERSION
+
+        raise ActiveJob::SerializationError, "Unsupported payload serializer version: #{version.inspect}"
+      end
+
+      def copy_payload_serializer_metadata(source_payload, encrypted_payload)
+        %i[payload_serializer payload_serializer_version].each do |key|
+          value = source_payload[key] || source_payload[key.to_s]
+          encrypted_payload[key] = value if value
+        end
       end
 
       # Serializes job arguments using ActiveJob's built-in serializer.
@@ -231,6 +267,8 @@ module ActiveJob
                     else
                       raise ArgumentError, "scheduled_at must be convertible to Time"
                     end
+        raise ArgumentError, "scheduled_at must be convertible to Time" unless timestamp.respond_to?(:iso8601)
+
         timestamp.iso8601
       end
 

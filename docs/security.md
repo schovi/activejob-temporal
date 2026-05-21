@@ -78,12 +78,11 @@ Status inspection uses the same UUID validation for job IDs before building Temp
 #### General Security Practices
 
 The gem does **not**:
-- ❌ Execute user code directly
 - ❌ Build SQL queries from user input (except validated Temporal search queries as above)
 - ❌ Render user input in HTML
 - ❌ Execute shell commands with job arguments
 
-All job arguments are serialized to JSON/GlobalID and passed through Temporal safely.
+By default, job arguments are serialized through ActiveJob's JSON/GlobalID-compatible serializers and passed through Temporal safely. Opt-in Marshal payload serialization is different: loading a Marshal payload can instantiate Ruby objects, so use it only with trusted Temporal histories and compatible application code.
 
 ### TLS Certificate Validation and Rotation
 
@@ -111,21 +110,25 @@ Legacy `TEMPORAL_TLS_CERT`, `TEMPORAL_TLS_KEY`, and `TEMPORAL_TLS_SERVER_NAME` e
 
 ### Payload Serialization
 
-Job arguments are serialized securely:
+Job arguments are normalized through ActiveJob before any optional payload encoding is applied:
 
-1. **No arbitrary code execution**: Uses `ActiveJob::Arguments.serialize`
-2. **Size limits**: Payloads > 250KB rejected (prevents DoS)
+1. **ActiveJob argument types**: Uses `ActiveJob::Arguments.serialize`
+2. **Size limits**: Payloads over the configured limit are rejected before enqueue
 3. **GlobalID support**: References instead of full object serialization
 4. **Optional encryption**: `config.encrypt_payload = true` encrypts job execution payloads with AES-256-GCM before sending them to Temporal
 
 ```ruby
-# ✅ Serialization via GlobalID
+# Serialization via GlobalID
 MyModel.new(id: 123)
 # Serialized as: "gid://app/MyModel/123"
 
-# ❌ Full object serialization (don't do)
+# Full object serialization is not supported.
 # That would try to serialize entire object state
 ```
+
+The default `payload_serializer = :json` is the safest and most portable format. `:message_pack` uses the optional `msgpack` gem and is intended for applications that want a compact binary representation of the ActiveJob-normalized payload. It still stores a Base64 envelope in Temporal, so measure representative payloads before assuming a size reduction.
+
+`payload_serializer = :marshal` should only be used when the Temporal namespace, workflow history, writers, and workers are trusted. Ruby Marshal can instantiate Ruby objects during load, and payloads can become unreadable when Ruby or application classes change. Prefer JSON or MessagePack for portability, and enable payload encryption when serialized arguments or execution metadata include sensitive data.
 
 ### Payload Encryption
 
@@ -146,6 +149,7 @@ The encrypted envelope protects job class, job ID, queue name, serialized argume
 - activity timeout options
 - retry policy metadata
 - per-job Temporal options
+- dead letter metadata
 - rate-limit metadata
 
 Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, search attributes are plaintext in Temporal visibility APIs, rate-limit keys stay in workflow-control metadata, and dead letter queue entries keep failure metadata plaintext so operators can inspect and triage failed jobs. For privacy-sensitive workloads, configure `workflow_id_generator` so workflow IDs do not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags. Do not put secrets in workflow IDs, queue names, tags, tenant IDs, rate-limit keys, DLQ failure messages, or custom search metadata.

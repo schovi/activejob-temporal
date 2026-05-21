@@ -36,6 +36,23 @@
         "default_activity_options": { "type": "object" },
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
+        "dead_letter": { "type": "object" },
+        "rate_limits": { "$ref": "#/definitions/rate_limits" }
+      }
+    },
+    {
+      "additionalProperties": false,
+      "required": ["serialized_payload", "payload_serializer", "payload_serializer_version", "serialized_data"],
+      "properties": {
+        "serialized_payload": { "const": true },
+        "payload_serializer": { "type": "string", "enum": ["message_pack", "marshal"] },
+        "payload_serializer_version": { "type": "integer", "enum": [1] },
+        "serialized_data": { "type": "string" },
+        "scheduled_at": { "type": "string", "format": "date-time" },
+        "default_activity_options": { "type": "object" },
+        "retry_policy": { "type": "object" },
+        "temporal_options": { "type": "object" },
+        "dead_letter": { "type": "object" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" }
       }
     },
@@ -45,12 +62,19 @@
       "properties": {
         "encrypted_payload": { "const": true },
         "encrypted_payload_version": { "type": "integer", "enum": [1] },
+        "payload_serializer": { "type": "string", "enum": ["message_pack", "marshal"] },
+        "payload_serializer_version": { "type": "integer", "enum": [1] },
         "encrypted_data": { "type": "string" },
         "scheduled_at": { "type": "string", "format": "date-time" },
         "default_activity_options": { "type": "object" },
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
+        "dead_letter": { "type": "object" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" }
+      },
+      "dependencies": {
+        "payload_serializer": ["payload_serializer_version"],
+        "payload_serializer_version": ["payload_serializer"]
       }
     }
   ]

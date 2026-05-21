@@ -22,6 +22,7 @@ RSpec.describe ActiveJob::Temporal::Payload do
       config.encrypt_payload = false
       config.encryption_key = nil
       config.encryption_old_keys = []
+      config.payload_serializer = :json
     end
 
     allow(ActiveJob::Temporal::Logger).to receive(:info)
@@ -87,8 +88,16 @@ RSpec.describe ActiveJob::Temporal::Payload do
       expect(payload[:scheduled_at]).to eq(base_time.iso8601)
     end
 
-    it "raises when scheduled_at string is not ISO8601" do
-      invalid_timestamp = "20/10/2024 12:00"
+    it "coerces scheduled_at strings accepted by ActiveSupport" do
+      scheduled_time = "October 20, 2024 12:00 UTC"
+
+      payload = described_class.from_job(job, scheduled_at: scheduled_time)
+
+      expect(payload[:scheduled_at]).to eq("2024-10-20T12:00:00+00:00")
+    end
+
+    it "raises when scheduled_at string cannot be parsed" do
+      invalid_timestamp = "not-a-date"
 
       expect { described_class.from_job(job, scheduled_at: invalid_timestamp) }
         .to raise_error(ArgumentError, /convertible to Time/)
@@ -150,6 +159,47 @@ RSpec.describe ActiveJob::Temporal::Payload do
 
       expect { described_class.from_job(bad_job) }
         .to raise_error(ActiveJob::SerializationError)
+    end
+
+    context "with non-JSON payload serializers" do
+      it "wraps MessagePack execution data and round-trips arguments" do
+        ActiveJob::Temporal.config.payload_serializer = :message_pack
+
+        payload = described_class.from_job(job)
+        ActiveJob::Temporal.config.payload_serializer = :json
+
+        expect(payload).to include(
+          serialized_payload: true,
+          payload_serializer: "message_pack",
+          payload_serializer_version: 1,
+          serialized_data: a_kind_of(String)
+        )
+        expect(payload).not_to have_key(:job_class)
+        expect(payload).not_to have_key(:arguments)
+        expect(described_class.deserialize_payload(payload)).to include(
+          job_class: job.class.name,
+          job_id: job.job_id,
+          queue_name: job.queue_name
+        )
+        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+      end
+
+      it "wraps Marshal execution data and round-trips arguments" do
+        ActiveJob::Temporal.config.payload_serializer = :marshal
+
+        payload = described_class.from_job(job)
+        ActiveJob::Temporal.config.payload_serializer = :json
+
+        expect(payload).to include(
+          serialized_payload: true,
+          payload_serializer: "marshal",
+          payload_serializer_version: 1,
+          serialized_data: a_kind_of(String)
+        )
+        expect(payload).not_to have_key(:job_class)
+        expect(payload).not_to have_key(:arguments)
+        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+      end
     end
 
     context "boundary conditions for payload size" do
@@ -485,6 +535,34 @@ RSpec.describe ActiveJob::Temporal::Payload do
 
         expect { described_class.deserialize_args(payload) }
           .to raise_error(ActiveJob::SerializationError, /Unable to decrypt ActiveJob::Temporal payload/)
+      end
+
+      it "encrypts serialized MessagePack execution data and preserves workflow controls" do
+        ActiveJob::Temporal.config.payload_serializer = :message_pack
+        scheduled_time = Time.utc(2024, 10, 20, 12, 0, 0)
+
+        payload = described_class.from_job(job, scheduled_at: scheduled_time).merge(
+          rate_limits: [{ limit: 100, interval: 1.0, key: "global" }]
+        )
+
+        expect(payload).to include(
+          encrypted_payload: true,
+          encrypted_payload_version: 1,
+          payload_serializer: "message_pack",
+          payload_serializer_version: 1,
+          encrypted_data: a_kind_of(String),
+          scheduled_at: scheduled_time.iso8601
+        )
+        expect(payload).not_to have_key(:serialized_payload)
+        expect(payload).not_to have_key(:serialized_data)
+        expect(described_class.deserialize_payload(payload)).to include(
+          job_class: job.class.name,
+          job_id: job.job_id,
+          queue_name: job.queue_name,
+          scheduled_at: scheduled_time.iso8601,
+          rate_limits: [{ limit: 100, interval: 1.0, key: "global" }]
+        )
+        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
       end
     end
   end

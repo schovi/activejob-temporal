@@ -197,6 +197,44 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     )
   end
 
+  it "keeps workflow-control fields outside non-JSON serializer envelopes" do
+    config.payload_serializer = :message_pack
+    config.dead_letter_queue = "failed_jobs"
+    config.dead_letter_after_attempts = 3
+    config.rate_limiter = ->(_rate_limits) { 0 }
+    config.global_rate_limit = { limit: 1000, per: :minute }
+    job = build_job("SerializedBuilderJob")
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload).to include(
+      serialized_payload: true,
+      payload_serializer: "message_pack",
+      payload_serializer_version: 1,
+      serialized_data: a_kind_of(String),
+      default_activity_options: hash_including(start_to_close_timeout: 900.0),
+      retry_policy: hash_including(maximum_attempts: 3),
+      rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
+      dead_letter: hash_including(
+        queue: "failed_jobs",
+        after_attempts: 3,
+        job_class: "SerializedBuilderJob",
+        job_id: job.job_id
+      )
+    )
+    expect(payload).not_to have_key(:job_class)
+    expect(payload).not_to have_key(:arguments)
+
+    config.payload_serializer = :json
+    expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
+      job_class: "SerializedBuilderJob",
+      default_activity_options: hash_including(start_to_close_timeout: 900.0),
+      retry_policy: hash_including(maximum_attempts: 3),
+      rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
+      dead_letter: hash_including(queue: "failed_jobs")
+    )
+  end
+
   it "enforces payload size after workflow-control fields are added" do
     job = build_job("FinalSizeBuilderJob")
     allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return(

@@ -44,6 +44,7 @@ The canonical machine-readable schema for all configuration options is available
 | `metrics_bind` | String | `"127.0.0.1"` | Bind address for the Prometheus metrics endpoint. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
+| `payload_serializer` | Symbol | `:json` | Serializer for job execution payloads. Supports `:json`, `:message_pack`, `:msgpack`, and `:marshal`. |
 | `encrypt_payload` | Boolean | `false` | Encrypt serialized job execution payloads before sending them to Temporal. |
 | `encryption_key` | String or `nil` | `nil` | Base64-encoded 32-byte AES-256-GCM payload encryption key. Required when `encrypt_payload` is true. |
 | `encryption_old_keys` | Array | `[]` | Previous Base64-encoded encryption keys accepted for decryption during key rotation. |
@@ -79,6 +80,7 @@ Configuration can also be set via environment variables for 12-factor app compli
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX` | `task_queue_prefix` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | `task_queue` | String | `"default"` |
 | `ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB` | `max_payload_size_kb` | Integer | `250` |
+| `ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER` | `payload_serializer` | Symbol | `:json` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | `max_concurrent_activities` | Integer | `100` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | `max_concurrent_workflow_tasks` | Integer | `5` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | `metrics_provider` | Symbol | `:none` |
@@ -129,6 +131,7 @@ ActiveJob::Temporal.configure do |config|
   config.metrics_provider = :prometheus
   config.metrics_port = 9394
   config.max_payload_size_kb = 512
+  config.payload_serializer = :json
   config.encrypt_payload = true
   config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
   config.tls_cert_path = "/etc/certs/client.pem"
@@ -282,6 +285,30 @@ Audit events use the same JSON payload format as adapter logs and include an `ev
 
 Audit attributes include correlation fields such as `workflow_id`, `run_id`, `job_class`, `job_id`, `queue`, `attempt`, and `worker_id` when available. Failure events include `error_class` and a SHA256 `error_fingerprint`, not raw exception messages or backtraces. The audit logger intentionally excludes raw job arguments, payloads, and return values. Use explicit application-level logging if a compliance process needs a redacted business identifier.
 
+## Payload Serialization
+
+`payload_serializer` controls how new job execution payloads are encoded before they are sent to Temporal. JSON is the default and remains the compatibility baseline:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.payload_serializer = :json
+end
+```
+
+Set `:message_pack` (or `:msgpack`) to wrap the ActiveJob-normalized execution payload in a MessagePack envelope:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.payload_serializer = :message_pack
+end
+```
+
+Applications that use MessagePack must add `gem "msgpack"` to their own Gemfile. `activejob-temporal` keeps it as a development dependency so JSON-only applications do not install an extra runtime dependency.
+
+Set `:marshal` only for trusted deployments where all processes that can write or read workflow history run compatible Ruby and application code. Marshal payloads are Ruby-specific, can break when classes or Ruby versions change, and must never be treated as safe for untrusted Temporal histories. The adapter still serializes job arguments through `ActiveJob::Arguments` first, so Marshal does not bypass ActiveJob's supported argument types.
+
+Serializer metadata is stored with each non-JSON payload. During a rolling deploy, deploy readers first, then switch enqueueing processes to the new serializer after every worker can decode it. Existing JSON payloads continue to run without configuration changes.
+
 ## Payload Encryption
 
 Set `encrypt_payload` to `true` to encrypt job execution payloads before they are sent to Temporal:
@@ -305,6 +332,7 @@ Encryption uses `ActiveSupport::MessageEncryptor` with AES-256-GCM and JSON seri
 - `default_activity_options`
 - `retry_policy`
 - `temporal_options`
+- `dead_letter`
 - `rate_limits`
 
 Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, search attributes can expose job class, queue, job ID, tenant ID, and tags, and rate-limit keys stay visible in workflow-control metadata. For privacy-sensitive workloads, configure a `workflow_id_generator` that does not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags. Do not put secrets in workflow IDs, search attributes, queue names, tags, rate-limit keys, or tenant metadata.
@@ -425,7 +453,7 @@ Temporal enforces limits on payload sizes to ensure efficient workflow execution
 
 ### Configuration
 
-The `max_payload_size_kb` configuration option (default: `250` KB) controls the maximum allowed size for serialized job arguments. When a job's serialized payload exceeds this limit, the adapter immediately raises an error rather than attempting to enqueue the workflow. When encryption is enabled, the limit is enforced after encryption so ciphertext overhead is included.
+The `max_payload_size_kb` configuration option (default: `250` KB) controls the maximum allowed size for serialized job arguments. When a job's serialized payload exceeds this limit, the adapter immediately raises an error rather than attempting to enqueue the workflow. The limit is enforced after payload serializer envelopes and after encryption, so Base64 and ciphertext overhead are included.
 
 ```ruby
 ActiveJob::Temporal.configure do |config|

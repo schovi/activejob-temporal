@@ -6,6 +6,7 @@ require "active_model"
 
 require_relative "middleware"
 require_relative "payload_encryption"
+require_relative "payload_serializers"
 require_relative "rate_limit_options"
 
 # rubocop:disable Metrics/ModuleLength
@@ -24,6 +25,7 @@ module ActiveJob
 
     VALIDATION_LEVELS = %i[strict warn none].freeze
     METRICS_PROVIDERS = %i[none prometheus].freeze
+    PAYLOAD_SERIALIZERS = PayloadSerializers::SUPPORTED
     UNTRAPPABLE_SIGNALS = %w[KILL STOP].freeze
 
     # Central registry of all configuration attributes.
@@ -277,6 +279,13 @@ module ActiveJob
         env_var: "ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB",
         type: :integer,
         description: "Maximum job payload size in kilobytes"
+      },
+
+      payload_serializer: {
+        default: :json,
+        env_var: "ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER",
+        type: :symbol,
+        description: "Payload serializer for job execution data: :json, :message_pack, :msgpack, or :marshal"
       },
 
       encrypt_payload: {
@@ -541,6 +550,12 @@ module ActiveJob
                 inclusion: {
                   in: METRICS_PROVIDERS,
                   message: :unsupported_provider
+                }
+
+      validates :payload_serializer,
+                inclusion: {
+                  in: PAYLOAD_SERIALIZERS,
+                  message: :unsupported_serializer
                 }
 
       #

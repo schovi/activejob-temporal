@@ -7,7 +7,7 @@
 
 metadata:
   schema_version: "1.0"
-  last_updated: "2026-05-20"
+  last_updated: "2026-05-21"
   contact: "ruby@temporal.io"
   repository: "https://github.com/temporalio/activejob-temporal"
   documentation: "https://github.com/temporalio/activejob-temporal/blob/main/docs/configuration_reference.md"
@@ -359,6 +359,18 @@ attributes:
       env_var_name: ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB
       example: 512
 
+    - name: payload_serializer
+      type: Symbol
+      default: ":json"
+      validation_rules:
+        - "Must be one of: :json, :message_pack, :msgpack, :marshal"
+        - ":json keeps the legacy inline payload format"
+        - ":message_pack and :msgpack require the msgpack gem at runtime"
+        - ":marshal must only be used with trusted workflow histories and compatible Ruby/application code"
+      description: "Serializer used for new job execution payloads. Non-JSON serializers wrap the ActiveJob-normalized payload in a versioned envelope while workflow-control metadata remains plaintext."
+      env_var_name: ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER
+      example: ":message_pack"
+
     - name: encrypt_payload
       type: Boolean
       default: false
@@ -464,6 +476,7 @@ examples:
       metrics_bind: "127.0.0.1"
       middleware_chain: "empty"
       max_payload_size_kb: 250
+      payload_serializer: ":json"
       encrypt_payload: false
       encryption_key: null
       encryption_old_keys: []
@@ -509,6 +522,7 @@ examples:
       metrics_bind: "127.0.0.1"
       middleware_chain: "empty"
       max_payload_size_kb: 250
+      payload_serializer: ":json"
       encrypt_payload: true
       encryption_key: "ENV['ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY']"
       encryption_old_keys: []
@@ -569,6 +583,7 @@ examples:
       metrics_bind: "127.0.0.1"
       middleware_chain: "empty"
       max_payload_size_kb: 512
+      payload_serializer: ":message_pack"
       encrypt_payload: true
       encryption_key: "ENV['ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY']"
       encryption_old_keys: []
@@ -596,6 +611,7 @@ examples:
         config.default_retry_max_attempts = 5
         config.validation_level = :strict
         config.max_payload_size_kb = 512
+        config.payload_serializer = :message_pack
         config.max_concurrent_activities = 300
         config.max_concurrent_workflow_tasks = 25
         config.metrics_provider = :prometheus
@@ -639,6 +655,7 @@ validation:
     - "dead_letter_queue - Optional, but when set must not be blank"
     - "dead_letter_after_attempts - Optional, but when set must be > 0 and requires dead_letter_queue"
     - "max_payload_size_kb - Must be between 1 and 2,097,152 KB"
+    - "payload_serializer - Must be one of :json, :message_pack, :msgpack, or :marshal"
     - "encrypt_payload - Must be true or false"
     - "encryption_key - Required when encrypt_payload is true; when present, must be a Base64-encoded 32-byte key"
     - "encryption_old_keys - Must be an array of Base64-encoded 32-byte keys"
@@ -690,6 +707,11 @@ environment_variables:
       maps_to: max_payload_size_kb
       example: "512"
       note: "Must be converted to integer"
+
+    - name: ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER
+      maps_to: payload_serializer
+      example: "message_pack"
+      note: "Must be converted to symbol"
 
     - name: ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES
       maps_to: max_concurrent_activities

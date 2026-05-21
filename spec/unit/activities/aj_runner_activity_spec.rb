@@ -128,6 +128,27 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end
     end
 
+    it "executes jobs from serialized payload envelopes" do
+      stub_const("SerializedRunnerJob", Class.new(ActiveJob::Base))
+      job = SerializedRunnerJob.new(*args)
+
+      ActiveJob::Temporal.config.payload_serializer = :message_pack
+      payload = ActiveJob::Temporal::Payload.from_job(job)
+      job_instance = instance_double("SerializedRunnerJob")
+      allow(SerializedRunnerJob).to receive(:new).and_return(job_instance)
+      allow(job_instance).to receive(:perform).and_return("performed")
+      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_args).and_call_original
+
+      expect(activity.execute(payload)).to eq("performed")
+
+      expect(job_instance).to have_received(:perform).with(*args)
+      expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(
+        hash_including(job_class: "SerializedRunnerJob", job_id: job.job_id, queue_name: "default")
+      )
+    ensure
+      ActiveJob::Temporal.config.payload_serializer = :json
+    end
+
     it "records started and completed audit events without raw arguments or result" do
       job_instance = instance_double("AuditRunnerJob")
       class_double("AuditRunnerJob", new: job_instance).as_stubbed_const

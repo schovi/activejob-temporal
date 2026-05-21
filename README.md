@@ -37,6 +37,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Search attributes:** Filter and debug jobs in Temporal UI using job class, queue, job ID, tenant ID, custom tags, and enqueue timestamp
 - ✅ **Transactional enqueue:** Jobs automatically defer enqueue until the current database transaction commits (via `enqueue_after_transaction_commit?`)
 - ✅ **GlobalID support:** Seamless serialization of ActiveRecord models and other GlobalID-compatible objects
+- ✅ **Payload serialization options:** Keep JSON defaults or encode job execution payloads with MessagePack or Marshal
 - ✅ **Configurable timeouts and retries:** Fine-tune activity timeouts, retry intervals, and backoff coefficients globally
 - ✅ **Structured logging:** JSON logs for integration with observability infrastructure
 - ✅ **Optional payload encryption:** Encrypt job execution payloads with AES-256-GCM while preserving deterministic workflow metadata
@@ -211,6 +212,7 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `metrics_bind` | String | `"127.0.0.1"` | Bind address for the Prometheus metrics endpoint. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
+| `payload_serializer` | Symbol | `:json` | Serializer for job execution payloads. Supports `:json`, `:message_pack`, `:msgpack`, and `:marshal`. |
 | `encrypt_payload` | Boolean | `false` | Encrypt serialized job execution payloads before sending them to Temporal. |
 | `encryption_key` | String or `nil` | `nil` | Base64-encoded 32-byte AES-256-GCM payload encryption key. Required when `encrypt_payload` is true. |
 | `encryption_old_keys` | Array | `[]` | Previous Base64-encoded encryption keys accepted for decryption during key rotation. |
@@ -237,6 +239,7 @@ ActiveJob::Temporal.configure do |config|
   config.metrics_provider = :prometheus
   config.metrics_port = 9394
   config.max_payload_size_kb = 512
+  config.payload_serializer = :json
   config.encrypt_payload = true
   config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
 end
@@ -331,6 +334,22 @@ end
 ```
 
 Audit events are JSON-formatted through the configured logger. Event names include `job.enqueued`, `job.started`, `job.completed`, `job.failed`, `job.cancelled`, and `schedule.created`. Events include correlation fields such as `workflow_id`, `run_id`, `job_class`, `job_id`, `queue`, `attempt`, and `worker_id` when available. Failure events include `error_class` and a SHA256 `error_fingerprint`, not raw exception messages or backtraces. Raw job arguments, payloads, and return values are not logged.
+
+### Payload Serialization
+
+JSON is the default payload format and remains the compatibility baseline. You can configure new enqueues to wrap the ActiveJob-normalized execution payload in a MessagePack or Marshal envelope:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.payload_serializer = :message_pack # aliases: :msgpack
+end
+```
+
+`payload_serializer` controls only new payloads. Each non-JSON payload stores serializer metadata with the payload, so workers can read older JSON workflows and newer serialized workflows during a rolling deploy. Deploy workers that can read the new serializer before changing enqueueing processes to write it.
+
+MessagePack requires the `msgpack` gem at runtime in any process that reads or writes MessagePack payloads. The gem is only a development dependency of `activejob-temporal`, so applications using `:message_pack` should add `gem "msgpack"` to their own Gemfile.
+
+Marshal serializes the ActiveJob-normalized execution payload, not arbitrary job argument objects. Use it only when all writers, workers, and Temporal history readers are trusted and run compatible Ruby and application code. Marshal payloads are Ruby-specific and can break when classes or Ruby versions change.
 
 ### Payload Encryption
 
@@ -851,6 +870,7 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | No | Enable structured lifecycle audit events. | `true` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE` | No | Task queue for parked dead letter workflows. | `failed_jobs` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS` | No | Retry attempt limit before routing to the dead letter queue. | `3` |
+| `ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER` | No | Serializer for new job execution payloads. | `json`, `message_pack`, or `marshal` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD` | No | Encrypt job execution payloads before sending them to Temporal. | `true` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY` | Required when encryption is enabled | Base64-encoded 32-byte AES-256-GCM encryption key. | `SecureRandom.base64(32)` |
 | `ACTIVEJOB_TEMPORAL_TLS_CERT_PATH` | Required for mTLS client certs | Client certificate file path. | `/etc/certs/client.pem` |

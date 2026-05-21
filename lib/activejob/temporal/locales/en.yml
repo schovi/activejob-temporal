@@ -29,6 +29,9 @@ en:
             max_payload_size_kb:
               payload_size_invalid: "must be between 1 and 2,097,152 KB (got: %{value}). Typical values: 250 KB (default), 500 KB (large), or 1000 KB (very large)"
 
+            payload_serializer:
+              unsupported_serializer: "is not supported. Use one of: json, message_pack, msgpack, marshal"
+
             max_concurrent_activities:
               concurrent_activities_invalid: "must be positive (got: %{value}). Typical values: 50 (low), 100 (default), 200+ (high throughput)"
 
