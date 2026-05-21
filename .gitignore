@@ -17,6 +17,7 @@
 /tmp/
 /vendor/bundle/
 Gemfile.lock
+!examples/basic_rails_app/Gemfile.lock
 _yardoc/
 doc/
 node_modules/
