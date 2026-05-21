@@ -314,6 +314,153 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
       end
     end
 
+    context "when dependencies are present" do
+      let(:dependency_payload) do
+        base_payload.merge(
+          "dependencies" => [
+            {
+              "job_id" => "parent-123",
+              "workflow_id" => "ajwf:DependencyParentJob:parent-123"
+            }
+          ],
+          "dependency_failure_policy" => "fail"
+        )
+      end
+
+      it "checks dependencies before executing the job activity" do
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+          calls << [activity_class, args, options]
+          if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+            [
+              {
+                "job_id" => "parent-123",
+                "workflow_id" => "ajwf:DependencyParentJob:parent-123",
+                "state" => "completed"
+              }
+            ]
+          else
+            :activity_result
+          end
+        end
+
+        workflow.execute(dependency_payload)
+
+        expect(calls.map(&:first)).to eq([
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::AjRunnerActivity
+                                         ])
+        expect(calls.first[1]).to eq([dependency_payload.fetch("dependencies")])
+        expect(calls.first[2][:schedule_to_close_timeout]).to eq(described_class::DEPENDENCY_CHECK_ACTIVITY_TIMEOUT)
+        expect(calls.first[2][:start_to_close_timeout]).to eq(described_class::DEPENDENCY_CHECK_ACTIVITY_TIMEOUT)
+        expect(calls.first[2][:retry_policy].max_attempts).to eq(1)
+      end
+
+      it "sleeps durably and rechecks while dependencies are pending" do
+        statuses = [
+          [{ "job_id" => "parent-123", "state" => "running" }],
+          [{ "job_id" => "parent-123", "state" => "completed" }]
+        ]
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+          calls << [activity_class, args, options]
+          if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+            statuses.shift
+          else
+            :activity_result
+          end
+        end
+
+        workflow.execute(dependency_payload)
+
+        expect(Temporalio::Workflow).to have_received(:sleep).with(described_class::DEPENDENCY_WAIT_INTERVAL)
+        dependency_checks = calls.count do |activity_class, _args, _options|
+          activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+        end
+        expect(dependency_checks).to eq(2)
+        expect(calls.last.first).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+      end
+
+      it "fails before executing the job activity when a dependency fails" do
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+          calls << [activity_class, args, options]
+          [
+            {
+              "job_id" => "parent-123",
+              "workflow_id" => "ajwf:DependencyParentJob:parent-123",
+              "state" => "failed"
+            }
+          ]
+        end
+
+        expect { workflow.execute(dependency_payload) }
+          .to raise_error(Temporalio::Error::ApplicationError, /Job dependency failed/)
+
+        expect(calls.map(&:first)).to eq([ActiveJob::Temporal::Activities::DependencyStatusActivity])
+      end
+
+      it "continues when failed dependencies are ignored" do
+        payload = dependency_payload.merge("dependency_failure_policy" => "ignore")
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+          calls << [activity_class, args, options]
+          if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+            [{ "job_id" => "parent-123", "state" => "failed" }]
+          else
+            :activity_result
+          end
+        end
+
+        workflow.execute(payload)
+
+        expect(calls.map(&:first)).to eq([
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::AjRunnerActivity
+                                         ])
+      end
+
+      it "fails after a missing dependency stays missing" do
+        stub_const("ActiveJob::Temporal::Workflows::WorkflowDependencies::DEPENDENCY_NOT_FOUND_MAX_CHECKS", 2)
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+          calls << [activity_class, args, options]
+          [{ "job_id" => "parent-123", "state" => "not_found" }]
+        end
+
+        expect { workflow.execute(dependency_payload) }
+          .to raise_error(Temporalio::Error::ApplicationError, /parent-123: not_found/)
+
+        expect(Temporalio::Workflow).to have_received(:sleep).with(described_class::DEPENDENCY_WAIT_INTERVAL).once
+        expect(calls.map(&:first)).to eq([
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity
+                                         ])
+      end
+
+      it "continues after a missing dependency stays missing when failures are ignored" do
+        stub_const("ActiveJob::Temporal::Workflows::WorkflowDependencies::DEPENDENCY_NOT_FOUND_MAX_CHECKS", 2)
+        payload = dependency_payload.merge("dependency_failure_policy" => "ignore")
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+          calls << [activity_class, args, options]
+          if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+            [{ "job_id" => "parent-123", "state" => "not_found" }]
+          else
+            :activity_result
+          end
+        end
+
+        workflow.execute(payload)
+
+        expect(calls.map(&:first)).to eq([
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::AjRunnerActivity
+                                         ])
+      end
+    end
+
     it "does not read process configuration during workflow execution" do
       allow(ActiveJob::Temporal).to receive(:config).and_raise("workflow must use payload data")
 

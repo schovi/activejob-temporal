@@ -2,6 +2,7 @@
 
 require_relative "payload"
 require_relative "job_payload_chain_builder"
+require_relative "job_payload_dependencies"
 require_relative "job_payload_workflow_interactions"
 require_relative "rate_limit_options"
 require_relative "retry_mapper"
@@ -10,6 +11,7 @@ module ActiveJob
   module Temporal
     class JobPayloadBuilder
       include JobPayloadChainBuilder
+      include JobPayloadDependencies
       include JobPayloadWorkflowInteractions
 
       TIMEOUT_CONFIG_ATTRIBUTES = {
@@ -32,6 +34,7 @@ module ActiveJob
         apply_rate_limits(payload, job)
         apply_workflow_interactions(payload, job.class)
         apply_chain(payload, job)
+        apply_dependencies(payload, job)
 
         Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job), config: @config)
         payload

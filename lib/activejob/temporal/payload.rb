@@ -223,6 +223,8 @@ module ActiveJob
           rate_limits
           workflow_interactions
           chain
+          dependencies
+          dependency_failure_policy
           activity_task_queue
         ].each do |key|
           value = source_payload[key] || source_payload[key.to_s]

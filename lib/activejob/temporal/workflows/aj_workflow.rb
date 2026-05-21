@@ -9,6 +9,7 @@ require "temporalio/workflow"
 require_relative "../activities/rate_limit_activity"
 require_relative "dead_letter_support"
 require_relative "workflow_chaining"
+require_relative "workflow_dependencies"
 require_relative "workflow_interactions"
 
 module ActiveJob
@@ -49,6 +50,7 @@ module ActiveJob
       class AjWorkflow < Temporalio::Workflow::Definition
         include DeadLetterSupport
         include WorkflowChaining
+        include WorkflowDependencies
         include WorkflowInteractions
 
         DEFAULT_START_TO_CLOSE_TIMEOUT = 900.0
@@ -133,6 +135,7 @@ module ActiveJob
           configure_workflow_interactions(payload)
 
           wait_until_scheduled(payload)
+          wait_for_dependencies(payload)
           result = execute_activity_sequence(payload) do |chain_payload|
             current_activity_payload = chain_payload
           end

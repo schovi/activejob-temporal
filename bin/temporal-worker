@@ -128,6 +128,7 @@ worker = Temporalio::Worker.new(
   ],
   activities: [
     ActiveJob::Temporal::Activities::RateLimitActivity,
+    ActiveJob::Temporal::Activities::DependencyStatusActivity,
     ActiveJob::Temporal::Activities::AjRunnerActivity
   ],
   max_concurrent_activity_task_polls: max_concurrent_activities,

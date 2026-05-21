@@ -30,6 +30,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Recurring jobs:** Declare cron schedules on job classes and register them through Temporal Schedules
 - ✅ **Conditional enqueueing:** Use `MyJob.perform_later_if(condition, args)` to skip jobs when no work is needed
 - ✅ **Job chaining:** Use `MyJob.set(chain: [NextJob]).perform_later(args)` to run sequential activities in one workflow
+- ✅ **Job dependencies:** Use `MyJob.set(depends_on: parent_job).perform_later(args)` to wait for independently enqueued jobs
 - ✅ **Retry mapping:** ActiveJob `retry_on` declarations automatically map to Temporal retry policies with exponential backoff
 - ✅ **Discard mapping:** `discard_on` maps to non-retryable errors, preventing wasted retry attempts
 - ✅ **Per-job timeout configuration:** Configure activity timeouts per job using `temporal_options` class method
@@ -480,6 +481,50 @@ BuildInvoicePayloadJob
 ```
 
 Run workers for every task queue used by the root job and its chained steps.
+
+## Job Dependencies
+
+Use `set(depends_on:)` when a separately enqueued job should finish before another job starts. The dependent workflow checks dependency status through a Temporal activity, sleeps durably between checks, then runs the job activity once every dependency has completed:
+
+```ruby
+export_job = ExportReportJob.perform_later(report.id)
+
+EmailReportJob
+  .set(depends_on: export_job)
+  .perform_later(report.id)
+```
+
+Dependencies can be enqueued ActiveJob instances, job IDs, or explicit hashes:
+
+```ruby
+EmailReportJob.set(depends_on: export_job).perform_later(report.id)
+EmailReportJob.set(depends_on: export_job.job_id).perform_later(report.id)
+EmailReportJob.set(depends_on: { job_class: ExportReportJob, job_id: export_job.job_id }).perform_later(report.id)
+EmailReportJob.set(depends_on: { workflow_id: "custom-export-workflow" }).perform_later(report.id)
+```
+
+When only a job ID is provided, dependency lookup uses the `ajJobId` Temporal search attribute. This works with the default `enable_search_attributes = true` setup. If search attributes are disabled, pass an enqueued job instance or an explicit `workflow_id`. A `{ job_class:, job_id: }` hash also works with the default workflow ID format. With a custom `workflow_id_generator`, prefer the enqueued job instance or explicit `workflow_id` forms.
+
+Multiple dependencies are supported:
+
+```ruby
+archive_job = ArchiveReportJob.perform_later(report.id)
+notify_job = NotifyAuditJob.perform_later(report.id)
+
+FinalizeReportJob
+  .set(depends_on: [archive_job, notify_job])
+  .perform_later(report.id)
+```
+
+By default, a failed, canceled, terminated, or timed-out dependency fails the dependent workflow before its job activity starts. Use `on_dependency_failure: :ignore` when the dependent job should continue after dependency failures:
+
+```ruby
+CleanupReportJob
+  .set(depends_on: [archive_job, notify_job], on_dependency_failure: :ignore)
+  .perform_later(report.id)
+```
+
+Missing dependencies are treated as dependency failures after a bounded retry window. This prevents typoed IDs or expired workflow visibility records from leaving the dependent workflow waiting forever.
 
 ## Recurring Jobs
 
@@ -1040,7 +1085,7 @@ The following features are **not yet implemented** in v0.1 but are planned for f
 
 **Other constraints:**
 - **250KB payload size limit** (configurable via `max_payload_size_kb`). Jobs with larger plaintext or encrypted payloads will raise `ActiveJob::SerializationError`. Store large data externally (e.g., S3, database) and pass references instead.
-- **Linear chains only:** `set(chain:)` supports sequential activities inside one workflow. DAG dependencies, child workflows, and independently enqueued job dependencies are not yet supported.
+- **Linear chains only:** `set(chain:)` supports sequential activities inside one workflow. Use `set(depends_on:)` for independently enqueued job gates. Child-workflow DAG orchestration is not yet supported.
 
 ## Migration from Sidekiq/Resque
 

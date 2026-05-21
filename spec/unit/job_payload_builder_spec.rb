@@ -136,6 +136,36 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     )
   end
 
+  it "includes dependency metadata with default workflow references" do
+    job = build_job("DependencyBuilderJob")
+    job.define_singleton_method(:temporal_dependencies) do
+      [
+        {
+          job_class: "DependencyBuilderParentJob",
+          job_id: "parent-123"
+        },
+        {
+          job_id: "search-only-parent"
+        }
+      ]
+    end
+    job.define_singleton_method(:temporal_dependency_failure_policy) { :ignore }
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:dependencies]).to eq([
+                                           {
+                                             job_class: "DependencyBuilderParentJob",
+                                             job_id: "parent-123",
+                                             workflow_id: "ajwf:DependencyBuilderParentJob:parent-123"
+                                           },
+                                           {
+                                             job_id: "search-only-parent"
+                                           }
+                                         ])
+    expect(payload[:dependency_failure_policy]).to eq("ignore")
+  end
+
   it "includes per-job rate limits with a job-specific key" do
     config.rate_limiter = ->(_rate_limits) { 0 }
     job_class = Class.new(ActiveJob::Base) do
@@ -260,6 +290,10 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         }
       ]
     end
+    job.define_singleton_method(:temporal_dependencies) do
+      [{ job_id: "parent-123", workflow_id: "custom-parent-workflow" }]
+    end
+    job.define_singleton_method(:temporal_dependency_failure_policy) { :fail }
 
     config.encryption_key = encryption_key
     config.encryption_old_keys = []
@@ -296,7 +330,11 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
           activity_task_queue: "reporting",
           dead_letter: hash_including(job_class: "EncryptedBuilderNextJob")
         )
-      ]
+      ],
+      dependencies: [
+        hash_including(job_id: "parent-123", workflow_id: "custom-parent-workflow")
+      ],
+      dependency_failure_policy: "fail"
     )
     expect(payload).not_to have_key(:job_class)
     expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
@@ -311,7 +349,11 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
           queue_name: "reporting",
           activity_task_queue: "reporting"
         )
-      ]
+      ],
+      dependencies: [
+        hash_including(job_id: "parent-123", workflow_id: "custom-parent-workflow")
+      ],
+      dependency_failure_policy: "fail"
     )
   end
 
@@ -335,6 +377,10 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         }
       ]
     end
+    job.define_singleton_method(:temporal_dependencies) do
+      [{ job_id: "parent-123", workflow_id: "custom-parent-workflow" }]
+    end
+    job.define_singleton_method(:temporal_dependency_failure_policy) { :ignore }
 
     payload = described_class.new(config).build(job)
 
@@ -364,7 +410,11 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
           activity_task_queue: "reporting",
           dead_letter: hash_including(job_class: "SerializedBuilderNextJob")
         )
-      ]
+      ],
+      dependencies: [
+        hash_including(job_id: "parent-123", workflow_id: "custom-parent-workflow")
+      ],
+      dependency_failure_policy: "ignore"
     )
     expect(payload).not_to have_key(:job_class)
     expect(payload).not_to have_key(:arguments)
@@ -382,7 +432,11 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
           queue_name: "reporting",
           activity_task_queue: "reporting"
         )
-      ]
+      ],
+      dependencies: [
+        hash_including(job_id: "parent-123", workflow_id: "custom-parent-workflow")
+      ],
+      dependency_failure_policy: "ignore"
     )
   end
 

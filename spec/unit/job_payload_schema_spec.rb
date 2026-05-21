@@ -19,6 +19,8 @@ RSpec.describe "job payload schema" do
           "workflow_interactions" => { "$ref" => "#/definitions/workflow_interactions" },
           "rate_limits" => { "$ref" => "#/definitions/rate_limits" },
           "chain" => { "$ref" => "#/definitions/chain" },
+          "dependencies" => { "$ref" => "#/definitions/dependencies" },
+          "dependency_failure_policy" => { "type" => "string", "enum" => %w[fail ignore] },
           "activity_task_queue" => { "type" => "string", "minLength" => 1 }
         )
       )
@@ -82,5 +84,23 @@ RSpec.describe "job payload schema" do
 
     expect(rate_limit_schema.fetch("required")).to contain_exactly("limit", "interval", "key")
     expect(rate_limit_schema.fetch("additionalProperties")).to be(false)
+  end
+
+  it "defines dependency metadata" do
+    dependency_schema = schema.fetch("definitions").fetch("dependency")
+
+    expect(dependency_schema).to include(
+      "type" => "object",
+      "additionalProperties" => false,
+      "anyOf" => contain_exactly(
+        { "required" => ["job_id"] },
+        { "required" => ["workflow_id"] }
+      ),
+      "properties" => include(
+        "job_class" => { "type" => "string", "minLength" => 1 },
+        "job_id" => { "type" => "string", "minLength" => 1 },
+        "workflow_id" => { "type" => "string", "minLength" => 1 }
+      )
+    )
   end
 end
