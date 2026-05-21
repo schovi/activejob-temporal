@@ -9,8 +9,8 @@ metadata:
   schema_version: "1.0"
   last_updated: "2026-05-21"
   contact: "ruby@temporal.io"
-  repository: "https://github.com/temporalio/activejob-temporal"
-  documentation: "https://github.com/temporalio/activejob-temporal/blob/main/docs/configuration_reference.md"
+  repository: "https://github.com/schovi/activejob-temporal"
+  documentation: "https://github.com/schovi/activejob-temporal/blob/main/docs/configuration_reference.md"
   description: "Configuration schema for activejob-temporal adapter"
 
 # Configuration attributes organized by functional category

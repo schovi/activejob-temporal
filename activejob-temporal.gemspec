@@ -14,7 +14,7 @@ Gem::Specification.new do |spec|
     It provides a drop-in ActiveJob adapter, Temporal workflows, and supporting tooling
     so Rails apps gain fault-tolerant scheduling, retries, and observability with minimal changes.
   DESC
-  spec.homepage = "https://github.com/temporalio/activejob-temporal"
+  spec.homepage = "https://github.com/schovi/activejob-temporal"
   spec.license = "MIT"
   spec.required_ruby_version = ">= 4.0"
 

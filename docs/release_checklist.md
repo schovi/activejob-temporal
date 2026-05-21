@@ -33,8 +33,8 @@ This document tracks all quality checks required before releasing activejob-temp
 - [x] Documentation is clear and accurate
 
 ### 6. Gem Build
-- [x] `rvm 4.0.3 do gem build activejob-temporal.gemspec` succeeds
-- [x] `.gem` file created successfully (activejob-temporal-0.1.0.gem)
+- [x] `rvm 4.0.3 do bundle exec rake build` succeeds
+- [x] `.gem` file created successfully (`pkg/activejob-temporal-0.1.0.gem`)
 - [x] No critical build errors (warnings about dependency constraints are acceptable for v0.1)
 - [x] Gemspec metadata is correct (version 0.1.0, authors, dependencies)
 
@@ -116,7 +116,7 @@ This document tracks all quality checks required before releasing activejob-temp
 
 ---
 
-**Release Manager:** Claude Code (Automated Quality Checks)
+**Release Owner:** TBD
 **Date Completed:** 2025-10-29
 **Release Status:** [x] APPROVED [ ] BLOCKED
 
@@ -126,7 +126,7 @@ This document tracks all quality checks required before releasing activejob-temp
 - Test suite: ✓ PASSED (115 examples, 0 failures)
 - Code coverage: ✓ EXCELLENT (99.32% line, 84.4% branch)
 - YARD docs: ✓ GENERATED (2 benign warnings)
-- Gem build: ✓ SUCCESS (activejob-temporal-0.1.0.gem)
+- Gem build: ✓ SUCCESS (`pkg/activejob-temporal-0.1.0.gem`)
 - Documentation: ✓ COMPLETE (6 docs, 1,162 total lines)
 - Code quality: ✓ CLEAN (no TODO/FIXME)
 - License: ✓ PRESENT (MIT)
@@ -142,20 +142,20 @@ All acceptance criteria have been met. The gem is production-ready for v0.1.0 re
 
 The gem is technically ready for publication, but publication has been deferred until the required infrastructure is in place.
 
-### Infrastructure Blockers
-- ❌ No git remote configured (`git remote -v` returns empty)
-- ❌ Gemspec homepage points to non-accessible repository (github.com/temporalio/activejob-temporal)
+### Infrastructure Status
+- ✅ Git remote configured (`origin` points to `ssh://git@github.com/schovi/activejob-temporal.git`)
+- ✅ Gemspec homepage points to the canonical repository (github.com/schovi/activejob-temporal)
 - ❌ No RubyGems.org account/credentials detected
 
 ### Why This Matters
-Publishing to RubyGems.org is a one-way operation. Publishing with broken source code links would create a poor user experience. Best practice is to ensure all infrastructure is working before making the gem public.
+Publishing to RubyGems.org is a one-way operation. Source code links and credentials must be verified before making the gem public.
 
 ### Prerequisites for Publication
-1. Configure git remote: `git remote add origin git@github.com:temporalio/activejob-temporal.git`
-2. Push code and tag: `git push origin master && git push origin v0.1.0`
+1. Verify git remote: `git remote -v`
+2. Push code and tag: `git push origin main && git push origin v0.1.0`
 3. Verify repository is publicly accessible
 4. Set up RubyGems.org account with MFA enabled
 5. Sign in: `rvm 4.0.3 do gem signin`
-6. Publish: `rvm 4.0.3 do gem push activejob-temporal-0.1.0.gem`
+6. Publish: `rvm 4.0.3 do gem push pkg/activejob-temporal-0.1.0.gem`
 
 **Complete publishing documentation:** See `docs/publishing.md` for detailed step-by-step instructions, verification procedures, and troubleshooting guidance.

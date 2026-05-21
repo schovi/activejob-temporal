@@ -185,6 +185,6 @@ PaymentGateway.charge(idempotency_key: Thread.current[:aj_temporal_idempotency_k
 
 **Documentation:** [README](../README.md) | [Comparison Guide](comparison.md) | [Configuration Reference](configuration_reference.md) | [Worker Setup Guide](worker_setup.md) | [Temporal Ruby SDK](https://docs.temporal.io/dev-guide/ruby)
 
-**Community:** [Temporal Slack](https://temporal.io/slack) (#ruby-sdk) | [GitHub Issues](https://github.com/temporalio/activejob-temporal/issues) | [Temporal Docs](https://docs.temporal.io/)
+**Community:** [Temporal Slack](https://temporal.io/slack) (#ruby-sdk) | [GitHub Issues](https://github.com/schovi/activejob-temporal/issues) | [Temporal Docs](https://docs.temporal.io/)
 
-**Questions?** Open an issue on [GitHub](https://github.com/temporalio/activejob-temporal/issues) or join [Temporal Slack](https://temporal.io/slack).
+**Questions?** Open an issue on [GitHub](https://github.com/schovi/activejob-temporal/issues) or join [Temporal Slack](https://temporal.io/slack).

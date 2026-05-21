@@ -4,7 +4,7 @@
 
 [![Gem Version](https://badge.fury.io/rb/activejob-temporal.svg)](https://badge.fury.io/rb/activejob-temporal)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/temporalio/activejob-temporal/actions/workflows/ci.yml/badge.svg)](https://github.com/temporalio/activejob-temporal/actions/workflows/ci.yml)
+[![CI](https://github.com/schovi/activejob-temporal/actions/workflows/ci.yml/badge.svg)](https://github.com/schovi/activejob-temporal/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/schovi/activejob-temporal/branch/main/graph/badge.svg)](https://codecov.io/gh/schovi/activejob-temporal)
 
 ⚠️ This gem is under active development. Expect rapid iteration and potential breaking changes until v1.0.0.
@@ -1137,7 +1137,7 @@ Please ensure:
 
 The scoped mutation task runs on Ruby 4. Mutant 0.16 may warn that its parser dependency is loading the Ruby 3.3 parser; keep using the Ruby 4 toolchain and treat parser failures on new Ruby syntax as a mutation tooling limitation.
 
-For bug reports and feature requests, please [open an issue](https://github.com/temporalio/activejob-temporal/issues).
+For bug reports and feature requests, please [open an issue](https://github.com/schovi/activejob-temporal/issues).
 
 ## License
 
