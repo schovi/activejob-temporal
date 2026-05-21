@@ -2,18 +2,38 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ActiveJob Temporal Payload",
   "type": "object",
-  "additionalProperties": false,
-  "required": ["job_class", "job_id", "queue_name", "arguments"],
-  "properties": {
-    "job_class": { "type": "string" },
-    "job_id": { "type": "string" },
-    "queue_name": { "type": "string" },
-    "arguments": { "type": "array" },
-    "executions": { "type": "integer", "minimum": 0 },
-    "exception_executions": {
-      "type": "object",
-      "additionalProperties": { "type": "integer", "minimum": 0 }
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "required": ["job_class", "job_id", "queue_name", "arguments"],
+      "properties": {
+        "job_class": { "type": "string" },
+        "job_id": { "type": "string" },
+        "queue_name": { "type": "string" },
+        "arguments": { "type": "array" },
+        "executions": { "type": "integer", "minimum": 0 },
+        "exception_executions": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "scheduled_at": { "type": "string", "format": "date-time" },
+        "default_activity_options": { "type": "object" },
+        "retry_policy": { "type": "object" },
+        "temporal_options": { "type": "object" }
+      }
     },
-    "scheduled_at": { "type": "string", "format": "date-time" }
-  }
+    {
+      "additionalProperties": false,
+      "required": ["encrypted_payload", "encrypted_payload_version", "encrypted_data"],
+      "properties": {
+        "encrypted_payload": { "const": true },
+        "encrypted_payload_version": { "type": "integer", "enum": [1] },
+        "encrypted_data": { "type": "string" },
+        "scheduled_at": { "type": "string", "format": "date-time" },
+        "default_activity_options": { "type": "object" },
+        "retry_policy": { "type": "object" },
+        "temporal_options": { "type": "object" }
+      }
+    }
+  ]
 }

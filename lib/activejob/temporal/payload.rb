@@ -7,6 +7,8 @@ require "active_support/core_ext/numeric/time"
 require "active_job/serializers"
 require "active_job/arguments"
 
+require_relative "payload_encryption"
+
 module ActiveJob
   module Temporal
     # Payload serialization and deserialization for ActiveJob.
@@ -107,7 +109,7 @@ module ActiveJob
       #   To reduce payload size, prefer passing database IDs instead of full ActiveRecord
       #   objects. For example, pass user.id instead of user. This is especially important
       #   for jobs with large argument lists or complex nested objects.
-      def from_job(job, scheduled_at: nil)
+      def from_job(job, scheduled_at: nil, enforce_size: true)
         payload = {
           job_class: job.class.name,
           job_id: job.job_id,
@@ -118,8 +120,9 @@ module ActiveJob
         }
         payload[:scheduled_at] = iso8601_timestamp(scheduled_at) if scheduled_at
 
-        enforce_payload_size!(payload)
-        payload
+        final_payload = encrypt_payload_if_configured(payload)
+        enforce_size!(final_payload, metrics_payload: payload) if enforce_size
+        final_payload
       end
 
       # Deserializes job arguments from a payload hash.
@@ -150,13 +153,63 @@ module ActiveJob
       #     Rails.logger.warn("Job argument no longer exists: #{e.message}")
       #   end
       def deserialize_args(payload)
-        serialized_args = payload[:arguments] || payload["arguments"]
+        deserialized_payload = deserialize_payload(payload)
+        serialized_args = deserialized_payload[:arguments] || deserialized_payload["arguments"]
         ActiveJob::Arguments.deserialize(serialized_args)
+      rescue ActiveJob::SerializationError, ActiveJob::Temporal::ConfigurationError
+        raise
       rescue StandardError => e
         raise ActiveJob::SerializationError, e.message
       end
 
+      def deserialize_payload(payload)
+        return payload unless PayloadEncryption.encrypted?(payload)
+
+        decrypted_payload = PayloadEncryption.decrypt(payload, ActiveJob::Temporal.config)
+        preserve_workflow_control_fields(payload, decrypted_payload)
+      end
+
+      def enforce_size!(payload, metrics_payload: payload)
+        json = JSON.generate(payload)
+        max_size_kb = ActiveJob::Temporal.config.max_payload_size_kb || 250
+        size_limit_bytes = max_size_kb * 1024
+        actual_size_kb = json.bytesize / 1024.0
+        usage_ratio = json.bytesize.to_f / size_limit_bytes
+
+        Metrics.observe_payload_size(payload: metrics_payload, bytes: json.bytesize)
+        log_payload_size(metrics_payload, actual_size_kb, max_size_kb, usage_ratio)
+        return if json.bytesize <= size_limit_bytes
+
+        message = format(
+          "Job payload size (%<actual>.1f KB) exceeds maximum allowed size (%<max>d KB). " \
+          "Consider reducing argument size or using references (e.g., database IDs).",
+          actual: actual_size_kb,
+          max: max_size_kb
+        )
+        raise ActiveJob::SerializationError, message
+      end
+
       private
+
+      # Only job execution data is encrypted; workflow-control fields stay plaintext
+      # so Temporal workflow replay never depends on mutable process configuration.
+      def encrypt_payload_if_configured(payload)
+        return payload unless ActiveJob::Temporal.config.encrypt_payload
+
+        execution_payload = payload.except(:scheduled_at)
+        encrypted_payload = PayloadEncryption.encrypt(execution_payload, ActiveJob::Temporal.config)
+        encrypted_payload[:scheduled_at] = payload[:scheduled_at] if payload[:scheduled_at]
+        encrypted_payload
+      end
+
+      def preserve_workflow_control_fields(source_payload, decrypted_payload)
+        %i[scheduled_at default_activity_options retry_policy temporal_options].each do |key|
+          value = source_payload[key] || source_payload[key.to_s]
+          decrypted_payload[key] = value if value
+        end
+
+        decrypted_payload
+      end
 
       # Serializes job arguments using ActiveJob's built-in serializer.
       # @api private
@@ -179,28 +232,6 @@ module ActiveJob
                       raise ArgumentError, "scheduled_at must be convertible to Time"
                     end
         timestamp.iso8601
-      end
-
-      # Validates payload size against configured maximum.
-      # @api private
-      def enforce_payload_size!(payload)
-        json = JSON.generate(payload)
-        max_size_kb = ActiveJob::Temporal.config.max_payload_size_kb || 250
-        size_limit_bytes = max_size_kb * 1024
-        actual_size_kb = json.bytesize / 1024.0
-        usage_ratio = json.bytesize.to_f / size_limit_bytes
-
-        Metrics.observe_payload_size(payload: payload, bytes: json.bytesize)
-        log_payload_size(payload, actual_size_kb, max_size_kb, usage_ratio)
-        return if json.bytesize <= size_limit_bytes
-
-        message = format(
-          "Job payload size (%<actual>.1f KB) exceeds maximum allowed size (%<max>d KB). " \
-          "Consider reducing argument size or using references (e.g., database IDs).",
-          actual: actual_size_kb,
-          max: max_size_kb
-        )
-        raise ActiveJob::SerializationError, message
       end
 
       def log_payload_size(payload, actual_size_kb, max_size_kb, usage_ratio)

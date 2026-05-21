@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "base64"
 
 RSpec.describe ActiveJob::Temporal::Configuration do
   subject(:configuration) { described_class.new }
@@ -67,6 +68,12 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "disables audit logging by default" do
       expect(configuration.audit_log).to be(false)
       expect(configuration.audit_logger).to be_nil
+    end
+
+    it "disables payload encryption by default" do
+      expect(configuration.encrypt_payload).to be(false)
+      expect(configuration.encryption_key).to be_nil
+      expect(configuration.encryption_old_keys).to eq([])
     end
 
     it "uses the default workflow ID generator when none is configured" do
@@ -259,6 +266,23 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(config.audit_log).to be(true)
     end
 
+    it "reads payload encryption from ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD").and_return("true")
+
+      config = described_class.new
+      expect(config.encrypt_payload).to be(true)
+    end
+
+    it "reads encryption key from ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY" do
+      key = valid_encryption_key
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY").and_return(key)
+
+      config = described_class.new
+      expect(config.encryption_key).to eq(key)
+    end
+
     it "uses default (5) when ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS is not set" do
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return(nil)
@@ -375,6 +399,70 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects values that cannot receive info logs" do
       expect { configuration.audit_logger = Object.new }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /Audit logger must respond to #info/)
+    end
+  end
+
+  describe "#encrypt_payload=" do
+    it "accepts boolean values when encryption key configuration is valid" do
+      configuration.encryption_key = valid_encryption_key
+
+      configuration.encrypt_payload = true
+      expect(configuration.encrypt_payload).to be(true)
+
+      configuration.encrypt_payload = false
+      expect(configuration.encrypt_payload).to be(false)
+    end
+
+    it "rejects non-boolean values" do
+      expect { configuration.encrypt_payload = "true" }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encrypt payload must be true or false/)
+    end
+
+    it "requires a primary encryption key when enabled" do
+      expect { configuration.encrypt_payload = true }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption key is required/)
+    end
+  end
+
+  describe "#encryption_key=" do
+    it "accepts nil and Base64-encoded 32-byte keys" do
+      configuration.encryption_key = valid_encryption_key
+      expect(configuration.encryption_key).to eq(valid_encryption_key)
+
+      configuration.encryption_key = nil
+      expect(configuration.encryption_key).to be_nil
+    end
+
+    it "rejects keys that are not valid Base64" do
+      expect { configuration.encryption_key = "not base64" }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption key must be a Base64-encoded 32-byte/)
+    end
+
+    it "rejects Base64 keys with the wrong decoded length" do
+      short_key = Base64.strict_encode64("short")
+
+      expect { configuration.encryption_key = short_key }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption key must be a Base64-encoded 32-byte/)
+    end
+  end
+
+  describe "#encryption_old_keys=" do
+    it "accepts an array of Base64-encoded 32-byte keys" do
+      old_keys = [valid_encryption_key("old-1"), valid_encryption_key("old-2")]
+
+      configuration.encryption_old_keys = old_keys
+
+      expect(configuration.encryption_old_keys).to eq(old_keys)
+    end
+
+    it "rejects non-array values" do
+      expect { configuration.encryption_old_keys = valid_encryption_key }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption old keys must be an array/)
+    end
+
+    it "rejects arrays containing invalid keys" do
+      expect { configuration.encryption_old_keys = [valid_encryption_key, "invalid"] }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption old keys must contain only/)
     end
   end
 
@@ -983,5 +1071,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         raise ActiveJob::Temporal::TemporalConnectionError, "connection failed"
       end.to raise_error(ActiveJob::Temporal::TemporalConnectionError, "connection failed")
     end
+  end
+
+  def valid_encryption_key(label = "primary")
+    Base64.strict_encode64(label.ljust(32, "-")[0, 32])
   end
 end

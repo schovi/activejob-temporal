@@ -103,6 +103,7 @@ Job arguments are serialized securely:
 1. **No arbitrary code execution**: Uses `ActiveJob::Arguments.serialize`
 2. **Size limits**: Payloads > 250KB rejected (prevents DoS)
 3. **GlobalID support**: References instead of full object serialization
+4. **Optional encryption**: `config.encrypt_payload = true` encrypts job execution payloads with AES-256-GCM before sending them to Temporal
 
 ```ruby
 # ✅ Serialization via GlobalID
@@ -112,6 +113,32 @@ MyModel.new(id: 123)
 # ❌ Full object serialization (don't do)
 # That would try to serialize entire object state
 ```
+
+### Payload Encryption
+
+Enable payload encryption for jobs that may carry sensitive arguments:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.encrypt_payload = true
+  config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+end
+```
+
+Keys must be Base64-encoded 32-byte values, for example `SecureRandom.base64(32)`. Store keys in a secret manager or encrypted environment, not in source control.
+
+The encrypted envelope protects job class, job ID, queue name, serialized arguments, and execution counters. These workflow-control fields remain plaintext because Temporal workflows must read them during deterministic replay:
+
+- `scheduled_at`
+- activity timeout options
+- retry policy metadata
+- per-job Temporal options
+
+Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, and search attributes are plaintext in Temporal visibility APIs. For privacy-sensitive workloads, configure `workflow_id_generator` so workflow IDs do not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags. Do not put secrets in workflow IDs, queue names, tags, tenant IDs, or custom search metadata.
+
+For key rotation, set the new primary key in `encryption_key` and keep previous keys in `encryption_old_keys` until all workflows encrypted with old keys complete or age out of Temporal history. Removing an old key too early prevents workers from decrypting existing workflow payloads.
+
+If you roll back by setting `encrypt_payload = false`, keep the keys deployed on workers until all previously encrypted workflows have completed or aged out. The setting only controls encryption of new payloads; encrypted payloads always require a configured key to run.
 
 ## Logging & Observability
 

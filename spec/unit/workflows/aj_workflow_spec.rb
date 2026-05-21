@@ -122,6 +122,30 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
       end
     end
 
+    context "when payload is encrypted" do
+      it "passes the encrypted envelope to the activity without reading encryption config" do
+        allow(ActiveJob::Temporal).to receive(:config).and_raise("workflow must not decrypt payload")
+        encrypted_payload = {
+          "encrypted_payload" => true,
+          "encrypted_payload_version" => 1,
+          "encrypted_data" => "opaque-ciphertext",
+          "default_activity_options" => {
+            "start_to_close_timeout" => activity_timeout
+          },
+          "retry_policy" => retry_policy_hash
+        }
+
+        workflow.execute(encrypted_payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload_arg, options|
+          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+          expect(payload_arg).to eq(encrypted_payload)
+          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
+          expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
+        end
+      end
+    end
+
     it "does not read process configuration during workflow execution" do
       allow(ActiveJob::Temporal).to receive(:config).and_raise("workflow must use payload data")
 

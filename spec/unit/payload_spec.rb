@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "base64"
 require "globalid"
 require_relative "../fixtures/sample_jobs"
 
@@ -18,6 +19,9 @@ RSpec.describe ActiveJob::Temporal::Payload do
   before do
     ActiveJob::Temporal.configure do |config|
       config.max_payload_size_kb = 250
+      config.encrypt_payload = false
+      config.encryption_key = nil
+      config.encryption_old_keys = []
     end
 
     allow(ActiveJob::Temporal::Logger).to receive(:info)
@@ -387,6 +391,88 @@ RSpec.describe ActiveJob::Temporal::Payload do
         expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
       end
     end
+
+    context "with payload encryption enabled" do
+      let(:job) { SimpleJob.new(["alpha", 123, { nested: true }]) }
+
+      before do
+        configure_payload_encryption
+      end
+
+      it "returns an encrypted envelope without plaintext job execution fields" do
+        payload = described_class.from_job(job)
+
+        expect(payload).to include(
+          encrypted_payload: true,
+          encrypted_payload_version: 1,
+          encrypted_data: a_kind_of(String)
+        )
+        expect(payload).not_to have_key(:job_class)
+        expect(payload).not_to have_key(:job_id)
+        expect(payload).not_to have_key(:queue_name)
+        expect(payload).not_to have_key(:arguments)
+        expect(payload[:encrypted_data]).not_to include("alpha")
+        expect(payload[:encrypted_data]).not_to include(job.job_id)
+        expect(payload[:encrypted_data]).not_to include(job.class.name)
+      end
+
+      it "keeps scheduled_at outside the encrypted data for workflow replay" do
+        scheduled_time = Time.utc(2024, 10, 20, 12, 0, 0)
+
+        payload = described_class.from_job(job, scheduled_at: scheduled_time)
+
+        expect(payload[:scheduled_at]).to eq(scheduled_time.iso8601)
+        expect(payload[:encrypted_data]).not_to include(scheduled_time.iso8601)
+      end
+
+      it "decrypts payload metadata and arguments transparently" do
+        payload = described_class.from_job(job)
+        decrypted_payload = described_class.deserialize_payload(payload)
+
+        expect(decrypted_payload).to include(
+          job_class: job.class.name,
+          job_id: job.job_id,
+          queue_name: job.queue_name,
+          executions: job.executions,
+          exception_executions: job.exception_executions
+        )
+        expect(decrypted_payload[:arguments]).to eq(ActiveJob::Arguments.serialize(job.arguments))
+        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+      end
+
+      it "records encrypted payload size with plaintext metric labels" do
+        payload = described_class.from_job(job)
+
+        expect(ActiveJob::Temporal::Metrics).to have_received(:observe_payload_size).with(
+          payload: hash_including(job_class: job.class.name, queue_name: job.queue_name),
+          bytes: JSON.generate(payload).bytesize
+        )
+      end
+
+      it "decrypts payloads encrypted with a rotated old key" do
+        old_key = encryption_key_for("old")
+        new_key = encryption_key_for("new")
+
+        configure_payload_encryption(key: old_key)
+        payload = described_class.from_job(job)
+
+        configure_payload_encryption(key: new_key, old_keys: [old_key])
+
+        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+      end
+
+      it "raises SerializationError when no configured key can decrypt the payload" do
+        old_key = encryption_key_for("old")
+        new_key = encryption_key_for("new")
+
+        configure_payload_encryption(key: old_key)
+        payload = described_class.from_job(job)
+        configure_payload_encryption(key: new_key)
+
+        expect { described_class.deserialize_args(payload) }
+          .to raise_error(ActiveJob::SerializationError, /Unable to decrypt ActiveJob::Temporal payload/)
+      end
+    end
   end
 
   describe ".deserialize_args" do
@@ -444,5 +530,17 @@ RSpec.describe ActiveJob::Temporal::Payload do
     }
 
     JSON.generate(payload).bytesize
+  end
+
+  def configure_payload_encryption(key: encryption_key_for("primary"), old_keys: [])
+    ActiveJob::Temporal.configure do |config|
+      config.encrypt_payload = true
+      config.encryption_key = key
+      config.encryption_old_keys = old_keys
+    end
+  end
+
+  def encryption_key_for(label)
+    Base64.strict_encode64(label.ljust(32, "-")[0, 32])
   end
 end

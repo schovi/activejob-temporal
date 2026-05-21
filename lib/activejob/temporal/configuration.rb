@@ -5,6 +5,7 @@ require "active_support/core_ext/numeric/time"
 require "active_model"
 
 require_relative "middleware"
+require_relative "payload_encryption"
 
 module ActiveJob
   module Temporal
@@ -199,6 +200,26 @@ module ActiveJob
         env_var: "ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB",
         type: :integer,
         description: "Maximum job payload size in kilobytes"
+      },
+
+      encrypt_payload: {
+        default: false,
+        env_var: "ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD",
+        type: :boolean,
+        description: "Encrypt serialized job execution payloads before sending them to Temporal"
+      },
+
+      encryption_key: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY",
+        type: :string,
+        description: "Base64-encoded 32-byte AES-256-GCM payload encryption key"
+      },
+
+      encryption_old_keys: {
+        default: -> { [] },
+        type: :array,
+        description: "Base64-encoded previous payload encryption keys accepted for decryption"
       },
 
       enable_search_attributes: {
@@ -458,6 +479,7 @@ module ActiveJob
       validate :validate_priority_task_queues
       validate :validate_metrics_settings
       validate :validate_audit_settings
+      validate :validate_encryption_settings
 
       private
 
@@ -565,6 +587,40 @@ module ActiveJob
         return if audit_logger.nil? || audit_logger.respond_to?(:info)
 
         errors.add(:audit_logger, :invalid, value: audit_logger.inspect)
+      end
+
+      def validate_encryption_settings
+        validate_encrypt_payload
+        validate_encryption_key
+        validate_encryption_old_keys
+      end
+
+      def validate_encrypt_payload
+        return if [true, false].include?(encrypt_payload)
+
+        errors.add(:encrypt_payload, :not_boolean, value: encrypt_payload.inspect)
+      end
+
+      def validate_encryption_key
+        if encrypt_payload && encryption_key.to_s.empty?
+          errors.add(:encryption_key, :required)
+          return
+        end
+
+        return if encryption_key.nil? || PayloadEncryption.valid_key?(encryption_key)
+
+        errors.add(:encryption_key, :invalid, bytes: PayloadEncryption.key_length, value: "[FILTERED]")
+      end
+
+      def validate_encryption_old_keys
+        unless encryption_old_keys.is_a?(Array)
+          errors.add(:encryption_old_keys, :not_an_array, value: encryption_old_keys.inspect)
+          return
+        end
+
+        return if encryption_old_keys.all? { |key| PayloadEncryption.valid_key?(key) }
+
+        errors.add(:encryption_old_keys, :invalid, bytes: PayloadEncryption.key_length, value: "[FILTERED]")
       end
 
       def callable_accepts_positional_job?(callable)

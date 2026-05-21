@@ -232,6 +232,28 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
+## Payload Decryption Errors
+
+**Error message**
+
+```text
+ActiveJob::SerializationError: Unable to decrypt ActiveJob::Temporal payload
+```
+
+**Diagnostics**
+
+Check that every worker has the same primary key and old-key rotation set:
+
+```bash
+bundle exec rails runner 'puts "encrypt_payload=#{ActiveJob::Temporal.config.encrypt_payload}"'
+bundle exec rails runner 'puts "encryption_key_present=#{!ActiveJob::Temporal.config.encryption_key.to_s.empty?}"'
+bundle exec rails runner 'puts "old_key_count=#{ActiveJob::Temporal.config.encryption_old_keys.size}"'
+```
+
+**Fix**
+
+Use Base64-encoded 32-byte keys, for example `SecureRandom.base64(32)`. During rotation, deploy the new key as `encryption_key` and keep the previous key in `encryption_old_keys` until workflows encrypted with the previous key have completed or aged out of Temporal history.
+
 ## Serialization Or Deserialization Errors
 
 **Symptoms**

@@ -238,6 +238,37 @@ attributes:
       env_var_name: ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB
       example: 512
 
+    - name: encrypt_payload
+      type: Boolean
+      default: false
+      validation_rules:
+        - "Must be true or false"
+        - "When true, encryption_key must be present and valid"
+      description: "Encrypt serialized job execution payloads before sending them to Temporal. Workflow-control metadata remains plaintext for deterministic replay."
+      env_var_name: ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD
+      example: true
+
+    - name: encryption_key
+      type: String
+      default: null
+      validation_rules:
+        - "Required when encrypt_payload is true"
+        - "Must be a Base64-encoded 32-byte AES-256-GCM key when provided"
+      description: "Primary payload encryption key used for new encrypted payloads. Store in a secret manager or encrypted environment variable."
+      env_var_name: ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY
+      example: "SecureRandom.base64(32)"
+
+    - name: encryption_old_keys
+      type: Array
+      default: []
+      validation_rules:
+        - "Must be an array"
+        - "Every value must be a Base64-encoded 32-byte AES-256-GCM key"
+      description: "Previous payload encryption keys accepted for decryption during key rotation."
+      env_var_name: null
+      example:
+        - "previous-base64-key"
+
     - name: enable_search_attributes
       type: Boolean
       default: true
@@ -312,6 +343,9 @@ examples:
       metrics_bind: "127.0.0.1"
       middleware_chain: "empty"
       max_payload_size_kb: 250
+      encrypt_payload: false
+      encryption_key: null
+      encryption_old_keys: []
       enable_search_attributes: true
       identity: null
     code_example: |
@@ -347,6 +381,9 @@ examples:
       metrics_bind: "127.0.0.1"
       middleware_chain: "empty"
       max_payload_size_kb: 250
+      encrypt_payload: true
+      encryption_key: "ENV['ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY']"
+      encryption_old_keys: []
       enable_search_attributes: true
       identity: "worker-01-us-east-1"
     code_example: |
@@ -363,6 +400,8 @@ examples:
         config.audit_logger = Logger.new("log/activejob_temporal_audit.log")
         config.metrics_provider = :prometheus
         config.metrics_port = 9394
+        config.encrypt_payload = true
+        config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
         config.identity = ENV.fetch('HOSTNAME', 'unknown-worker')
         # Validation happens automatically at end of block!
       end
@@ -390,6 +429,9 @@ examples:
       metrics_bind: "127.0.0.1"
       middleware_chain: "empty"
       max_payload_size_kb: 512
+      encrypt_payload: true
+      encryption_key: "ENV['ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY']"
+      encryption_old_keys: []
       max_concurrent_activities: 300
       max_concurrent_workflow_tasks: 25
       enable_search_attributes: true
@@ -411,6 +453,8 @@ examples:
         config.max_concurrent_workflow_tasks = 25
         config.metrics_provider = :prometheus
         config.metrics_port = 9394
+        config.encrypt_payload = true
+        config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
         config.identity = 'worker-heavy-01'
         # Validation happens automatically at end of block!
       end
@@ -446,6 +490,9 @@ validation:
     - "default_retry_backoff - Must be >= 1.0"
     - "default_retry_max_attempts - Must be >= 0"
     - "max_payload_size_kb - Must be between 1 and 2,097,152 KB"
+    - "encrypt_payload - Must be true or false"
+    - "encryption_key - Required when encrypt_payload is true; when present, must be a Base64-encoded 32-byte key"
+    - "encryption_old_keys - Must be an array of Base64-encoded 32-byte keys"
     - "max_concurrent_activities - Must be > 0"
     - "max_concurrent_workflow_tasks - Must be > 0"
     - "metrics_provider - Must be :none or :prometheus"
@@ -467,6 +514,7 @@ type_reference:
   Duration: "Numeric (seconds) or ActiveSupport::Duration object (e.g., 15.minutes, 30.seconds)"
   Logger: "Ruby Logger or Logger-compatible object with standard logging interface"
   Middleware::Chain: "Callable object that responds to #add and #call"
+  Array: "Ruby Array object"
 
 # Environment variable priority
 environment_variables:
@@ -522,3 +570,13 @@ environment_variables:
       maps_to: audit_log
       example: "true"
       note: "Must be converted to boolean"
+
+    - name: ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD
+      maps_to: encrypt_payload
+      example: "true"
+      note: "Must be converted to boolean"
+
+    - name: ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY
+      maps_to: encryption_key
+      example: "SecureRandom.base64(32)"
+      note: "Must be a Base64-encoded 32-byte AES-256-GCM key when encryption is enabled"

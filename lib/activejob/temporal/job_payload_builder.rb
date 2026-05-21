@@ -18,7 +18,7 @@ module ActiveJob
       end
 
       def build(job, scheduled_at: nil)
-        payload = Payload.from_job(job, scheduled_at: scheduled_at)
+        payload = Payload.from_job(job, scheduled_at: scheduled_at, enforce_size: false)
         payload[:default_activity_options] = default_activity_options
 
         retry_policy = RetryMapper.for(job.class)
@@ -27,10 +27,19 @@ module ActiveJob
         temporal_options = extract_temporal_options(job.class)
         payload[:temporal_options] = temporal_options if temporal_options.any?
 
+        Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job))
         payload
       end
 
       private
+
+      def metrics_payload_for(job)
+        {
+          job_class: job.class.name,
+          job_id: job.job_id,
+          queue_name: job.queue_name
+        }
+      end
 
       def extract_temporal_options(job_class)
         return {} unless job_class.respond_to?(:temporal_options)

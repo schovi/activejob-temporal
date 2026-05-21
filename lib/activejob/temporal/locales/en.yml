@@ -53,6 +53,17 @@ en:
             audit_logger:
               invalid: "must respond to #info, got: %{value}"
 
+            encrypt_payload:
+              not_boolean: "must be true or false, got: %{value}"
+
+            encryption_key:
+              required: "is required when payload encryption is enabled"
+              invalid: "must be a Base64-encoded %{bytes}-byte AES-256-GCM key"
+
+            encryption_old_keys:
+              not_an_array: "must be an array of Base64-encoded keys, got: %{value}"
+              invalid: "must contain only Base64-encoded %{bytes}-byte AES-256-GCM keys"
+
             workflow_id_generator:
               not_callable: "must respond to #call (for example, ->(job) { \"custom-#{job.job_id}\" }), got: %{value}"
               wrong_arity: "must accept one ActiveJob argument (for example, ->(job) { \"custom-#{job.job_id}\" }), got: %{value}"

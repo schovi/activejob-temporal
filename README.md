@@ -38,6 +38,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **GlobalID support:** Seamless serialization of ActiveRecord models and other GlobalID-compatible objects
 - ✅ **Configurable timeouts and retries:** Fine-tune activity timeouts, retry intervals, and backoff coefficients globally
 - ✅ **Structured logging:** JSON logs for integration with observability infrastructure
+- ✅ **Optional payload encryption:** Encrypt job execution payloads with AES-256-GCM while preserving deterministic workflow metadata
 
 ## Installation
 
@@ -200,6 +201,9 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `metrics_bind` | String | `"127.0.0.1"` | Bind address for the Prometheus metrics endpoint. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
+| `encrypt_payload` | Boolean | `false` | Encrypt serialized job execution payloads before sending them to Temporal. |
+| `encryption_key` | String or `nil` | `nil` | Base64-encoded 32-byte AES-256-GCM payload encryption key. Required when `encrypt_payload` is true. |
+| `encryption_old_keys` | Array | `[]` | Previous Base64-encoded encryption keys accepted for decryption during key rotation. |
 
 ### Example Configuration
 
@@ -221,6 +225,8 @@ ActiveJob::Temporal.configure do |config|
   config.metrics_provider = :prometheus
   config.metrics_port = 9394
   config.max_payload_size_kb = 512
+  config.encrypt_payload = true
+  config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
 end
 ```
 
@@ -313,6 +319,39 @@ end
 ```
 
 Audit events are JSON-formatted through the configured logger. Event names include `job.enqueued`, `job.started`, `job.completed`, `job.failed`, `job.cancelled`, and `schedule.created`. Events include correlation fields such as `workflow_id`, `run_id`, `job_class`, `job_id`, `queue`, `attempt`, and `worker_id` when available. Failure events include `error_class` and a SHA256 `error_fingerprint`, not raw exception messages or backtraces. Raw job arguments, payloads, and return values are not logged.
+
+### Payload Encryption
+
+Enable payload encryption when job arguments or execution metadata should not be stored as plaintext in Temporal history:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.encrypt_payload = true
+  config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+end
+```
+
+Generate keys as Base64-encoded 32-byte values:
+
+```ruby
+SecureRandom.base64(32)
+```
+
+Encryption uses `ActiveSupport::MessageEncryptor` with AES-256-GCM and JSON serialization. The encrypted data contains job class, job ID, queue name, serialized arguments, and execution counters. Workflow-control fields such as `scheduled_at`, activity timeout options, retry policy metadata, and per-job Temporal options stay plaintext so workflow replay remains deterministic.
+
+Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, and search attributes can expose job class, queue, job ID, tenant ID, and tags. For privacy-sensitive workloads, configure a `workflow_id_generator` that does not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags.
+
+For key rotation, deploy the new primary key and keep old keys configured until all workflows encrypted with old keys have finished or aged out of Temporal history:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.encrypt_payload = true
+  config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+  config.encryption_old_keys = ENV.fetch("ACTIVEJOB_TEMPORAL_OLD_ENCRYPTION_KEYS", "").split(",").reject(&:empty?)
+end
+```
+
+If you disable encryption for new jobs, keep `encryption_key` or the relevant `encryption_old_keys` configured on workers until every previously encrypted workflow has completed or aged out of Temporal history. Workers still need keys to decrypt already-started encrypted workflows.
 
 ## Conditional Enqueueing
 
@@ -732,6 +771,8 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. | `9394` |
 | `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. | `0.0.0.0` |
 | `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | No | Enable structured lifecycle audit events. | `true` |
+| `ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD` | No | Encrypt job execution payloads before sending them to Temporal. | `true` |
+| `ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY` | Required when encryption is enabled | Base64-encoded 32-byte AES-256-GCM encryption key. | `SecureRandom.base64(32)` |
 
 ### Performance Tuning
 
@@ -781,7 +822,7 @@ The following features are **not yet implemented** in v0.1 but are planned for f
 - **ActiveRecord callback interception** (e.g., automatic transactional enqueue) → Deferred
 
 **Other constraints:**
-- **250KB payload size limit** (configurable via `max_payload_size_kb`). Jobs with larger payloads will raise `ActiveJob::SerializationError`. Store large data externally (e.g., S3, database) and pass references instead.
+- **250KB payload size limit** (configurable via `max_payload_size_kb`). Jobs with larger plaintext or encrypted payloads will raise `ActiveJob::SerializationError`. Store large data externally (e.g., S3, database) and pass references instead.
 - **Single workflow + activity pattern:** Each job is executed as one workflow containing one activity. More complex orchestration patterns are not yet supported.
 
 ## Migration from Sidekiq/Resque

@@ -101,11 +101,12 @@ module ActiveJob
         def execute(payload)
           job_class = nil
           audit_context = nil
-          audit_context = audit_started(payload)
+          deserialized_payload = Payload.deserialize_payload(payload)
+          audit_context = audit_started(deserialized_payload)
 
-          result = Metrics.instrument_perform(payload) do
-            args = Payload.deserialize_args(payload)
-            job_class = constantize_job_class(payload)
+          result = Metrics.instrument_perform(deserialized_payload) do
+            args = Payload.deserialize_args(deserialized_payload)
+            job_class = constantize_job_class(deserialized_payload)
             job = job_class.new
 
             set_idempotency_key
@@ -115,7 +116,7 @@ module ActiveJob
           result
         rescue StandardError => e
           audit_failed(audit_context || empty_audit_context, e)
-          Metrics.record_retry(payload, e)
+          Metrics.record_retry(deserialized_payload || payload, e)
           handle_exception(job_class, e)
         ensure
           Thread.current[IDEMPOTENCY_KEY] = nil

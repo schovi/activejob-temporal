@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "base64"
 require_relative "../../fixtures/sample_jobs"
 require "activejob/temporal/activities/aj_runner_activity"
 
@@ -101,6 +102,30 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(activity.execute(payload)).to eq("performed")
 
       expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(payload)
+    end
+
+    it "decrypts encrypted payloads before metrics, audit, and job execution" do
+      stub_const("EncryptedRunnerJob", Class.new(ActiveJob::Base))
+      job = EncryptedRunnerJob.new(*args)
+
+      with_payload_encryption do
+        encrypted_payload = ActiveJob::Temporal::Payload.from_job(job)
+        job_instance = instance_double("EncryptedRunnerJob")
+        allow(EncryptedRunnerJob).to receive(:new).and_return(job_instance)
+        allow(job_instance).to receive(:perform).and_return("performed")
+        allow(ActiveJob::Temporal::Payload).to receive(:deserialize_args).and_call_original
+
+        expect(activity.execute(encrypted_payload)).to eq("performed")
+
+        expect(job_instance).to have_received(:perform).with(*args)
+        expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(
+          hash_including(job_class: "EncryptedRunnerJob", job_id: job.job_id, queue_name: "default")
+        )
+        expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+          "job.started",
+          hash_including(job_class: "EncryptedRunnerJob", job_id: job.job_id, queue: "default")
+        )
+      end
     end
 
     it "records started and completed audit events without raw arguments or result" do
@@ -264,6 +289,26 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
 
       expect(Thread.current[idempotency_key]).to be_nil
+    end
+  end
+
+  def with_payload_encryption
+    previous_encrypt_payload = ActiveJob::Temporal.config.encrypt_payload
+    previous_encryption_key = ActiveJob::Temporal.config.encryption_key
+    previous_encryption_old_keys = ActiveJob::Temporal.config.encryption_old_keys
+
+    ActiveJob::Temporal.configure do |config|
+      config.encrypt_payload = true
+      config.encryption_key = Base64.strict_encode64("activity-key".ljust(32, "-")[0, 32])
+      config.encryption_old_keys = []
+    end
+
+    yield
+  ensure
+    ActiveJob::Temporal.configure do |config|
+      config.encrypt_payload = previous_encrypt_payload
+      config.encryption_key = previous_encryption_key
+      config.encryption_old_keys = previous_encryption_old_keys
     end
   end
 end
