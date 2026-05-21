@@ -207,6 +207,101 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  test-chaos:
+    name: Chaos Tests (Ruby ${{ matrix.ruby }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        ruby: ['4.0']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby ${{ matrix.ruby }}
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+          bundler-cache: true
+
+      - name: Start Temporal chaos test server
+        run: |
+          docker compose up -d postgresql temporal toxiproxy
+          for i in {1..120}; do
+            if docker compose exec -T temporal temporal operator namespace list >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose logs temporal toxiproxy
+          exit 1
+
+      - name: Configure Temporal chaos namespace
+        run: |
+          docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1 ||
+            docker compose exec -T temporal temporal operator namespace create test
+          for i in {1..60}; do
+            if docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          required_search_attributes_present() {
+            attributes=$(docker compose exec -T temporal temporal operator search-attribute list -n test 2>/dev/null || true)
+            for attribute in ajClass ajQueue ajJobId ajEnqueuedAt ajTenantId ajTags; do
+              if ! grep -q "$attribute" <<<"$attributes"; then
+                return 1
+              fi
+            done
+          }
+
+          for i in {1..60}; do
+            if required_search_attributes_present; then
+              exit 0
+            fi
+            docker compose exec -T temporal temporal operator search-attribute create -n test \
+              --name ajClass --type Keyword \
+              --name ajQueue --type Keyword \
+              --name ajJobId --type Keyword \
+              --name ajEnqueuedAt --type Datetime \
+              --name ajTenantId --type Int \
+              --name ajTags --type KeywordList || true
+            sleep 1
+          done
+          required_search_attributes_present
+
+      - name: Run chaos tests
+        run: bundle exec rake spec:chaos
+        env:
+          TEST_SUITE: chaos
+
+      - name: Upload chaos coverage to Codecov
+        if: matrix.ruby == '4.0'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          disable_search: true
+          flags: chaos
+          name: ruby-${{ matrix.ruby }}-chaos
+          use_oidc: true
+          fail_ci_if_error: false
+
+      - name: Upload chaos test coverage
+        if: matrix.ruby == '4.0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-chaos-ruby-${{ matrix.ruby }}
+          path: coverage/
+
+      - name: Stop Temporal chaos test server
+        if: always()
+        run: docker compose down -v
+
   example-basic-rails-app:
     name: Example Rails App
     runs-on: ubuntu-latest
@@ -240,7 +335,7 @@ jobs:
   build:
     name: Build Gem
     runs-on: ubuntu-latest
-    needs: [lint, security, mutation, test-unit, test-integration, example-basic-rails-app]
+    needs: [lint, security, mutation, test-unit, test-integration, test-chaos, example-basic-rails-app]
 
     steps:
       - name: Checkout code

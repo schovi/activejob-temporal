@@ -126,9 +126,14 @@ module ActiveJob
       # Checks if error indicates workflow was already started (duplicate job_id).
       # @api private
       def workflow_already_started?(error)
-        return false unless defined?(Temporalio::Client::WorkflowAlreadyStartedError)
+        return true if defined?(Temporalio::Error::WorkflowAlreadyStartedError) &&
+                       error.is_a?(Temporalio::Error::WorkflowAlreadyStartedError)
+        return true if defined?(Temporalio::Client::WorkflowAlreadyStartedError) &&
+                       error.is_a?(Temporalio::Client::WorkflowAlreadyStartedError)
 
-        error.is_a?(Temporalio::Client::WorkflowAlreadyStartedError)
+        defined?(Temporalio::Error::RPCError::Code::ALREADY_EXISTS) &&
+          error.respond_to?(:code) &&
+          error.code == Temporalio::Error::RPCError::Code::ALREADY_EXISTS
       end
 
       # Logs enqueue event with structured metadata.

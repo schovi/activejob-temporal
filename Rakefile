@@ -106,6 +106,12 @@ namespace :spec do
     t.pattern = "spec/contract/**/*_spec.rb"
     ENV["TEST_SUITE"] = "contract"
   end
+
+  desc "Run chaos specs"
+  RSpec::Core::RakeTask.new(:chaos) do |t|
+    t.pattern = "spec/chaos/**/*_spec.rb"
+    ENV["TEST_SUITE"] = "chaos"
+  end
 end
 
 RuboCop::RakeTask.new(:rubocop)

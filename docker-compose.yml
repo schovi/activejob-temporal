@@ -8,8 +8,6 @@ services:
     image: postgres:15
     networks:
       - temporal-network
-    ports:
-      - 5432:5432
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -36,6 +34,18 @@ services:
       - temporal-network
     ports:
       - 7233:7233
+
+  toxiproxy:
+    container_name: toxiproxy
+    depends_on:
+      - temporal
+    image: ghcr.io/shopify/toxiproxy:latest
+    command: ["-host=0.0.0.0"]
+    networks:
+      - temporal-network
+    ports:
+      - 7234:7234
+      - 8474:8474
 
   temporal-ui:
     container_name: temporal-ui

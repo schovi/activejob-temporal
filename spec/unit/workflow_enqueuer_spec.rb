@@ -213,6 +213,43 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       )
     end
 
+    it "returns nil for current SDK duplicate workflow errors" do
+      error = Temporalio::Error::WorkflowAlreadyStartedError.new(
+        workflow_id: "ajwf:SimpleJob:test-job-id",
+        workflow_type: "ActiveJob::Temporal::Workflows::AjWorkflow",
+        run_id: "test-run-id"
+      )
+      allow(client).to receive(:start_workflow).and_raise(error)
+
+      result = enqueuer.enqueue(job)
+
+      expect(result).to be_nil
+      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
+        job: job,
+        duplicate: true
+      )
+    end
+
+    it "returns nil for already-exists RPC duplicate workflow errors" do
+      error = Class.new(StandardError) do
+        attr_reader :code
+
+        def initialize
+          @code = Temporalio::Error::RPCError::Code::ALREADY_EXISTS
+          super("Workflow execution already started")
+        end
+      end
+      allow(client).to receive(:start_workflow).and_raise(error.new)
+
+      result = enqueuer.enqueue(job)
+
+      expect(result).to be_nil
+      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
+        job: job,
+        duplicate: true
+      )
+    end
+
     it "raises ActiveJob::EnqueueError for non-duplicate errors" do
       allow(client).to receive(:start_workflow).and_raise(StandardError, "Connection failed")
 

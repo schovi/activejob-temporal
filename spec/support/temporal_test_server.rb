@@ -11,7 +11,8 @@ module TemporalTestHelper
   DEFAULT_TARGET = "127.0.0.1:7233"
   TEMPORAL_SPEC_PATH_SEGMENTS = [
     File.join("spec", "integration"),
-    File.join("spec", "contract")
+    File.join("spec", "contract"),
+    File.join("spec", "chaos")
   ].freeze
 
   class ServerNotAvailableError < RuntimeError
