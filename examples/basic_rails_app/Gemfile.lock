@@ -8,7 +8,7 @@ PATH
       globalid (>= 0.3)
       listen (~> 3.9)
       prometheus-client (~> 4.2)
-      temporalio (>= 1.4.1)
+      temporalio (>= 1.4.0, < 1.5)
 
 GEM
   remote: https://rubygems.org/
