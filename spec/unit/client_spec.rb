@@ -1,10 +1,18 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "tmpdir"
 
 RSpec.describe ActiveJob::Temporal, ".client" do
   let(:tls_env_keys) do
-    %w[TEMPORAL_TLS_CERT TEMPORAL_TLS_KEY TEMPORAL_TLS_SERVER_NAME]
+    %w[TEMPORAL_TLS_CERT TEMPORAL_TLS_KEY TEMPORAL_TLS_SERVER_NAME TEMPORAL_TLS_SERVER_ROOT_CA_CERT]
+  end
+
+  def expect_tls_options(tls, client_cert: nil, client_private_key: nil, server_root_ca_cert: nil, domain: nil)
+    expect(tls.client_cert).to eq(client_cert)
+    expect(tls.client_private_key).to eq(client_private_key)
+    expect(tls.server_root_ca_cert).to eq(server_root_ca_cert)
+    expect(tls.domain).to eq(domain)
   end
 
   around do |example|
@@ -80,6 +88,40 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     expect(Temporalio::Client).to have_received(:connect).once
   end
 
+  it "reloads the memoized client with a fresh connection" do
+    first_client = instance_double("Temporalio::Client")
+    second_client = instance_double("Temporalio::Client")
+    allow(Temporalio::Client).to receive(:connect).and_return(first_client, second_client)
+
+    expect(described_class.client).to be(first_client)
+    expect(described_class.reload_client!).to be(second_client)
+    expect(described_class.client).to be(second_client)
+    expect(Temporalio::Client).to have_received(:connect).twice
+  end
+
+  it "keeps the previous client when reload connection fails" do
+    configured_client = instance_double("Temporalio::Client")
+    allow(Temporalio::Client).to receive(:connect).and_return(configured_client)
+    described_class.client
+
+    allow(Temporalio::Client).to receive(:connect).and_raise(StandardError, "unreachable")
+
+    expect { described_class.reload_client! }.to raise_error(ActiveJob::Temporal::Error)
+    expect(described_class.client).to be(configured_client)
+  end
+
+  it "keeps the previous client when the reload block fails" do
+    first_client = instance_double("Temporalio::Client")
+    second_client = instance_double("Temporalio::Client")
+    allow(Temporalio::Client).to receive(:connect).and_return(first_client, second_client)
+    described_class.client
+
+    expect do
+      described_class.reload_client! { raise "worker replacement failed" }
+    end.to raise_error(RuntimeError, /worker replacement failed/)
+    expect(described_class.client).to be(first_client)
+  end
+
   it "passes optional TLS options when provided via environment variables" do
     ENV["TEMPORAL_TLS_CERT"] = "cert-data"
     ENV["TEMPORAL_TLS_KEY"] = "key-data"
@@ -89,10 +131,11 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
       expect(target).to eq("127.0.0.1:7233")
       expect(namespace).to eq("default")
-      expect(kwargs[:tls]).to eq(
-        certificate: "cert-data",
-        private_key: "key-data",
-        server_name: "temporal.example.dev"
+      expect_tls_options(
+        kwargs[:tls],
+        client_cert: "cert-data",
+        client_private_key: "key-data",
+        domain: "temporal.example.dev"
       )
       client_instance
     end
@@ -107,7 +150,7 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
       expect(target).to eq("127.0.0.1:7233")
       expect(namespace).to eq("default")
-      expect(kwargs[:tls]).to eq(certificate: "cert-data")
+      expect_tls_options(kwargs[:tls], client_cert: "cert-data")
       client_instance
     end
 
@@ -121,7 +164,7 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
       expect(target).to eq("127.0.0.1:7233")
       expect(namespace).to eq("default")
-      expect(kwargs[:tls]).to eq(private_key: "key-only")
+      expect_tls_options(kwargs[:tls], client_private_key: "key-only")
       client_instance
     end
 
@@ -135,7 +178,19 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
       expect(target).to eq("127.0.0.1:7233")
       expect(namespace).to eq("default")
-      expect(kwargs[:tls]).to eq(server_name: "temporal.example.com")
+      expect_tls_options(kwargs[:tls], domain: "temporal.example.com")
+      client_instance
+    end
+
+    expect(described_class.client).to be(client_instance)
+  end
+
+  it "passes optional TLS root CA when provided via environment variables" do
+    ENV["TEMPORAL_TLS_SERVER_ROOT_CA_CERT"] = "root-ca-data"
+
+    client_instance = instance_double("Temporalio::Client")
+    expect(Temporalio::Client).to receive(:connect) do |_target, _namespace, **kwargs|
+      expect_tls_options(kwargs[:tls], server_root_ca_cert: "root-ca-data")
       client_instance
     end
 
@@ -146,28 +201,89 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     described_class.configure do |config|
       config.target = "localhost:7233"
       config.namespace = "custom"
+      config.tls = {
+        certificate: "config-cert",
+        private_key: "config-key"
+      }
     end
-    configuration = ActiveJob::Temporal.config
-    configuration.singleton_class.class_eval { attr_accessor :tls } unless configuration.respond_to?(:tls)
-    configuration.tls = {
-      certificate: "config-cert",
-      private_key: "config-key"
-    }
 
     client_instance = instance_double("Temporalio::Client")
     expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
       expect(target).to eq("localhost:7233")
       expect(namespace).to eq("custom")
-      expect(kwargs[:tls]).to eq(
-        certificate: "config-cert",
-        private_key: "config-key"
+      expect_tls_options(
+        kwargs[:tls],
+        client_cert: "config-cert",
+        client_private_key: "config-key"
       )
       client_instance
     end
 
     expect(described_class.client).to be(client_instance)
-  ensure
-    configuration&.tls = nil
+  end
+
+  it "allows TLS to be explicitly disabled on the config object" do
+    ENV["TEMPORAL_TLS_CERT"] = "cert-data"
+
+    described_class.configure do |config|
+      config.tls = false
+    end
+
+    client_instance = instance_double("Temporalio::Client")
+    expect(Temporalio::Client).to receive(:connect) do |_target, _namespace, **kwargs|
+      expect(kwargs).to eq(tls: false)
+      client_instance
+    end
+
+    expect(described_class.client).to be(client_instance)
+  end
+
+  it "passes SDK-native TLS options through unchanged" do
+    tls_options = ActiveJob::Temporal::Client::TLS_OPTIONS_CLASS.new(client_cert: "sdk-cert")
+
+    described_class.configure do |config|
+      config.tls = tls_options
+    end
+
+    client_instance = instance_double("Temporalio::Client")
+    expect(Temporalio::Client).to receive(:connect) do |_target, _namespace, **kwargs|
+      expect(kwargs[:tls]).to be(tls_options)
+      client_instance
+    end
+
+    expect(described_class.client).to be(client_instance)
+  end
+
+  it "reads TLS certificate files when path configuration is present" do
+    Dir.mktmpdir do |directory|
+      cert_path = File.join(directory, "client.pem")
+      key_path = File.join(directory, "client-key.pem")
+      root_ca_path = File.join(directory, "root-ca.pem")
+      File.write(cert_path, "cert-from-file")
+      File.write(key_path, "key-from-file")
+      File.write(root_ca_path, "root-ca-from-file")
+
+      described_class.configure do |config|
+        config.tls_cert_path = cert_path
+        config.tls_key_path = key_path
+        config.tls_server_root_ca_cert_path = root_ca_path
+        config.tls_domain = "temporal.example.dev"
+      end
+
+      client_instance = instance_double("Temporalio::Client")
+      expect(Temporalio::Client).to receive(:connect) do |_target, _namespace, **kwargs|
+        expect_tls_options(
+          kwargs[:tls],
+          client_cert: "cert-from-file",
+          client_private_key: "key-from-file",
+          server_root_ca_cert: "root-ca-from-file",
+          domain: "temporal.example.dev"
+        )
+        client_instance
+      end
+
+      expect(described_class.client).to be(client_instance)
+    end
   end
 
   it "wraps connection errors in ActiveJob::Temporal::Error" do

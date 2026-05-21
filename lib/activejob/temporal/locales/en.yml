@@ -75,3 +75,27 @@ en:
               not_a_hash: "must be a hash mapping ActiveJob priority values to task queue names, got: %{value}"
               non_integer_priority: "priority keys must be integers because ActiveJob priorities are numeric, got: %{value}"
               blank_queue: "task queue names must be present, got: %{value}"
+
+            tls_cert_path:
+              requires_key_path: "requires tls_key_path so the client certificate and private key rotate together"
+              invalid_path: "must be a non-empty file path, got: %{value}"
+              unreadable_path: "must point to a readable file, got: %{value}"
+
+            tls_key_path:
+              invalid_path: "must be a non-empty file path, got: %{value}"
+              unreadable_path: "must point to a readable file, got: %{value}"
+
+            tls_server_root_ca_cert_path:
+              invalid_path: "must be a non-empty file path, got: %{value}"
+              unreadable_path: "must point to a readable file, got: %{value}"
+
+            tls_domain:
+              blank: "must be present when configured"
+
+            tls_cert_watch:
+              not_boolean: "must be true or false, got: %{value}"
+              requires_paths: "requires at least one TLS certificate path to watch"
+
+            tls_reload_signal:
+              blank: "must be present when configured"
+              invalid: "must be a signal name like HUP or USR1, got: %{value}"

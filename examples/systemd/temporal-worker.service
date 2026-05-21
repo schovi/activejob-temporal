@@ -18,6 +18,7 @@ Environment=ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=100
 Environment=ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=5
 
 ExecStart=/usr/bin/env bundle exec temporal-worker
+ExecReload=/bin/kill -HUP $MAINPID
 KillSignal=SIGTERM
 TimeoutStopSec=60
 

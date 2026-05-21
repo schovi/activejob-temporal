@@ -37,6 +37,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "activemodel", ">= 7.2", "< 9"
   spec.add_dependency "concurrent-ruby", "~> 1.1"
   spec.add_dependency "globalid", ">= 0.3"
+  spec.add_dependency "listen", "~> 3.9"
   spec.add_dependency "prometheus-client", "~> 4.2"
   spec.add_dependency "temporalio", ">= 1.4.1"
 

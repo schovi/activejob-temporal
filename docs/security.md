@@ -41,6 +41,7 @@ spec.add_dependency "activejob", ">= 7.2", "< 9"
 spec.add_dependency "activemodel", ">= 7.2", "< 9"
 spec.add_dependency "concurrent-ruby", "~> 1.1"
 spec.add_dependency "globalid", ">= 0.3"
+spec.add_dependency "listen", "~> 3.9"
 spec.add_dependency "temporalio", ">= 1.4.1"
 ```
 
@@ -84,17 +85,29 @@ The gem does **not**:
 
 All job arguments are serialized to JSON/GlobalID and passed through Temporal safely.
 
-### TLS Certificate Validation
+### TLS Certificate Validation and Rotation
 
-When using TLS with Temporal:
+When using mTLS with Temporal, store certificate material outside source control and point the worker at secured files:
 
 ```ruby
-# ✅ Load from secure environment variable
-ENV["TEMPORAL_TLS_CERT"]  # Should be set in secure config, not code
-
-# ❌ Don't hardcode certificates
-config.tls_cert_path = "/path/to/cert"  # OK if path is secure
+ActiveJob::Temporal.configure do |config|
+  config.tls_cert_path = "/etc/certs/client.pem"
+  config.tls_key_path = "/etc/certs/client-key.pem"
+  config.tls_server_root_ca_cert_path = "/etc/certs/root-ca.pem"
+  config.tls_domain = "temporal.example.com"
+  config.tls_cert_watch = true
+end
 ```
+
+The client certificate and private key paths must be configured together. The worker reads the files when building a Temporal client and can reload without restart when either file changes. Replace certificate files atomically, for example write a new file and rename it into place, so the watcher never observes a partially written PEM.
+
+File watching is controlled by `config.tls_cert_watch` or `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true`. Workers also trap `SIGHUP` by default for manual reload:
+
+```bash
+kill -HUP <worker-pid>
+```
+
+Legacy `TEMPORAL_TLS_CERT`, `TEMPORAL_TLS_KEY`, and `TEMPORAL_TLS_SERVER_NAME` environment variables are still accepted for PEM content, but running processes cannot observe changed environment values. Use file paths for zero-downtime certificate rotation.
 
 ### Payload Serialization
 

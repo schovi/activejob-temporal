@@ -16,8 +16,8 @@ module ActiveJob
     # attributes or environment variables.
     #
     # @note TLS Configuration Precedence
-    #   If both `config.tls` and environment variables are present, `config.tls` takes
-    #   precedence. Environment variables are only used if `config.tls` is nil.
+    #   `config.tls` takes precedence, followed by configured certificate file paths,
+    #   then legacy environment variables.
     #
     # @note Environment Variables
     #   - TEMPORAL_TLS_CERT: TLS certificate (PEM format, full content)
@@ -37,19 +37,25 @@ module ActiveJob
     # @example TLS via configuration object
     #   ActiveJob::Temporal.configure do |config|
     #     config.tls = {
-    #       certificate: File.read("cert.pem"),
-    #       private_key: File.read("key.pem"),
-    #       server_name: "temporal.example.com"
+    #       client_cert: File.read("cert.pem"),
+    #       client_private_key: File.read("key.pem"),
+    #       domain: "temporal.example.com"
     #     }
     #   end
     #   client = ActiveJob::Temporal.client
     module Client
+      TLS_OPTIONS_CLASS = if defined?(Temporalio::Client::Connection::TLSOptions)
+                            Temporalio::Client::Connection::TLSOptions
+                          end
+
       # Environment variable name for TLS certificate
       TLS_CERT_ENV = "TEMPORAL_TLS_CERT"
       # Environment variable name for TLS private key
       TLS_KEY_ENV = "TEMPORAL_TLS_KEY"
       # Environment variable name for TLS server name
       TLS_SERVER_NAME_ENV = "TEMPORAL_TLS_SERVER_NAME"
+      # Environment variable name for TLS root CA certificate
+      TLS_SERVER_ROOT_CA_CERT_ENV = "TEMPORAL_TLS_SERVER_ROOT_CA_CERT"
 
       module_function
 
@@ -111,7 +117,7 @@ module ActiveJob
       # @api private
       def connection_kwargs(configuration)
         tls = tls_options(configuration)
-        return {} unless tls
+        return {} if tls.nil?
 
         { tls: tls }
       end
@@ -120,20 +126,90 @@ module ActiveJob
       # Extracts TLS options from config or environment variables.
       # @api private
       def tls_options(configuration)
-        return configuration.tls if configuration.respond_to?(:tls) && configuration.tls
+        configured_tls = configuration.tls if configuration.respond_to?(:tls)
+        return normalize_tls_options(configured_tls) unless configured_tls.nil?
+
+        path_options = tls_path_options(configuration)
+        return path_options if path_options
 
         cert = ENV.fetch(TLS_CERT_ENV, nil)
         key = ENV.fetch(TLS_KEY_ENV, nil)
         server_name = ENV.fetch(TLS_SERVER_NAME_ENV, nil)
-        return nil unless cert || key || server_name
+        server_root_ca_cert = ENV.fetch(TLS_SERVER_ROOT_CA_CERT_ENV, nil)
+        return nil unless cert || key || server_name || server_root_ca_cert
 
-        {
-          certificate: cert,
-          private_key: key,
-          server_name: server_name
-        }.compact
+        build_tls_options(
+          client_cert: cert,
+          client_private_key: key,
+          server_root_ca_cert: server_root_ca_cert,
+          domain: server_name
+        )
       end
       private_class_method :tls_options
+
+      def tls_path_options(configuration)
+        return unless configuration.respond_to?(:tls_cert_path)
+
+        cert = read_tls_file(configuration.tls_cert_path)
+        key = read_tls_file(configuration.tls_key_path)
+        server_root_ca_cert = read_tls_file(configuration.tls_server_root_ca_cert_path)
+        domain = configuration.tls_domain
+        return nil unless cert || key || server_root_ca_cert || domain
+
+        build_tls_options(
+          client_cert: cert,
+          client_private_key: key,
+          server_root_ca_cert: server_root_ca_cert,
+          domain: domain
+        )
+      end
+      private_class_method :tls_path_options
+
+      def read_tls_file(path)
+        return nil if path.nil? || path.to_s.empty?
+
+        File.read(File.expand_path(path))
+      end
+      private_class_method :read_tls_file
+
+      def normalize_tls_options(tls)
+        return tls if [true, false].include?(tls)
+        return tls if TLS_OPTIONS_CLASS && tls.is_a?(TLS_OPTIONS_CLASS)
+        return normalize_tls_hash(tls) if tls.is_a?(Hash)
+
+        tls
+      end
+      private_class_method :normalize_tls_options
+
+      def normalize_tls_hash(tls)
+        build_tls_options(
+          client_cert: tls_hash_value(tls, :client_cert, :certificate),
+          client_private_key: tls_hash_value(tls, :client_private_key, :private_key),
+          server_root_ca_cert: tls_hash_value(tls, :server_root_ca_cert),
+          domain: tls_hash_value(tls, :domain, :server_name)
+        )
+      end
+      private_class_method :normalize_tls_hash
+
+      def tls_hash_value(hash, *keys)
+        keys.each do |key|
+          return hash[key] if hash.key?(key)
+
+          string_key = key.to_s
+          return hash[string_key] if hash.key?(string_key)
+        end
+
+        nil
+      end
+      private_class_method :tls_hash_value
+
+      def build_tls_options(**attributes)
+        attributes = attributes.compact
+        return attributes unless TLS_OPTIONS_CLASS
+
+        TLS_OPTIONS_CLASS.new(**attributes)
+      end
+      private_class_method :build_tls_options
     end
   end
 end

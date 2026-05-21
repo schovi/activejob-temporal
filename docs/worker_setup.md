@@ -22,6 +22,12 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. Off by default. | `9394` |
 | `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_TLS_CERT_PATH` | Required for mTLS client certs | Client certificate file path. | `/etc/certs/client.pem` |
+| `ACTIVEJOB_TEMPORAL_TLS_KEY_PATH` | Required with client cert path | Client private key file path. | `/etc/certs/client-key.pem` |
+| `ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH` | No | Root CA certificate file path for self-hosted TLS. | `/etc/certs/root-ca.pem` |
+| `ACTIVEJOB_TEMPORAL_TLS_DOMAIN` | No | TLS SNI domain override. | `temporal.example.com` |
+| `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH` | No | Watch TLS files and reload worker clients on change. | `true` |
+| `ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL` | No | Manual reload signal name. Defaults to `HUP`. | `USR1` |
 
 ## Starting the Worker
 
@@ -85,6 +91,18 @@ curl http://localhost:9394/metrics
 ```
 
 The metrics endpoint returns Prometheus text format from `GET /metrics`. It is not a health probe.
+
+**mTLS certificate reload:**
+```bash
+ACTIVEJOB_TEMPORAL_TLS_CERT_PATH=/etc/certs/client.pem \
+ACTIVEJOB_TEMPORAL_TLS_KEY_PATH=/etc/certs/client-key.pem \
+ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true \
+bundle exec temporal-worker
+
+kill -HUP <worker-pid>
+```
+
+When certificate watching is enabled, the worker watches the configured TLS certificate files and swaps in a fresh Temporal client after a successful reconnect. `SIGHUP` triggers the same reload path manually. Existing calls continue on the previous client.
 
 The health endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, poll capacity settings, PID, start time, and uptime:
 

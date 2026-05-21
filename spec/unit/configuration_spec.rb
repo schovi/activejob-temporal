@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "base64"
+require "tmpdir"
 
 RSpec.describe ActiveJob::Temporal::Configuration do
   subject(:configuration) { described_class.new }
@@ -53,6 +54,16 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "sets task_queue to 'default'" do
       expect(configuration.task_queue).to eq("default")
+    end
+
+    it "sets TLS rotation defaults" do
+      expect(configuration.tls).to be_nil
+      expect(configuration.tls_cert_path).to be_nil
+      expect(configuration.tls_key_path).to be_nil
+      expect(configuration.tls_server_root_ca_cert_path).to be_nil
+      expect(configuration.tls_domain).to be_nil
+      expect(configuration.tls_cert_watch).to be(false)
+      expect(configuration.tls_reload_signal).to eq("HUP")
     end
 
     it "sets priority task queue mappings to an empty hash" do
@@ -281,6 +292,30 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       config = described_class.new
       expect(config.encryption_key).to eq(key)
+    end
+
+    it "reads TLS certificate paths from environment variables" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_CERT_PATH").and_return("/certs/client.pem")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_KEY_PATH").and_return("/certs/client-key.pem")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH").and_return("/certs/ca.pem")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_DOMAIN").and_return("temporal.example.dev")
+
+      config = described_class.new
+      expect(config.tls_cert_path).to eq("/certs/client.pem")
+      expect(config.tls_key_path).to eq("/certs/client-key.pem")
+      expect(config.tls_server_root_ca_cert_path).to eq("/certs/ca.pem")
+      expect(config.tls_domain).to eq("temporal.example.dev")
+    end
+
+    it "reads TLS reload controls from environment variables" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH").and_return("true")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL").and_return("USR1")
+
+      config = described_class.new
+      expect(config.tls_cert_watch).to be(true)
+      expect(config.tls_reload_signal).to eq("USR1")
     end
 
     it "uses default (5) when ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS is not set" do
@@ -532,6 +567,76 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects unsupported validation levels" do
       expect { configuration.validation_level = :relaxed }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /Validation level must be one of/)
+    end
+  end
+
+  describe "TLS configuration" do
+    def with_tls_files
+      Dir.mktmpdir do |directory|
+        cert_path = File.join(directory, "client.pem")
+        key_path = File.join(directory, "client-key.pem")
+        root_ca_path = File.join(directory, "root-ca.pem")
+        File.write(cert_path, "cert")
+        File.write(key_path, "key")
+        File.write(root_ca_path, "root-ca")
+        yield cert_path, key_path, root_ca_path
+      end
+    end
+
+    it "accepts readable client certificate and key paths" do
+      with_tls_files do |cert_path, key_path, root_ca_path|
+        configuration.in_configure_block = true
+        configuration.tls_cert_path = cert_path
+        configuration.tls_key_path = key_path
+        configuration.tls_server_root_ca_cert_path = root_ca_path
+        configuration.tls_domain = "temporal.example.dev"
+        configuration.tls_cert_watch = true
+        configuration.in_configure_block = false
+
+        expect { configuration.validate! }.not_to raise_error
+      end
+    end
+
+    it "rejects a client certificate path without a matching key path" do
+      with_tls_files do |cert_path, _key_path, _root_ca_path|
+        expect { configuration.tls_cert_path = cert_path }
+          .to raise_error(ActiveJob::Temporal::ConfigurationError, /requires tls_key_path/)
+      end
+    end
+
+    it "rejects unreadable TLS paths" do
+      missing_path = File.join(Dir.tmpdir, "missing-root-ca.pem")
+
+      expect { configuration.tls_server_root_ca_cert_path = missing_path }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /readable file/)
+    end
+
+    it "rejects certificate watching when no TLS file paths are configured" do
+      expect { configuration.tls_cert_watch = true }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /requires at least one TLS certificate path/)
+    end
+
+    it "rejects non-boolean certificate watching values" do
+      expect { configuration.tls_cert_watch = "true" }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be true or false/)
+    end
+
+    it "rejects blank TLS domain overrides" do
+      expect { configuration.tls_domain = " " }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be present/)
+    end
+
+    it "accepts trappable TLS reload signal names" do
+      configuration.tls_reload_signal = "SIGHUP"
+
+      expect(configuration.tls_reload_signal).to eq("SIGHUP")
+    end
+
+    it "rejects invalid or untrappable TLS reload signal names" do
+      ["HUP!", "HUP123", "KILL", "9"].each do |signal_name|
+        expect { configuration.tls_reload_signal = signal_name }
+          .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be a signal name/)
+      end
     end
   end
 

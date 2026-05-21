@@ -40,6 +40,80 @@ attributes:
       env_var_name: ACTIVEJOB_TEMPORAL_NAMESPACE
       example: "production"
 
+    - name: tls
+      type: Object
+      default: null
+      validation_rules:
+        - "Optional SDK-native TLS options, hash-compatible TLS settings, true, false, or nil"
+      description: "Optional TLS override passed to the Temporal Ruby SDK. Prefer file path settings for certificate rotation."
+      env_var_name: null
+      example:
+        client_cert: "File.read('/etc/certs/client.pem')"
+        client_private_key: "File.read('/etc/certs/client-key.pem')"
+        domain: "temporal.example.com"
+
+    - name: tls_cert_path
+      type: String
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must be a readable file"
+        - "Must be configured together with tls_key_path"
+      description: "Client certificate file path for mTLS. The worker reads the file when building or reloading a Temporal client."
+      env_var_name: ACTIVEJOB_TEMPORAL_TLS_CERT_PATH
+      example: "/etc/certs/client.pem"
+
+    - name: tls_key_path
+      type: String
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must be a readable file"
+        - "Must be configured together with tls_cert_path"
+      description: "Client private key file path for mTLS. The worker reads the file when building or reloading a Temporal client."
+      env_var_name: ACTIVEJOB_TEMPORAL_TLS_KEY_PATH
+      example: "/etc/certs/client-key.pem"
+
+    - name: tls_server_root_ca_cert_path
+      type: String
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must be a readable file"
+      description: "Root CA certificate file path for self-hosted Temporal TLS verification."
+      env_var_name: ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH
+      example: "/etc/certs/root-ca.pem"
+
+    - name: tls_domain
+      type: String
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must not be blank"
+      description: "Optional TLS SNI domain override."
+      env_var_name: ACTIVEJOB_TEMPORAL_TLS_DOMAIN
+      example: "temporal.example.com"
+
+    - name: tls_cert_watch
+      type: Boolean
+      default: false
+      validation_rules:
+        - "Must be true or false"
+        - "When true, at least one TLS file path must be configured"
+      description: "Watch configured TLS files and reload worker clients when certificate files change."
+      env_var_name: ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH
+      example: true
+
+    - name: tls_reload_signal
+      type: String
+      default: "HUP"
+      validation_rules:
+        - "Must be a trappable signal name such as HUP or USR1"
+        - "KILL and STOP are rejected because Ruby cannot trap them"
+      description: "Signal used by workers for manual TLS client reload."
+      env_var_name: ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL
+      example: "HUP"
+
     - name: identity
       type: String
       default: null
@@ -348,6 +422,13 @@ examples:
       encryption_old_keys: []
       enable_search_attributes: true
       identity: null
+      tls: null
+      tls_cert_path: null
+      tls_key_path: null
+      tls_server_root_ca_cert_path: null
+      tls_domain: null
+      tls_cert_watch: false
+      tls_reload_signal: "HUP"
     code_example: |
       # config/initializers/activejob_temporal.rb
       ActiveJob::Temporal.configure do |config|
@@ -386,6 +467,13 @@ examples:
       encryption_old_keys: []
       enable_search_attributes: true
       identity: "worker-01-us-east-1"
+      tls: null
+      tls_cert_path: "/etc/certs/client.pem"
+      tls_key_path: "/etc/certs/client-key.pem"
+      tls_server_root_ca_cert_path: "/etc/certs/root-ca.pem"
+      tls_domain: "temporal.production.example.com"
+      tls_cert_watch: true
+      tls_reload_signal: "HUP"
     code_example: |
       # config/initializers/activejob_temporal.rb
       ActiveJob::Temporal.configure do |config|
@@ -403,6 +491,11 @@ examples:
         config.encrypt_payload = true
         config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
         config.identity = ENV.fetch('HOSTNAME', 'unknown-worker')
+        config.tls_cert_path = ENV.fetch("ACTIVEJOB_TEMPORAL_TLS_CERT_PATH")
+        config.tls_key_path = ENV.fetch("ACTIVEJOB_TEMPORAL_TLS_KEY_PATH")
+        config.tls_server_root_ca_cert_path = ENV["ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH"]
+        config.tls_domain = ENV["ACTIVEJOB_TEMPORAL_TLS_DOMAIN"]
+        config.tls_cert_watch = true
         # Validation happens automatically at end of block!
       end
 
@@ -436,6 +529,13 @@ examples:
       max_concurrent_workflow_tasks: 25
       enable_search_attributes: true
       identity: "worker-heavy-01"
+      tls: null
+      tls_cert_path: null
+      tls_key_path: null
+      tls_server_root_ca_cert_path: null
+      tls_domain: null
+      tls_cert_watch: false
+      tls_reload_signal: "HUP"
     code_example: |
       # config/initializers/activejob_temporal.rb
       ActiveJob::Temporal.configure do |config|

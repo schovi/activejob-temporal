@@ -7,6 +7,7 @@ require "active_model"
 require_relative "middleware"
 require_relative "payload_encryption"
 
+# rubocop:disable Metrics/ModuleLength
 module ActiveJob
   module Temporal
     LOCALE_PATH = File.expand_path("locales/en.yml", __dir__)
@@ -22,6 +23,7 @@ module ActiveJob
 
     VALIDATION_LEVELS = %i[strict warn none].freeze
     METRICS_PROVIDERS = %i[none prometheus].freeze
+    UNTRAPPABLE_SIGNALS = %w[KILL STOP].freeze
 
     # Central registry of all configuration attributes.
     #
@@ -68,6 +70,54 @@ module ActiveJob
         env_var: "ACTIVEJOB_TEMPORAL_TASK_QUEUE",
         type: :string,
         description: "Default task queue name for workers"
+      },
+
+      tls: {
+        default: nil,
+        type: :object,
+        description: "Optional SDK-native TLS options or hash-compatible TLS settings"
+      },
+
+      tls_cert_path: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_TLS_CERT_PATH",
+        type: :string,
+        description: "Optional client certificate file path for mTLS"
+      },
+
+      tls_key_path: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_TLS_KEY_PATH",
+        type: :string,
+        description: "Optional client private key file path for mTLS"
+      },
+
+      tls_server_root_ca_cert_path: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH",
+        type: :string,
+        description: "Optional server root CA certificate file path for TLS verification"
+      },
+
+      tls_domain: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_TLS_DOMAIN",
+        type: :string,
+        description: "Optional TLS SNI domain override"
+      },
+
+      tls_cert_watch: {
+        default: false,
+        env_var: "ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH",
+        type: :boolean,
+        description: "Watch TLS certificate files and reload worker clients when they change"
+      },
+
+      tls_reload_signal: {
+        default: "HUP",
+        env_var: "ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL",
+        type: :string,
+        description: "Signal used by workers to reload TLS certificates manually"
       },
 
       priority_task_queues: {
@@ -480,6 +530,7 @@ module ActiveJob
       validate :validate_metrics_settings
       validate :validate_audit_settings
       validate :validate_encryption_settings
+      validate :validate_tls_settings
 
       private
 
@@ -623,6 +674,70 @@ module ActiveJob
         errors.add(:encryption_old_keys, :invalid, bytes: PayloadEncryption.key_length, value: "[FILTERED]")
       end
 
+      def validate_tls_settings
+        validate_tls_cert_key_pair
+        validate_tls_file_path(:tls_cert_path)
+        validate_tls_file_path(:tls_key_path)
+        validate_tls_file_path(:tls_server_root_ca_cert_path)
+        validate_tls_domain
+        validate_tls_cert_watch
+        validate_tls_reload_signal
+      end
+
+      def validate_tls_cert_key_pair
+        return if tls_cert_path.to_s.empty? == tls_key_path.to_s.empty?
+
+        errors.add(:tls_cert_path, :requires_key_path)
+      end
+
+      def validate_tls_file_path(attribute)
+        path = public_send(attribute)
+        return if path.nil?
+
+        unless path.is_a?(String) && path.strip.present?
+          errors.add(attribute, :invalid_path, value: path.inspect)
+          return
+        end
+
+        expanded_path = File.expand_path(path)
+        return if File.file?(expanded_path) && File.readable?(expanded_path)
+
+        errors.add(attribute, :unreadable_path, value: path)
+      end
+
+      def validate_tls_domain
+        return if tls_domain.nil? || tls_domain.to_s.strip.present?
+
+        errors.add(:tls_domain, :blank)
+      end
+
+      def validate_tls_cert_watch
+        unless [true, false].include?(tls_cert_watch)
+          errors.add(:tls_cert_watch, :not_boolean, value: tls_cert_watch.inspect)
+          return
+        end
+
+        return unless tls_cert_watch && tls_watch_paths.empty?
+
+        errors.add(:tls_cert_watch, :requires_paths)
+      end
+
+      def validate_tls_reload_signal
+        unless tls_reload_signal.is_a?(String) && tls_reload_signal.strip.present?
+          errors.add(:tls_reload_signal, :blank)
+          return
+        end
+
+        normalized_signal = tls_reload_signal.sub(/\ASIG/i, "").upcase
+        return if Signal.list.key?(normalized_signal) && !UNTRAPPABLE_SIGNALS.include?(normalized_signal)
+
+        errors.add(:tls_reload_signal, :invalid, value: tls_reload_signal.inspect)
+      end
+
+      def tls_watch_paths
+        [tls_cert_path, tls_key_path, tls_server_root_ca_cert_path].compact.reject { |path| path.to_s.strip.empty? }
+      end
+
       def callable_accepts_positional_job?(callable)
         arity = callable.respond_to?(:arity) ? callable.arity : callable.method(:call).arity
 
@@ -653,3 +768,4 @@ module ActiveJob
     # rubocop:enable Metrics/ClassLength
   end
 end
+# rubocop:enable Metrics/ModuleLength

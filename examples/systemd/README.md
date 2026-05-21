@@ -37,6 +37,7 @@ Update these values in the service file before enabling it:
 | `User` and `Group` | `deploy` | Must be able to read the app and run Bundler. |
 | `WorkingDirectory` | `/var/www/myapp/current` | Must point at the Rails app root. |
 | `ExecStart` | `/usr/bin/env bundle exec temporal-worker` | Assumes `bundle` resolves to a Ruby 4.0+ environment. |
+| `ExecReload` | `/bin/kill -HUP $MAINPID` | Triggers worker TLS client reload without restarting the process. |
 
 The service files load `temporal-worker.env` before setting task-queue-specific defaults. Keep shared connection settings in the env file, and set `ACTIVEJOB_TEMPORAL_TASK_QUEUE` in the service unit or template instance.
 
@@ -52,6 +53,12 @@ Restart the worker after deploys:
 
 ```bash
 sudo systemctl restart temporal-worker
+```
+
+Reload TLS certificates without restarting the worker:
+
+```bash
+sudo systemctl reload temporal-worker
 ```
 
 View logs:

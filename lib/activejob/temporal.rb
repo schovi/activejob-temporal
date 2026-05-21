@@ -8,6 +8,8 @@ require_relative "temporal/configuration"
 require_relative "temporal/configurable"
 require_relative "temporal/client"
 require_relative "temporal/logger"
+require_relative "temporal/certificate_watcher"
+require_relative "temporal/worker_client_reloader"
 require_relative "temporal/audit_log"
 require_relative "temporal/metrics"
 require_relative "temporal/metrics_server"
@@ -116,7 +118,20 @@ module ActiveJob
       #
       # @see Client.build
       def client
-        @client ||= Client.build(config)
+        client_mutex.synchronize do
+          @client ||= Client.build(config)
+        end
+      end
+
+      def reload_client!
+        fresh_client = Client.build(config)
+        yield fresh_client if block_given?
+
+        client_mutex.synchronize do
+          @client = fresh_client
+        end
+
+        fresh_client
       end
 
       # Cancels a running or scheduled job by job ID.
@@ -180,6 +195,12 @@ module ActiveJob
 
       def failed?(job_class, job_id)
         Inspect.failed?(job_class, job_id)
+      end
+
+      private
+
+      def client_mutex
+        @client_mutex ||= Mutex.new
       end
     end
   end
