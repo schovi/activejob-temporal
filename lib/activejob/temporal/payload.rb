@@ -109,7 +109,7 @@ module ActiveJob
       #   To reduce payload size, prefer passing database IDs instead of full ActiveRecord
       #   objects. For example, pass user.id instead of user. This is especially important
       #   for jobs with large argument lists or complex nested objects.
-      def from_job(job, scheduled_at: nil, enforce_size: true)
+      def from_job(job, scheduled_at: nil, enforce_size: true, config: ActiveJob::Temporal.config)
         payload = {
           job_class: job.class.name,
           job_id: job.job_id,
@@ -120,8 +120,8 @@ module ActiveJob
         }
         payload[:scheduled_at] = iso8601_timestamp(scheduled_at) if scheduled_at
 
-        final_payload = encrypt_payload_if_configured(payload)
-        enforce_size!(final_payload, metrics_payload: payload) if enforce_size
+        final_payload = encrypt_payload_if_configured(payload, config)
+        enforce_size!(final_payload, metrics_payload: payload, config: config) if enforce_size
         final_payload
       end
 
@@ -152,8 +152,8 @@ module ActiveJob
       #     # Record was deleted between enqueue and execution
       #     Rails.logger.warn("Job argument no longer exists: #{e.message}")
       #   end
-      def deserialize_args(payload)
-        deserialized_payload = deserialize_payload(payload)
+      def deserialize_args(payload, config: ActiveJob::Temporal.config)
+        deserialized_payload = deserialize_payload(payload, config: config)
         serialized_args = deserialized_payload[:arguments] || deserialized_payload["arguments"]
         ActiveJob::Arguments.deserialize(serialized_args)
       rescue ActiveJob::SerializationError, ActiveJob::Temporal::ConfigurationError
@@ -162,16 +162,16 @@ module ActiveJob
         raise ActiveJob::SerializationError, e.message
       end
 
-      def deserialize_payload(payload)
+      def deserialize_payload(payload, config: ActiveJob::Temporal.config)
         return payload unless PayloadEncryption.encrypted?(payload)
 
-        decrypted_payload = PayloadEncryption.decrypt(payload, ActiveJob::Temporal.config)
+        decrypted_payload = PayloadEncryption.decrypt(payload, config)
         preserve_workflow_control_fields(payload, decrypted_payload)
       end
 
-      def enforce_size!(payload, metrics_payload: payload)
+      def enforce_size!(payload, metrics_payload: payload, config: ActiveJob::Temporal.config)
         json = JSON.generate(payload)
-        max_size_kb = ActiveJob::Temporal.config.max_payload_size_kb || 250
+        max_size_kb = config.max_payload_size_kb || 250
         size_limit_bytes = max_size_kb * 1024
         actual_size_kb = json.bytesize / 1024.0
         usage_ratio = json.bytesize.to_f / size_limit_bytes
@@ -193,11 +193,11 @@ module ActiveJob
 
       # Only job execution data is encrypted; workflow-control fields stay plaintext
       # so Temporal workflow replay never depends on mutable process configuration.
-      def encrypt_payload_if_configured(payload)
-        return payload unless ActiveJob::Temporal.config.encrypt_payload
+      def encrypt_payload_if_configured(payload, config)
+        return payload unless config.encrypt_payload
 
         execution_payload = payload.except(:scheduled_at)
-        encrypted_payload = PayloadEncryption.encrypt(execution_payload, ActiveJob::Temporal.config)
+        encrypted_payload = PayloadEncryption.encrypt(execution_payload, config)
         encrypted_payload[:scheduled_at] = payload[:scheduled_at] if payload[:scheduled_at]
         encrypted_payload
       end

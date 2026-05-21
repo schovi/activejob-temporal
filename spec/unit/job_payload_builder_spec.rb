@@ -52,11 +52,9 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
   it "keeps workflow-control fields readable when payload encryption is enabled" do
     job = build_job("EncryptedBuilderJob")
 
-    ActiveJob::Temporal.configure do |global_config|
-      global_config.encrypt_payload = true
-      global_config.encryption_key = encryption_key
-      global_config.encryption_old_keys = []
-    end
+    config.encryption_key = encryption_key
+    config.encryption_old_keys = []
+    config.encrypt_payload = true
 
     payload = described_class.new(config).build(job)
 
@@ -68,7 +66,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       retry_policy: a_kind_of(Hash)
     )
     expect(payload).not_to have_key(:job_class)
-    expect(ActiveJob::Temporal::Payload.deserialize_payload(payload)).to include(
+    expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
       job_class: "EncryptedBuilderJob",
       default_activity_options: hash_including(start_to_close_timeout: 900.0),
       retry_policy: a_kind_of(Hash)
@@ -81,9 +79,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       non_retryable_error_types: ["x" * 2048]
     )
 
-    ActiveJob::Temporal.configure do |global_config|
-      global_config.max_payload_size_kb = 1
-    end
+    config.max_payload_size_kb = 1
 
     expect { described_class.new(config).build(job) }
       .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)

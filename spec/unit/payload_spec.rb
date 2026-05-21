@@ -483,6 +483,14 @@ RSpec.describe ActiveJob::Temporal::Payload do
       expect(described_class.deserialize_args(payload)).to eq(job.arguments)
     end
 
+    it "uses the provided config when deserializing encrypted arguments" do
+      job = SimpleJob.new(["string", 123, { foo: "bar" }])
+      config = encrypted_configuration(key: encryption_key_for("local"))
+      payload = described_class.from_job(job, config: config)
+
+      expect(described_class.deserialize_args(payload, config: config)).to eq(job.arguments)
+    end
+
     it "raises when payload is missing arguments" do
       expect { described_class.deserialize_args({}) }
         .to raise_error(ActiveJob::SerializationError)
@@ -537,6 +545,14 @@ RSpec.describe ActiveJob::Temporal::Payload do
       config.encrypt_payload = true
       config.encryption_key = key
       config.encryption_old_keys = old_keys
+    end
+  end
+
+  def encrypted_configuration(key:)
+    ActiveJob::Temporal::Configuration.new.tap do |config|
+      config.encryption_key = key
+      config.encryption_old_keys = []
+      config.encrypt_payload = true
     end
   end
 
