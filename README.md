@@ -1136,7 +1136,7 @@ Please ensure:
 - **Mutation tests pass** (`rvm 4.0.3 do bundle exec rake mutation`) for the scoped Mutant baseline when touching covered code
 - **Documentation is updated** (YARD comments, README, etc.) for new features
 
-The scoped mutation task runs on Ruby 4. Mutant 0.16 may warn that its parser dependency is loading the Ruby 3.3 parser; keep using the Ruby 4 toolchain and treat parser failures on new Ruby syntax as a mutation tooling limitation.
+The scoped mutation task runs on Ruby 4. Mutant 0.16 may warn about an older parser dependency; keep using the Ruby 4 toolchain and treat parser failures on new Ruby syntax as a mutation tooling limitation.
 
 For bug reports and feature requests, please [open an issue](https://github.com/schovi/activejob-temporal/issues).
 

@@ -19,7 +19,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0'
+          ruby-version: '4.0.3'
           bundler-cache: true
 
       - name: Run Rubocop
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0'
+          ruby-version: '4.0.3'
           bundler-cache: true
 
       - name: Install bundle-audit
@@ -60,7 +60,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0'
+          ruby-version: '4.0.3'
           bundler-cache: true
 
       - name: Run mutation tests
@@ -76,7 +76,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ['4.0']
+        ruby: ['4.0.3']
 
     steps:
       - name: Checkout code
@@ -94,7 +94,7 @@ jobs:
           TEST_SUITE: unit
 
       - name: Upload unit coverage to Codecov
-        if: matrix.ruby == '4.0'
+        if: matrix.ruby == '4.0.3'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
@@ -105,7 +105,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload unit test coverage
-        if: matrix.ruby == '4.0'
+        if: matrix.ruby == '4.0.3'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-unit-ruby-${{ matrix.ruby }}
@@ -121,7 +121,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ['4.0']
+        ruby: ['4.0.3']
 
     steps:
       - name: Checkout code
@@ -186,7 +186,7 @@ jobs:
           TEST_SUITE: integration
 
       - name: Upload integration coverage to Codecov
-        if: matrix.ruby == '4.0'
+        if: matrix.ruby == '4.0.3'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
@@ -197,7 +197,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload integration test coverage
-        if: matrix.ruby == '4.0'
+        if: matrix.ruby == '4.0.3'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-integration-ruby-${{ matrix.ruby }}
@@ -216,7 +216,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ['4.0']
+        ruby: ['4.0.3']
 
     steps:
       - name: Checkout code
@@ -281,7 +281,7 @@ jobs:
           TEST_SUITE: chaos
 
       - name: Upload chaos coverage to Codecov
-        if: matrix.ruby == '4.0'
+        if: matrix.ruby == '4.0.3'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
@@ -292,7 +292,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload chaos test coverage
-        if: matrix.ruby == '4.0'
+        if: matrix.ruby == '4.0.3'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-chaos-ruby-${{ matrix.ruby }}
@@ -317,7 +317,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0'
+          ruby-version: '4.0.3'
           bundler-cache: true
           working-directory: examples/basic_rails_app
 
@@ -344,7 +344,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0'
+          ruby-version: '4.0.3'
           bundler-cache: true
 
       - name: Build gem

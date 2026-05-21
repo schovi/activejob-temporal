@@ -4,6 +4,8 @@
 
 Use Ruby 4.0.3 for local development and validation. The repository targets Ruby 4+ and does not require installing Ruby 3.
 
+See [Ruby Baseline](docs/ruby_baseline.md) for the source-of-truth files, CI coverage, and external tooling notes.
+
 Run validation commands through the Ruby 4 toolchain:
 
 ```sh
@@ -23,7 +25,7 @@ rvm 4.0.3 do bundle exec rake mutation
 
 The default subject list is intentionally small so the task stays fast and does not require a local Temporal server. Expand `.mutant.yml` as specs are hardened around additional code paths.
 
-Mutant 0.16 supports Ruby 4, but its parser dependency may warn that it is loading the Ruby 3.3 parser. Treat new Ruby syntax parse failures as a Mutant tooling limitation and keep the repository runtime baseline on Ruby 4.
+Mutant 0.16 supports Ruby 4, but its parser dependency may warn about an older parser version. Treat new Ruby syntax parse failures as a Mutant tooling limitation and keep the repository runtime baseline on Ruby 4.
 
 ## Dependency Updates
 
