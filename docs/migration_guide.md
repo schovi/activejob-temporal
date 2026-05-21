@@ -26,7 +26,7 @@ Practical migration instructions from Sidekiq/Resque/Delayed Job to activejob-te
 
 ### Ruby 4 Upgrade Note
 
-Ruby 4 support requires Temporal Ruby SDK 1.4.1+, which rejects process configuration reads from workflow code. New workflows serialize global activity timeout defaults into the workflow payload at enqueue time. Before upgrading an application with existing Temporal workflow histories, drain or complete workflows that depend on non-default global activity timeout settings, then deploy the Ruby 4 worker.
+Ruby 4 support requires Temporal Ruby SDK 1.4.x. Workflow code must use deterministic payload values instead of reading process configuration directly. New workflows serialize global activity timeout defaults into the workflow payload at enqueue time. Before upgrading an application with existing Temporal workflow histories, drain or complete workflows that depend on non-default global activity timeout settings, then deploy the Ruby 4 worker.
 
 ---
 

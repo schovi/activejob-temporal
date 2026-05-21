@@ -70,7 +70,9 @@ The gem will automatically install dependencies:
 - `concurrent-ruby` (~> 1.1)
 - `globalid` (>= 0.3)
 - `listen` (~> 3.9)
-- `temporalio` (>= 1.4.1) — the Temporal Ruby SDK
+- `temporalio` (>= 1.4.0, < 1.5) — the Temporal Ruby SDK
+
+Ruby 4 compatibility is supported on Temporal Ruby SDK 1.4.x and contract-tested against 1.4.0 and 1.4.1 in CI.
 
 ## Quick Start
 

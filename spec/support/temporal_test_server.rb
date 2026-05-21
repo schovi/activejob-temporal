@@ -9,7 +9,10 @@
 module TemporalTestHelper
   TEST_NAMESPACE = "test"
   DEFAULT_TARGET = "127.0.0.1:7233"
-  INTEGRATION_PATH_SEGMENT = File.join("spec", "integration")
+  TEMPORAL_SPEC_PATH_SEGMENTS = [
+    File.join("spec", "integration"),
+    File.join("spec", "contract")
+  ].freeze
 
   class ServerNotAvailableError < RuntimeError
   end
@@ -49,7 +52,9 @@ module TemporalTestHelper
       files_to_run = RSpec.configuration.files_to_run
       return true if files_to_run.empty?
 
-      files_to_run.any? { |path| path.include?(INTEGRATION_PATH_SEGMENT) }
+      files_to_run.any? do |path|
+        TEMPORAL_SPEC_PATH_SEGMENTS.any? { |segment| path.include?(segment) }
+      end
     end
 
     private
@@ -57,7 +62,7 @@ module TemporalTestHelper
     def ensure_temporal_sdk!
       return if defined?(Temporalio::Client)
 
-      raise "Temporal Ruby SDK (temporalio gem) must be available to run integration specs."
+      raise "Temporal Ruby SDK (temporalio gem) must be available to run Temporal specs."
     end
 
     def store_original_configuration
@@ -102,7 +107,7 @@ module TemporalTestHelper
       target = ENV.fetch("TEMPORAL_TEST_TARGET", DEFAULT_TARGET)
       message = <<~MSG
         Unable to connect to Temporal test server at #{target} (namespace: #{TEST_NAMESPACE}).
-        Start a test server before running integration specs, for example:
+        Start a test server before running Temporal specs, for example:
           temporal server start-dev --namespace #{TEST_NAMESPACE}
         Or with Docker:
           docker run --rm -p 7233:7233 -p 8233:8233 temporalio/auto-setup:latest

@@ -39,7 +39,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "globalid", ">= 0.3"
   spec.add_dependency "listen", "~> 3.9"
   spec.add_dependency "prometheus-client", "~> 4.2"
-  spec.add_dependency "temporalio", ">= 1.4.1"
+  spec.add_dependency "temporalio", ">= 1.4.0", "< 1.5"
 
   spec.add_development_dependency "benchmark-ips", "~> 2.14"
   spec.add_development_dependency "github_changelog_generator", "~> 1.18"

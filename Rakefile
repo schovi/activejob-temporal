@@ -86,7 +86,7 @@ def merged_changelog(generated_changelog, existing_changelog)
 end
 
 desc "Run the spec suite"
-task spec: %i[spec:unit spec:integration]
+task spec: %i[spec:unit spec:integration spec:contract]
 
 namespace :spec do
   desc "Run unit specs"
@@ -99,6 +99,12 @@ namespace :spec do
   RSpec::Core::RakeTask.new(:integration) do |t|
     t.pattern = "spec/integration/**/*_spec.rb"
     ENV["TEST_SUITE"] = "integration"
+  end
+
+  desc "Run Temporal SDK contract specs"
+  RSpec::Core::RakeTask.new(:contract) do |t|
+    t.pattern = "spec/contract/**/*_spec.rb"
+    ENV["TEST_SUITE"] = "contract"
   end
 end
 
