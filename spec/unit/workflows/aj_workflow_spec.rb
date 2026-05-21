@@ -149,6 +149,171 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
       end
     end
 
+    context "when chain metadata is present" do
+      it "executes chained activities sequentially with each previous result as the next raw argument" do
+        payload = base_payload.merge(
+          "chain" => [
+            {
+              "job_class" => "SecondChainJob",
+              "job_id" => "abc-123:chain:1",
+              "queue_name" => "reporting",
+              "arguments" => [],
+              "activity_task_queue" => "reporting",
+              "default_activity_options" => base_payload.fetch("default_activity_options"),
+              "retry_policy" => retry_policy_hash
+            },
+            {
+              "job_class" => "ThirdChainJob",
+              "job_id" => "abc-123:chain:2",
+              "queue_name" => "default",
+              "arguments" => [],
+              "activity_task_queue" => "priority_reports",
+              "default_activity_options" => base_payload.fetch("default_activity_options"),
+              "retry_policy" => retry_policy_hash
+            }
+          ]
+        )
+        calls = []
+        results = %w[first-result second-result third-result]
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **options|
+          calls << [args, options]
+          results.shift
+        end
+
+        expect(workflow.execute(payload)).to eq("third-result")
+
+        expect(calls.map { |args, _options| args.first }).to eq([
+                                                                  ActiveJob::Temporal::Activities::AjRunnerActivity,
+                                                                  ActiveJob::Temporal::Activities::AjRunnerActivity,
+                                                                  ActiveJob::Temporal::Activities::AjRunnerActivity
+                                                                ])
+        expect(calls[0][0]).to eq([
+                                    ActiveJob::Temporal::Activities::AjRunnerActivity,
+                                    payload
+                                  ])
+        expect(calls[1][0][1]).to include(
+          "job_class" => "SecondChainJob",
+          "queue_name" => "reporting",
+          "arguments" => ["first-result"]
+        )
+        expect(calls[1][0][2]).to eq(["first-result"])
+        expect(calls[1][1][:task_queue]).to eq("reporting")
+        expect(calls[2][0][1]).to include(
+          "job_class" => "ThirdChainJob",
+          "activity_task_queue" => "priority_reports",
+          "arguments" => ["second-result"]
+        )
+        expect(calls[2][0][2]).to eq(["second-result"])
+        expect(calls[2][1][:task_queue]).to eq("priority_reports")
+      end
+
+      it "stops before later chain steps when a chained activity fails" do
+        error = Temporalio::Error::ActivityError.new(
+          "activity failed",
+          scheduled_event_id: 1,
+          started_event_id: 2,
+          identity: "worker-1",
+          activity_type: "AjRunnerActivity",
+          activity_id: "activity-1",
+          retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+        )
+        payload = base_payload.merge(
+          "chain" => [
+            { "job_class" => "SecondChainJob", "options" => {} },
+            { "job_class" => "ThirdChainJob", "options" => {} }
+          ]
+        )
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **_options|
+          calls << args
+          raise error if calls.length == 2
+
+          "first-result"
+        end
+
+        expect { workflow.execute(payload) }.to raise_error(error)
+
+        expect(calls.length).to eq(2)
+        expect(calls.dig(1, 1)).to include("job_class" => "SecondChainJob")
+      end
+
+      it "dead-letters a failed chain step with chain step metadata" do
+        error = Temporalio::Error::ActivityError.new(
+          "activity failed",
+          scheduled_event_id: 1,
+          started_event_id: 2,
+          identity: "worker-1",
+          activity_type: "AjRunnerActivity",
+          activity_id: "activity-1",
+          retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+        )
+        application_error = Temporalio::Error::ApplicationError.new(
+          "permanent failure",
+          type: "StandardError"
+        )
+        payload = base_payload.merge(
+          "dead_letter" => {
+            "queue" => "failed_jobs",
+            "after_attempts" => 3,
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "queue_name" => "default"
+          },
+          "chain" => [
+            {
+              "job_class" => "SecondChainJob",
+              "job_id" => "abc-123:chain:1",
+              "queue_name" => "reporting",
+              "arguments" => [],
+              "activity_task_queue" => "priority_reports",
+              "default_activity_options" => base_payload.fetch("default_activity_options"),
+              "retry_policy" => retry_policy_hash,
+              "dead_letter" => {
+                "queue" => "failed_jobs",
+                "after_attempts" => 3,
+                "job_class" => "SecondChainJob",
+                "job_id" => "abc-123:chain:1",
+                "queue_name" => "reporting",
+                "task_queue" => "priority_reports"
+              }
+            }
+          ]
+        )
+        calls = []
+        allow(error).to receive(:cause).and_return(application_error)
+        allow(Temporalio::Workflow).to receive(:now).and_return(Time.utc(2026, 5, 21, 10, 0, 0))
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **_options|
+          calls << args
+          raise error if calls.length == 2
+
+          "first-result"
+        end
+
+        expect { workflow.execute(payload) }.to raise_error(error)
+
+        expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
+          ActiveJob::Temporal::Workflows::DeadLetterWorkflow,
+          hash_including(
+            "id" => "ajdlq:SecondChainJob:abc-123:chain:1",
+            "payload" => hash_including(
+              "job_class" => "SecondChainJob",
+              "job_id" => "abc-123:chain:1",
+              "queue_name" => "reporting"
+            ),
+            "metadata" => hash_including(
+              "job_class" => "SecondChainJob",
+              "job_id" => "abc-123:chain:1",
+              "original_queue_name" => "reporting",
+              "original_task_queue" => "priority_reports"
+            )
+          ),
+          id: "ajdlq:SecondChainJob:abc-123:chain:1",
+          task_queue: "failed_jobs",
+          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+        )
+      end
+    end
+
     it "does not read process configuration during workflow execution" do
       allow(ActiveJob::Temporal).to receive(:config).and_raise("workflow must use payload data")
 

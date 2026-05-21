@@ -17,7 +17,9 @@ RSpec.describe "job payload schema" do
           "temporal_options" => { "type" => "object" },
           "dead_letter" => { "type" => "object" },
           "workflow_interactions" => { "$ref" => "#/definitions/workflow_interactions" },
-          "rate_limits" => { "$ref" => "#/definitions/rate_limits" }
+          "rate_limits" => { "$ref" => "#/definitions/rate_limits" },
+          "chain" => { "$ref" => "#/definitions/chain" },
+          "activity_task_queue" => { "type" => "string", "minLength" => 1 }
         )
       )
     )

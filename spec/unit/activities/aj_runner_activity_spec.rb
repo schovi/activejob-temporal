@@ -46,6 +46,20 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(Thread.current[idempotency_key]).to be_nil
     end
 
+    it "uses optional raw arguments instead of deserializing payload arguments" do
+      raw_arguments = ["previous-result"]
+      job_instance = instance_double("RawOverrideRunnerJob")
+      job_class = class_double("RawOverrideRunnerJob", new: job_instance).as_stubbed_const
+      payload = { "job_class" => "RawOverrideRunnerJob", "arguments" => ["serialized"] }
+      allow(job_instance).to receive(:perform).and_return("performed")
+
+      expect(ActiveJob::Temporal::Payload).not_to receive(:deserialize_args)
+
+      expect(activity.execute(payload, raw_arguments)).to eq("performed")
+      expect(job_class).to have_received(:new)
+      expect(job_instance).to have_received(:perform).with(*raw_arguments)
+    end
+
     it "re-raises retryable exceptions so Temporal can retry" do
       payload = { "job_class" => "RetryableJob" }
       job_instance = instance_double(RetryableJob.name)

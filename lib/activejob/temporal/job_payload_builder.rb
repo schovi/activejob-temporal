@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "payload"
+require_relative "job_payload_chain_builder"
 require_relative "job_payload_workflow_interactions"
 require_relative "rate_limit_options"
 require_relative "retry_mapper"
@@ -8,6 +9,7 @@ require_relative "retry_mapper"
 module ActiveJob
   module Temporal
     class JobPayloadBuilder
+      include JobPayloadChainBuilder
       include JobPayloadWorkflowInteractions
 
       TIMEOUT_CONFIG_ATTRIBUTES = {
@@ -29,6 +31,7 @@ module ActiveJob
         apply_temporal_options(payload, job.class)
         apply_rate_limits(payload, job)
         apply_workflow_interactions(payload, job.class)
+        apply_chain(payload, job)
 
         Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job), config: @config)
         payload
@@ -37,10 +40,11 @@ module ActiveJob
       private
 
       def apply_retry_policy(payload, job)
-        retry_policy = RetryMapper.for(job.class)
-        apply_dead_letter_attempt_limit(retry_policy)
+        retry_policy = retry_policy_for(job.class)
         payload[:retry_policy] = retry_policy
-        payload[:dead_letter] = dead_letter_metadata(job, retry_policy) if dead_letter_enabled?
+        return unless dead_letter_enabled?
+
+        payload[:dead_letter] = dead_letter_metadata(job.class.name, job.job_id, job.queue_name, retry_policy)
       end
 
       def apply_temporal_options(payload, job_class)
@@ -49,7 +53,7 @@ module ActiveJob
       end
 
       def apply_rate_limits(payload, job)
-        rate_limits = rate_limits_for(job)
+        rate_limits = rate_limits_for(job.class)
         payload[:rate_limits] = rate_limits if rate_limits.any?
       end
 
@@ -67,10 +71,10 @@ module ActiveJob
         job_class.temporal_options
       end
 
-      def rate_limits_for(job)
+      def rate_limits_for(job_class)
         rate_limits = [
           configured_global_rate_limit,
-          configured_job_rate_limit(job.class)
+          configured_job_rate_limit(job_class)
         ].compact
         validate_rate_limiter!(rate_limits)
         rate_limits
@@ -115,13 +119,14 @@ module ActiveJob
         retry_policy[:maximum_attempts] = @config.dead_letter_after_attempts
       end
 
-      def dead_letter_metadata(job, retry_policy)
+      def dead_letter_metadata(job_class_name, job_id, queue_name, retry_policy, task_queue: nil)
         metadata = {
           queue: @config.dead_letter_queue,
-          job_class: job.class.name,
-          job_id: job.job_id,
-          queue_name: job.queue_name
+          job_class: job_class_name,
+          job_id: job_id,
+          queue_name: queue_name
         }
+        metadata[:task_queue] = task_queue if task_queue
         after_attempts = dead_letter_attempt_limit(retry_policy)
         metadata[:after_attempts] = after_attempts if after_attempts
         metadata
@@ -133,6 +138,12 @@ module ActiveJob
 
         attempts = retry_policy[:maximum_attempts] || retry_policy["maximum_attempts"]
         attempts if attempts.respond_to?(:positive?) && attempts.positive?
+      end
+
+      def retry_policy_for(job_class)
+        retry_policy = RetryMapper.for(job_class)
+        apply_dead_letter_attempt_limit(retry_policy)
+        retry_policy
       end
 
       def default_activity_options

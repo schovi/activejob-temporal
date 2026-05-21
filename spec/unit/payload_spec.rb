@@ -200,6 +200,31 @@ RSpec.describe ActiveJob::Temporal::Payload do
         expect(payload).not_to have_key(:arguments)
         expect(described_class.deserialize_args(payload)).to eq(job.arguments)
       end
+
+      it "preserves chain metadata outside serialized execution data" do
+        ActiveJob::Temporal.config.payload_serializer = :message_pack
+        chain = [
+          {
+            job_class: "SerializedChainNextJob",
+            options: {
+              queue: "reporting",
+              priority: 7
+            }
+          }
+        ]
+
+        payload = described_class.from_job(job).merge(chain: chain)
+        ActiveJob::Temporal.config.payload_serializer = :json
+
+        expect(payload).to include(
+          serialized_payload: true,
+          payload_serializer: "message_pack",
+          payload_serializer_version: 1,
+          serialized_data: a_kind_of(String),
+          chain: chain
+        )
+        expect(described_class.deserialize_payload(payload)).to include(chain: chain)
+      end
     end
 
     context "boundary conditions for payload size" do
@@ -504,6 +529,23 @@ RSpec.describe ActiveJob::Temporal::Payload do
                                                       ])
       end
 
+      it "preserves chain metadata outside encrypted job execution fields" do
+        chain = [
+          {
+            job_class: "EncryptedChainNextJob",
+            options: {
+              queue: "reporting",
+              priority: 7
+            }
+          }
+        ]
+        payload = described_class.from_job(job).merge(chain: chain)
+
+        decrypted_payload = described_class.deserialize_payload(payload)
+
+        expect(decrypted_payload[:chain]).to eq(chain)
+      end
+
       it "records encrypted payload size with plaintext metric labels" do
         payload = described_class.from_job(job)
 
@@ -542,7 +584,15 @@ RSpec.describe ActiveJob::Temporal::Payload do
         scheduled_time = Time.utc(2024, 10, 20, 12, 0, 0)
 
         payload = described_class.from_job(job, scheduled_at: scheduled_time).merge(
-          rate_limits: [{ limit: 100, interval: 1.0, key: "global" }]
+          rate_limits: [{ limit: 100, interval: 1.0, key: "global" }],
+          chain: [
+            {
+              job_class: "EncryptedSerializedChainNextJob",
+              options: {
+                queue: "reporting"
+              }
+            }
+          ]
         )
 
         expect(payload).to include(
@@ -560,7 +610,15 @@ RSpec.describe ActiveJob::Temporal::Payload do
           job_id: job.job_id,
           queue_name: job.queue_name,
           scheduled_at: scheduled_time.iso8601,
-          rate_limits: [{ limit: 100, interval: 1.0, key: "global" }]
+          rate_limits: [{ limit: 100, interval: 1.0, key: "global" }],
+          chain: [
+            {
+              job_class: "EncryptedSerializedChainNextJob",
+              options: {
+                queue: "reporting"
+              }
+            }
+          ]
         )
         expect(described_class.deserialize_args(payload)).to eq(job.arguments)
       end

@@ -72,6 +72,70 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     )
   end
 
+  it "includes chain activity payloads with each step's own execution metadata" do
+    config.rate_limiter = ->(_rate_limits) { 0 }
+    config.priority_task_queues = { 7 => "priority_reports" }
+    config.task_queue_prefix = "prod-"
+    next_job_class = Class.new(ActiveJob::Base) do
+      def self.name = "PayloadBuilderNextJob"
+
+      queue_as :mailers
+      retry_on StandardError, wait: 10.seconds, attempts: 4
+      temporal_options start_to_close_timeout: 2.hours
+      rate_limit 5, per: :minute
+    end
+    stub_const("PayloadBuilderNextJob", next_job_class)
+    final_job_class = Class.new(ActiveJob::Base) do
+      def self.name = "PayloadBuilderFinalJob"
+    end
+    stub_const("PayloadBuilderFinalJob", final_job_class)
+    job = build_job("PayloadBuilderChainRootJob")
+    job.define_singleton_method(:temporal_chain) do
+      [
+        {
+          job_class: next_job_class.name,
+          options: {}
+        },
+        {
+          job_class: final_job_class.name,
+          options: {
+            queue: "reporting",
+            priority: 7
+          }
+        }
+      ]
+    end
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:chain]).to contain_exactly(
+      hash_including(
+        job_class: "PayloadBuilderNextJob",
+        job_id: "#{job.job_id}:chain:1",
+        queue_name: "mailers",
+        arguments: [],
+        activity_task_queue: "prod-mailers",
+        temporal_options: { start_to_close_timeout: 7200.0 },
+        retry_policy: hash_including(initial_interval: 10.0, maximum_attempts: 4),
+        rate_limits: [
+          {
+            limit: 5,
+            interval: 60.0,
+            key: "activejob-temporal:job:PayloadBuilderNextJob"
+          }
+        ]
+      ),
+      hash_including(
+        job_class: "PayloadBuilderFinalJob",
+        job_id: "#{job.job_id}:chain:2",
+        queue_name: "reporting",
+        arguments: [],
+        activity_task_queue: "prod-priority_reports",
+        retry_policy: hash_including(maximum_attempts: 1)
+      )
+    )
+  end
+
   it "includes per-job rate limits with a job-specific key" do
     config.rate_limiter = ->(_rate_limits) { 0 }
     job_class = Class.new(ActiveJob::Base) do
@@ -183,6 +247,19 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
 
   it "keeps workflow-control fields readable when payload encryption is enabled" do
     job = build_job("EncryptedBuilderJob", workflow_interactions: true)
+    stub_const("EncryptedBuilderNextJob", Class.new(ActiveJob::Base) do
+      def self.name = "EncryptedBuilderNextJob"
+    end)
+    job.define_singleton_method(:temporal_chain) do
+      [
+        {
+          job_class: "EncryptedBuilderNextJob",
+          options: {
+            queue: "reporting"
+          }
+        }
+      ]
+    end
 
     config.encryption_key = encryption_key
     config.encryption_old_keys = []
@@ -211,7 +288,15 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         job_class: "EncryptedBuilderJob",
         signals: ["pause"],
         queries: ["paused"]
-      )
+      ),
+      chain: [
+        hash_including(
+          job_class: "EncryptedBuilderNextJob",
+          queue_name: "reporting",
+          activity_task_queue: "reporting",
+          dead_letter: hash_including(job_class: "EncryptedBuilderNextJob")
+        )
+      ]
     )
     expect(payload).not_to have_key(:job_class)
     expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
@@ -219,7 +304,14 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       default_activity_options: hash_including(start_to_close_timeout: 900.0),
       retry_policy: hash_including(maximum_attempts: 3),
       rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
-      dead_letter: hash_including(queue: "failed_jobs")
+      dead_letter: hash_including(queue: "failed_jobs"),
+      chain: [
+        hash_including(
+          job_class: "EncryptedBuilderNextJob",
+          queue_name: "reporting",
+          activity_task_queue: "reporting"
+        )
+      ]
     )
   end
 
@@ -230,6 +322,19 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     config.rate_limiter = ->(_rate_limits) { 0 }
     config.global_rate_limit = { limit: 1000, per: :minute }
     job = build_job("SerializedBuilderJob", workflow_interactions: true)
+    stub_const("SerializedBuilderNextJob", Class.new(ActiveJob::Base) do
+      def self.name = "SerializedBuilderNextJob"
+    end)
+    job.define_singleton_method(:temporal_chain) do
+      [
+        {
+          job_class: "SerializedBuilderNextJob",
+          options: {
+            queue: "reporting"
+          }
+        }
+      ]
+    end
 
     payload = described_class.new(config).build(job)
 
@@ -251,7 +356,15 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         job_class: "SerializedBuilderJob",
         signals: ["pause"],
         queries: ["paused"]
-      )
+      ),
+      chain: [
+        hash_including(
+          job_class: "SerializedBuilderNextJob",
+          queue_name: "reporting",
+          activity_task_queue: "reporting",
+          dead_letter: hash_including(job_class: "SerializedBuilderNextJob")
+        )
+      ]
     )
     expect(payload).not_to have_key(:job_class)
     expect(payload).not_to have_key(:arguments)
@@ -262,7 +375,14 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       default_activity_options: hash_including(start_to_close_timeout: 900.0),
       retry_policy: hash_including(maximum_attempts: 3),
       rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
-      dead_letter: hash_including(queue: "failed_jobs")
+      dead_letter: hash_including(queue: "failed_jobs"),
+      chain: [
+        hash_including(
+          job_class: "SerializedBuilderNextJob",
+          queue_name: "reporting",
+          activity_task_queue: "reporting"
+        )
+      ]
     )
   end
 

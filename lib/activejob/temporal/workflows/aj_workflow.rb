@@ -8,6 +8,7 @@ require "temporalio/workflow"
 
 require_relative "../activities/rate_limit_activity"
 require_relative "dead_letter_support"
+require_relative "workflow_chaining"
 require_relative "workflow_interactions"
 
 module ActiveJob
@@ -47,6 +48,7 @@ module ActiveJob
       # @see https://docs.temporal.io/workflows#timers Temporal Durable Timers
       class AjWorkflow < Temporalio::Workflow::Definition
         include DeadLetterSupport
+        include WorkflowChaining
         include WorkflowInteractions
 
         DEFAULT_START_TO_CLOSE_TIMEOUT = 900.0
@@ -126,28 +128,22 @@ module ActiveJob
         #
         # @see Activities::AjRunnerActivity#execute
         def execute(payload)
+          current_activity_payload = payload
           configure_workflow_state(payload)
           configure_workflow_interactions(payload)
 
-          scheduled_time = extract_scheduled_time(payload)
-          workflow_state["phase"] = "scheduled" if scheduled_time
-          sleep_until(scheduled_time) if scheduled_time
-          wait_while_paused
+          wait_until_scheduled(payload)
+          result = execute_activity_sequence(payload) do |chain_payload|
+            current_activity_payload = chain_payload
+          end
 
-          wait_for_rate_limit(payload)
-          wait_while_paused
-
-          workflow_state["phase"] = "running_activity"
-          result = Temporalio::Workflow.execute_activity(
-            ActiveJob::Temporal::Activities::AjRunnerActivity,
-            payload,
-            **activity_options(payload)
-          )
           workflow_state["phase"] = "completed"
           result
         rescue Temporalio::Error::ActivityError => e
           workflow_state["phase"] = "failed"
-          start_dead_letter_workflow(payload, e) if dead_letterable_failure?(payload, e)
+          if dead_letterable_failure?(current_activity_payload, e)
+            start_dead_letter_workflow(current_activity_payload, e)
+          end
           raise
         end
 
@@ -160,6 +156,13 @@ module ActiveJob
           return unless timestamp
 
           Time.iso8601(timestamp)
+        end
+
+        def wait_until_scheduled(payload)
+          scheduled_time = extract_scheduled_time(payload)
+          workflow_state["phase"] = "scheduled" if scheduled_time
+          sleep_until(scheduled_time) if scheduled_time
+          wait_while_paused
         end
 
         # Sleeps until target time using Temporal's durable timer.
@@ -208,6 +211,8 @@ module ActiveJob
 
           retry_policy_hash = payload[:retry_policy] || payload["retry_policy"]
           options[:retry_policy] = build_retry_policy(retry_policy_hash) if retry_policy_hash
+          task_queue = payload[:activity_task_queue] || payload["activity_task_queue"]
+          options[:task_queue] = task_queue if task_queue
 
           options
         end

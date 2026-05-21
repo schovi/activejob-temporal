@@ -34,6 +34,34 @@
           "uniqueItems": true
         }
       }
+    },
+    "chain_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job_class", "job_id", "queue_name", "arguments"],
+      "properties": {
+        "job_class": { "type": "string", "minLength": 1 },
+        "job_id": { "type": "string", "minLength": 1 },
+        "queue_name": { "type": "string", "minLength": 1 },
+        "arguments": { "type": "array" },
+        "executions": { "type": "integer", "minimum": 0 },
+        "exception_executions": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "default_activity_options": { "type": "object" },
+        "retry_policy": { "type": "object" },
+        "temporal_options": { "type": "object" },
+        "dead_letter": { "type": "object" },
+        "rate_limits": { "$ref": "#/definitions/rate_limits" },
+        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
+        "activity_task_queue": { "type": "string", "minLength": 1 }
+      }
+    },
+    "chain": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/chain_step" }
     }
   },
   "oneOf": [
@@ -56,7 +84,9 @@
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" },
-        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" }
+        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
+        "chain": { "$ref": "#/definitions/chain" },
+        "activity_task_queue": { "type": "string", "minLength": 1 }
       }
     },
     {
@@ -73,7 +103,9 @@
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" },
-        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" }
+        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
+        "chain": { "$ref": "#/definitions/chain" },
+        "activity_task_queue": { "type": "string", "minLength": 1 }
       }
     },
     {
@@ -91,7 +123,9 @@
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" },
-        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" }
+        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
+        "chain": { "$ref": "#/definitions/chain" },
+        "activity_task_queue": { "type": "string", "minLength": 1 }
       },
       "dependencies": {
         "payload_serializer": ["payload_serializer_version"],

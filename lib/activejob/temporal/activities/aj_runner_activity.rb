@@ -98,14 +98,14 @@ module ActiveJob
         #     end
         #   end
         #   # If RecordNotFound is raised, activity raises non-retryable ApplicationError
-        def execute(payload)
+        def execute(payload, raw_arguments = nil)
           job_class = nil
           audit_context = nil
           deserialized_payload = Payload.deserialize_payload(payload)
           audit_context = audit_started(deserialized_payload)
 
           result = Metrics.instrument_perform(deserialized_payload) do
-            args = Payload.deserialize_args(deserialized_payload)
+            args = raw_arguments.nil? ? Payload.deserialize_args(deserialized_payload) : Array(raw_arguments)
             job_class = constantize_job_class(deserialized_payload)
             job = job_class.new
 

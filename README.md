@@ -29,6 +29,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Scheduled execution:** Use `MyJob.set(wait: 5.minutes).perform_later(args)` or `MyJob.set(wait_until: Time.zone.now + 1.hour).perform_later(args)` for delayed jobs
 - ✅ **Recurring jobs:** Declare cron schedules on job classes and register them through Temporal Schedules
 - ✅ **Conditional enqueueing:** Use `MyJob.perform_later_if(condition, args)` to skip jobs when no work is needed
+- ✅ **Job chaining:** Use `MyJob.set(chain: [NextJob]).perform_later(args)` to run sequential activities in one workflow
 - ✅ **Retry mapping:** ActiveJob `retry_on` declarations automatically map to Temporal retry policies with exponential backoff
 - ✅ **Discard mapping:** `discard_on` maps to non-retryable errors, preventing wasted retry attempts
 - ✅ **Per-job timeout configuration:** Configure activity timeouts per job using `temporal_options` class method
@@ -435,6 +436,50 @@ SendInvoiceJob.set(wait_until: Time.zone.now + 1.hour).perform_later(invoice.id)
 ```
 
 Under the hood, the adapter starts a Temporal workflow that sleeps until the scheduled time before executing the activity.
+
+## Job Chaining
+
+Use `set(chain:)` when one job should run after another in the same Temporal workflow. Each chain step runs as a separate `AjRunnerActivity`, and each step receives the previous job's return value as its single argument:
+
+```ruby
+class BuildInvoicePayloadJob < ApplicationJob
+  def perform(invoice_id)
+    invoice = Invoice.find(invoice_id)
+    { id: invoice.id, total_cents: invoice.total_cents }
+  end
+end
+
+class SendInvoicePayloadJob < ApplicationJob
+  def perform(invoice_payload)
+    InvoiceMailer.invoice_ready(invoice_payload).deliver_now
+    invoice_payload.fetch(:id)
+  end
+end
+
+class MarkInvoiceSentJob < ApplicationJob
+  def perform(invoice_id)
+    Invoice.find(invoice_id).update!(sent_at: Time.current)
+  end
+end
+
+BuildInvoicePayloadJob
+  .set(chain: [SendInvoicePayloadJob, MarkInvoiceSentJob])
+  .perform_later(invoice.id)
+```
+
+Failures stop the chain. If `BuildInvoicePayloadJob` or `SendInvoicePayloadJob` raises after retries are exhausted, later jobs are not executed.
+
+Chain return values are stored in Temporal history as activity results before being passed to the next step. Prefer small primitives, IDs, and compact hashes over large records or binary payloads.
+
+Chain steps run with the chained job class's own retry, timeout, and rate-limit metadata. They also use that job's queue for the activity task queue. Use ActiveJob's configured-job form when a specific step should run on a different queue or priority-mapped task queue:
+
+```ruby
+BuildInvoicePayloadJob
+  .set(chain: [SendInvoicePayloadJob.set(queue: :mailers, priority: 10)])
+  .perform_later(invoice.id)
+```
+
+Run workers for every task queue used by the root job and its chained steps.
 
 ## Recurring Jobs
 
@@ -988,7 +1033,6 @@ Additional guides:
 
 The following features are **not yet implemented** in v0.1 but are planned for future releases:
 
-- **Multi-activity workflows** (job chains/pipelines) → Planned for v0.3
 - **Updates** → Planned for v0.3
 - **Child workflows** → Planned for v0.3
 - **Rails generators** (for scaffolding jobs, initializers, etc.) → Planned for v1.0
@@ -996,7 +1040,7 @@ The following features are **not yet implemented** in v0.1 but are planned for f
 
 **Other constraints:**
 - **250KB payload size limit** (configurable via `max_payload_size_kb`). Jobs with larger plaintext or encrypted payloads will raise `ActiveJob::SerializationError`. Store large data externally (e.g., S3, database) and pass references instead.
-- **Single workflow + activity pattern:** Each job is executed as one workflow containing one activity. More complex orchestration patterns are not yet supported.
+- **Linear chains only:** `set(chain:)` supports sequential activities inside one workflow. DAG dependencies, child workflows, and independently enqueued job dependencies are not yet supported.
 
 ## Migration from Sidekiq/Resque
 
