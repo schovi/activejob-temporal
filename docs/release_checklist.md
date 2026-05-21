@@ -147,6 +147,15 @@ The gem is technically ready for publication, but publication has been deferred 
 - ✅ Gemspec homepage points to the canonical repository (github.com/schovi/activejob-temporal)
 - ❌ No RubyGems.org account/credentials detected
 
+### Release Automation Status
+- [x] Release automation policy documented in `docs/publishing.md`
+- [ ] RubyGems publishing owner confirmed
+- [ ] Credential strategy configured: trusted publishing or `GEM_HOST_API_KEY`
+- [ ] Protected release environment or manual approval gate configured
+- [ ] First public RubyGems publish completed deliberately
+
+Do not enable automatic publishing for issue #47 until these items are complete.
+
 ### Why This Matters
 Publishing to RubyGems.org is a one-way operation. Source code links and credentials must be verified before making the gem public.
 

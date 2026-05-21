@@ -40,6 +40,27 @@ Publishing to RubyGems.org is a **one-way operation**. Once published:
 
 ---
 
+## Release Automation Policy
+
+Release automation is intentionally not enabled yet.
+
+The first public release must stay deliberate and manual until RubyGems ownership and publishing authentication are configured. Do not enable a workflow that publishes automatically on every push to `main`.
+
+Future release automation should follow this policy:
+
+1. Use a manual `workflow_dispatch` release workflow, or a protected `release` environment with required approval.
+2. Prefer RubyGems trusted publishing over a long-lived `GEM_HOST_API_KEY`.
+3. If `GEM_HOST_API_KEY` is used, store it only as a GitHub Actions environment secret scoped to the protected release environment.
+4. Run the Ruby 4.0.3 validation gates before publishing: lint, tests, gem build, and package metadata checks.
+5. Generate or verify the changelog and version bump before the irreversible publish step.
+6. Create the GitHub release only after the RubyGems push succeeds.
+
+This policy removes push-to-main publishing from scope. The remaining automation blocker is RubyGems publishing setup: either trusted publishing for this repository and workflow, or a protected release environment with `GEM_HOST_API_KEY`.
+
+A safe interim workflow may validate release readiness without publishing. It may build the gem, inspect metadata, generate a changelog preview, and report the version that would be released. It must not push tags, publish to RubyGems, update `CHANGELOG.md`, update `lib/activejob/temporal/version.rb`, or create a GitHub release.
+
+---
+
 ## Technical Readiness ✅
 
 The gem itself is ready for publication:

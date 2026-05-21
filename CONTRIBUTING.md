@@ -52,3 +52,18 @@ CHANGELOG_GITHUB_TOKEN=... rvm 4.0.3 do bundle exec rake changelog:generate
 The task also accepts `GITHUB_TOKEN` when `CHANGELOG_GITHUB_TOKEN` is not set. Review the generated `CHANGELOG.md` before committing release notes.
 
 Generated unreleased sections are rebuilt from GitHub issues and pull requests. Existing released sections stay in place so curated release notes are not lost.
+
+## Release Commits
+
+Release automation is not enabled yet.
+
+Use conventional commit prefixes where they describe the change:
+
+- `feat:` for user-visible features
+- `fix:` for bug fixes
+- `docs:` for documentation-only changes
+- `test:` for test-only changes
+- `ci:` for GitHub Actions or CI changes
+- `chore:` for maintenance that does not affect runtime behavior
+
+Do not rely on commit messages to publish a release until [Publishing](docs/publishing.md) says release automation is enabled.
