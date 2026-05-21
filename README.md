@@ -1006,9 +1006,11 @@ For VM or bare-metal deployments, see the [systemd worker examples](examples/sys
 See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete working Rails application demonstrating:
 
 - Job enqueuing and execution (simple, scheduled, retryable, cancellable jobs)
+- GlobalID serialization with seeded ActiveRecord subscriber records
+- Per-job timeout configuration on long-running heartbeat jobs
 - Full ActiveJob Temporal configuration
 - Docker Compose setup for Rails, Temporal, Temporal UI, search attributes, and the worker
-- Worker setup and testing
+- Worker setup, seed data, and example app tests
 - How the auto-detection feature works
 
 ### Environment Variables

@@ -1,6 +1,6 @@
 # ActiveJob Temporal - Basic Rails Example
 
-This is a minimal Rails 8 application that demonstrates the core features of the `activejob-temporal` gem. It includes sample jobs showing immediate execution, scheduled jobs, retry behavior, and graceful cancellation.
+This is a Rails 8 application that demonstrates the core features of the `activejob-temporal` gem. It includes sample jobs showing immediate execution, scheduled jobs, retry behavior, GlobalID serialization, per-job timeouts, and graceful cancellation.
 
 ## Features Demonstrated
 
@@ -8,7 +8,8 @@ This is a minimal Rails 8 application that demonstrates the core features of the
 - **ScheduledJob**: Delayed execution using `set(wait:)`
 - **RecurringReportJob**: Cron-style schedule declaration using Temporal Schedules
 - **RetryableJob**: Automatic retry with exponential backoff using `retry_on`
-- **CancellableJob**: Long-running job with heartbeating for graceful cancellation
+- **CancellableJob**: Long-running job with per-job timeouts and heartbeating for graceful cancellation
+- **SendCampaignEmailJob**: ActiveRecord/GlobalID job arguments using seeded email subscribers
 
 ## Prerequisites
 
@@ -43,6 +44,12 @@ Once running, you'll see output from both the Rails server and worker. The servi
 - Temporal UI: http://localhost:8080
 
 That's it! You can now [jump to usage examples](#usage-examples) below.
+
+The Docker Compose startup prepares the database automatically. To refresh the sample subscribers manually:
+
+```bash
+docker-compose exec rails-app bin/rails db:seed
+```
 
 To stop all services:
 ```bash
@@ -152,6 +159,15 @@ rails server -p 3000
 
 The API will be available at http://localhost:3000
 
+#### 6. Seed Example Data
+
+Seed the sample email subscribers used by the GlobalID example:
+
+```bash
+bin/rails db:prepare
+bin/rails db:seed
+```
+
 ## Usage Examples
 
 ### Enqueue a Simple Job
@@ -220,6 +236,35 @@ Response includes the `job_id` you'll need for cancellation:
   "iterations": 20,
   "estimated_duration": "40 seconds",
   "message": "Long-running job enqueued. Use DELETE /jobs/cancel with job_id to cancel it."
+}
+```
+
+### Enqueue a Campaign Email Job with GlobalID
+
+Seeded subscribers are ActiveRecord models. Passing one to `SendCampaignEmailJob` demonstrates ActiveJob GlobalID serialization:
+
+```bash
+curl -X POST "http://localhost:3000/jobs/campaign_email?campaign_name=Spring%20Launch"
+```
+
+Use a specific subscriber from the seed data:
+
+```bash
+curl -X POST "http://localhost:3000/jobs/campaign_email?subscriber_id=1&campaign_name=Spring%20Launch"
+```
+
+Response:
+
+```json
+{
+  "status": "enqueued",
+  "job_type": "SendCampaignEmailJob",
+  "job_id": "unique-job-id",
+  "queue": "default",
+  "subscriber_id": 1,
+  "subscriber_gid": "gid://.../EmailSubscriber/1",
+  "campaign_name": "Spring Launch",
+  "message": "Campaign email job enqueued with a GlobalID subscriber argument"
 }
 ```
 
@@ -360,6 +405,8 @@ end
 class CancellableJob < ApplicationJob
   queue_as :default
 
+  temporal_options start_to_close_timeout: 2.minutes, heartbeat_timeout: 10.seconds
+
   def perform(iterations = 10)
     iterations.times do |i|
       Temporalio::Activity::Context.current.heartbeat # Required for cancellation
@@ -371,6 +418,36 @@ end
 ```
 
 **Key Point**: The `heartbeat` call is essential for graceful cancellation. Without it, the job will only be cancelled after it completes.
+
+### SendCampaignEmailJob
+
+```ruby
+class SendCampaignEmailJob < ApplicationJob
+  queue_as :default
+
+  discard_on ActiveJob::DeserializationError
+
+  def perform(email_subscriber, campaign_name:)
+    return unless email_subscriber.subscribed?
+
+    email_subscriber.update!(
+      last_campaign_name: campaign_name,
+      last_campaign_sent_at: Time.current
+    )
+  end
+end
+```
+
+`email_subscriber` is an ActiveRecord model. ActiveJob serializes it as a GlobalID before the job is sent to Temporal and deserializes it before `perform` runs.
+
+## Running Tests
+
+The example app includes Minitest coverage for the model, GlobalID job serialization, per-job timeout declarations, and controller enqueue endpoints:
+
+```bash
+bin/rails db:prepare
+bin/rails test
+```
 
 ## Testing the Complete Workflow
 
@@ -396,6 +473,9 @@ curl -X DELETE "http://localhost:3000/jobs/cancel?job_class=CancellableJob&job_i
 curl -X POST "http://localhost:3000/jobs/retryable?should_fail=true"
 
 # 7. Check Temporal UI - you should see multiple activity attempts
+
+# 8. Test GlobalID serialization with a seeded subscriber
+curl -X POST "http://localhost:3000/jobs/campaign_email?subscriber_id=1&campaign_name=Spring%20Launch"
 ```
 
 ## Troubleshooting
@@ -480,12 +560,11 @@ The worker will automatically detect your Rails app and load it!
 
 - Read the [main README](../../README.md) for complete API documentation
 - Check [configuration reference](../../docs/configuration_reference.md) for all options
-- Review [API documentation](../../docs/api_documentation.md) for advanced features
 - See [migration guide](../../docs/migration_guide.md) to integrate into existing Rails apps
 - Check [Worker Setup Guide](../../docs/worker_setup.md) for additional worker configuration
 
 ## Support
 
 For issues and questions:
-- GitHub: https://github.com/yourusername/activejob-temporal
+- GitHub: https://github.com/schovi/activejob-temporal
 - Documentation: See `docs/` directory in the gem root

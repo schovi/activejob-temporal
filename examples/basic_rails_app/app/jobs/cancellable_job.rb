@@ -5,6 +5,8 @@
 class CancellableJob < ApplicationJob
   queue_as :default
 
+  temporal_options start_to_close_timeout: 2.minutes, heartbeat_timeout: 10.seconds
+
   def perform(iterations = 10)
     Rails.logger.info "CancellableJob started with #{iterations} iterations"
 

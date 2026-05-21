@@ -98,9 +98,11 @@ services:
       - ../../:/workspace
       # Preserve bundle cache across runs
       - bundle_cache:/usr/local/bundle
+      # Share the Rails database with the web container for GlobalID deserialization
+      - rails_storage:/workspace/examples/basic_rails_app/storage
       # Preserve database
       - rails_storage:/workspace/examples/basic_rails_app/storage
-    command: bundle exec rails server -b 0.0.0.0
+    command: bash -lc "bin/rails db:prepare db:seed && bundle exec rails server -b 0.0.0.0"
     networks:
       - temporal-network
     healthcheck:
@@ -116,7 +118,7 @@ services:
       dockerfile: examples/basic_rails_app/Dockerfile.dev
     depends_on:
       rails-app:
-        condition: service_started
+        condition: service_healthy
       temporal-init:
         condition: service_completed_successfully
     environment:

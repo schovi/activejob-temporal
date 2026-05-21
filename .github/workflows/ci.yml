@@ -207,11 +207,40 @@ jobs:
         if: always()
         run: docker compose down -v
 
+  example-basic-rails-app:
+    name: Example Rails App
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: examples/basic_rails_app
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0'
+          bundler-cache: true
+          working-directory: examples/basic_rails_app
+
+      - name: Prepare test database
+        run: bundle exec rails db:prepare
+        env:
+          RAILS_ENV: test
+
+      - name: Run example app tests
+        run: bundle exec rails test
+        env:
+          RAILS_ENV: test
+
   # Build gem - runs once to verify gem can be built
   build:
     name: Build Gem
     runs-on: ubuntu-latest
-    needs: [lint, security, test-unit, test-integration]
+    needs: [lint, security, mutation, test-unit, test-integration, example-basic-rails-app]
 
     steps:
       - name: Checkout code

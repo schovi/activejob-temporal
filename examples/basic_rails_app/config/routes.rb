@@ -11,6 +11,7 @@ Rails.application.routes.draw do
     post :scheduled
     post :retryable
     post :cancellable
+    post :campaign_email
     delete :cancel
   end
 

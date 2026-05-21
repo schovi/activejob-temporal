@@ -79,6 +79,26 @@ class JobsController < ApplicationController
     }
   end
 
+  def campaign_email
+    subscriber = find_campaign_subscriber
+
+    return render json: { error: "No subscribed email subscriber found" }, status: :not_found unless subscriber
+
+    campaign_name = params[:campaign_name].presence || "Spring Launch"
+    job = SendCampaignEmailJob.perform_later(subscriber, campaign_name: campaign_name)
+
+    render json: {
+      status: "enqueued",
+      job_type: "SendCampaignEmailJob",
+      job_id: job.job_id,
+      queue: job.queue_name,
+      subscriber_id: subscriber.id,
+      subscriber_gid: subscriber.to_global_id.to_s,
+      campaign_name: campaign_name,
+      message: "Campaign email job enqueued with a GlobalID subscriber argument"
+    }
+  end
+
   # DELETE /jobs/cancel
   # Cancels a running or pending job
   # Required params: job_class, job_id
@@ -97,7 +117,7 @@ class JobsController < ApplicationController
     unless valid_job_class?(job_class)
       return render json: {
         error: "Invalid job class",
-        message: "Job class must be one of: SimpleJob, ScheduledJob, RetryableJob, CancellableJob"
+        message: "Job class must be one of: SimpleJob, ScheduledJob, RetryableJob, CancellableJob, SendCampaignEmailJob"
       }, status: :bad_request
     end
 
@@ -120,7 +140,15 @@ class JobsController < ApplicationController
 
   private
 
+  def find_campaign_subscriber
+    if params[:subscriber_id].present?
+      EmailSubscriber.subscribed.find_by(id: params[:subscriber_id])
+    else
+      EmailSubscriber.subscribed.first
+    end
+  end
+
   def valid_job_class?(job_class)
-    %w[SimpleJob ScheduledJob RetryableJob CancellableJob].include?(job_class)
+    %w[SimpleJob ScheduledJob RetryableJob CancellableJob SendCampaignEmailJob].include?(job_class)
   end
 end
