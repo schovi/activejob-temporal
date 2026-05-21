@@ -33,6 +33,14 @@ Dependabot checks root Bundler dependencies weekly and opens up to five update p
 
 Development dependency minor and patch updates are grouped into a single pull request. Review dependency pull requests like any other change: confirm CI passes, scan the changelog for breaking behavior, and keep major updates separate unless the dependency explicitly documents compatibility.
 
+## Code Quality Tracking
+
+Qlty, the successor to Code Climate Quality, reads the committed `.qlty/qlty.toml` analysis configuration.
+
+The current configuration focuses maintainability tracking on the library code and excludes generated or packaged artifacts. RuboCop findings are monitored in Qlty while the existing GitHub Actions lint job remains the blocking local validation path.
+
+Do not add a README maintainability badge until the repository has been added to Qlty and the generated project badge URL is available.
+
 ## Changelog
 
 Generate release changelog updates from merged GitHub pull requests and closed issues:
