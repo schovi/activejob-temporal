@@ -91,11 +91,12 @@ module ActiveJob
 
       def schedule_action
         job = build_job
+        workflow_id = workflow_id_prefix
 
         Temporalio::Client::Schedule::Action::StartWorkflow.new(
           Workflows::AjWorkflow,
-          @payload_builder.build(job),
-          id: workflow_id_prefix,
+          @payload_builder.build(job, encryption_context: encryption_context_for(workflow_id)),
+          id: workflow_id,
           task_queue: Adapter.resolve_task_queue(job, config: @config),
           search_attributes: search_attributes_for(job)
         )
@@ -134,6 +135,10 @@ module ActiveJob
 
       def workflow_id_prefix
         "ajschwf:#{id}"
+      end
+
+      def encryption_context_for(workflow_id)
+        { namespace: @config.namespace, workflow_id: workflow_id }
       end
 
       def schedule_already_running?(error)

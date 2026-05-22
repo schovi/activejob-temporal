@@ -9,7 +9,10 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
   subject(:activity) { described_class.new }
 
   let(:workflow_id) { "wf-123" }
-  let(:activity_info) { instance_double("Temporalio::Activity::Info", workflow_id: workflow_id) }
+  let(:workflow_namespace) { "test-namespace" }
+  let(:activity_info) do
+    instance_double("Temporalio::Activity::Info", workflow_id: workflow_id, workflow_namespace: workflow_namespace)
+  end
   let(:activity_context) { instance_double("Temporalio::Activity::Context", info: activity_info) }
   let(:args) { [42, "payload"] }
   let(:idempotency_key) { :aj_temporal_idempotency_key }
@@ -45,6 +48,23 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(job_class).to have_received(:new)
       expect(job_instance).to have_received(:perform).with(*args)
       expect(Thread.current[idempotency_key]).to be_nil
+    end
+
+    it "deserializes payloads with workflow encryption context" do
+      job_instance = instance_double("ContextRunnerJob")
+      job_class = class_double("ContextRunnerJob", new: job_instance).as_stubbed_const
+      payload = { "job_class" => "ContextRunnerJob", "arguments" => ["raw"] }
+      encryption_context = { namespace: workflow_namespace, workflow_id: workflow_id }
+
+      expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload)
+        .with(payload, encryption_context: encryption_context)
+        .and_return(payload)
+      expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).with(payload).and_return(args)
+      allow(job_instance).to receive(:perform).and_return("performed")
+
+      expect(activity.execute(payload)).to eq("performed")
+
+      expect(job_class).to have_received(:new)
     end
 
     it "uses optional raw arguments instead of deserializing payload arguments" do
@@ -224,7 +244,9 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     it "wraps payload deserialization failures in non-retryable ApplicationError" do
       payload = { "job_class" => "UndeserializableJob", "queue_name" => "critical" }
       original_error = ActiveJob::SerializationError.new("bad payload")
-      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload).with(payload).and_raise(original_error)
+      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload)
+        .with(payload, encryption_context: { namespace: workflow_namespace, workflow_id: workflow_id })
+        .and_raise(original_error)
 
       expect { activity.execute(payload) }
         .to raise_error(Temporalio::Error::ApplicationError) do |error|

@@ -85,6 +85,28 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       enqueuer.enqueue(job)
     end
 
+    it "builds encrypted payloads with the target workflow context" do
+      payload_builder = instance_double(ActiveJob::Temporal::JobPayloadBuilder)
+      enqueuer = described_class.new(client, config, logger, payload_builder: payload_builder)
+      payload = { job_class: "SimpleJob", job_id: job.job_id, queue_name: "default" }
+
+      allow(payload_builder).to receive(:build)
+        .with(
+          job,
+          scheduled_at: nil,
+          encryption_context: { namespace: "default", workflow_id: "ajwf:SimpleJob:test-job-id" }
+        )
+        .and_return(payload)
+
+      enqueuer.enqueue(job)
+
+      expect(payload_builder).to have_received(:build).with(
+        job,
+        scheduled_at: nil,
+        encryption_context: { namespace: "default", workflow_id: "ajwf:SimpleJob:test-job-id" }
+      )
+    end
+
     it "uses the configured workflow ID generator" do
       config.workflow_id_generator = ->(job) { "custom:#{job.class.name}:#{job.job_id}" }
       enqueuer = described_class.new(client, config, logger)

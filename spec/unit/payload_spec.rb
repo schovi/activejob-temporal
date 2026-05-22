@@ -531,6 +531,65 @@ RSpec.describe ActiveJob::Temporal::Payload do
         expect(described_class.deserialize_args(payload)).to eq(job.arguments)
       end
 
+      it "binds v2 encrypted payloads to workflow context" do
+        encryption_context = { namespace: "payments", workflow_id: "workflow-1" }
+        payload = described_class.from_job(job, encryption_context: encryption_context)
+
+        expect(payload).to include(
+          encrypted_payload: true,
+          encrypted_payload_version: 2,
+          encrypted_key_id: "primary",
+          encrypted_data: a_kind_of(String),
+          encrypted_iv: a_kind_of(String),
+          encrypted_auth_tag: a_kind_of(String)
+        )
+        expect(described_class.deserialize_payload(payload, encryption_context: encryption_context)).to include(
+          job_class: job.class.name,
+          job_id: job.job_id
+        )
+
+        expect do
+          described_class.deserialize_payload(
+            payload,
+            encryption_context: { namespace: "payments", workflow_id: "workflow-2" }
+          )
+        end.to raise_error(ActiveJob::SerializationError, /Unable to decrypt ActiveJob::Temporal payload/)
+      end
+
+      it "pins v2 decryption to the encrypted key id" do
+        old_key = encryption_key_for("old")
+        new_key = encryption_key_for("new")
+        encryption_context = { namespace: "payments", workflow_id: "workflow-1" }
+
+        old_config = encrypted_configuration(key: { id: "old", key: old_key })
+        payload = described_class.from_job(job, config: old_config, encryption_context: encryption_context)
+
+        rotated_config = encrypted_configuration(key: { id: "new", key: new_key })
+        rotated_config.encryption_old_keys = [{ id: "old", key: old_key }]
+        expect(
+          described_class.deserialize_args(payload, config: rotated_config, encryption_context: encryption_context)
+        ).to eq(job.arguments)
+
+        unknown_key_payload = payload.merge(encrypted_key_id: "missing")
+        expect do
+          described_class.deserialize_args(
+            unknown_key_payload,
+            config: rotated_config,
+            encryption_context: encryption_context
+          )
+        end.to raise_error(ActiveJob::SerializationError, /Unknown encrypted payload key id/)
+
+        rotated_config.encryption_old_keys = [{ id: "old", key: old_key, decrypt_until: Time.utc(2000, 1, 1) }]
+        expect do
+          described_class.deserialize_args(payload, config: rotated_config, encryption_context: encryption_context)
+        end.to raise_error(ActiveJob::SerializationError, /expired/)
+
+        rotated_config.encryption_old_keys = [{ id: "old", key: encryption_key_for("wrong") }]
+        expect do
+          described_class.deserialize_args(payload, config: rotated_config, encryption_context: encryption_context)
+        end.to raise_error(ActiveJob::SerializationError, /Unable to decrypt ActiveJob::Temporal payload/)
+      end
+
       it "does not trust rate limit metadata added outside encrypted data" do
         payload = described_class.from_job(job).merge(
           rate_limits: [

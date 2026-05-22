@@ -61,11 +61,11 @@ en:
 
             encryption_key:
               required: "is required when payload encryption is enabled"
-              invalid: "must be a Base64-encoded %{bytes}-byte AES-256-GCM key"
+              invalid: "must be a Base64-encoded %{bytes}-byte AES-256-GCM key or key metadata with a safe id"
 
             encryption_old_keys:
-              not_an_array: "must be an array of Base64-encoded keys, got: %{value}"
-              invalid: "must contain only Base64-encoded %{bytes}-byte AES-256-GCM keys"
+              not_an_array: "must be an array of Base64-encoded keys or key metadata, got: %{value}"
+              invalid: "must contain only Base64-encoded %{bytes}-byte AES-256-GCM keys or key metadata with safe ids"
 
             workflow_id_generator:
               not_callable: "must respond to #call (for example, ->(job) { \"custom-#{job.job_id}\" }), got: %{value}"

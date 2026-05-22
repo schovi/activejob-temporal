@@ -541,8 +541,21 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.encryption_key).to be_nil
     end
 
+    it "accepts key metadata with an explicit id" do
+      key_metadata = { id: "2026-05", key: valid_encryption_key }
+
+      configuration.encryption_key = key_metadata
+
+      expect(configuration.encryption_key).to eq(key_metadata)
+    end
+
     it "rejects keys that are not valid Base64" do
       expect { configuration.encryption_key = "not base64" }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption key must be a Base64-encoded 32-byte/)
+    end
+
+    it "rejects key metadata with unsafe ids" do
+      expect { configuration.encryption_key = { id: "bad key", key: valid_encryption_key } }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption key must be a Base64-encoded 32-byte/)
     end
 
@@ -557,6 +570,17 @@ RSpec.describe ActiveJob::Temporal::Configuration do
   describe "#encryption_old_keys=" do
     it "accepts an array of Base64-encoded 32-byte keys" do
       old_keys = [valid_encryption_key("old-1"), valid_encryption_key("old-2")]
+
+      configuration.encryption_old_keys = old_keys
+
+      expect(configuration.encryption_old_keys).to eq(old_keys)
+    end
+
+    it "accepts old key metadata with explicit ids" do
+      old_keys = [
+        { id: "2026-01", key: valid_encryption_key("old-1") },
+        { id: "2026-02", key: valid_encryption_key("old-2"), decrypt_until: Time.utc(2027, 1, 1) }
+      ]
 
       configuration.encryption_old_keys = old_keys
 

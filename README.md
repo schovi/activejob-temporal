@@ -219,8 +219,8 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 | `payload_serializer` | Symbol | `:json` | Serializer for job execution payloads. Supports `:json`, `:message_pack`, `:msgpack`, and `:marshal`. |
 | `encrypt_payload` | Boolean | `false` | Encrypt serialized job execution payloads before sending them to Temporal. |
-| `encryption_key` | String or `nil` | `nil` | Base64-encoded 32-byte AES-256-GCM payload encryption key. Required when `encrypt_payload` is true. |
-| `encryption_old_keys` | Array | `[]` | Previous Base64-encoded encryption keys accepted for decryption during key rotation. |
+| `encryption_key` | String, Hash, or `nil` | `nil` | Base64-encoded 32-byte AES-256-GCM payload encryption key, or `{ id:, key: }` metadata. Required when `encrypt_payload` is true. |
+| `encryption_old_keys` | Array | `[]` | Previous encryption keys accepted for decryption during key rotation. Entries may be Base64 strings or `{ id:, key:, decrypt_until: }` hashes. |
 
 ### Example Configuration
 
@@ -246,7 +246,10 @@ ActiveJob::Temporal.configure do |config|
   config.max_payload_size_kb = 512
   config.payload_serializer = :json
   config.encrypt_payload = true
-  config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+  config.encryption_key = {
+    id: "2026-05",
+    key: ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+  }
 end
 ```
 
@@ -363,7 +366,10 @@ Enable payload encryption when job arguments or execution metadata should not be
 ```ruby
 ActiveJob::Temporal.configure do |config|
   config.encrypt_payload = true
-  config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+  config.encryption_key = {
+    id: "2026-05",
+    key: ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+  }
 end
 ```
 
@@ -373,7 +379,7 @@ Generate keys as Base64-encoded 32-byte values:
 SecureRandom.base64(32)
 ```
 
-Encryption uses `ActiveSupport::MessageEncryptor` with AES-256-GCM and JSON serialization. The encrypted data contains job class, job ID, queue name, serialized arguments, and execution counters. Workflow-control fields such as `scheduled_at`, activity timeout options, retry policy metadata, per-job Temporal options, and rate-limit metadata stay plaintext so workflow replay remains deterministic.
+Encryption uses AES-256-GCM. New workflow payloads bind ciphertext to the Temporal namespace, workflow ID, and encryption key ID as authenticated data. The encrypted data contains job class, job ID, queue name, serialized arguments, execution counters, and workflow-control fields. Plaintext copies of workflow-control fields remain in the envelope so workflow replay does not depend on worker-local encryption keys.
 
 Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, and search attributes can expose job class, queue, job ID, tenant ID, and tags. For privacy-sensitive workloads, configure a `workflow_id_generator` that does not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags.
 
@@ -382,12 +388,21 @@ For key rotation, deploy the new primary key and keep old keys configured until 
 ```ruby
 ActiveJob::Temporal.configure do |config|
   config.encrypt_payload = true
-  config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
-  config.encryption_old_keys = ENV.fetch("ACTIVEJOB_TEMPORAL_OLD_ENCRYPTION_KEYS", "").split(",").reject(&:empty?)
+  config.encryption_key = {
+    id: "2026-06",
+    key: ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+  }
+  config.encryption_old_keys = [
+    {
+      id: "2026-05",
+      key: ENV.fetch("ACTIVEJOB_TEMPORAL_OLD_ENCRYPTION_KEY"),
+      decrypt_until: Time.utc(2026, 9, 1)
+    }
+  ]
 end
 ```
 
-If you disable encryption for new jobs, keep `encryption_key` or the relevant `encryption_old_keys` configured on workers until every previously encrypted workflow has completed or aged out of Temporal history. Workers still need keys to decrypt already-started encrypted workflows.
+Older version 1 envelopes without key IDs are still decryptable with Base64 string keys in `encryption_key` or `encryption_old_keys`. For version 2 envelopes, workers use `encrypted_key_id` to select one configured key and do not try every key. If you disable encryption for new jobs, keep `encryption_key` or the relevant `encryption_old_keys` configured on workers until every previously encrypted workflow has completed or aged out of Temporal history. Workers still need keys to decrypt already-started encrypted workflows.
 
 ## Conditional Enqueueing
 

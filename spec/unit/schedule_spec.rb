@@ -136,6 +136,33 @@ RSpec.describe ActiveJob::Temporal::Schedule do
     expect(temporal_schedule.action.task_queue).to eq("billing")
   end
 
+  it "builds encrypted payloads with the scheduled workflow context" do
+    payload_builder = instance_double(ActiveJob::Temporal::JobPayloadBuilder)
+    payload = { job_class: "ScheduledReportJob", job_id: "ajsch:ScheduledReportJob", queue_name: "reports" }
+    schedule = described_class.new(
+      job_class,
+      cron: "0 3 * * *",
+      client: client,
+      config: config,
+      payload_builder: payload_builder
+    )
+
+    allow(payload_builder).to receive(:build)
+      .with(
+        an_instance_of(job_class),
+        encryption_context: { namespace: "default", workflow_id: "ajschwf:ajsch:ScheduledReportJob" }
+      )
+      .and_return(payload)
+
+    temporal_schedule = schedule.to_temporal_schedule
+
+    expect(temporal_schedule.action.args.first).to be(payload)
+    expect(payload_builder).to have_received(:build).with(
+      an_instance_of(job_class),
+      encryption_context: { namespace: "default", workflow_id: "ajschwf:ajsch:ScheduledReportJob" }
+    )
+  end
+
   it "uses injected configuration when resolving task queues" do
     config.task_queue_prefix = "prod-"
     schedule = described_class.new(

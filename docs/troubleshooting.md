@@ -252,7 +252,7 @@ bundle exec rails runner 'puts "old_key_count=#{ActiveJob::Temporal.config.encry
 
 **Fix**
 
-Use Base64-encoded 32-byte keys, for example `SecureRandom.base64(32)`. During rotation, deploy the new key as `encryption_key` and keep the previous key in `encryption_old_keys` until workflows encrypted with the previous key have completed or aged out of Temporal history.
+Use Base64-encoded 32-byte key material, for example `SecureRandom.base64(32)`. During rotation, deploy the new key as `encryption_key` with a new `id`, and keep the previous key metadata in `encryption_old_keys` until workflows encrypted with the previous key have completed or aged out of Temporal history.
 
 ## Serialization Or Deserialization Errors
 

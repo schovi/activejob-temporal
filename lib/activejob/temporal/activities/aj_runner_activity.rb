@@ -105,7 +105,7 @@ module ActiveJob
         def execute(payload, raw_arguments = nil)
           job_class = nil
           audit_context = nil
-          deserialized_payload = Payload.deserialize_payload(payload)
+          deserialized_payload = Payload.deserialize_payload(payload, encryption_context: activity_encryption_context)
           audit_context = audit_started(deserialized_payload)
 
           result = Metrics.instrument_perform(deserialized_payload) do
@@ -185,6 +185,18 @@ module ActiveJob
                           "unknown-workflow"
                         end
           Thread.current[IDEMPOTENCY_KEY] = "#{workflow_id}/runner"
+        end
+
+        def activity_encryption_context
+          return unless defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
+
+          info = Temporalio::Activity::Context.current.info
+          namespace = if info.respond_to?(:workflow_namespace)
+                        info.workflow_namespace
+                      else
+                        ActiveJob::Temporal.config.namespace
+                      end
+          { namespace: namespace, workflow_id: info.workflow_id }
         end
 
         # Handles exceptions by checking discard_on declarations.

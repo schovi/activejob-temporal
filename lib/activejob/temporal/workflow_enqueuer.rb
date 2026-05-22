@@ -57,8 +57,9 @@ module ActiveJob
       #   enqueuer.enqueue(job) # => nil (FAIL conflict returns nil)
       def enqueue(job, scheduled_at: nil)
         validate_job_for_enqueueing(job)
-        payload = build_payload(job, scheduled_at: scheduled_at)
-        enqueue_with_payload(job, payload)
+        workflow_id = @workflow_id_builder.build(job)
+        payload = build_payload(job, workflow_id: workflow_id, scheduled_at: scheduled_at)
+        enqueue_with_payload(job, payload, workflow_id)
       end
 
       private
@@ -71,8 +72,7 @@ module ActiveJob
 
       # Enqueues a workflow with the given payload and options.
       # @api private
-      def enqueue_with_payload(job, payload)
-        workflow_id = @workflow_id_builder.build(job)
+      def enqueue_with_payload(job, payload, workflow_id)
         task_queue = Adapter.resolve_task_queue(job, config: @config)
         add_dead_letter_task_queue(payload, task_queue)
 
@@ -102,8 +102,16 @@ module ActiveJob
       # Builds a payload hash from a job instance.
       # Includes the job's retry policy and temporal timeout options for use in the workflow.
       # @api private
-      def build_payload(job, scheduled_at: nil)
-        @payload_builder.build(job, scheduled_at: scheduled_at)
+      def build_payload(job, workflow_id:, scheduled_at: nil)
+        @payload_builder.build(
+          job,
+          scheduled_at: scheduled_at,
+          encryption_context: encryption_context_for(workflow_id)
+        )
+      end
+
+      def encryption_context_for(workflow_id)
+        { namespace: @config.namespace, workflow_id: workflow_id }
       end
 
       # Starts the Temporal workflow with the given options.

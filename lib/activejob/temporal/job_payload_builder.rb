@@ -25,7 +25,7 @@ module ActiveJob
         @config = config
       end
 
-      def build(job, scheduled_at: nil)
+      def build(job, scheduled_at: nil, encryption_context: nil)
         payload = Payload.from_job(job, scheduled_at:, enforce_size: false, encrypt: false, config: @config)
         payload[:default_activity_options] = default_activity_options
 
@@ -36,7 +36,7 @@ module ActiveJob
         apply_chain(payload, job)
         apply_dependencies(payload, job)
 
-        payload = Payload.encrypt_payload(payload, config: @config)
+        payload = Payload.encrypt_payload(payload, config: @config, encryption_context: encryption_context)
         Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job), config: @config)
         payload
       end

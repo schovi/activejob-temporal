@@ -79,6 +79,19 @@ RSpec.describe "job payload schema" do
     )
   end
 
+  it "allows v2 encrypted payload metadata" do
+    encrypted_branch = schema.fetch("oneOf").find do |branch|
+      branch.fetch("required").include?("encrypted_payload")
+    end
+
+    expect(encrypted_branch.fetch("properties")).to include(
+      "encrypted_payload_version" => { "type" => "integer", "enum" => [1, 2] },
+      "encrypted_key_id" => { "type" => "string", "minLength" => 1 },
+      "encrypted_iv" => { "type" => "string" },
+      "encrypted_auth_tag" => { "type" => "string" }
+    )
+  end
+
   it "requires normalized rate limit entries" do
     rate_limit_schema = schema.fetch("definitions").fetch("rate_limit")
 

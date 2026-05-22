@@ -124,7 +124,15 @@ module ActiveJob
       #   To reduce payload size, prefer passing database IDs instead of full ActiveRecord
       #   objects. For example, pass user.id instead of user. This is especially important
       #   for jobs with large argument lists or complex nested objects.
-      def from_job(job, scheduled_at: nil, enforce_size: true, encrypt: true, config: ActiveJob::Temporal.config)
+      def from_job(
+        job,
+        scheduled_at: nil,
+        enforce_size: true,
+        config: ActiveJob::Temporal.config,
+        **options
+      )
+        encrypt = options.fetch(:encrypt, true)
+        encryption_context = options[:encryption_context]
         payload = {
           job_class: job.class.name,
           job_id: job.job_id,
@@ -138,7 +146,7 @@ module ActiveJob
         scheduled_timestamp = payload.delete(:scheduled_at)
         final_payload = serializer_for(config).dump(payload)
         final_payload[:scheduled_at] = scheduled_timestamp if scheduled_timestamp
-        final_payload = encrypt_payload(final_payload, config: config) if encrypt
+        final_payload = encrypt_payload_for_transport(final_payload, encrypt, config, encryption_context)
         enforce_size!(final_payload, metrics_payload: payload, config: config) if enforce_size
         final_payload
       end
@@ -170,8 +178,8 @@ module ActiveJob
       #     # Record was deleted between enqueue and execution
       #     Rails.logger.warn("Job argument no longer exists: #{e.message}")
       #   end
-      def deserialize_args(payload, config: ActiveJob::Temporal.config)
-        deserialize_payload_args(deserialize_payload(payload, config: config))
+      def deserialize_args(payload, config: ActiveJob::Temporal.config, encryption_context: nil)
+        deserialize_payload_args(deserialize_payload(payload, config: config, encryption_context: encryption_context))
       end
 
       def deserialize_payload_args(payload)
@@ -183,9 +191,13 @@ module ActiveJob
         raise ActiveJob::SerializationError, e.message
       end
 
-      def deserialize_payload(payload, config: ActiveJob::Temporal.config)
+      def deserialize_payload(payload, config: ActiveJob::Temporal.config, encryption_context: nil)
         transport_payload = if PayloadEncryption.encrypted?(payload)
-                              decrypted_payload = PayloadEncryption.decrypt(payload, config)
+                              decrypted_payload = PayloadEncryption.decrypt(
+                                payload,
+                                config,
+                                context: encryption_context
+                              )
                               preserve_workflow_control_fields(payload, decrypted_payload, fields: %i[scheduled_at])
                             else
                               payload
@@ -195,8 +207,8 @@ module ActiveJob
         preserve_workflow_control_fields(transport_payload, execution_payload)
       end
 
-      def encrypt_payload(payload, config: ActiveJob::Temporal.config)
-        encrypt_payload_if_configured(payload, config)
+      def encrypt_payload(payload, config: ActiveJob::Temporal.config, encryption_context: nil)
+        encrypt_payload_if_configured(payload, config, encryption_context: encryption_context)
       end
 
       def enforce_size!(payload, metrics_payload: payload, config: ActiveJob::Temporal.config)
@@ -223,11 +235,17 @@ module ActiveJob
 
       # Plaintext copies keep workflow replay config-free; ciphertext keeps activities
       # from trusting tampered envelope controls after decryption.
-      def encrypt_payload_if_configured(payload, config)
+      def encrypt_payload_for_transport(payload, encrypt, config, encryption_context)
+        return payload unless encrypt
+
+        encrypt_payload(payload, config: config, encryption_context: encryption_context)
+      end
+
+      def encrypt_payload_if_configured(payload, config, encryption_context:)
         return payload unless config.encrypt_payload
 
         execution_payload = payload.except(:scheduled_at)
-        encrypted_payload = PayloadEncryption.encrypt(execution_payload, config)
+        encrypted_payload = PayloadEncryption.encrypt(execution_payload, config, context: encryption_context)
         copy_payload_serializer_metadata(payload, encrypted_payload)
         preserve_workflow_control_fields(payload, encrypted_payload)
         encrypted_payload

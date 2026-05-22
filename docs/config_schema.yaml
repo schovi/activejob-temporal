@@ -377,30 +377,34 @@ attributes:
       validation_rules:
         - "Must be true or false"
         - "When true, encryption_key must be present and valid"
-      description: "Encrypt serialized job execution payloads before sending them to Temporal. Workflow-control metadata, including rate limits, remains plaintext for deterministic replay."
+      description: "Encrypt serialized job execution payloads before sending them to Temporal. Plaintext workflow-control metadata remains available for deterministic replay."
       env_var_name: ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD
       example: true
 
     - name: encryption_key
-      type: String
+      type: String or Hash
       default: null
       validation_rules:
         - "Required when encrypt_payload is true"
-        - "Must be a Base64-encoded 32-byte AES-256-GCM key when provided"
-      description: "Primary payload encryption key used for new encrypted payloads. Store in a secret manager or encrypted environment variable."
+        - "Must be a Base64-encoded 32-byte AES-256-GCM key, or a hash with id and key"
+      description: "Primary payload encryption key used for new encrypted payloads. Hash metadata supplies the key ID used by version 2 envelopes."
       env_var_name: ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY
-      example: "SecureRandom.base64(32)"
+      example:
+        id: "2026-05"
+        key: "SecureRandom.base64(32)"
 
     - name: encryption_old_keys
       type: Array
       default: []
       validation_rules:
         - "Must be an array"
-        - "Every value must be a Base64-encoded 32-byte AES-256-GCM key"
-      description: "Previous payload encryption keys accepted for decryption during key rotation."
+        - "Every value must be a Base64-encoded 32-byte AES-256-GCM key, or a hash with id and key"
+      description: "Previous payload encryption keys accepted for decryption during key rotation. Hash entries may include decrypt_until."
       env_var_name: null
       example:
-        - "previous-base64-key"
+        - id: "2026-04"
+          key: "previous-base64-key"
+          decrypt_until: "2026-09-01T00:00:00Z"
 
     - name: enable_search_attributes
       type: Boolean
@@ -524,7 +528,9 @@ examples:
       max_payload_size_kb: 250
       payload_serializer: ":json"
       encrypt_payload: true
-      encryption_key: "ENV['ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY']"
+      encryption_key:
+        id: "2026-05"
+        key: "ENV['ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY']"
       encryption_old_keys: []
       enable_search_attributes: true
       identity: "worker-01-us-east-1"
@@ -550,7 +556,10 @@ examples:
         config.metrics_provider = :prometheus
         config.metrics_port = 9394
         config.encrypt_payload = true
-        config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+        config.encryption_key = {
+          id: "2026-05",
+          key: ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+        }
         config.identity = ENV.fetch('HOSTNAME', 'unknown-worker')
         config.tls_cert_path = ENV.fetch("ACTIVEJOB_TEMPORAL_TLS_CERT_PATH")
         config.tls_key_path = ENV.fetch("ACTIVEJOB_TEMPORAL_TLS_KEY_PATH")
@@ -585,7 +594,9 @@ examples:
       max_payload_size_kb: 512
       payload_serializer: ":message_pack"
       encrypt_payload: true
-      encryption_key: "ENV['ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY']"
+      encryption_key:
+        id: "2026-05"
+        key: "ENV['ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY']"
       encryption_old_keys: []
       max_concurrent_activities: 300
       max_concurrent_workflow_tasks: 25
@@ -617,7 +628,10 @@ examples:
         config.metrics_provider = :prometheus
         config.metrics_port = 9394
         config.encrypt_payload = true
-        config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+        config.encryption_key = {
+          id: "2026-05",
+          key: ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+        }
         config.identity = 'worker-heavy-01'
         # Validation happens automatically at end of block!
       end
@@ -657,8 +671,8 @@ validation:
     - "max_payload_size_kb - Must be between 1 and 2,097,152 KB"
     - "payload_serializer - Must be one of :json, :message_pack, :msgpack, or :marshal"
     - "encrypt_payload - Must be true or false"
-    - "encryption_key - Required when encrypt_payload is true; when present, must be a Base64-encoded 32-byte key"
-    - "encryption_old_keys - Must be an array of Base64-encoded 32-byte keys"
+    - "encryption_key - Required when encrypt_payload is true; when present, must be a Base64-encoded 32-byte key or key metadata"
+    - "encryption_old_keys - Must be an array of Base64-encoded 32-byte keys or key metadata"
     - "max_concurrent_activities - Must be > 0"
     - "max_concurrent_workflow_tasks - Must be > 0"
     - "metrics_provider - Must be :none or :prometheus"

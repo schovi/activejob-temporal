@@ -137,13 +137,16 @@ Enable payload encryption for jobs that may carry sensitive arguments:
 ```ruby
 ActiveJob::Temporal.configure do |config|
   config.encrypt_payload = true
-  config.encryption_key = ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+  config.encryption_key = {
+    id: "2026-05",
+    key: ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+  }
 end
 ```
 
 Keys must be Base64-encoded 32-byte values, for example `SecureRandom.base64(32)`. Store keys in a secret manager or encrypted environment, not in source control.
 
-The encrypted envelope protects job class, job ID, queue name, serialized arguments, and execution counters. These workflow-control fields remain plaintext because Temporal workflows must read them during deterministic replay:
+The encrypted envelope protects job class, job ID, queue name, serialized arguments, execution counters, and workflow-control fields. New encrypted payloads are bound to the Temporal namespace, workflow ID, and encryption key ID as AES-GCM authenticated data. Plaintext copies of these workflow-control fields remain in the envelope because Temporal workflows must read them during deterministic replay:
 
 - `scheduled_at`
 - activity timeout options
@@ -154,7 +157,25 @@ The encrypted envelope protects job class, job ID, queue name, serialized argume
 
 Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, search attributes are plaintext in Temporal visibility APIs, rate-limit keys stay in workflow-control metadata, and dead letter queue entries keep failure metadata plaintext so operators can inspect and triage failed jobs. For privacy-sensitive workloads, configure `workflow_id_generator` so workflow IDs do not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags. Do not put secrets in workflow IDs, queue names, tags, tenant IDs, rate-limit keys, DLQ failure messages, or custom search metadata.
 
-For key rotation, set the new primary key in `encryption_key` and keep previous keys in `encryption_old_keys` until all workflows encrypted with old keys complete or age out of Temporal history. Removing an old key too early prevents workers from decrypting existing workflow payloads.
+For key rotation, set the new primary key metadata in `encryption_key` and keep previous key metadata in `encryption_old_keys` until all workflows encrypted with old keys complete or age out of Temporal history:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.encryption_key = {
+    id: "2026-06",
+    key: ENV.fetch("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY")
+  }
+  config.encryption_old_keys = [
+    {
+      id: "2026-05",
+      key: ENV.fetch("ACTIVEJOB_TEMPORAL_OLD_ENCRYPTION_KEY"),
+      decrypt_until: Time.utc(2026, 9, 1)
+    }
+  ]
+end
+```
+
+Version 2 encrypted payloads use `encrypted_key_id` to select the configured key and do not try every key. Version 1 encrypted payloads from older gem versions do not have key IDs and remain decryptable with Base64 string keys. Removing an old key too early prevents workers from decrypting existing workflow payloads.
 
 If you roll back by setting `encrypt_payload = false`, keep the keys deployed on workers until all previously encrypted workflows have completed or aged out. The setting only controls encryption of new payloads; encrypted payloads always require a configured key to run.
 

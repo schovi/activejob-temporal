@@ -61,7 +61,8 @@ RSpec.describe "Per-job timeout configuration", :integration do
     enqueuer = ActiveJob::Temporal::WorkflowEnqueuer.new(client, config)
 
     # Access the private build_payload method for testing
-    payload = enqueuer.send(:build_payload, job)
+    workflow_id = ActiveJob::Temporal::WorkflowIdBuilder.new.build(job)
+    payload = enqueuer.send(:build_payload, job, workflow_id: workflow_id)
 
     # Verify temporal_options are included
     expect(payload[:temporal_options]).to be_present

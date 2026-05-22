@@ -298,14 +298,14 @@ module ActiveJob
       encryption_key: {
         default: nil,
         env_var: "ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY",
-        type: :string,
-        description: "Base64-encoded 32-byte AES-256-GCM payload encryption key"
+        type: :object,
+        description: "Base64-encoded 32-byte AES-256-GCM payload encryption key or key metadata"
       },
 
       encryption_old_keys: {
         default: -> { [] },
         type: :array,
-        description: "Base64-encoded previous payload encryption keys accepted for decryption"
+        description: "Previous payload encryption keys or key metadata accepted for decryption"
       },
 
       enable_search_attributes: {
