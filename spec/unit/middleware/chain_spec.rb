@@ -92,6 +92,127 @@ RSpec.describe ActiveJob::Temporal::Middleware::Chain do
   end
 
   describe "#add" do
+    it "replaces an equivalent middleware registration" do
+      middleware_class = Class.new do
+        def initialize(events)
+          @events = events
+        end
+
+        def call(_job)
+          @events << :called
+          yield
+        end
+      end
+      events = []
+
+      chain.add(middleware_class, events)
+      chain.add(middleware_class, events)
+      chain.call(job) { :performed }
+
+      expect(events).to eq([:called])
+    end
+
+    it "keeps equivalent registrations stable when constructor arguments mutate" do
+      middleware_class = Class.new do
+        def initialize(events)
+          @events = events
+        end
+
+        def call(_job)
+          @events << :called
+          yield
+        end
+      end
+      events = []
+
+      chain.add(middleware_class, events)
+      chain.call(job) { :performed }
+      chain.add(middleware_class, events)
+      chain.call(job) { :performed }
+
+      expect(events).to eq(%i[called called])
+    end
+
+    it "keeps scalar argument keys stable when original strings mutate" do
+      middleware_class = Class.new do
+        def initialize(name, events)
+          @name = name
+          @events = events
+        end
+
+        def call(_job)
+          @events << @name
+          yield
+        end
+      end
+      name = +"initial"
+      events = []
+
+      chain.add(middleware_class, name, events)
+      name.replace("changed")
+      chain.add(middleware_class, "initial", events)
+      chain.call(job) { :performed }
+
+      expect(events).to eq(["initial"])
+    end
+
+    it "allows repeated middleware classes with different arguments" do
+      middleware_class = Class.new do
+        def initialize(name, events)
+          @name = name
+          @events = events
+        end
+
+        def call(_job)
+          @events << @name
+          yield
+        end
+      end
+      events = []
+
+      chain.add(middleware_class, :first, events)
+      chain.add(middleware_class, :second, events)
+      chain.call(job) { :performed }
+
+      expect(events).to eq(%i[first second])
+    end
+
+    it "replaces reloaded middleware classes with the same name" do
+      first_class = Class.new do
+        def self.name
+          "ReloadableMiddleware"
+        end
+
+        def call(_job)
+          :first
+        end
+      end
+      second_class = Class.new do
+        def self.name
+          "ReloadableMiddleware"
+        end
+
+        def call(_job)
+          yield
+        end
+      end
+
+      chain.add(first_class)
+      chain.add(second_class)
+
+      expect(chain.call(job) { :performed }).to eq(:performed)
+    end
+
+    it "replaces reloaded callable middleware from the same source" do
+      events = []
+
+      chain.add(build_reloadable_callable(events))
+      chain.add(build_reloadable_callable(events))
+      chain.call(job) { :performed }
+
+      expect(events).to eq([:called])
+    end
+
     it "rejects middleware that cannot be called" do
       middleware_class = Class.new
 
@@ -102,6 +223,13 @@ RSpec.describe ActiveJob::Temporal::Middleware::Chain do
       middleware = ->(_job, &block) { block.call }
 
       expect { chain.add(middleware, :argument) }.to raise_error(ArgumentError, /arguments require/)
+    end
+  end
+
+  def build_reloadable_callable(events)
+    lambda do |_job, &block|
+      events << :called
+      block.call
     end
   end
 end

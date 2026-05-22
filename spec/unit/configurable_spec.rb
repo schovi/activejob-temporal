@@ -92,6 +92,22 @@ RSpec.describe ActiveJob::Temporal do
 
       expect(warning_logger).to have_received(:warn).with(/[Tt]arget.*format/)
     end
+
+    it "does not duplicate middleware when configure is rerun" do
+      middleware_class = Class.new do
+        def call(_job)
+          yield
+        end
+      end
+
+      2.times do
+        described_class.configure do |config|
+          config.add_middleware middleware_class
+        end
+      end
+
+      expect(described_class.config.middleware_chain.to_a.length).to eq(1)
+    end
   end
 
   describe ".validate!" do
