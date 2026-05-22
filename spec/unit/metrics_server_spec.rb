@@ -52,6 +52,45 @@ RSpec.describe ActiveJob::Temporal::MetricsServer do
 
       expect(response).to include("HTTP/1.1 405 Method Not Allowed")
     end
+
+    it "does not create a thread for each stalled client" do
+      created_threads = Queue.new
+      allow(Thread).to receive(:new).and_wrap_original do |original, *arguments, &block|
+        created_threads << true
+        original.call(*arguments, &block)
+      end
+      @server = described_class.new(port: 0, bind_address: "127.0.0.1", provider: provider).start
+      threads_after_start = created_threads.length
+
+      stalled_sockets = Array.new(5) do
+        TCPSocket.new("127.0.0.1", @server.port).tap do |socket|
+          socket.write("GET /metrics HTTP/1.1\r\n")
+        end
+      end
+      sleep 0.2
+
+      expect(created_threads.length).to eq(threads_after_start)
+    ensure
+      stalled_sockets&.each(&:close)
+    end
+
+    it "releases workers held by partial request lines" do
+      stub_const("#{described_class.name}::READ_TIMEOUT_SECONDS", 0.1)
+      @server = described_class.new(port: 0, bind_address: "127.0.0.1", provider: provider).start
+
+      stalled_sockets = Array.new(described_class::CONNECTION_WORKERS) do
+        TCPSocket.new("127.0.0.1", @server.port).tap do |socket|
+          socket.write("GET /metrics HTTP/1.1")
+        end
+      end
+      sleep 0.2
+
+      response = http_request("GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+
+      expect(response).to include("HTTP/1.1 200 OK")
+    ensure
+      stalled_sockets&.each(&:close)
+    end
   end
 
   private

@@ -3,12 +3,19 @@
 require "io/wait"
 require "socket"
 
+require_relative "connection_worker_pool"
+require_relative "http_line_reader"
+
 module ActiveJob
   module Temporal
     class MetricsServer
+      include HttpLineReader
+
       DEFAULT_BIND_ADDRESS = "127.0.0.1"
       READ_TIMEOUT_SECONDS = 1
       CONTENT_TYPE = "text/plain; version=0.0.4"
+      CONNECTION_WORKERS = 4
+      CONNECTION_QUEUE_SIZE = 16
 
       attr_reader :port, :bind_address
 
@@ -26,6 +33,11 @@ module ActiveJob
 
           @server = TCPServer.new(bind_address, @requested_port)
           @port = @server.addr[1]
+          @connection_pool = ConnectionWorkerPool.new(
+            size: CONNECTION_WORKERS,
+            queue_size: CONNECTION_QUEUE_SIZE,
+            name: "activejob-temporal-metrics"
+          ) { |client| serve_client(client) }.start
           @running = true
           @thread = Thread.new { run }
         end
@@ -36,16 +48,20 @@ module ActiveJob
       def stop
         server = nil
         thread = nil
+        connection_pool = nil
 
         @mutex.synchronize do
           server = @server
           thread = @thread
+          connection_pool = @connection_pool
           @server = nil
           @thread = nil
+          @connection_pool = nil
           @running = false
         end
 
         server&.close
+        connection_pool&.stop(timeout: 2)
         thread&.join(2)
       end
 
@@ -57,10 +73,10 @@ module ActiveJob
 
       def run
         loop do
-          server = @mutex.synchronize { @server }
-          break unless server
+          server, connection_pool = @mutex.synchronize { [@server, @connection_pool] }
+          break unless server && connection_pool
 
-          Thread.new(server.accept) { |client| serve_client(client) }
+          connection_pool.enqueue(server.accept)
         rescue IOError, Errno::EBADF
           break
         end
@@ -103,12 +119,6 @@ module ActiveJob
           line = read_line(client)
           break if line.nil? || line == "\r\n" || line == "\n"
         end
-      end
-
-      def read_line(client)
-        return unless client.wait_readable(READ_TIMEOUT_SECONDS)
-
-        client.gets
       end
 
       def write_text(client, status, payload, body: true)

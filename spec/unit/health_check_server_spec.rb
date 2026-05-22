@@ -101,6 +101,49 @@ RSpec.describe ActiveJob::Temporal::HealthCheckServer do
       stalled_socket&.close
     end
 
+    it "does not create a thread for each stalled client" do
+      state.mark_started!
+      created_threads = Queue.new
+      allow(Thread).to receive(:new).and_wrap_original do |original, *arguments, &block|
+        created_threads << true
+        original.call(*arguments, &block)
+      end
+      @server = described_class.new(port: 0, bind_address: "127.0.0.1", state: state).start
+      threads_after_start = created_threads.length
+
+      stalled_sockets = Array.new(5) do
+        TCPSocket.new("127.0.0.1", @server.port).tap do |socket|
+          socket.write("GET /health HTTP/1.1\r\n")
+        end
+      end
+      sleep 0.2
+
+      expect(created_threads.length).to eq(threads_after_start)
+    ensure
+      stalled_sockets&.each(&:close)
+    end
+
+    it "releases workers held by partial request lines" do
+      stub_const("#{described_class.name}::READ_TIMEOUT_SECONDS", 0.1)
+      state.mark_started!
+      @server = described_class.new(port: 0, bind_address: "127.0.0.1", state: state).start
+
+      stalled_sockets = Array.new(described_class::CONNECTION_WORKERS) do
+        TCPSocket.new("127.0.0.1", @server.port).tap do |socket|
+          socket.write("GET /health HTTP/1.1")
+        end
+      end
+      sleep 0.2
+
+      response = http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+      status, body = parse_response(response)
+
+      expect(status).to eq("HTTP/1.1 200 OK")
+      expect(body["status"]).to eq("ok")
+    ensure
+      stalled_sockets&.each(&:close)
+    end
+
     it "keeps running when a client disconnects before reading the response" do
       state.mark_started!
       @server = described_class.new(port: 0, bind_address: "127.0.0.1", state: state).start
