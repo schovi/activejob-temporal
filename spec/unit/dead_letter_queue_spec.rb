@@ -108,6 +108,56 @@ RSpec.describe ActiveJob::Temporal::DeadLetterQueue do
       expect(handle).to have_received(:signal).with(:mark_retried, workflow_id)
     end
 
+    it "returns success when mark retried signal fails after applying" do
+      workflow_id = "ajdlq-retry:ajdlq:RetryableJob:job-123"
+      retried_entry = entry.merge("state" => "retried", "retry_workflow_id" => workflow_id)
+      signal_error = StandardError.new("signal failed")
+      allow(client).to receive(:workflow_handle).with("ajdlq:RetryableJob:job-123", run_id: nil).and_return(handle)
+      allow(handle).to receive(:query).with(:entry).and_return(entry, retried_entry)
+      allow(client).to receive(:start_workflow).and_return(handle)
+      allow(handle).to receive(:signal).with(:mark_retried, workflow_id).and_raise(signal_error)
+
+      expect(described_class.retry(RetryableJob, "job-123", client: client)).to eq(workflow_id)
+    end
+
+    it "raises a marked retry error when the retry workflow may be running but the entry remains pending" do
+      workflow_id = "ajdlq-retry:ajdlq:RetryableJob:job-123"
+      signal_error = StandardError.new("signal failed")
+      allow(client).to receive(:workflow_handle).with("ajdlq:RetryableJob:job-123", run_id: nil).and_return(handle)
+      allow(handle).to receive(:query).with(:entry).and_return(entry, entry)
+      allow(client).to receive(:start_workflow).and_return(handle)
+      allow(handle).to receive(:signal).with(:mark_retried, workflow_id).and_raise(signal_error)
+
+      expect do
+        described_class.retry(RetryableJob, "job-123", client: client)
+      end.to raise_error(ActiveJob::Temporal::Error) { |error|
+        expect(error.message).to include(workflow_id)
+        expect(error.message).to include("could not mark dead letter entry")
+        expect(error.cause).to be(signal_error)
+      }
+    end
+
+    it "raises a marked retry error when an already-started retry workflow cannot be marked" do
+      workflow_id = "ajdlq-retry:ajdlq:RetryableJob:job-123"
+      already_started = Temporalio::Error::WorkflowAlreadyStartedError.new(
+        workflow_id: workflow_id,
+        workflow_type: "ActiveJobTemporalAjWorkflow",
+        run_id: "retry-run-1"
+      )
+      signal_error = StandardError.new("signal failed")
+      allow(client).to receive(:workflow_handle).with("ajdlq:RetryableJob:job-123", run_id: nil).and_return(handle)
+      allow(handle).to receive(:query).with(:entry).and_return(entry, entry)
+      allow(client).to receive(:start_workflow).and_raise(already_started)
+      allow(handle).to receive(:signal).with(:mark_retried, workflow_id).and_raise(signal_error)
+
+      expect do
+        described_class.retry(RetryableJob, "job-123", client: client)
+      end.to raise_error(ActiveJob::Temporal::Error) { |error|
+        expect(error.message).to include(workflow_id)
+        expect(error.cause).to be(signal_error)
+      }
+    end
+
     it "marks the entry retried when another operator already started the deterministic retry workflow" do
       workflow_id = "ajdlq-retry:ajdlq:RetryableJob:job-123"
       already_started = Temporalio::Error::WorkflowAlreadyStartedError.new(

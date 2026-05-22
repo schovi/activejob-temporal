@@ -315,11 +315,14 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
     end
 
     it "raises ActiveJob::EnqueueError for non-duplicate errors" do
-      allow(client).to receive(:start_workflow).and_raise(StandardError, "Connection failed")
+      original_error = StandardError.new("Connection failed")
+      allow(client).to receive(:start_workflow).and_raise(original_error)
 
       expect do
         enqueuer.enqueue(job)
-      end.to raise_error(ActiveJob::EnqueueError)
+      end.to raise_error(ActiveJob::EnqueueError) { |error|
+        expect(error.cause).to be(original_error)
+      }
     end
 
     context "with scheduled_at" do

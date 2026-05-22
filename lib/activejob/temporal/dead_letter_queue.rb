@@ -33,7 +33,7 @@ module ActiveJob
 
         workflow_id = retry_workflow_id(entry)
         start_retry_workflow(client, entry, workflow_id, queue)
-        handle.signal(:mark_retried, workflow_id)
+        mark_retried_entry(handle, workflow_id)
         workflow_id
       end
 
@@ -81,6 +81,23 @@ module ActiveJob
       end
       private_class_method :start_retry_workflow
 
+      def mark_retried_entry(handle, workflow_id)
+        handle.signal(:mark_retried, workflow_id)
+      rescue StandardError => e
+        return if entry_retried_with_workflow_id?(query_entry_after_mark_failure(handle), workflow_id)
+
+        message = "Retry workflow #{workflow_id} may be running, but could not mark dead letter entry retried"
+        raise ActiveJob::Temporal::Error.new(message), cause: e
+      end
+      private_class_method :mark_retried_entry
+
+      def query_entry_after_mark_failure(handle)
+        handle.query(:entry)
+      rescue StandardError
+        nil
+      end
+      private_class_method :query_entry_after_mark_failure
+
       def ensure_pending_entry!(entry)
         state = entry.fetch("state", "pending")
         return if state == "pending"
@@ -94,6 +111,13 @@ module ActiveJob
         entry["state"] == "retried" && entry["retry_workflow_id"].to_s.strip.present?
       end
       private_class_method :retried_entry?
+
+      def entry_retried_with_workflow_id?(entry, workflow_id)
+        return false unless entry
+
+        entry["state"] == "retried" && entry["retry_workflow_id"] == workflow_id
+      end
+      private_class_method :entry_retried_with_workflow_id?
 
       def retry_workflow_id(entry)
         "ajdlq-retry:#{entry.fetch('id')}"

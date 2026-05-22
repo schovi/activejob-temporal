@@ -135,7 +135,7 @@ module ActiveJob
           return nil
         end
 
-        raise ActiveJob::EnqueueError, build_enqueue_error_message(job, e)
+        raise ActiveJob::EnqueueError.new(build_enqueue_error_message(job, e)), cause: e
       end
 
       # Checks if error indicates workflow was already started (duplicate job_id).
