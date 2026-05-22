@@ -87,6 +87,15 @@ if pool_size < 1
   exit(1)
 end
 
+reload_signal = config.tls_reload_signal.to_s.sub(/\ASIG/i, "").upcase
+unless Signal.list.key?(reload_signal) && !ActiveJob::Temporal::UNTRAPPABLE_SIGNALS.include?(reload_signal)
+  warn(
+    "Error: ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL must be a signal name safe to trap, " \
+    "got: #{config.tls_reload_signal.inspect}"
+  )
+  exit(1)
+end
+
 if pool_size > 1
   pool = ActiveJob::Temporal::WorkerPool.new(
     size: pool_size,
@@ -177,7 +186,6 @@ if metrics_port
 end
 
 client_reloader = ActiveJob::Temporal::WorkerClientReloader.new(worker: worker)
-reload_signal = config.tls_reload_signal.to_s.sub(/\ASIG/i, "").upcase
 reload_signal_queue = Queue.new
 reload_signal_thread = Thread.new do
   loop do

@@ -778,8 +778,8 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.tls_reload_signal).to eq("SIGHUP")
     end
 
-    it "rejects invalid or untrappable TLS reload signal names" do
-      ["HUP!", "HUP123", "KILL", "9"].each do |signal_name|
+    it "rejects invalid or reserved TLS reload signal names" do
+      %w[HUP! HUP123 9 CHLD INT KILL PIPE QUIT STOP TERM].each do |signal_name|
         expect { configuration.tls_reload_signal = signal_name }
           .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be a signal name/)
       end

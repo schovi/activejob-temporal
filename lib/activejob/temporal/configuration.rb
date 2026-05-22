@@ -26,7 +26,7 @@ module ActiveJob
     VALIDATION_LEVELS = %i[strict warn none].freeze
     METRICS_PROVIDERS = %i[none prometheus].freeze
     PAYLOAD_SERIALIZERS = PayloadSerializers::SUPPORTED
-    UNTRAPPABLE_SIGNALS = %w[KILL STOP].freeze
+    UNTRAPPABLE_SIGNALS = %w[CHLD INT KILL PIPE QUIT STOP TERM].freeze
 
     # Central registry of all configuration attributes.
     #
