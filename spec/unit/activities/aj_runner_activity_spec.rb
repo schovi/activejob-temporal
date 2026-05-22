@@ -148,10 +148,12 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         job_instance = instance_double("EncryptedRunnerJob")
         allow(EncryptedRunnerJob).to receive(:new).and_return(job_instance)
         allow(job_instance).to receive(:perform).and_return("performed")
+        allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload).and_call_original
         allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_call_original
 
         expect(activity.execute(encrypted_payload)).to eq("performed")
 
+        expect(ActiveJob::Temporal::Payload).to have_received(:deserialize_payload).once
         expect(job_instance).to have_received(:perform).with(*args)
         expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(
           hash_including(job_class: "EncryptedRunnerJob", job_id: job.job_id, queue_name: "default")
