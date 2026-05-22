@@ -186,11 +186,11 @@ if metrics_port
 end
 
 client_reloader = ActiveJob::Temporal::WorkerClientReloader.new(worker: worker)
-reload_signal_queue = Queue.new
+reload_signal_queue = ActiveJob::Temporal::ReloadSignalQueue.new
 reload_signal_thread = Thread.new do
   loop do
     signal = reload_signal_queue.pop
-    break if signal == :shutdown
+    break unless signal
 
     begin
       client_reloader.reload(source: "signal:#{signal}")
@@ -199,7 +199,7 @@ reload_signal_thread = Thread.new do
     end
   end
 end
-Signal.trap(reload_signal) { reload_signal_queue << reload_signal }
+Signal.trap(reload_signal) { reload_signal_queue.push(reload_signal) }
 
 certificate_watcher = nil
 if config.tls_cert_watch
@@ -226,7 +226,7 @@ rescue Interrupt
 ensure
   worker_health.mark_stopped!
   certificate_watcher&.stop
-  reload_signal_queue << :shutdown
+  reload_signal_queue.close
   reload_signal_thread.join(1)
   health_check_server&.stop
   metrics_server&.stop
