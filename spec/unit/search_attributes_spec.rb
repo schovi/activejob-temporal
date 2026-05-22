@@ -53,6 +53,38 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
 
         expect(attributes[aj_tags_key]).to be_nil
       end
+
+      it "reuses core search attribute keys across calls" do
+        reset_search_attribute_key_cache
+        keyword_type = Temporalio::SearchAttributes::IndexedValueType::KEYWORD
+        time_type = Temporalio::SearchAttributes::IndexedValueType::TIME
+        allow(Temporalio::SearchAttributes::Key).to receive(:new).and_call_original
+
+        described_class.for(job)
+        described_class.for(job)
+
+        expect(Temporalio::SearchAttributes::Key).to have_received(:new).with("ajClass", keyword_type).once
+        expect(Temporalio::SearchAttributes::Key).to have_received(:new).with("ajQueue", keyword_type).once
+        expect(Temporalio::SearchAttributes::Key).to have_received(:new).with("ajJobId", keyword_type).once
+        expect(Temporalio::SearchAttributes::Key).to have_received(:new).with("ajEnqueuedAt", time_type).once
+      end
+
+      it "reuses optional search attribute keys across calls" do
+        reset_search_attribute_key_cache
+        tagged_tenant_job = SimpleJob.new([TenantContext.new(456)])
+        tagged_tenant_job.job_id = "job-optional"
+        tagged_tenant_job.queue_name = "billing"
+        tagged_tenant_job.define_singleton_method(:temporal_tags) { %w[urgent customer_123] }
+        integer_type = Temporalio::SearchAttributes::IndexedValueType::INTEGER
+        keyword_list_type = Temporalio::SearchAttributes::IndexedValueType::KEYWORD_LIST
+        allow(Temporalio::SearchAttributes::Key).to receive(:new).and_call_original
+
+        described_class.for(tagged_tenant_job)
+        described_class.for(tagged_tenant_job)
+
+        expect(Temporalio::SearchAttributes::Key).to have_received(:new).with("ajTenantId", integer_type).once
+        expect(Temporalio::SearchAttributes::Key).to have_received(:new).with("ajTags", keyword_list_type).once
+      end
     end
 
     context "when queue name is not set" do
@@ -132,5 +164,11 @@ RSpec.describe ActiveJob::Temporal::SearchAttributes do
         expect(attributes[aj_tags_key]).to eq(%w[urgent customer_123])
       end
     end
+  end
+
+  def reset_search_attribute_key_cache
+    return unless described_class.instance_variable_defined?(:@search_attribute_keys)
+
+    described_class.remove_instance_variable(:@search_attribute_keys)
   end
 end

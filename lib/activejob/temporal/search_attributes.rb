@@ -50,6 +50,15 @@ module ActiveJob
     module SearchAttributes
       extend self
 
+      SEARCH_ATTRIBUTE_KEY_DEFINITIONS = {
+        aj_class: ["ajClass", :KEYWORD],
+        aj_queue: ["ajQueue", :KEYWORD],
+        aj_job_id: ["ajJobId", :KEYWORD],
+        aj_enqueued_at: ["ajEnqueuedAt", :TIME],
+        aj_tenant_id: ["ajTenantId", :INTEGER],
+        aj_tags: ["ajTags", :KEYWORD_LIST]
+      }.freeze
+
       # Builds a Temporalio::SearchAttributes object for a job.
       #
       # Creates typed search attribute keys and populates them with job metadata.
@@ -106,15 +115,10 @@ module ActiveJob
       # Sets core search attributes (ajClass, ajQueue, ajJobId, ajEnqueuedAt).
       # @api private
       def set_core_attributes(attributes, job)
-        aj_class_key = create_key("ajClass", :KEYWORD)
-        aj_queue_key = create_key("ajQueue", :KEYWORD)
-        aj_job_id_key = create_key("ajJobId", :KEYWORD)
-        aj_enqueued_at_key = create_key("ajEnqueuedAt", :TIME)
-
-        attributes[aj_class_key] = job.class.name
-        attributes[aj_queue_key] = job.queue_name || "default"
-        attributes[aj_job_id_key] = job.job_id
-        attributes[aj_enqueued_at_key] = Time.now
+        attributes[search_attribute_key(:aj_class)] = job.class.name
+        attributes[search_attribute_key(:aj_queue)] = job.queue_name || "default"
+        attributes[search_attribute_key(:aj_job_id)] = job.job_id
+        attributes[search_attribute_key(:aj_enqueued_at)] = Time.now
       end
 
       # Adds tenant ID attribute if first argument responds to tenant_id.
@@ -123,16 +127,24 @@ module ActiveJob
         tenant_id = extract_tenant_id(job.arguments)
         return unless tenant_id
 
-        aj_tenant_id_key = create_key("ajTenantId", :INTEGER)
-        attributes[aj_tenant_id_key] = tenant_id
+        attributes[search_attribute_key(:aj_tenant_id)] = tenant_id
       end
 
       def add_tags_attribute(attributes, job)
         tags = extract_tags(job)
         return if tags.empty?
 
-        aj_tags_key = create_key("ajTags", :KEYWORD_LIST)
-        attributes[aj_tags_key] = tags
+        attributes[search_attribute_key(:aj_tags)] = tags
+      end
+
+      def search_attribute_key(key)
+        search_attribute_keys.fetch(key)
+      end
+
+      def search_attribute_keys
+        @search_attribute_keys ||= SEARCH_ATTRIBUTE_KEY_DEFINITIONS.each_with_object({}) do |(key, (name, type)), keys|
+          keys[key] = create_key(name, type).freeze
+        end.freeze
       end
 
       # Creates a typed Temporal search attribute key.
