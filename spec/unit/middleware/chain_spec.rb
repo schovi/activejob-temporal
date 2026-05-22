@@ -59,6 +59,16 @@ RSpec.describe ActiveJob::Temporal::Middleware::Chain do
       expect(events).to eq([job])
     end
 
+    it "does not rebuild the middleware stack for each call" do
+      middleware = ->(_received_job, &block) { block.call }
+      chain.add(middleware)
+      entries = chain.instance_variable_get(:@entries)
+
+      expect(entries).not_to receive(:reverse_each)
+
+      expect(chain.call(job) { :performed }).to eq(:performed)
+    end
+
     it "propagates middleware exceptions" do
       error = RuntimeError.new("middleware failed")
       middleware_class = Class.new do

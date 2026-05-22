@@ -7,14 +7,18 @@ module ActiveJob
       class Chain
         include Enumerable
 
+        TERMINAL_CALL_CHAIN = ->(_job, terminal) { terminal.call }.freeze
+
         def initialize(entries = [])
           @entries = []
+          @compiled_call_chain = TERMINAL_CALL_CHAIN
           entries.each { |entry| add(entry) }
         end
 
         def add(middleware, *args, **kwargs, &block)
           callable = build_callable(middleware, args, kwargs, block)
           @entries << callable
+          @compiled_call_chain = compile_call_chain
 
           callable
         end
@@ -22,9 +26,7 @@ module ActiveJob
         def call(job, &terminal)
           raise ArgumentError, "middleware chain requires a block" unless terminal
 
-          @entries.reverse_each.reduce(terminal) do |next_middleware, middleware|
-            proc { middleware.call(job, &next_middleware) }
-          end.call
+          @compiled_call_chain.call(job, terminal)
         end
 
         def each(&block)
@@ -34,6 +36,14 @@ module ActiveJob
         end
 
         private
+
+        def compile_call_chain
+          @entries.reverse_each.reduce(TERMINAL_CALL_CHAIN) do |next_middleware, middleware|
+            lambda do |job, terminal|
+              middleware.call(job) { next_middleware.call(job, terminal) }
+            end
+          end
+        end
 
         def build_callable(middleware, args, kwargs, block)
           callable = if middleware.is_a?(Class)
