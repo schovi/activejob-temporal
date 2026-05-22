@@ -292,6 +292,22 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
 
         enqueuer.enqueue(job, scheduled_at: scheduled_time)
       end
+
+      it "rejects malformed scheduled_at values before starting a workflow" do
+        expect do
+          enqueuer.enqueue(job, scheduled_at: "not-a-date")
+        end.to raise_error(ArgumentError, /scheduled_at must be/)
+
+        expect(client).not_to have_received(:start_workflow)
+      end
+
+      it "rejects past scheduled_at values before starting a workflow" do
+        expect do
+          enqueuer.enqueue(job, scheduled_at: 1.minute.ago)
+        end.to raise_error(ArgumentError, /scheduled_at must be in the future/)
+
+        expect(client).not_to have_received(:start_workflow)
+      end
     end
 
     context "with blank queue name" do

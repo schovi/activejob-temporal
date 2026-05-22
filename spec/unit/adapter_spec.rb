@@ -319,6 +319,16 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
 
       expect(result).to be_nil
     end
+
+    it "rejects past timestamps before starting a workflow" do
+      past_timestamp = (Time.now - 60).to_i
+
+      expect do
+        adapter.enqueue_at(job, past_timestamp)
+      end.to raise_error(ArgumentError, /scheduled_at must be in the future/)
+
+      expect(client).not_to have_received(:start_workflow)
+    end
   end
 
   describe "#enqueue_after_transaction_commit?" do

@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "time"
+
 require_relative "job_payload_builder"
 require_relative "workflow_id_builder"
 
@@ -57,6 +59,7 @@ module ActiveJob
       #   enqueuer.enqueue(job) # => nil (FAIL conflict returns nil)
       def enqueue(job, scheduled_at: nil)
         validate_job_for_enqueueing(job)
+        scheduled_at = validate_scheduled_at!(scheduled_at)
         workflow_id = @workflow_id_builder.build(job)
         payload = build_payload(job, workflow_id: workflow_id, scheduled_at: scheduled_at)
         enqueue_with_payload(job, payload, workflow_id)
@@ -187,6 +190,25 @@ module ActiveJob
       # @api private
       def validate_job_for_enqueueing(job)
         raise ConfigurationError, "Job queue name cannot be blank" if job.queue_name.blank?
+      end
+
+      def validate_scheduled_at!(scheduled_at)
+        return if scheduled_at.nil?
+
+        scheduled_time = coerce_scheduled_at!(scheduled_at)
+        raise ArgumentError, "scheduled_at must be in the future" unless scheduled_time > Time.now
+
+        scheduled_time
+      end
+
+      def coerce_scheduled_at!(scheduled_at)
+        scheduled_time = scheduled_at.is_a?(String) ? Time.iso8601(scheduled_at) : scheduled_at
+        scheduled_time = scheduled_time.to_time if !scheduled_time.is_a?(Time) && scheduled_time.respond_to?(:to_time)
+        raise ArgumentError unless scheduled_time.is_a?(Time)
+
+        scheduled_time
+      rescue ArgumentError, TypeError
+        raise ArgumentError, "scheduled_at must be an ISO8601 string or respond to to_time"
       end
     end
   end
