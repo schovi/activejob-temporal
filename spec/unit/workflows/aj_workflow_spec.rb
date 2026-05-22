@@ -312,6 +312,62 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
         )
       end
+
+      it "logs skipped dead-lettering when a failed chain step has a blank DLQ queue" do
+        error = Temporalio::Error::ActivityError.new(
+          "activity failed",
+          scheduled_event_id: 1,
+          started_event_id: 2,
+          identity: "worker-1",
+          activity_type: "AjRunnerActivity",
+          activity_id: "activity-1",
+          retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+        )
+        workflow_logger = instance_spy(Logger)
+        payload = base_payload.merge(
+          "chain" => [
+            {
+              "job_class" => "SecondChainJob",
+              "job_id" => "abc-123:chain:1",
+              "queue_name" => "reporting",
+              "arguments" => [],
+              "activity_task_queue" => "priority_reports",
+              "default_activity_options" => base_payload.fetch("default_activity_options"),
+              "retry_policy" => retry_policy_hash,
+              "dead_letter" => {
+                "queue" => nil,
+                "after_attempts" => 3,
+                "job_class" => "SecondChainJob",
+                "job_id" => "abc-123:chain:1",
+                "queue_name" => "reporting",
+                "task_queue" => "priority_reports"
+              }
+            }
+          ]
+        )
+        calls = []
+        allow(Temporalio::Workflow).to receive(:logger).and_return(workflow_logger)
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **_options|
+          calls << args
+          raise error if calls.length == 2
+
+          "first-result"
+        end
+
+        expect { workflow.execute(payload) }.to raise_error(error)
+
+        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+        expect(workflow_logger).to have_received(:warn).with(
+          hash_including(
+            event: "dead_letter_skipped",
+            reason: "blank_queue",
+            job_class: "SecondChainJob",
+            job_id: "abc-123:chain:1",
+            queue_name: "reporting",
+            retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+          )
+        )
+      end
     end
 
     context "when dependencies are present" do
@@ -866,6 +922,43 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         expect { workflow.execute(base_payload) }.to raise_error(error)
 
         expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+      end
+
+      it "logs skipped dead-lettering when DLQ metadata has a blank queue" do
+        error = Temporalio::Error::ActivityError.new(
+          "activity failed",
+          scheduled_event_id: 1,
+          started_event_id: 2,
+          identity: "worker-1",
+          activity_type: "AjRunnerActivity",
+          activity_id: "activity-1",
+          retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+        )
+        workflow_logger = instance_spy(Logger)
+        payload = base_payload.merge(
+          "dead_letter" => {
+            "queue" => " ",
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "queue_name" => "default"
+          }
+        )
+        allow(Temporalio::Workflow).to receive(:logger).and_return(workflow_logger)
+        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+
+        expect { workflow.execute(payload) }.to raise_error(error)
+
+        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+        expect(workflow_logger).to have_received(:warn).with(
+          hash_including(
+            event: "dead_letter_skipped",
+            reason: "blank_queue",
+            job_class: "SampleJob",
+            job_id: "abc-123",
+            queue_name: "default",
+            retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+          )
+        )
       end
 
       it "does not dead-letter rate limit activity failures before the job runs" do

@@ -107,6 +107,48 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       )
     end
 
+    it "rejects blank dead letter queues before starting a workflow" do
+      payload_builder = instance_double(ActiveJob::Temporal::JobPayloadBuilder)
+      enqueuer = described_class.new(client, config, logger, payload_builder: payload_builder)
+      payload = {
+        job_class: "SimpleJob",
+        job_id: job.job_id,
+        queue_name: "default",
+        dead_letter: { queue: " " }
+      }
+
+      allow(payload_builder).to receive(:build).and_return(payload)
+
+      expect { enqueuer.enqueue(job) }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /dead_letter\.queue cannot be blank/)
+      expect(client).not_to have_received(:start_workflow)
+    end
+
+    it "rejects blank chain dead letter queues before starting a workflow" do
+      payload_builder = instance_double(ActiveJob::Temporal::JobPayloadBuilder)
+      enqueuer = described_class.new(client, config, logger, payload_builder: payload_builder)
+      payload = {
+        job_class: "SimpleJob",
+        job_id: job.job_id,
+        queue_name: "default",
+        chain: [
+          {
+            job_class: "NextJob",
+            job_id: "#{job.job_id}:chain:1",
+            queue_name: "default",
+            arguments: [],
+            dead_letter: { queue: nil }
+          }
+        ]
+      }
+
+      allow(payload_builder).to receive(:build).and_return(payload)
+
+      expect { enqueuer.enqueue(job) }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /chain\.dead_letter\.queue cannot be blank/)
+      expect(client).not_to have_received(:start_workflow)
+    end
+
     it "uses the configured workflow ID generator" do
       config.workflow_id_generator = ->(job) { "custom:#{job.class.name}:#{job.job_id}" }
       enqueuer = described_class.new(client, config, logger)

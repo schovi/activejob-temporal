@@ -13,10 +13,13 @@ module ActiveJob
         def dead_letterable_failure?(payload, error)
           metadata = dead_letter_metadata(payload)
           return false unless metadata
-          return false unless metadata_value(metadata, :queue).to_s.strip.present?
           return false unless job_execution_activity_failure?(error)
 
-          error.retry_state == Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+          return false unless error.retry_state == Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+          return true if dead_letter_queue_present?(metadata)
+
+          log_dead_letter_skipped(metadata, error)
+          false
         end
 
         def start_dead_letter_workflow(payload, error)
@@ -102,8 +105,27 @@ module ActiveJob
           error.respond_to?(:activity_type) && error.activity_type == "AjRunnerActivity"
         end
 
+        def dead_letter_queue_present?(metadata)
+          metadata_value(metadata, :queue).to_s.strip.present?
+        end
+
+        def log_dead_letter_skipped(metadata, error)
+          Temporalio::Workflow.logger.warn(
+            event: "dead_letter_skipped",
+            reason: "blank_queue",
+            job_class: metadata_value(metadata, :job_class),
+            job_id: metadata_value(metadata, :job_id),
+            queue_name: metadata_value(metadata, :queue_name),
+            retry_state: error.retry_state
+          )
+        end
+
         def metadata_value(metadata, key)
+          return unless metadata.respond_to?(:[])
+
           metadata[key] || metadata[key.to_s]
+        rescue TypeError
+          nil
         end
       end
     end

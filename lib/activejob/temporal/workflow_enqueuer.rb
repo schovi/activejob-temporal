@@ -2,6 +2,7 @@
 
 require "time"
 
+require_relative "dead_letter_payload_validation"
 require_relative "job_payload_builder"
 require_relative "workflow_id_builder"
 
@@ -76,6 +77,8 @@ module ActiveJob
       # Enqueues a workflow with the given payload and options.
       # @api private
       def enqueue_with_payload(job, payload, workflow_id)
+        DeadLetterPayloadValidation.validate!(payload)
+
         task_queue = Adapter.resolve_task_queue(job, config: @config)
         add_dead_letter_task_queue(payload, task_queue)
 
