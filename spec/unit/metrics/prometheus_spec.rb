@@ -64,6 +64,18 @@ RSpec.describe ActiveJob::Temporal::Metrics::Prometheus do
       )
       expect(rendered_metrics).to include('activejob_temporal_job_duration_seconds_sum{class="ExampleJob"} 0.25')
     end
+
+    it "normalizes failed job errors to a bounded label" do
+      error = Class.new(RuntimeError).new("boom")
+
+      expect do
+        metrics.instrument_perform(job_class: "ExampleJob", queue: "critical") { raise error }
+      end.to raise_error(error)
+
+      expect(rendered_metrics).to include(
+        'activejob_temporal_jobs_failed_total{class="ExampleJob",queue="critical",error="RuntimeError"} 1.0'
+      )
+    end
   end
 
   describe "worker gauges" do
@@ -90,6 +102,14 @@ RSpec.describe ActiveJob::Temporal::Metrics::Prometheus do
 
       expect(rendered_metrics).to include(
         'activejob_temporal_retries_total{class="ExampleJob",error="RuntimeError"} 1.0'
+      )
+    end
+
+    it "normalizes unknown retry errors to a bounded label" do
+      metrics.record_retry(job_class: "ExampleJob", error: "MyApp::TransientError")
+
+      expect(rendered_metrics).to include(
+        'activejob_temporal_retries_total{class="ExampleJob",error="StandardError"} 1.0'
       )
     end
   end

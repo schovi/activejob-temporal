@@ -6,6 +6,40 @@ require "prometheus/client/formats/text"
 module ActiveJob
   module Temporal
     module Metrics
+      module PrometheusErrorLabels
+        LABEL_CLASSES = [
+          ActiveJob::DeserializationError,
+          ActiveJob::SerializationError,
+          NoMethodError,
+          NameError,
+          ArgumentError,
+          TypeError,
+          LoadError,
+          SystemCallError,
+          IOError,
+          RuntimeError,
+          StandardError,
+          ScriptError,
+          Exception
+        ].freeze
+
+        module_function
+
+        def for(error)
+          error_class = error_class_for(error)
+          label_class = LABEL_CLASSES.find { |klass| error_class <= klass }
+
+          (label_class&.name || "Unknown").to_s
+        end
+
+        def error_class_for(error)
+          return error if error.is_a?(Class)
+          return error.class if error.is_a?(Exception)
+
+          LABEL_CLASSES.find { |klass| klass.name == error.to_s } || StandardError
+        end
+      end
+
       class Prometheus
         DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120].freeze
         PAYLOAD_SIZE_BUCKETS = [512, 1024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144,
@@ -37,14 +71,15 @@ module ActiveJob
           @jobs_completed.increment(labels: { class: label(job_class), queue: label(queue) })
           result
         rescue StandardError => e
-          @jobs_failed.increment(labels: { class: label(job_class), queue: label(queue), error: e.class.name })
+          @jobs_failed.increment(labels: { class: label(job_class), queue: label(queue),
+                                           error: PrometheusErrorLabels.for(e) })
           raise
         ensure
           @job_duration.observe(monotonic_time - started_at, labels: { class: label(job_class) }) if started_at
         end
 
         def record_retry(job_class:, error:)
-          @retries.increment(labels: { class: label(job_class), error: label(error) })
+          @retries.increment(labels: { class: label(job_class), error: PrometheusErrorLabels.for(error) })
         end
 
         def record_worker_started
