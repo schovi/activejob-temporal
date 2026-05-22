@@ -47,6 +47,19 @@ module ActiveJob
 
       PAYLOAD_WARNING_THRESHOLD = 0.8
       PAYLOAD_NEAR_LIMIT_THRESHOLD = 0.9
+      WORKFLOW_CONTROL_FIELDS = %i[
+        scheduled_at
+        default_activity_options
+        retry_policy
+        temporal_options
+        dead_letter
+        rate_limits
+        workflow_interactions
+        chain
+        dependencies
+        dependency_failure_policy
+        activity_task_queue
+      ].freeze
 
       # Converts an ActiveJob instance into a serializable payload hash.
       #
@@ -111,7 +124,7 @@ module ActiveJob
       #   To reduce payload size, prefer passing database IDs instead of full ActiveRecord
       #   objects. For example, pass user.id instead of user. This is especially important
       #   for jobs with large argument lists or complex nested objects.
-      def from_job(job, scheduled_at: nil, enforce_size: true, config: ActiveJob::Temporal.config)
+      def from_job(job, scheduled_at: nil, enforce_size: true, encrypt: true, config: ActiveJob::Temporal.config)
         payload = {
           job_class: job.class.name,
           job_id: job.job_id,
@@ -125,7 +138,7 @@ module ActiveJob
         scheduled_timestamp = payload.delete(:scheduled_at)
         final_payload = serializer_for(config).dump(payload)
         final_payload[:scheduled_at] = scheduled_timestamp if scheduled_timestamp
-        final_payload = encrypt_payload_if_configured(final_payload, config)
+        final_payload = encrypt_payload(final_payload, config: config) if encrypt
         enforce_size!(final_payload, metrics_payload: payload, config: config) if enforce_size
         final_payload
       end
@@ -173,13 +186,17 @@ module ActiveJob
       def deserialize_payload(payload, config: ActiveJob::Temporal.config)
         transport_payload = if PayloadEncryption.encrypted?(payload)
                               decrypted_payload = PayloadEncryption.decrypt(payload, config)
-                              preserve_workflow_control_fields(payload, decrypted_payload)
+                              preserve_workflow_control_fields(payload, decrypted_payload, fields: %i[scheduled_at])
                             else
                               payload
                             end
 
         execution_payload = serializer_for_transport_payload(transport_payload, config).load(transport_payload)
         preserve_workflow_control_fields(transport_payload, execution_payload)
+      end
+
+      def encrypt_payload(payload, config: ActiveJob::Temporal.config)
+        encrypt_payload_if_configured(payload, config)
       end
 
       def enforce_size!(payload, metrics_payload: payload, config: ActiveJob::Temporal.config)
@@ -204,32 +221,20 @@ module ActiveJob
 
       private
 
-      # Only job execution data is encrypted; workflow-control fields stay plaintext
-      # so Temporal workflow replay never depends on mutable process configuration.
+      # Plaintext copies keep workflow replay config-free; ciphertext keeps activities
+      # from trusting tampered envelope controls after decryption.
       def encrypt_payload_if_configured(payload, config)
         return payload unless config.encrypt_payload
 
         execution_payload = payload.except(:scheduled_at)
         encrypted_payload = PayloadEncryption.encrypt(execution_payload, config)
         copy_payload_serializer_metadata(payload, encrypted_payload)
-        encrypted_payload[:scheduled_at] = payload[:scheduled_at] if payload[:scheduled_at]
+        preserve_workflow_control_fields(payload, encrypted_payload)
         encrypted_payload
       end
 
-      def preserve_workflow_control_fields(source_payload, decrypted_payload)
-        %i[
-          scheduled_at
-          default_activity_options
-          retry_policy
-          temporal_options
-          dead_letter
-          rate_limits
-          workflow_interactions
-          chain
-          dependencies
-          dependency_failure_policy
-          activity_task_queue
-        ].each do |key|
+      def preserve_workflow_control_fields(source_payload, decrypted_payload, fields: WORKFLOW_CONTROL_FIELDS)
+        fields.each do |key|
           value = source_payload[key] || source_payload[key.to_s]
           decrypted_payload[key] = value if value
         end

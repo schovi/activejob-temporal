@@ -26,7 +26,7 @@ module ActiveJob
       end
 
       def build(job, scheduled_at: nil)
-        payload = Payload.from_job(job, scheduled_at: scheduled_at, enforce_size: false, config: @config)
+        payload = Payload.from_job(job, scheduled_at:, enforce_size: false, encrypt: false, config: @config)
         payload[:default_activity_options] = default_activity_options
 
         apply_retry_policy(payload, job)
@@ -36,6 +36,7 @@ module ActiveJob
         apply_chain(payload, job)
         apply_dependencies(payload, job)
 
+        payload = Payload.encrypt_payload(payload, config: @config)
         Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job), config: @config)
         payload
       end

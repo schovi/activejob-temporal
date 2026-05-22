@@ -339,19 +339,49 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload).not_to have_key(:job_class)
     expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
       job_class: "EncryptedBuilderJob",
-      default_activity_options: hash_including(start_to_close_timeout: 900.0),
-      retry_policy: hash_including(maximum_attempts: 3),
-      rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
-      dead_letter: hash_including(queue: "failed_jobs"),
+      default_activity_options: hash_including("start_to_close_timeout" => 900.0),
+      retry_policy: hash_including("maximum_attempts" => 3),
+      rate_limits: [hash_including("limit" => 1000, "interval" => 60.0, "key" => "activejob-temporal:global")],
+      dead_letter: hash_including("queue" => "failed_jobs"),
       chain: [
         hash_including(
-          job_class: "EncryptedBuilderNextJob",
-          queue_name: "reporting",
-          activity_task_queue: "reporting"
+          "job_class" => "EncryptedBuilderNextJob",
+          "queue_name" => "reporting",
+          "activity_task_queue" => "reporting"
         )
       ],
       dependencies: [
-        hash_including(job_id: "parent-123", workflow_id: "custom-parent-workflow")
+        hash_including("job_id" => "parent-123", "workflow_id" => "custom-parent-workflow")
+      ],
+      dependency_failure_policy: "fail"
+    )
+
+    tampered_payload = payload.merge(
+      default_activity_options: { start_to_close_timeout: 1.0 },
+      retry_policy: { maximum_attempts: 1 },
+      chain: [
+        {
+          job_class: "TamperedChainJob",
+          activity_task_queue: "tampered"
+        }
+      ],
+      dependencies: [
+        { job_id: "tampered-parent", workflow_id: "tampered-workflow" }
+      ],
+      dependency_failure_policy: "ignore"
+    )
+
+    expect(ActiveJob::Temporal::Payload.deserialize_payload(tampered_payload, config: config)).to include(
+      default_activity_options: hash_including("start_to_close_timeout" => 900.0),
+      retry_policy: hash_including("maximum_attempts" => 3),
+      chain: [
+        hash_including(
+          "job_class" => "EncryptedBuilderNextJob",
+          "activity_task_queue" => "reporting"
+        )
+      ],
+      dependencies: [
+        hash_including("job_id" => "parent-123", "workflow_id" => "custom-parent-workflow")
       ],
       dependency_failure_policy: "fail"
     )
