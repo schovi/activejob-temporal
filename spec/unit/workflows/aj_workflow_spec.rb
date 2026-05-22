@@ -438,6 +438,47 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
                                          ])
       end
 
+      it "resets missing dependency checks when a dependency reappears" do
+        stub_const("ActiveJob::Temporal::Workflows::WorkflowDependencies::DEPENDENCY_NOT_FOUND_MAX_CHECKS", 2)
+        dependency_statuses = [
+          [{ "job_id" => "parent-123", "state" => "not_found" }],
+          [
+            {
+              "job_id" => "parent-123",
+              "workflow_id" => "ajwf:DependencyParentJob:parent-123",
+              "state" => "running"
+            }
+          ],
+          [{ "job_id" => "parent-123", "state" => "not_found" }],
+          [
+            {
+              "job_id" => "parent-123",
+              "workflow_id" => "ajwf:DependencyParentJob:parent-123",
+              "state" => "completed"
+            }
+          ]
+        ]
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+          calls << [activity_class, args, options]
+          if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+            dependency_statuses.shift
+          else
+            :activity_result
+          end
+        end
+
+        workflow.execute(dependency_payload)
+
+        expect(calls.map(&:first)).to eq([
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::AjRunnerActivity
+                                         ])
+      end
+
       it "continues after a missing dependency stays missing when failures are ignored" do
         stub_const("ActiveJob::Temporal::Workflows::WorkflowDependencies::DEPENDENCY_NOT_FOUND_MAX_CHECKS", 2)
         payload = dependency_payload.merge("dependency_failure_policy" => "ignore")

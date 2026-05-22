@@ -83,7 +83,12 @@ module ActiveJob
         end
 
         def dependency_status_key(status)
-          status["workflow_id"] || status[:workflow_id] || status["job_id"] || status[:job_id] || status.hash
+          job_class = status["job_class"] || status[:job_class]
+          job_id = status["job_id"] || status[:job_id]
+          return "#{job_class}:#{job_id}" if job_class && job_id
+          return job_id if job_id
+
+          status["workflow_id"] || status[:workflow_id] || status.hash
         end
 
         def fail_on_dependency_failure?(payload)
