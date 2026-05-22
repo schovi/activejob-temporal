@@ -82,6 +82,27 @@ RSpec.describe ActiveJob::Temporal::Inspect do
       expect(client).to have_received(:workflow_handle).with(custom_workflow_id, run_id: run_id)
     end
 
+    it "escapes job class names when searching fallback workflows" do
+      dynamic_job_class = Class.new(ActiveJob::Base)
+      safe_name = "SimpleJob"
+      unsafe_name = "SimpleJob' OR '1'='1"
+      escaped_query = "ajClass='SimpleJob'' OR ''1''=''1' AND ajJobId='#{job_id}'"
+      custom_workflow_id = "tenant-42:ajwf:#{safe_name}:#{job_id}"
+      custom_execution = double("WorkflowExecution", id: custom_workflow_id, run_id: run_id)
+      custom_handle = instance_double(workflow_handle_class)
+
+      allow(dynamic_job_class).to receive(:name).and_return(safe_name, safe_name, safe_name, unsafe_name)
+      allow(client).to receive(:workflow_handle).with("ajwf:#{safe_name}:#{job_id}", run_id: nil).and_return(handle)
+      allow(handle).to receive(:describe).and_raise(not_found_error)
+      allow(client).to receive(:list_workflows).with(escaped_query).and_return([custom_execution])
+      allow(client).to receive(:workflow_handle).with(custom_workflow_id, run_id: run_id).and_return(custom_handle)
+      allow(custom_handle).to receive(:describe).and_return(description)
+
+      described_class.status(dynamic_job_class, job_id)
+
+      expect(client).to have_received(:list_workflows).with(escaped_query)
+    end
+
     it "uses the default workflow ID before querying search attributes" do
       result = described_class.status(job_class, job_id)
 

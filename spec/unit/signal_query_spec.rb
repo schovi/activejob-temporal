@@ -67,6 +67,26 @@ RSpec.describe ActiveJob::Temporal::SignalQuery do
       expect(custom_handle).to have_received(:signal).with("pause", "manual hold")
     end
 
+    it "escapes job class names when searching fallback workflows" do
+      dynamic_job_class = Class.new(ActiveJob::Base)
+      safe_name = "SignalQueryJob"
+      unsafe_name = "SignalQueryJob' OR '1'='1"
+      escaped_query = "ajClass='SignalQueryJob'' OR ''1''=''1' AND ajJobId='#{job_id}' " \
+                      "AND ExecutionStatus='Running'"
+
+      allow(dynamic_job_class).to receive(:name).and_return(safe_name, safe_name, safe_name, unsafe_name)
+      allow(client).to receive(:workflow_handle)
+        .with("ajwf:#{safe_name}:#{job_id}", run_id: nil)
+        .and_return(default_handle)
+      allow(default_handle).to receive(:signal).and_raise(not_found_error)
+      allow(client).to receive(:list_workflows).with(escaped_query).and_return([workflow_execution])
+
+      described_class.signal(dynamic_job_class, job_id, :pause)
+
+      expect(client).to have_received(:list_workflows).with(escaped_query)
+      expect(custom_handle).to have_received(:signal).with("pause")
+    end
+
     it "raises WorkflowNotFoundError when no running workflow is found" do
       allow(default_handle).to receive(:signal).and_raise(not_found_error)
       allow(client).to receive(:list_workflows).with(search_query).and_return([])

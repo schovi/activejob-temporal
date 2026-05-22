@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative "visibility_query"
 require_relative "workflow_id_builder"
 
 module ActiveJob
@@ -191,7 +192,8 @@ module ActiveJob
         end
 
         def workflow_search_query(job_class, job_id, status_query)
-          "ajClass='#{job_class.name}' AND ajJobId='#{job_id}' AND #{status_query}"
+          "ajClass=#{VisibilityQuery.quote(job_class.name)} AND ajJobId=#{VisibilityQuery.quote(job_id)} " \
+            "AND #{status_query}"
         end
 
         # Logs cancellation request event.

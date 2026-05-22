@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "temporalio/error"
+require_relative "visibility_query"
 require_relative "workflow_id_builder"
 
 module ActiveJob
@@ -120,7 +121,8 @@ module ActiveJob
         end
 
         def workflow_search_query(job_class, job_id)
-          "ajClass='#{job_class.name}' AND ajJobId='#{job_id}' AND ExecutionStatus='Running'"
+          "ajClass=#{VisibilityQuery.quote(job_class.name)} AND ajJobId=#{VisibilityQuery.quote(job_id)} " \
+            "AND ExecutionStatus='Running'"
         end
 
         def default_workflow_id(job_class, job_id)

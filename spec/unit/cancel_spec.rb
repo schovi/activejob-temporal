@@ -75,6 +75,23 @@ RSpec.describe ActiveJob::Temporal::Cancel do
         expect(handle).to have_received(:cancel)
       end
 
+      it "escapes job class names when querying workflows" do
+        dynamic_job_class = Class.new(ActiveJob::Base)
+        unsafe_name = "CancelJob' OR '1'='1"
+        escaped_query = "ajClass='CancelJob'' OR ''1''=''1' AND ajJobId='#{job_id}' " \
+                        "AND ExecutionStatus='Running'"
+        workflow_info = double("WorkflowInfo", id: "workflow-1")
+
+        allow(dynamic_job_class).to receive(:name).and_return(unsafe_name)
+        allow(client).to receive(:list_workflows).with(escaped_query).and_return([workflow_info])
+        allow(client).to receive(:workflow_handle).with("workflow-1").and_return(handle)
+
+        described_class.cancel(dynamic_job_class, job_id)
+
+        expect(client).to have_received(:list_workflows).with(escaped_query)
+        expect(handle).to have_received(:cancel)
+      end
+
       it "logs a cancellation request event" do
         described_class.cancel(job_class, job_id)
 
