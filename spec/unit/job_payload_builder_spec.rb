@@ -481,6 +481,15 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
   end
 
+  it "serializes once when enforcing final payload size" do
+    job = build_job("SingleSizeBuilderJob")
+    allow(JSON).to receive(:generate).and_call_original
+
+    described_class.new(config).build(job)
+
+    expect(JSON).to have_received(:generate).once
+  end
+
   private
 
   def build_job(name, workflow_interactions: false)
