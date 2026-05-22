@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "timeout"
 
 RSpec.describe ActiveJob::Temporal::RateLimiters::Memory do
   let(:clock_value) { 1000.0 }
@@ -50,6 +51,36 @@ RSpec.describe ActiveJob::Temporal::RateLimiters::Memory do
 
     expect(limiter.wait_time_for([short_limit, long_limit])).to eq(0.0)
     expect(limiter.wait_time_for([long_limit])).to eq(49.0)
+  end
+
+  it "does not block unrelated keys while another key is active" do
+    slow_limit = { limit: 10, interval: 10.0, key: "slow" }
+    fast_limit = { limit: 10, interval: 10.0, key: "fast" }
+    slow_entered = Queue.new
+    release_slow = Queue.new
+    original_active_timestamps = limiter.method(:active_timestamps)
+    slow_blocked = false
+
+    limiter.define_singleton_method(:active_timestamps) do |rate_limit, now|
+      if rate_limit[:key] == "slow" && !slow_blocked
+        slow_blocked = true
+        slow_entered << true
+        release_slow.pop
+      end
+
+      original_active_timestamps.call(rate_limit, now)
+    end
+
+    slow_thread = Thread.new { limiter.wait_time_for([slow_limit]) }
+    slow_entered.pop
+
+    fast_thread = Thread.new { limiter.wait_time_for([fast_limit]) }
+
+    expect(Timeout.timeout(1) { fast_thread.value }).to eq(0.0)
+  ensure
+    release_slow << true if release_slow
+    slow_thread&.join
+    fast_thread&.join
   end
 
   it "requires rate limit keys" do
