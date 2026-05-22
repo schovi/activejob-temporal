@@ -7,6 +7,7 @@ module WorkerPoolSpecSupport
   FakeStatus = Struct.new(:success?, keyword_init: true)
 
   class FakeProcessAdapter
+    attr_accessor :on_fork, :on_sleep, :on_wait_nonblock
     attr_reader :forks, :signals, :sleeps, :waits
 
     def initialize
@@ -20,6 +21,7 @@ module WorkerPoolSpecSupport
     def fork(environment, command)
       @next_pid += 1
       @forks << FakeFork.new(pid: @next_pid, environment: environment, command: command)
+      @on_fork&.call(@next_pid)
       @next_pid
     end
 
@@ -28,6 +30,7 @@ module WorkerPoolSpecSupport
     end
 
     def wait_nonblock(pid)
+      @on_wait_nonblock&.call(pid)
       pid
     end
 
@@ -38,6 +41,7 @@ module WorkerPoolSpecSupport
 
     def sleep(duration)
       @sleeps << duration
+      @on_sleep&.call(duration)
     end
 
     def fork_supported? = true
@@ -132,6 +136,54 @@ RSpec.describe ActiveJob::Temporal::WorkerPool do
     pool.__send__(:handle_worker_exit, 1001, WorkerPoolSpecSupport::FakeStatus.new(success?: false))
 
     expect(process_adapter.forks.map(&:pid)).to eq([1001])
+  end
+
+  it "does not restart a worker when shutdown begins during the restart delay" do
+    pool = build_pool(size: 1, restart_delay: 0.1)
+    pool.start(supervise: false)
+    process_adapter.on_sleep = lambda do |_duration|
+      process_adapter.on_sleep = nil
+      pool.stop
+    end
+
+    pool.__send__(:handle_worker_exit, 1001, WorkerPoolSpecSupport::FakeStatus.new(success?: false))
+
+    expect(process_adapter.forks.map(&:pid)).to eq([1001])
+  end
+
+  it "terminates a restarted worker when shutdown begins before registration" do
+    pool = build_pool(size: 1)
+    process_adapter.on_fork = ->(pid) { pool.stop if pid == 1002 }
+    pool.start(supervise: false)
+
+    pool.__send__(:handle_worker_exit, 1001, WorkerPoolSpecSupport::FakeStatus.new(success?: false))
+
+    expect(process_adapter.forks.map(&:pid)).to eq([1001, 1002])
+    expect(process_adapter.signals).to eq([["TERM", 1002]])
+    expect(pool.__send__(:child_count)).to be(0)
+  end
+
+  it "stops only once when stop is called concurrently" do
+    pool = build_pool(size: 1)
+    first_wait_started = Queue.new
+    release_first_wait = Queue.new
+    wait_calls = 0
+    pool.start(supervise: false)
+    process_adapter.on_wait_nonblock = lambda do |_pid|
+      wait_calls += 1
+      next unless wait_calls == 1
+
+      first_wait_started << true
+      release_first_wait.pop
+    end
+    stop_thread = Thread.new { pool.stop }
+
+    first_wait_started.pop
+    pool.stop
+    release_first_wait << true
+    stop_thread.join
+
+    expect(process_adapter.signals).to eq([["TERM", 1001]])
   end
 
   it "sends TERM to child workers when stopped" do

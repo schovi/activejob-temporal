@@ -65,10 +65,16 @@ module ActiveJob
 
       def stop
         children = @mutex.synchronize do
-          @stopping = true
-          @running = false
-          @children.values
+          if @stopping
+            nil
+          else
+            @stopping = true
+            @running = false
+
+            @children.values
+          end
         end
+        return self unless children
 
         children.each { |child| terminate_worker(child) }
         deadline = monotonic_time + @shutdown_timeout
@@ -157,13 +163,30 @@ module ActiveJob
         pid = @process_adapter.fork(environment, @worker_command)
         child = Child.new(pid: pid, index: index, restarts: restarts)
 
-        @mutex.synchronize { @children[pid] = child }
+        unless register_worker_if_running(child)
+          terminate_worker(child)
+          wait_for_worker(child, monotonic_time + @shutdown_timeout)
+          return
+        end
+
         ActiveJob::Temporal::Logger.log_event(
           "worker_pool_worker_started",
           worker_index: index,
           pid: pid,
           restarts: restarts
         )
+      end
+
+      def register_worker_if_running(child)
+        @mutex.synchronize do
+          if @stopping || !@running
+            false
+          else
+            @children[child.pid] = child
+
+            true
+          end
+        end
       end
 
       def worker_environment(index)
@@ -211,9 +234,11 @@ module ActiveJob
           success: status.respond_to?(:success?) ? status.success? : nil
         )
 
-        return if stopping?
+        return unless restart_allowed?
 
         @process_adapter.sleep(@restart_delay) if @restart_delay.positive?
+        return unless restart_allowed?
+
         start_worker(child.index, restarts: child.restarts + 1)
       end
 
@@ -225,8 +250,8 @@ module ActiveJob
         @mutex.synchronize { @children.keys }
       end
 
-      def stopping?
-        @mutex.synchronize { @stopping }
+      def restart_allowed?
+        @mutex.synchronize { @running && !@stopping }
       end
 
       def terminate_worker(child)
@@ -251,26 +276,40 @@ module ActiveJob
       end
 
       def install_signal_handlers
-        @signal_queue = Queue.new
-        SHUTDOWN_SIGNALS.each do |signal|
-          @previous_signal_handlers[signal] = Signal.trap(signal) { @signal_queue << signal }
-        end
-        @signal_thread = Thread.new do
-          signal = @signal_queue.pop
-          unless signal == :shutdown
-            ActiveJob::Temporal::Logger.log_event("worker_pool_shutdown_requested", signal: signal)
-            stop
+        @mutex.synchronize do
+          signal_queue = Queue.new
+          @signal_queue = signal_queue
+          SHUTDOWN_SIGNALS.each do |signal|
+            @previous_signal_handlers[signal] = Signal.trap(signal) { signal_queue << signal }
+          end
+          @signal_thread = Thread.new do
+            signal = signal_queue.pop
+            unless signal == :shutdown
+              ActiveJob::Temporal::Logger.log_event("worker_pool_shutdown_requested", signal: signal)
+              stop
+            end
           end
         end
       end
 
       def restore_signal_handlers
-        @previous_signal_handlers.each do |signal, handler|
+        previous_signal_handlers, signal_queue, signal_thread = @mutex.synchronize do
+          [
+            @previous_signal_handlers.dup,
+            @signal_queue,
+            @signal_thread
+          ].tap do
+            @previous_signal_handlers.clear
+            @signal_queue = nil
+            @signal_thread = nil
+          end
+        end
+
+        previous_signal_handlers.each do |signal, handler|
           Signal.trap(signal, handler)
         end
-        @previous_signal_handlers.clear
-        @signal_queue << :shutdown if @signal_queue && !@signal_queue.closed?
-        @signal_thread&.join(1) if @signal_thread&.alive? && @signal_thread != Thread.current
+        signal_queue << :shutdown if signal_queue && !signal_queue.closed?
+        signal_thread&.join(1) if signal_thread&.alive? && signal_thread != Thread.current
       rescue ArgumentError
         nil
       end
