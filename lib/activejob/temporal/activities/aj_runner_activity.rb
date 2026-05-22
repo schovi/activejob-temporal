@@ -56,6 +56,10 @@ module ActiveJob
       class AjRunnerActivity < Temporalio::Activity::Definition
         # Thread-local key for storing the idempotency token.
         IDEMPOTENCY_KEY = :aj_temporal_idempotency_key
+        DESERIALIZATION_ERROR_CLASSES = [
+          ActiveJob::SerializationError,
+          ActiveJob::DeserializationError
+        ].freeze
 
         # Executes the job inside the Temporal activity context.
         #
@@ -186,14 +190,22 @@ module ActiveJob
         # Handles exceptions by checking discard_on declarations.
         # @api private
         def handle_exception(job_class, error)
-          if job_class && RetryMapper.discard_exception?(job_class, error)
-            raise Temporalio::Error::ApplicationError.new(
-              error.message,
-              non_retryable: true
-            )
-          end
+          raise non_retryable_application_error(error) if job_class.nil? && deserialization_error?(error)
+
+          raise non_retryable_application_error(error) if job_class && RetryMapper.discard_exception?(job_class, error)
 
           raise error
+        end
+
+        def deserialization_error?(error)
+          DESERIALIZATION_ERROR_CLASSES.any? { |error_class| error.is_a?(error_class) }
+        end
+
+        def non_retryable_application_error(error)
+          Temporalio::Error::ApplicationError.new(
+            error.message,
+            non_retryable: true
+          )
         end
       end
     end

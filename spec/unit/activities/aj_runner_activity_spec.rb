@@ -221,6 +221,20 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       ActiveJob::Temporal::Metrics.reset!
     end
 
+    it "wraps payload deserialization failures in non-retryable ApplicationError" do
+      payload = { "job_class" => "UndeserializableJob", "queue_name" => "critical" }
+      original_error = ActiveJob::SerializationError.new("bad payload")
+      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload).with(payload).and_raise(original_error)
+
+      expect { activity.execute(payload) }
+        .to raise_error(Temporalio::Error::ApplicationError) do |error|
+          expect(error.non_retryable).to eq(true)
+          expect(error.message).to eq(original_error.message)
+        end
+
+      expect(ActiveJob::Temporal::RetryMapper).not_to have_received(:discard_exception?)
+    end
+
     it "records failed audit events with error metadata" do
       payload = { "job_class" => "RetryableJob", "job_id" => "job-1", "queue_name" => "critical" }
       job_instance = instance_double(RetryableJob.name)
