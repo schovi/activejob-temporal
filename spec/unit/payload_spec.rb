@@ -166,7 +166,6 @@ RSpec.describe ActiveJob::Temporal::Payload do
         ActiveJob::Temporal.config.payload_serializer = :message_pack
 
         payload = described_class.from_job(job)
-        ActiveJob::Temporal.config.payload_serializer = :json
 
         expect(payload).to include(
           serialized_payload: true,
@@ -188,7 +187,6 @@ RSpec.describe ActiveJob::Temporal::Payload do
         ActiveJob::Temporal.config.payload_serializer = :marshal
 
         payload = described_class.from_job(job)
-        ActiveJob::Temporal.config.payload_serializer = :json
 
         expect(payload).to include(
           serialized_payload: true,
@@ -214,7 +212,6 @@ RSpec.describe ActiveJob::Temporal::Payload do
         ]
 
         payload = described_class.from_job(job).merge(chain: chain)
-        ActiveJob::Temporal.config.payload_serializer = :json
 
         expect(payload).to include(
           serialized_payload: true,
@@ -224,6 +221,25 @@ RSpec.describe ActiveJob::Temporal::Payload do
           chain: chain
         )
         expect(described_class.deserialize_payload(payload)).to include(chain: chain)
+      end
+
+      it "rejects MessagePack payloads when the configured serializer is JSON" do
+        ActiveJob::Temporal.config.payload_serializer = :message_pack
+        payload = described_class.from_job(job)
+        ActiveJob::Temporal.config.payload_serializer = :json
+
+        expect { described_class.deserialize_payload(payload) }
+          .to raise_error(ActiveJob::SerializationError, /Payload serializer mismatch/)
+      end
+
+      it "rejects Marshal payloads when the configured serializer is JSON" do
+        ActiveJob::Temporal.config.payload_serializer = :marshal
+        payload = described_class.from_job(job)
+        ActiveJob::Temporal.config.payload_serializer = :json
+
+        expect(ActiveJob::Temporal::PayloadSerializers::Marshal).not_to receive(:load)
+        expect { described_class.deserialize_payload(payload) }
+          .to raise_error(ActiveJob::SerializationError, /Payload serializer mismatch/)
       end
     end
 

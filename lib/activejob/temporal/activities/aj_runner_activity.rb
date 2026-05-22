@@ -105,7 +105,7 @@ module ActiveJob
           audit_context = audit_started(deserialized_payload)
 
           result = Metrics.instrument_perform(deserialized_payload) do
-            args = raw_arguments.nil? ? Payload.deserialize_args(deserialized_payload) : Array(raw_arguments)
+            args = raw_arguments.nil? ? Payload.deserialize_payload_args(deserialized_payload) : Array(raw_arguments)
             job_class = constantize_job_class(deserialized_payload)
             job = job_class.new
 

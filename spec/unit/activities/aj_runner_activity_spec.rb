@@ -17,9 +17,10 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
 
   before do
     # Mock the real SDK's Activity Context API
+    ActiveJob::Temporal.config.payload_serializer = :json
     allow(Temporalio::Activity::Context).to receive(:exist?).and_return(true)
     allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
-    allow(ActiveJob::Temporal::Payload).to receive(:deserialize_args).and_return(args)
+    allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_return(args)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?).and_return(false)
     allow(ActiveJob::Temporal.config).to receive(:middleware_chain).and_return(middleware_chain)
     allow(ActiveJob::Temporal::Metrics).to receive(:instrument_perform).and_call_original
@@ -33,7 +34,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job_class = class_double("RunnerSpecJob", new: job_instance).as_stubbed_const
       payload = { "job_class" => "RunnerSpecJob", "arguments" => ["raw"] }
 
-      expect(ActiveJob::Temporal::Payload).to receive(:deserialize_args).with(payload).and_return(args)
+      expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).with(payload).and_return(args)
       allow(job_instance).to receive(:perform) do |*received_args|
         expect(Thread.current[idempotency_key]).to eq("#{workflow_id}/runner")
         expect(received_args).to eq(args)
@@ -53,7 +54,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       payload = { "job_class" => "RawOverrideRunnerJob", "arguments" => ["serialized"] }
       allow(job_instance).to receive(:perform).and_return("performed")
 
-      expect(ActiveJob::Temporal::Payload).not_to receive(:deserialize_args)
+      expect(ActiveJob::Temporal::Payload).not_to receive(:deserialize_payload_args)
 
       expect(activity.execute(payload, raw_arguments)).to eq("performed")
       expect(job_class).to have_received(:new)
@@ -127,7 +128,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         job_instance = instance_double("EncryptedRunnerJob")
         allow(EncryptedRunnerJob).to receive(:new).and_return(job_instance)
         allow(job_instance).to receive(:perform).and_return("performed")
-        allow(ActiveJob::Temporal::Payload).to receive(:deserialize_args).and_call_original
+        allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_call_original
 
         expect(activity.execute(encrypted_payload)).to eq("performed")
 
@@ -151,7 +152,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job_instance = instance_double("SerializedRunnerJob")
       allow(SerializedRunnerJob).to receive(:new).and_return(job_instance)
       allow(job_instance).to receive(:perform).and_return("performed")
-      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_args).and_call_original
+      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_call_original
 
       expect(activity.execute(payload)).to eq("performed")
 
@@ -208,7 +209,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       error = ArgumentError.new("bad payload")
       ActiveJob::Temporal::Metrics.reset!
       ActiveJob::Temporal.config.metrics_provider = :prometheus
-      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_args).with(payload).and_raise(error)
+      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).with(payload).and_raise(error)
 
       expect { activity.execute(payload) }.to raise_error(error)
 

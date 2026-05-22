@@ -419,7 +419,6 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload).not_to have_key(:job_class)
     expect(payload).not_to have_key(:arguments)
 
-    config.payload_serializer = :json
     expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
       job_class: "SerializedBuilderJob",
       default_activity_options: hash_including(start_to_close_timeout: 900.0),

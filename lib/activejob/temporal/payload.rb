@@ -158,8 +158,11 @@ module ActiveJob
       #     Rails.logger.warn("Job argument no longer exists: #{e.message}")
       #   end
       def deserialize_args(payload, config: ActiveJob::Temporal.config)
-        deserialized_payload = deserialize_payload(payload, config: config)
-        serialized_args = deserialized_payload[:arguments] || deserialized_payload["arguments"]
+        deserialize_payload_args(deserialize_payload(payload, config: config))
+      end
+
+      def deserialize_payload_args(payload)
+        serialized_args = payload[:arguments] || payload["arguments"]
         ActiveJob::Arguments.deserialize(serialized_args)
       rescue ActiveJob::SerializationError, ActiveJob::Temporal::ConfigurationError
         raise
@@ -175,7 +178,7 @@ module ActiveJob
                               payload
                             end
 
-        execution_payload = serializer_for_transport_payload(transport_payload).load(transport_payload)
+        execution_payload = serializer_for_transport_payload(transport_payload, config).load(transport_payload)
         preserve_workflow_control_fields(transport_payload, execution_payload)
       end
 
@@ -238,12 +241,29 @@ module ActiveJob
         PayloadSerializers.fetch(config.payload_serializer)
       end
 
-      def serializer_for_transport_payload(payload)
-        serializer_name = payload[:payload_serializer] || payload["payload_serializer"]
-        return PayloadSerializers.fetch(:json) unless serializer_name
+      def serializer_for_transport_payload(payload, config)
+        configured_serializer = PayloadSerializers.normalize_name(config.payload_serializer)
+        payload_serializer = payload_serializer_name(payload)
+        unless payload_serializer == configured_serializer
+          message = "Payload serializer mismatch: " \
+                    "configured #{configured_serializer.inspect}, payload #{payload_serializer.inspect}"
+          raise ActiveJob::SerializationError,
+                message
+        end
 
-        validate_payload_serializer_version!(payload)
-        PayloadSerializers.fetch(serializer_name)
+        validate_payload_serializer_version!(payload) if payload_serializer_metadata?(payload)
+        PayloadSerializers.fetch(configured_serializer)
+      end
+
+      def payload_serializer_name(payload)
+        serializer_name = payload[:payload_serializer] || payload["payload_serializer"]
+        return PayloadSerializers::JSON unless serializer_name
+
+        PayloadSerializers.normalize_name(serializer_name)
+      end
+
+      def payload_serializer_metadata?(payload)
+        payload.key?(:payload_serializer) || payload.key?("payload_serializer")
       end
 
       def validate_payload_serializer_version!(payload)
