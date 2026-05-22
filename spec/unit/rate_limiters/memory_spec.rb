@@ -61,14 +61,14 @@ RSpec.describe ActiveJob::Temporal::RateLimiters::Memory do
     original_active_timestamps = limiter.method(:active_timestamps)
     slow_blocked = false
 
-    limiter.define_singleton_method(:active_timestamps) do |rate_limit, now|
+    limiter.define_singleton_method(:active_timestamps) do |rate_limit, now, bucket|
       if rate_limit[:key] == "slow" && !slow_blocked
         slow_blocked = true
         slow_entered << true
         release_slow.pop
       end
 
-      original_active_timestamps.call(rate_limit, now)
+      original_active_timestamps.call(rate_limit, now, bucket)
     end
 
     slow_thread = Thread.new { limiter.wait_time_for([slow_limit]) }
@@ -83,8 +83,42 @@ RSpec.describe ActiveJob::Temporal::RateLimiters::Memory do
     fast_thread&.join
   end
 
+  it "evicts idle buckets when their timestamps expire without recording new capacity" do
+    blocking_limit = { limit: 1, interval: 60.0, key: "global" }
+    idle_limit = { limit: 1, interval: 10.0, key: "tenant-1" }
+    limiter.wait_time_for([blocking_limit])
+    limiter.wait_time_for([idle_limit])
+    allow(clock).to receive(:call).and_return(1011.0)
+
+    expect(limiter.wait_time_for([blocking_limit, idle_limit])).to eq(49.0)
+
+    bucket_keys = bucket_keys_for(limiter)
+    expect(bucket_keys).to include(["global", 60.0])
+    expect(bucket_keys).not_to include(["tenant-1", 10.0])
+  end
+
+  it "evicts idle one-shot buckets when unrelated traffic continues" do
+    idle_limit = { limit: 1, interval: 10.0, key: "tenant-1" }
+    active_limit = { limit: 2, interval: 60.0, key: "global" }
+    limiter.wait_time_for([idle_limit])
+    allow(clock).to receive(:call).and_return(1011.0)
+
+    expect(limiter.wait_time_for([active_limit])).to eq(0.0)
+
+    bucket_keys = bucket_keys_for(limiter)
+    expect(bucket_keys).to include(["global", 60.0])
+    expect(bucket_keys).not_to include(["tenant-1", 10.0])
+  end
+
   it "requires rate limit keys" do
     expect { limiter.wait_time_for([{ limit: 1, interval: 1.0 }]) }
       .to raise_error(ArgumentError, /key must be present/)
+  end
+
+  def bucket_keys_for(limiter)
+    limiter
+      .instance_variable_get(:@bucket_store)
+      .instance_variable_get(:@buckets_by_key)
+      .keys
   end
 end
