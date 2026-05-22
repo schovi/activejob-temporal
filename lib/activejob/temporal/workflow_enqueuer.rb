@@ -25,7 +25,8 @@ module ActiveJob
       # @param logger [Logger] Optional logger instance
       # @param workflow_id_builder [WorkflowIdBuilder] Builder for Temporal workflow IDs
       def initialize(client, config, logger = nil, workflow_id_builder: nil, payload_builder: nil)
-        @client = client
+        @client_provider = client if client.respond_to?(:call)
+        @client = client unless @client_provider
         @config = config
         @logger = logger || config.logger
         @workflow_id_builder = workflow_id_builder || WorkflowIdBuilder.new(configured_workflow_id_generator)
@@ -109,7 +110,7 @@ module ActiveJob
       # @api private
       def start_workflow(job, payload, options)
         workflow_class = Workflows::AjWorkflow
-        handle = @client.start_workflow(workflow_class, payload, **options)
+        handle = client.start_workflow(workflow_class, payload, **options)
 
         log_enqueued(job, options, payload, duplicate: false)
 
@@ -163,6 +164,12 @@ module ActiveJob
           job_id: job.job_id,
           error: error.message
         )
+      end
+
+      def client
+        return @client_provider.call if @client_provider
+
+        @client
       end
 
       # Validate job before enqueueing.

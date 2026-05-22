@@ -137,12 +137,21 @@ module ActiveJob
 
       def reload_client!
         fresh_client = Client.build(config)
-        yield fresh_client if block_given?
+        begin
+          yield fresh_client if block_given?
+        rescue StandardError
+          close_client(fresh_client)
+          raise
+        end
+
+        previous_client = nil
 
         client_mutex.synchronize do
+          previous_client = @client
           @client = fresh_client
         end
 
+        close_client(previous_client) unless previous_client.equal?(fresh_client)
         fresh_client
       end
 
@@ -237,6 +246,14 @@ module ActiveJob
 
       def client_mutex
         @client_mutex ||= Mutex.new
+      end
+
+      def close_client(client)
+        return unless client.respond_to?(:close)
+
+        client.close
+      rescue StandardError
+        nil
       end
     end
   end

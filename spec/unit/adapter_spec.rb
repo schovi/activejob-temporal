@@ -255,6 +255,22 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
       expect(result).to eq("workflow-handle")
     end
 
+    it "uses the current Temporal client when enqueueing" do
+      first_client = instance_double(Temporalio::Client)
+      second_client = instance_double(Temporalio::Client)
+      first_job = job
+      second_job = ScheduledJob.new
+
+      allow(first_client).to receive(:start_workflow).and_return("first-handle")
+      allow(second_client).to receive(:start_workflow).and_return("second-handle")
+      allow(ActiveJob::Temporal).to receive(:client).and_return(first_client, second_client)
+
+      expect(adapter.enqueue(first_job)).to eq("first-handle")
+      expect(adapter.enqueue(second_job)).to eq("second-handle")
+      expect(first_client).to have_received(:start_workflow).once
+      expect(second_client).to have_received(:start_workflow).once
+    end
+
     it "propagates enqueuer errors" do
       allow(client).to receive(:start_workflow).and_raise(StandardError, "workflow failed")
 

@@ -121,11 +121,14 @@ module ActiveJob
 
       # Initialize the adapter with a WorkflowEnqueuer service instance.
       def initialize
-        client = ActiveJob::Temporal.client
         config = ActiveJob::Temporal.config
         logger = config.logger
 
-        @enqueuer = ActiveJob::Temporal::WorkflowEnqueuer.new(client, config, logger)
+        @enqueuer = ActiveJob::Temporal::WorkflowEnqueuer.new(
+          -> { ActiveJob::Temporal.client },
+          config,
+          logger
+        )
       end
 
       # Enqueues a job for immediate execution on Temporal by starting the AjWorkflow.

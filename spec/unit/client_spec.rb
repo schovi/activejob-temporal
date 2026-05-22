@@ -99,6 +99,18 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     expect(Temporalio::Client).to have_received(:connect).twice
   end
 
+  it "closes the previous client after a successful reload when supported" do
+    first_client = double("Temporalio::Client", close: true)
+    second_client = double("Temporalio::Client", close: true)
+    allow(Temporalio::Client).to receive(:connect).and_return(first_client, second_client)
+
+    described_class.client
+    described_class.reload_client!
+
+    expect(first_client).to have_received(:close)
+    expect(second_client).not_to have_received(:close)
+  end
+
   it "keeps the previous client when reload connection fails" do
     configured_client = instance_double("Temporalio::Client")
     allow(Temporalio::Client).to receive(:connect).and_return(configured_client)
@@ -111,8 +123,8 @@ RSpec.describe ActiveJob::Temporal, ".client" do
   end
 
   it "keeps the previous client when the reload block fails" do
-    first_client = instance_double("Temporalio::Client")
-    second_client = instance_double("Temporalio::Client")
+    first_client = double("Temporalio::Client", close: true)
+    second_client = double("Temporalio::Client", close: true)
     allow(Temporalio::Client).to receive(:connect).and_return(first_client, second_client)
     described_class.client
 
@@ -120,6 +132,8 @@ RSpec.describe ActiveJob::Temporal, ".client" do
       described_class.reload_client! { raise "worker replacement failed" }
     end.to raise_error(RuntimeError, /worker replacement failed/)
     expect(described_class.client).to be(first_client)
+    expect(first_client).not_to have_received(:close)
+    expect(second_client).to have_received(:close)
   end
 
   it "passes optional TLS options when provided via environment variables" do
