@@ -13,6 +13,8 @@ ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=5
 
 These settings are passed to the Temporal Ruby worker as activity and workflow task poll limits. They control how aggressively a worker polls for work, not a guaranteed number of simultaneously running jobs. The current gem exposes these poll limits and worker process count as its worker capacity knobs, so verify the actual effect with Temporal UI, worker logs, and host metrics.
 
+The default `100` activity poll setting is an I/O-bound starting point. On MRI Ruby, CPU-bound jobs still contend on the GVL, so compression, rendering, parsing, encryption, and similar compute-heavy jobs should usually start near `Etc.nprocessors` activity polls per worker process, or lower when several worker processes share the same host.
+
 ## Tuning Loop
 
 1. Record the current task queue backlog, job latency, worker CPU, worker memory, database pool usage, and downstream service latency.
@@ -30,7 +32,7 @@ Do not raise poll capacity just because a queue is busy. A bigger worker can mak
 | Scenario | Activity poll setting | Workflow task poll setting | Use when | Watch closely |
 | --- | ---: | ---: | --- | --- |
 | Local development or low-resource worker | `10` to `20` | `2` to `5` | Laptop, small VM, CI smoke test, or memory-constrained worker | Memory, CPU, local Temporal responsiveness |
-| Balanced production default | `100` | `5` | Mixed job durations with normal database and API calls | Activity task backlog, DB pool waits, worker memory |
+| Balanced production default | `100` | `5` | Mixed I/O-heavy job durations with normal database and API calls | Activity task backlog, DB pool waits, worker memory |
 | High-throughput short jobs | `300` to `500` | `25` to `50` | Jobs usually finish in under 1 second and spend time waiting on I/O | Downstream rate limits, log volume, Temporal frontend load |
 | Long-running or database-heavy jobs | `10` to `50` | `5` to `10` | Jobs run for minutes, hold DB connections, load large records, or call slow services | DB connections, memory, retry storms |
 | CPU-bound jobs | `2` to `8` per worker | `5` | Jobs compress, render, parse, encrypt, or otherwise burn CPU | CPU saturation and context switching |

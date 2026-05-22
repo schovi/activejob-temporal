@@ -1038,7 +1038,7 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` or `temporal.example.com:7233` |
 | `ACTIVEJOB_TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` or `production` |
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | No | Task queue the worker will poll for jobs. | `default` (if omitted) |
-| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity (defaults to `100`). | `50` or `200` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity. Defaults to `100`, an I/O-oriented starting point. Lower this near CPU core count for CPU-bound MRI workers. | `50` or `200` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` or `50` |
 | `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE` | No | Number of child worker processes for `temporal-worker` to supervise. Defaults to `1`. | `3` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
@@ -1062,6 +1062,8 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 By default, the worker runs with:
 - 100 activity task polls
 - 5 workflow task polls
+
+The activity default is meant for I/O-bound jobs. On MRI Ruby, CPU-bound jobs still share the GVL, so heavy compute workloads should start near `Etc.nprocessors` activity polls per worker process and increase only after measuring CPU saturation and queue lag.
 
 For different workloads, adjust via environment variables:
 

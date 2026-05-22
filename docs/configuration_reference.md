@@ -49,7 +49,7 @@ The canonical machine-readable schema for all configuration options is available
 | `encryption_key` | String, Hash, or `nil` | `nil` | Base64-encoded 32-byte AES-256-GCM payload encryption key, or `{ id:, key: }` metadata. Required when `encrypt_payload` is true. |
 | `encryption_old_keys` | Array | `[]` | Previous encryption keys accepted for decryption during key rotation. Entries may be Base64 strings or `{ id:, key:, decrypt_until: }` hashes. |
 | `identity` | String or `nil` | `nil` | Optional worker identity string for observability and debugging. Useful in multi-worker deployments. |
-| `max_concurrent_activities` | Integer | `100` | Maximum activity task poll capacity per worker process. |
+| `max_concurrent_activities` | Integer | `100` | Maximum activity task poll capacity per worker process. The default is tuned for I/O-bound work; lower it near CPU core count for CPU-bound MRI workers. |
 | `max_concurrent_workflow_tasks` | Integer | `5` | Maximum workflow task poll capacity per worker process. |
 
 ## Rate Limit Configuration
@@ -582,6 +582,8 @@ ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=20 \
 bundle exec temporal-worker
 ```
 
+The default `100` activity poll setting assumes jobs spend meaningful time waiting on I/O. For CPU-bound MRI jobs, start closer to `Etc.nprocessors` activity polls per worker process, then raise it only if CPU has headroom and Temporal queue lag remains high.
+
 ### When to Adjust These Settings
 
 Consider increasing these values when:
@@ -601,10 +603,10 @@ Do **not** increase these values if:
 
 **Memory Usage**: Higher poll capacity can feed more work to the worker. Actual memory growth depends on Temporal worker execution slots, job runtime behavior, and your job's data structures (loaded ActiveRecord models, local variables, etc.). Measure worker memory before and after increasing these settings.
 
-**CPU Usage**: If your jobs are CPU-bound (heavy computation, data processing), higher worker load will not improve throughput and may degrade performance due to context switching overhead.
+**CPU Usage**: If your jobs are CPU-bound (heavy computation, data processing), higher worker load will not improve throughput and may degrade performance due to GVL contention and context switching overhead.
 
 **Recommended Starting Values**:
-- **Default (100 activity polls, 5 workflow task polls)**: Appropriate for most workloads. Start here unless you have specific performance requirements.
+- **Default (100 activity polls, 5 workflow task polls)**: Appropriate for I/O-bound or mixed workloads with resource headroom.
 - **High-throughput (300-500 activity polls, 25-50 workflow task polls)**: For short I/O-bound workloads with sufficient memory and downstream capacity.
 - **Resource-constrained (10-50 activity polls, 2-5 workflow task polls)**: For memory-limited workers, CPU-intensive jobs, or database-heavy jobs.
 

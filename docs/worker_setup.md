@@ -48,7 +48,7 @@ The worker automatically detects your Rails environment and loads your job class
 ### Options
 
 - **`ACTIVEJOB_TEMPORAL_TASK_QUEUE`**: Task queue name. Defaults to `default`.
-- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`**: Maximum activity task poll capacity. Defaults to `100`.
+- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`**: Maximum activity task poll capacity. Defaults to `100`, which is an I/O-oriented starting point. Lower this near CPU core count for CPU-bound MRI workers.
 - **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum workflow task poll capacity. Defaults to `5`.
 - **`--pool-size SIZE`**: Start a parent process that supervises `SIZE` worker processes. Can also be set with `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE`.
 - **`--health-check-port PORT`**: Optional HTTP health endpoint at `GET /health`. Can also be set with `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT`.
@@ -204,7 +204,7 @@ ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=200 bundle exec temporal-worker
 - **Default:** 100
 - **Higher values:** More activity poll capacity when jobs and dependencies have headroom
 - **Lower values:** Less resource consumption, better for constrained environments
-- **Recommended:** 50-200 for typical workloads
+- **Recommended:** 50-200 for typical I/O-heavy workloads, or near `Etc.nprocessors` for CPU-bound MRI jobs
 
 #### Workflow Task Concurrency
 
@@ -267,7 +267,7 @@ Use Temporal UI (http://localhost:8080 in development) to monitor:
 - **Worker Health**: Shows worker availability and last heartbeat
 
 **Tuning Process:**
-1. Deploy with default settings (100 activity polls, 5 workflow task polls)
+1. Deploy with default settings for I/O-bound queues (100 activity polls, 5 workflow task polls), or lower activity polls near CPU core count for CPU-bound MRI queues
 2. Monitor queue depths in Temporal UI
 3. If Workflow Task Queue is growing: increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`
 4. If Activity Task Queue is growing: increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`
