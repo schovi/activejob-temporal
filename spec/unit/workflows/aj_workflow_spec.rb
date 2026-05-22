@@ -674,6 +674,32 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         expect(workflow.handle_dynamic_query("progress")).to eq(75)
       end
 
+      it "routes buffered custom signals after workflow interactions are configured" do
+        signal_handler = lambda do |state, value|
+          state["progress"] = value
+        end
+        query_handler = lambda do |state|
+          state.fetch("progress", 0)
+        end
+        job_class = Class.new do
+          define_singleton_method(:temporal_signal_handlers) { { "progress" => signal_handler } }
+          define_singleton_method(:temporal_query_handlers) { { "progress" => query_handler } }
+        end
+        stub_const("SampleJob", job_class)
+        payload = base_payload.merge(
+          "workflow_interactions" => {
+            "job_class" => "SampleJob",
+            "signals" => ["progress"],
+            "queries" => ["progress"]
+          }
+        )
+
+        workflow.handle_dynamic_signal("progress", 75)
+        workflow.execute(payload)
+
+        expect(workflow.handle_dynamic_query("progress")).to eq(75)
+      end
+
       it "rejects undeclared custom interactions" do
         payload = base_payload.merge(
           "workflow_interactions" => {

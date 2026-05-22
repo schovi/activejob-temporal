@@ -23,6 +23,15 @@ module ActiveJob
         end
 
         def dispatch_custom_signal(handler_name, args)
+          unless workflow_interactions_configured?
+            buffered_custom_signals << [handler_name, deep_copy(args)]
+            return nil
+          end
+
+          dispatch_configured_custom_signal(handler_name, args)
+        end
+
+        def dispatch_configured_custom_signal(handler_name, args)
           handler = workflow_signal_handlers[handler_name]
           raise ArgumentError, "Unknown workflow signal: #{handler_name}" unless handler
 
@@ -53,9 +62,19 @@ module ActiveJob
         end
 
         def configure_workflow_interactions(payload)
-          metadata = payload[:workflow_interactions] || payload["workflow_interactions"]
+          reset_workflow_interactions
+          load_workflow_interaction_handlers(payload)
+          @workflow_interactions_configured = true
+          flush_buffered_custom_signals
+        end
+
+        def reset_workflow_interactions
           @workflow_signal_handlers = {}
           @workflow_query_handlers = {}
+        end
+
+        def load_workflow_interaction_handlers(payload)
+          metadata = payload[:workflow_interactions] || payload["workflow_interactions"]
           return unless metadata
 
           job_class = constant_from_name(metadata[:job_class] || metadata["job_class"])
@@ -88,6 +107,20 @@ module ActiveJob
 
         def workflow_query_handlers
           @workflow_query_handlers ||= {}
+        end
+
+        def workflow_interactions_configured?
+          @workflow_interactions_configured == true
+        end
+
+        def buffered_custom_signals
+          @buffered_custom_signals ||= []
+        end
+
+        def flush_buffered_custom_signals
+          buffered_custom_signals.shift(buffered_custom_signals.length).each do |handler_name, args|
+            dispatch_configured_custom_signal(handler_name, args)
+          end
         end
 
         def filtered_handlers(job_class, method_name, handler_names)
