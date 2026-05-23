@@ -799,6 +799,7 @@ ActiveJob::Temporal.cancel_where(ajClass: "ReportJob", ajTenantId: 123)
 - Raises `ActiveJob::Temporal::WorkflowNotFoundError` when no matching workflow exists
 - Batch cancellation lists running workflows with Temporal visibility pagination
 - Batch cancellation calls `handle.terminate` for each match and returns `{ terminated:, failed:, errors: }`
+- Batch cancellation runs termination calls with bounded concurrency and keeps up to 100 per-workflow error details
 
 **Important:** For prompt cancellation, long-running jobs should periodically call `Temporalio::Activity::Context.current.heartbeat` to signal they are still alive. Temporal checks for cancellation requests during heartbeats.
 

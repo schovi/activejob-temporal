@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "timeout"
 require_relative "../fixtures/sample_jobs"
 
 unless defined?(Temporalio::Error::RPCError)
@@ -473,6 +474,75 @@ RSpec.describe ActiveJob::Temporal::Cancel do
           }
         ]
       )
+    end
+
+    it "terminates workflows from the same page concurrently" do
+      workflow_count = 4
+      query = "ajQueue='bulk' AND ExecutionStatus='Running'"
+      started_terminations = Queue.new
+      release_terminations = Queue.new
+      workflows = Array.new(workflow_count) do |index|
+        double("WorkflowExecution", id: "workflow-#{index}", run_id: "run-#{index}")
+      end
+      handles = workflows.to_h do |workflow|
+        [
+          workflow.id,
+          Class.new do
+            define_method(:terminate) do |_reason|
+              started_terminations << workflow.id
+              release_terminations.pop
+            end
+          end.new
+        ]
+      end
+
+      allow(client).to receive(:list_workflow_page)
+        .with(query, page_size: 100, next_page_token: nil)
+        .and_return(page_class.new(workflows, nil))
+      workflows.each do |workflow|
+        allow(client).to receive(:workflow_handle)
+          .with(workflow.id, run_id: workflow.run_id)
+          .and_return(handles.fetch(workflow.id))
+      end
+
+      cancellation_thread = Thread.new { described_class.cancel_where(ajQueue: "bulk") }
+
+      begin
+        expect do
+          Timeout.timeout(1) do
+            2.times { started_terminations.pop }
+          end
+        end.not_to raise_error
+      ensure
+        workflow_count.times { release_terminations << true }
+      end
+
+      expect(cancellation_thread.value).to eq(terminated: workflow_count, failed: 0, errors: [])
+    end
+
+    it "caps recorded termination errors while counting every failure" do
+      error_limit = ActiveJob::Temporal::Cancel::BatchCanceller::MAX_REPORTED_ERRORS
+      workflow_count = error_limit + 5
+      query = "ajQueue='bulk' AND ExecutionStatus='Running'"
+      workflows = Array.new(workflow_count) do |index|
+        double("WorkflowExecution", id: "workflow-#{index}", run_id: "run-#{index}")
+      end
+      failing_handle = instance_double(workflow_handle_class)
+
+      allow(failing_handle).to receive(:terminate).and_raise(StandardError, "permission denied")
+      allow(client).to receive(:list_workflow_page)
+        .with(query, page_size: 100, next_page_token: nil)
+        .and_return(page_class.new(workflows, nil))
+      workflows.each do |workflow|
+        allow(client).to receive(:workflow_handle).with(workflow.id, run_id: workflow.run_id).and_return(failing_handle)
+      end
+
+      result = described_class.cancel_where(ajQueue: "bulk")
+
+      expect(result[:terminated]).to eq(0)
+      expect(result[:failed]).to eq(workflow_count)
+      expect(result[:errors].size).to eq(error_limit)
+      expect(result[:errors]).to all(include(error: "StandardError: permission denied"))
     end
 
     it "escapes string search attribute values" do

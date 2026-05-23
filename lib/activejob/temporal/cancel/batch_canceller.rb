@@ -1,10 +1,14 @@
 # frozen_string_literal: true
 
+require_relative "batch_summary"
+
 module ActiveJob
   module Temporal
     module Cancel
       class BatchCanceller
         PAGE_SIZE = 100
+        TERMINATION_CONCURRENCY = 5
+        MAX_REPORTED_ERRORS = BatchSummary::MAX_REPORTED_ERRORS
         TERMINATION_REASON = "ActiveJob::Temporal.cancel_where"
         SEARCH_ATTRIBUTE_TYPES = {
           "ajClass" => :keyword,
@@ -20,13 +24,13 @@ module ActiveJob
 
         def cancel_where(filters)
           query = workflows_query(normalize_filters(filters))
-          summary = empty_summary
+          summary = BatchSummary.new
 
-          each_workflow(query) do |workflow_execution|
-            terminate_workflow(workflow_execution, summary)
+          each_workflow_page(query) do |workflow_executions|
+            terminate_workflows(workflow_executions, summary)
           end
 
-          summary
+          summary.to_h
         rescue ArgumentError
           raise
         rescue StandardError => e
@@ -100,19 +104,32 @@ module ActiveJob
           (filters.map { |name, value| "#{name}=#{value}" } + ["ExecutionStatus='Running'"]).join(" AND ")
         end
 
-        def empty_summary
-          { terminated: 0, failed: 0, errors: [] }
-        end
-
-        def each_workflow(query, &)
+        def each_workflow_page(query, &)
           next_page_token = nil
 
           loop do
             page = client.list_workflow_page(query, page_size: PAGE_SIZE, next_page_token: next_page_token)
-            page.executions.each(&)
+            yield page.executions
             next_page_token = page.next_page_token
             break if next_page_token.to_s.empty?
           end
+        end
+
+        def terminate_workflows(workflow_executions, summary)
+          workflow_executions = workflow_executions.to_a
+          worker_count = [workflow_executions.length, TERMINATION_CONCURRENCY].min
+          workflow_queue = Queue.new
+
+          workflow_executions.each { |workflow_execution| workflow_queue << workflow_execution }
+          Array.new(worker_count) do
+            Thread.new do
+              loop do
+                terminate_workflow(workflow_queue.pop(true), summary)
+              rescue ThreadError
+                break
+              end
+            end
+          end.each(&:value)
         end
 
         def terminate_workflow(workflow_execution, summary)
@@ -127,18 +144,9 @@ module ActiveJob
             status: "terminated",
             reason: TERMINATION_REASON
           )
-          summary[:terminated] += 1
+          summary.record_terminated
         rescue StandardError => e
-          summary[:failed] += 1
-          summary[:errors] << cancellation_error(workflow_id, run_id, e)
-        end
-
-        def cancellation_error(workflow_id, run_id, error)
-          {
-            workflow_id: workflow_id,
-            run_id: run_id,
-            error: "#{error.class}: #{error.message}"
-          }
+          summary.record_failure(workflow_id, run_id, e)
         end
       end
     end
