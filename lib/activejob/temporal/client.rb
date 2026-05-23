@@ -7,6 +7,8 @@ rescue LoadError
   # Tests stub Temporalio::Client, and production users must include the SDK.
 end
 
+require_relative "tls_file"
+
 module ActiveJob
   module Temporal
     # Builds Temporal client connections.
@@ -166,9 +168,7 @@ module ActiveJob
       private_class_method :tls_path_options
 
       def read_tls_file(path)
-        return nil if path.nil? || path.to_s.empty?
-
-        File.read(File.expand_path(path))
+        TLSFile.read(path)
       end
       private_class_method :read_tls_file
 

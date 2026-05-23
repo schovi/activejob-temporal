@@ -100,15 +100,15 @@ en:
             tls_cert_path:
               requires_key_path: "requires tls_key_path so the client certificate and private key rotate together"
               invalid_path: "must be a non-empty file path, got: %{value}"
-              unreadable_path: "must point to a readable file, got: %{value}"
+              unreadable_path: "must point to a readable, non-symlink file, got: %{value}"
 
             tls_key_path:
               invalid_path: "must be a non-empty file path, got: %{value}"
-              unreadable_path: "must point to a readable file, got: %{value}"
+              unreadable_path: "must point to a readable, non-symlink file, got: %{value}"
 
             tls_server_root_ca_cert_path:
               invalid_path: "must be a non-empty file path, got: %{value}"
-              unreadable_path: "must point to a readable file, got: %{value}"
+              unreadable_path: "must point to a readable, non-symlink file, got: %{value}"
 
             tls_domain:
               blank: "must be present when configured"

@@ -18,9 +18,9 @@ The canonical machine-readable schema for all configuration options is available
 | `rate_limiter` | Object, callable, or `nil` | `nil` | Optional limiter backend responding to `wait_time_for(rate_limits)` or `call(rate_limits)`. Required when rate limits are configured. |
 | `global_rate_limit` | Hash or `nil` | `nil` | Optional global rate limit, for example `{ limit: 1000, per: :minute }`. |
 | `tls` | Object, Hash, Boolean, or `nil` | `nil` | Optional SDK-native TLS options or hash-compatible TLS settings. |
-| `tls_cert_path` | String or `nil` | `nil` | Client certificate file path for mTLS. Must be configured with `tls_key_path`. |
-| `tls_key_path` | String or `nil` | `nil` | Client private key file path for mTLS. Must be configured with `tls_cert_path`. |
-| `tls_server_root_ca_cert_path` | String or `nil` | `nil` | Optional root CA certificate file path for self-hosted Temporal TLS verification. |
+| `tls_cert_path` | String or `nil` | `nil` | Client certificate file path for mTLS. Must be configured with `tls_key_path`. Symlinks are rejected. |
+| `tls_key_path` | String or `nil` | `nil` | Client private key file path for mTLS. Must be configured with `tls_cert_path`. Symlinks are rejected. |
+| `tls_server_root_ca_cert_path` | String or `nil` | `nil` | Optional root CA certificate file path for self-hosted Temporal TLS verification. Symlinks are rejected. |
 | `tls_domain` | String or `nil` | `nil` | Optional SNI domain override for TLS verification. |
 | `tls_cert_watch` | Boolean | `false` | Watch configured TLS certificate files and reload worker clients when they change. |
 | `tls_reload_signal` | String | `"HUP"` | Signal name used by workers for manual TLS reload. |

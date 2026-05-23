@@ -8,6 +8,7 @@ require_relative "middleware"
 require_relative "payload_encryption"
 require_relative "payload_serializers"
 require_relative "rate_limit_options"
+require_relative "tls_file"
 
 # rubocop:disable Metrics/ModuleLength
 module ActiveJob
@@ -813,8 +814,7 @@ module ActiveJob
           return
         end
 
-        expanded_path = File.expand_path(path)
-        return if File.file?(expanded_path) && File.readable?(expanded_path)
+        return if TLSFile.readable_regular_file?(path)
 
         errors.add(attribute, :unreadable_path, value: path)
       end

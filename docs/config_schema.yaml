@@ -57,7 +57,8 @@ attributes:
       default: null
       validation_rules:
         - "Optional field, can be nil"
-        - "When provided, must be a readable file"
+        - "When provided, must be a readable regular file"
+        - "Symlinks are rejected"
         - "Must be configured together with tls_key_path"
       description: "Client certificate file path for mTLS. The worker reads the file when building or reloading a Temporal client."
       env_var_name: ACTIVEJOB_TEMPORAL_TLS_CERT_PATH
@@ -68,7 +69,8 @@ attributes:
       default: null
       validation_rules:
         - "Optional field, can be nil"
-        - "When provided, must be a readable file"
+        - "When provided, must be a readable regular file"
+        - "Symlinks are rejected"
         - "Must be configured together with tls_cert_path"
       description: "Client private key file path for mTLS. The worker reads the file when building or reloading a Temporal client."
       env_var_name: ACTIVEJOB_TEMPORAL_TLS_KEY_PATH
@@ -79,7 +81,8 @@ attributes:
       default: null
       validation_rules:
         - "Optional field, can be nil"
-        - "When provided, must be a readable file"
+        - "When provided, must be a readable regular file"
+        - "Symlinks are rejected"
       description: "Root CA certificate file path for self-hosted Temporal TLS verification."
       env_var_name: ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH
       example: "/etc/certs/root-ca.pem"

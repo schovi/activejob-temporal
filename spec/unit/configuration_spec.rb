@@ -802,7 +802,21 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       missing_path = File.join(Dir.tmpdir, "missing-root-ca.pem")
 
       expect { configuration.tls_server_root_ca_cert_path = missing_path }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /readable file/)
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /readable, non-symlink file/)
+    end
+
+    it "rejects symlink TLS paths" do
+      with_tls_files do |cert_path, key_path, _root_ca_path|
+        symlink_path = "#{cert_path}.link"
+        File.symlink(cert_path, symlink_path)
+        configuration.in_configure_block = true
+        configuration.tls_cert_path = symlink_path
+        configuration.tls_key_path = key_path
+        configuration.in_configure_block = false
+
+        expect { configuration.validate! }
+          .to raise_error(ActiveJob::Temporal::ConfigurationError, /readable, non-symlink file/)
+      end
     end
 
     it "rejects certificate watching when no TLS file paths are configured" do

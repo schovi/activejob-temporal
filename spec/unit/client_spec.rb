@@ -300,6 +300,26 @@ RSpec.describe ActiveJob::Temporal, ".client" do
     end
   end
 
+  it "rejects TLS files replaced by symlinks after configuration validation" do
+    Dir.mktmpdir do |directory|
+      cert_path = File.join(directory, "client.pem")
+      key_path = File.join(directory, "client-key.pem")
+      File.write(cert_path, "cert-from-file")
+      File.write(key_path, "key-from-file")
+
+      described_class.configure do |config|
+        config.tls_cert_path = cert_path
+        config.tls_key_path = key_path
+      end
+      File.delete(cert_path)
+      File.symlink(key_path, cert_path)
+
+      expect(Temporalio::Client).not_to receive(:connect)
+      expect { described_class.client }
+        .to raise_error(ActiveJob::Temporal::Error, /TLS file path must not be a symlink/)
+    end
+  end
+
   it "wraps connection errors in ActiveJob::Temporal::Error" do
     described_class.configure do |config|
       config.target = "1.2.3.4:7233"
