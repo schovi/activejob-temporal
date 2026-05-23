@@ -28,6 +28,12 @@ Practical migration instructions from Sidekiq/Resque/Delayed Job to activejob-te
 
 Ruby 4 support requires Temporal Ruby SDK 1.4.x. Workflow code must use deterministic payload values instead of reading process configuration directly. New workflows serialize global activity timeout defaults into the workflow payload at enqueue time. Before upgrading an application with existing Temporal workflow histories, drain or complete workflows that depend on non-default global activity timeout settings, then deploy the Ruby 4 worker.
 
+### Workflow Versioning Note
+
+Workflow control-flow changes use centralized Temporal patch markers in `ActiveJob::Temporal::Workflows::WorkflowVersioning`. Future changes to workflow branching, persisted workflow state, signal/query/update behavior, helper activity routing, or continue-as-new behavior should add a named patch there and branch through `workflow_patch_enabled?`.
+
+Keep both the old and new workflow paths deployed until in-flight histories that can replay the old path have completed or continued as new. After that drain is verified in Temporal visibility, call `Temporalio::Workflow.deprecate_patch` for the marker in a follow-up deploy, then remove the old branch in a later release.
+
 ---
 
 ## 3. Migration Strategy

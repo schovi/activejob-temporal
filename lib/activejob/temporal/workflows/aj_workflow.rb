@@ -15,6 +15,7 @@ require_relative "workflow_dependencies"
 require_relative "workflow_execution_steps"
 require_relative "workflow_interactions"
 require_relative "workflow_local_activities"
+require_relative "workflow_versioning"
 
 module ActiveJob
   module Temporal
@@ -60,6 +61,7 @@ module ActiveJob
         include WorkflowExecutionSteps
         include WorkflowInteractions
         include WorkflowLocalActivities
+        include WorkflowVersioning
 
         DEFAULT_START_TO_CLOSE_TIMEOUT = 900.0
         RATE_LIMIT_ACTIVITY_TIMEOUT = 30.0
