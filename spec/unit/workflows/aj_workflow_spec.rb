@@ -123,6 +123,28 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
         end
       end
+
+      it "uses Temporal retry defaults when optional retry fields are nil" do
+        custom_retry_policy = {
+          "initial_interval" => nil,
+          "backoff_coefficient" => nil,
+          "max_interval" => nil,
+          "maximum_attempts" => 3,
+          "non_retryable_error_types" => nil
+        }
+        payload = base_payload.merge("retry_policy" => custom_retry_policy)
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
+          retry_policy = options[:retry_policy]
+          expect(retry_policy.initial_interval).to eq(1.0)
+          expect(retry_policy.backoff_coefficient).to eq(2.0)
+          expect(retry_policy.max_interval).to be_nil
+          expect(retry_policy.max_attempts).to eq(3)
+          expect(retry_policy.non_retryable_error_types).to be_nil
+        end
+      end
     end
 
     context "when payload is encrypted" do

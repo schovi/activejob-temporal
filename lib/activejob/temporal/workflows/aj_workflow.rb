@@ -235,13 +235,15 @@ module ActiveJob
           # RetryMapper returns maximum_attempts, but Temporalio::RetryPolicy expects max_attempts
           max_attempts_value = hash[:maximum_attempts] || hash["maximum_attempts"]
 
-          Temporalio::RetryPolicy.new(
+          retry_policy_options = {
             initial_interval: hash[:initial_interval] || hash["initial_interval"],
             backoff_coefficient: hash[:backoff_coefficient] || hash["backoff_coefficient"],
             max_interval: hash[:max_interval] || hash["max_interval"],
             max_attempts: max_attempts_value,
             non_retryable_error_types: hash[:non_retryable_error_types] || hash["non_retryable_error_types"]
-          )
+          }.compact
+
+          Temporalio::RetryPolicy.new(**retry_policy_options)
         end
       end
     end
