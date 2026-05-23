@@ -13,7 +13,8 @@ module ActiveJob
       def workflow_interactions_for(job_class)
         handlers = {
           signals: handler_names_for(job_class, :temporal_signal_handler_names),
-          queries: handler_names_for(job_class, :temporal_query_handler_names)
+          queries: handler_names_for(job_class, :temporal_query_handler_names),
+          updates: handler_names_for(job_class, :temporal_update_handler_names)
         }
         return if handlers.values.all?(&:empty?)
 

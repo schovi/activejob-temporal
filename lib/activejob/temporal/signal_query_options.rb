@@ -11,6 +11,7 @@ module ActiveJob
       HANDLER_NAME_PATTERN = /\A[a-zA-Z_]\w*\z/
       BUILT_IN_SIGNAL_NAMES = %w[pause resume].freeze
       BUILT_IN_QUERY_NAMES = %w[pause_reason paused phase signals state].freeze
+      BUILT_IN_UPDATE_NAMES = [].freeze
 
       module ClassMethods
         def temporal_signal(name, &block)
@@ -27,12 +28,24 @@ module ActiveJob
           local_temporal_query_handlers[handler_name] = block
         end
 
+        def temporal_update(name, &block)
+          raise ArgumentError, "temporal_update requires a block" unless block
+
+          handler_name = normalize_handler_name(name)
+          validate_custom_handler_name!(handler_name, "update", BUILT_IN_UPDATE_NAMES)
+          local_temporal_update_handlers[handler_name] = block
+        end
+
         def temporal_signal_handlers
           inherited_temporal_handlers(:temporal_signal_handlers).merge(local_temporal_signal_handlers)
         end
 
         def temporal_query_handlers
           inherited_temporal_handlers(:temporal_query_handlers).merge(local_temporal_query_handlers)
+        end
+
+        def temporal_update_handlers
+          inherited_temporal_handlers(:temporal_update_handlers).merge(local_temporal_update_handlers)
         end
 
         def temporal_signal_handler_names
@@ -43,6 +56,10 @@ module ActiveJob
           temporal_query_handlers.keys
         end
 
+        def temporal_update_handler_names
+          temporal_update_handlers.keys
+        end
+
         private
 
         def local_temporal_signal_handlers
@@ -51,6 +68,10 @@ module ActiveJob
 
         def local_temporal_query_handlers
           @local_temporal_query_handlers ||= {}
+        end
+
+        def local_temporal_update_handlers
+          @local_temporal_update_handlers ||= {}
         end
 
         def normalize_handler_name(name)

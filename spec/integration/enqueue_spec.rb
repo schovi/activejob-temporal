@@ -88,6 +88,38 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
     stop_worker(@worker_thread)
   end
 
+  it "sends workflow updates to a running job and returns the update result" do
+    task_queue = "test-updates-#{SecureRandom.hex(4)}"
+    job_class = stub_const("WorkflowUpdateIntegrationJob", Class.new(ActiveJob::Base) do
+      queue_as :default
+
+      temporal_update :set_progress do |state, completed, total|
+        state["progress"] = { "completed" => completed, "total" => total }
+      end
+
+      temporal_query :progress do |state|
+        state["progress"]
+      end
+
+      def perform
+        sleep 2
+      end
+    end)
+    @worker_thread = start_worker(task_queue)
+    sleep 0.5
+
+    job = job_class.set(queue: task_queue).perform_later
+    workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
+    wait_for_workflow_status(workflow_id, Temporalio::Client::WorkflowExecutionStatus::RUNNING)
+
+    result = ActiveJob::Temporal.update(job_class, job.job_id, :set_progress, 3, 10)
+
+    expect(result).to eq("completed" => 3, "total" => 10)
+    expect(ActiveJob::Temporal.query(job_class, job.job_id, :progress)).to eq("completed" => 3, "total" => 10)
+  ensure
+    stop_worker(@worker_thread)
+  end
+
   context "large payloads" do
     it "rejects job with payload > 250KB (default limit)" do
       # Create a large argument that exceeds the default 250KB limit
@@ -212,6 +244,18 @@ RSpec.describe "ActiveJob Temporal enqueue", :integration do
       loop do
         description = handle.describe
         return description if terminal_statuses.include?(description.status)
+
+        sleep 0.1
+      end
+    end
+  end
+
+  def wait_for_workflow_status(workflow_id, expected_status)
+    handle = client.workflow_handle(workflow_id)
+
+    Timeout.timeout(10) do
+      loop do
+        break if handle.describe.status == expected_status
 
         sleep 0.1
       end

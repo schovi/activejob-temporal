@@ -20,7 +20,7 @@
     "workflow_interactions": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["job_class", "signals", "queries"],
+      "required": ["job_class", "signals", "queries", "updates"],
       "properties": {
         "job_class": { "type": "string", "minLength": 1 },
         "signals": {
@@ -29,6 +29,11 @@
           "uniqueItems": true
         },
         "queries": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "updates": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 },
           "uniqueItems": true

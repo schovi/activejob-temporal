@@ -33,11 +33,12 @@ RSpec.describe "job payload schema" do
     expect(interaction_schema).to include(
       "type" => "object",
       "additionalProperties" => false,
-      "required" => contain_exactly("job_class", "signals", "queries"),
+      "required" => contain_exactly("job_class", "signals", "queries", "updates"),
       "properties" => include(
         "job_class" => { "type" => "string", "minLength" => 1 },
         "signals" => include("type" => "array", "uniqueItems" => true),
-        "queries" => include("type" => "array", "uniqueItems" => true)
+        "queries" => include("type" => "array", "uniqueItems" => true),
+        "updates" => include("type" => "array", "uniqueItems" => true)
       )
     )
   end

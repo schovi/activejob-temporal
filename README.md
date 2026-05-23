@@ -37,7 +37,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Per-job timeout configuration:** Configure activity timeouts per job using `temporal_options` class method
 - ✅ **Rate limiting:** Enforce global and per-job throughput limits through a pluggable limiter backend
 - ✅ **Job cancellation:** Cancel in-flight jobs via `ActiveJob::Temporal.cancel(JobClass, job_id)` API
-- ✅ **Signals and queries:** Send workflow signals and query workflow-owned state
+- ✅ **Signals, queries, and updates:** Send workflow signals, query workflow-owned state, and run request/response workflow updates
 - ✅ **Search attributes:** Filter and debug jobs in Temporal UI using job class, queue, job ID, tenant ID, custom tags, and enqueue timestamp
 - ✅ **Transactional enqueue:** Jobs automatically defer enqueue until the current database transaction commits (via `enqueue_after_transaction_commit?`)
 - ✅ **GlobalID support:** Seamless serialization of ActiveRecord models and other GlobalID-compatible objects
@@ -871,7 +871,7 @@ ActiveJob::Temporal.failed?(SendInvoiceJob, "550e8400-e29b-41d4-a716-44665544000
 `status` returns `nil` when no workflow exists for the given job ID. Predicates return `false` for missing jobs.
 `attempt` and `last_failure` are best-effort details from pending activities, so closed workflows may return `nil` for both.
 
-## Signals and Queries
+## Signals, Queries, and Updates
 
 Signals mutate workflow-owned state. Queries read it without opening the Temporal UI:
 
@@ -922,6 +922,27 @@ end
 ActiveJob::Temporal.signal(ImportJob, job_id, :set_progress, 450, 1_000)
 ActiveJob::Temporal.query(ImportJob, job_id, :progress)
 # => { "completed" => 450, "total" => 1000, "percentage" => 45 }
+```
+
+Updates also run in workflow code, mutate workflow-owned state, and return a result to the caller:
+
+```ruby
+class ImportJob < ApplicationJob
+  temporal_update :set_checkpoint do |state, checkpoint|
+    state["checkpoint"] = checkpoint
+  end
+
+  temporal_query :checkpoint do |state|
+    state["checkpoint"]
+  end
+
+  def perform(account_id)
+    import_account(account_id)
+  end
+end
+
+ActiveJob::Temporal.update(ImportJob, job_id, :set_checkpoint, "users:450")
+# => "users:450"
 ```
 
 Custom handlers run inside Temporal workflow code. Keep them deterministic: update only the provided state hash, avoid database calls, network calls, random values, process time, and other I/O. Built-in names (`pause`, `resume`, `state`, `paused`, `pause_reason`, `phase`, and `signals`) are reserved.
@@ -1137,7 +1158,6 @@ Additional guides:
 
 The following features are **not yet implemented** in v0.1 but are planned for future releases:
 
-- **Updates** → Planned for v0.3
 - **Child workflows** → Planned for v0.3
 - **Rails generators** (for scaffolding jobs, initializers, etc.) → Planned for v1.0
 - **ActiveRecord callback interception** (e.g., automatic transactional enqueue) → Deferred

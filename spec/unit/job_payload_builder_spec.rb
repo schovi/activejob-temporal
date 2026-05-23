@@ -52,7 +52,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload[:temporal_options]).to eq(start_to_close_timeout: 7200.0)
   end
 
-  it "includes workflow interaction metadata for declared signals and queries" do
+  it "includes workflow interaction metadata for declared signals, queries, and updates" do
     job_class = Class.new(ActiveJob::Base) do
       def self.name = "WorkflowInteractionJob"
 
@@ -60,6 +60,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       temporal_signal(:append_event) { |state, event| (state["events"] ||= []) << event }
       temporal_query(:progress) { |state| state["progress"] }
       temporal_query(:events) { |state| state["events"] || [] }
+      temporal_update(:set_progress) { |state, value| state["progress"] = value }
     end
     job = job_class.new
 
@@ -68,7 +69,8 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload[:workflow_interactions]).to eq(
       job_class: "WorkflowInteractionJob",
       signals: %w[append_event progress],
-      queries: %w[events progress]
+      queries: %w[events progress],
+      updates: %w[set_progress]
     )
   end
 

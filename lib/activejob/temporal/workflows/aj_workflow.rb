@@ -82,6 +82,13 @@ module ActiveJob
           end
         end
 
+        workflow_update dynamic: true
+        def handle_dynamic_update(update_name, *args)
+          handler_name = normalize_handler_name!(update_name, "update")
+
+          dispatch_custom_update(handler_name, args)
+        end
+
         # Executes the workflow: optionally sleeps until scheduled time, then runs the activity.
         #
         # @param payload [Hash] Job payload containing execution metadata

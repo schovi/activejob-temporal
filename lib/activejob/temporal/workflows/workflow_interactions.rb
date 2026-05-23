@@ -47,10 +47,26 @@ module ActiveJob
           handler.call(deep_copy(workflow_state["custom"]), *args)
         end
 
+        def dispatch_custom_update(handler_name, args)
+          handler = workflow_update_handlers[handler_name]
+          raise ArgumentError, "Unknown workflow update: #{handler_name}" unless handler
+
+          result = handler.call(workflow_state["custom"], *args)
+          record_update(handler_name, args)
+          result
+        end
+
         def record_signal(handler_name, args)
           workflow_state["signals"][handler_name] = {
             "args" => deep_copy(args),
             "received_at" => Temporalio::Workflow.now.iso8601
+          }
+        end
+
+        def record_update(handler_name, args)
+          workflow_state["updates"][handler_name] = {
+            "args" => deep_copy(args),
+            "accepted_at" => Temporalio::Workflow.now.iso8601
           }
         end
 
@@ -71,6 +87,7 @@ module ActiveJob
         def reset_workflow_interactions
           @workflow_signal_handlers = {}
           @workflow_query_handlers = {}
+          @workflow_update_handlers = {}
         end
 
         def load_workflow_interaction_handlers(payload)
@@ -90,6 +107,11 @@ module ActiveJob
             :temporal_query_handlers,
             metadata[:queries] || metadata["queries"]
           )
+          @workflow_update_handlers = filtered_handlers(
+            job_class,
+            :temporal_update_handlers,
+            metadata[:updates] || metadata["updates"]
+          )
         end
 
         def workflow_state
@@ -97,6 +119,7 @@ module ActiveJob
             "phase" => "initialized",
             "paused" => false,
             "signals" => {},
+            "updates" => {},
             "custom" => {}
           }
         end
@@ -107,6 +130,10 @@ module ActiveJob
 
         def workflow_query_handlers
           @workflow_query_handlers ||= {}
+        end
+
+        def workflow_update_handlers
+          @workflow_update_handlers ||= {}
         end
 
         def workflow_interactions_configured?

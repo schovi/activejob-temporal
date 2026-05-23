@@ -110,7 +110,7 @@ Watch for:
 
 - You must operate Temporal or use Temporal Cloud.
 - Search Attributes must be registered before workflows can be filtered.
-- Current v0.1 jobs use a single workflow plus one activity. Multi-activity workflows, job chains, child workflows, signals, queries, and recurring Temporal schedules are planned but not current behavior.
+- Current jobs use a single primary workflow plus activities. Child workflows are not yet supported.
 - Temporal workflow determinism limits what code can run inside workflow definitions. This gem keeps user job code in activities, but upgrades still need care when workflow histories exist.
 - Payload size matters. The default maximum is `250` KB, so pass IDs or GlobalID records instead of large objects.
 

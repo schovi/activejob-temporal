@@ -796,6 +796,39 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         expect(workflow.handle_dynamic_query("progress")).to eq(75)
       end
 
+      it "routes declared custom updates to the ActiveJob handlers and returns their result" do
+        update_handler = lambda do |state, completed, total|
+          state["progress"] = { "completed" => completed, "total" => total }
+          state["progress"]
+        end
+        query_handler = lambda do |state|
+          state["progress"]
+        end
+        job_class = Class.new do
+          define_singleton_method(:temporal_update_handlers) { { "set_progress" => update_handler } }
+          define_singleton_method(:temporal_query_handlers) { { "progress" => query_handler } }
+        end
+        stub_const("SampleJob", job_class)
+        payload = base_payload.merge(
+          "workflow_interactions" => {
+            "job_class" => "SampleJob",
+            "updates" => ["set_progress"],
+            "queries" => ["progress"]
+          }
+        )
+
+        workflow.execute(payload)
+        result = workflow.handle_dynamic_update("set_progress", 450, 1_000)
+
+        expect(result).to eq("completed" => 450, "total" => 1_000)
+        expect(workflow.handle_dynamic_query("progress")).to eq("completed" => 450, "total" => 1_000)
+        expect(workflow.handle_dynamic_query("state")).to include(
+          "updates" => hash_including(
+            "set_progress" => hash_including("args" => [450, 1_000])
+          )
+        )
+      end
+
       it "routes buffered custom signals after workflow interactions are configured" do
         signal_handler = lambda do |state, value|
           state["progress"] = value
@@ -836,6 +869,8 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           .to raise_error(ArgumentError, /Unknown workflow signal/)
         expect { workflow.handle_dynamic_query("missing") }
           .to raise_error(ArgumentError, /Unknown workflow query/)
+        expect { workflow.handle_dynamic_update("missing") }
+          .to raise_error(ArgumentError, /Unknown workflow update/)
       end
     end
 

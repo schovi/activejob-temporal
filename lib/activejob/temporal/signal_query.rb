@@ -43,6 +43,21 @@ module ActiveJob
                 "Failed to query Temporal workflow for job_id #{job_id}: #{e.message}"
         end
 
+        def update(job_class, job_id, update_name, *)
+          validate_job_class!(job_class)
+          validate_job_id!(job_id)
+          handler_name = normalize_handler_name!(update_name, "update")
+
+          with_running_workflow_handle(job_class, job_id) do |handle|
+            handle.execute_update(handler_name, *)
+          end
+        rescue ArgumentError, ActiveJob::Temporal::WorkflowNotFoundError
+          raise
+        rescue Temporalio::Error::RPCError => e
+          raise ActiveJob::Temporal::TemporalConnectionError,
+                "Failed to update Temporal workflow for job_id #{job_id}: #{e.message}"
+        end
+
         private
 
         def with_running_workflow_handle(job_class, job_id)

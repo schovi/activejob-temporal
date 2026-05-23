@@ -98,7 +98,7 @@ This document tracks all quality checks required before releasing activejob-temp
 
 ## Known Limitations (Documented & Acceptable)
 
-- [x] No Temporal Signals, Queries, or Updates (documented in README limitations section)
+- [x] Workflow interaction limits documented in README
 - [x] No child workflows or multi-activity orchestration (documented in README)
 - [x] No Temporal Schedules API for recurring jobs (documented in README)
 - [x] No custom DLQ UI (documented in README)

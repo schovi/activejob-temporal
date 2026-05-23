@@ -229,6 +229,10 @@ module ActiveJob
         SignalQuery.query(job_class, job_id, query_name, *, reject_condition: reject_condition)
       end
 
+      def update(job_class, job_id, update_name, *)
+        SignalQuery.update(job_class, job_id, update_name, *)
+      end
+
       def running?(job_class, job_id)
         Inspect.running?(job_class, job_id)
       end
