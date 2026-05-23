@@ -261,6 +261,13 @@ module ActiveJob
         description: "Bind address for the Prometheus metrics endpoint"
       },
 
+      metrics_allow_public_bind: {
+        default: false,
+        env_var: "ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND",
+        type: :boolean,
+        description: "Allow the Prometheus metrics endpoint to bind non-loopback addresses"
+      },
+
       middleware_chain: {
         default: -> { Middleware::Chain.new },
         type: :object,
@@ -344,8 +351,9 @@ module ActiveJob
     #   ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB,
     #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES,
     #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS,
-    #   ACTIVEJOB_TEMPORAL_METRICS_PROVIDER, ACTIVEJOB_TEMPORAL_METRICS_PORT, and
-    #   ACTIVEJOB_TEMPORAL_METRICS_BIND can provide defaults.
+    #   ACTIVEJOB_TEMPORAL_METRICS_PROVIDER, ACTIVEJOB_TEMPORAL_METRICS_PORT,
+    #   ACTIVEJOB_TEMPORAL_METRICS_BIND, and ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND
+    #   can provide defaults.
     #
     # @see ConfigValidator
     # @see ActiveJob::Temporal.configure
@@ -707,6 +715,7 @@ module ActiveJob
       def validate_metrics_settings
         validate_metrics_port
         validate_metrics_bind
+        validate_metrics_allow_public_bind
       end
 
       def validate_metrics_port
@@ -720,6 +729,12 @@ module ActiveJob
         return if metrics_bind.to_s.strip.present?
 
         errors.add(:metrics_bind, :blank)
+      end
+
+      def validate_metrics_allow_public_bind
+        return if [true, false].include?(metrics_allow_public_bind)
+
+        errors.add(:metrics_allow_public_bind, :not_boolean, value: metrics_allow_public_bind.inspect)
       end
 
       def validate_audit_settings

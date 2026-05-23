@@ -19,10 +19,12 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` |
 | `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE` | No | Number of child worker processes for `temporal-worker` to supervise. Defaults to `1`. | `3` |
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT` | No | Expose `GET /health` on the given port. Off by default. | `8080` |
-| `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND` | No | Bind address for the health endpoint. Defaults to localhost. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND` | No | Bind address for the health endpoint. Defaults to localhost. Non-loopback addresses require `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND=true`. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND` | No | Allow the unauthenticated health endpoint to bind a non-loopback address. Use only behind network controls. | `true` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. Off by default. | `9394` |
-| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. Non-loopback addresses require `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND=true`. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND` | No | Allow the unauthenticated metrics endpoint to bind a non-loopback address. Use only behind network controls. | `true` |
 | `ACTIVEJOB_TEMPORAL_TLS_CERT_PATH` | Required for mTLS client certs | Client certificate file path. | `/etc/certs/client.pem` |
 | `ACTIVEJOB_TEMPORAL_TLS_KEY_PATH` | Required with client cert path | Client private key file path. | `/etc/certs/client-key.pem` |
 | `ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH` | No | Root CA certificate file path for self-hosted TLS. | `/etc/certs/root-ca.pem` |
@@ -52,9 +54,11 @@ The worker automatically detects your Rails environment and loads your job class
 - **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum workflow task poll capacity. Defaults to `5`.
 - **`--pool-size SIZE`**: Start a parent process that supervises `SIZE` worker processes. Can also be set with `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE`.
 - **`--health-check-port PORT`**: Optional HTTP health endpoint at `GET /health`. Can also be set with `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT`.
-- **`--health-check-bind HOST`**: Health endpoint bind address. Defaults to `127.0.0.1`; set `0.0.0.0` when an orchestrator must reach the port from outside the process namespace.
+- **`--health-check-bind HOST`**: Health endpoint bind address. Defaults to `127.0.0.1`; non-loopback addresses require `--allow-public-health-check-bind`.
+- **`--allow-public-health-check-bind`**: Allow the unauthenticated health endpoint to bind a non-loopback address. Use only behind network controls.
 - **`--metrics-port PORT`**: Optional Prometheus metrics endpoint at `GET /metrics`. Can also be set with `ACTIVEJOB_TEMPORAL_METRICS_PORT`.
-- **`--metrics-bind HOST`**: Metrics endpoint bind address. Defaults to `127.0.0.1`; set `0.0.0.0` when Prometheus scrapes from outside the process namespace.
+- **`--metrics-bind HOST`**: Metrics endpoint bind address. Defaults to `127.0.0.1`; non-loopback addresses require `--allow-public-metrics-bind`.
+- **`--allow-public-metrics-bind`**: Allow the unauthenticated metrics endpoint to bind a non-loopback address. Use only behind network controls.
 - **`RAILS_ROOT`**: Optional path to Rails app. Auto-detected if omitted (uses current directory).
 
 ### Examples
@@ -88,12 +92,18 @@ curl http://localhost:8080/health
 
 **Worker health endpoint for container probes:**
 ```bash
-bundle exec temporal-worker --health-check-bind 0.0.0.0 --health-check-port 8080
+bundle exec temporal-worker \
+  --health-check-bind 0.0.0.0 \
+  --allow-public-health-check-bind \
+  --health-check-port 8080
 ```
 
 **Prometheus metrics endpoint:**
 ```bash
-bundle exec temporal-worker --metrics-bind 0.0.0.0 --metrics-port 9394
+bundle exec temporal-worker \
+  --metrics-bind 0.0.0.0 \
+  --allow-public-metrics-bind \
+  --metrics-port 9394
 curl http://localhost:9394/metrics
 ```
 
@@ -291,7 +301,12 @@ environment:
 spec:
   containers:
   - name: temporal-worker
-    args: ["--health-check-bind", "0.0.0.0", "--health-check-port", "8080"]
+    args:
+      - "--health-check-bind"
+      - "0.0.0.0"
+      - "--allow-public-health-check-bind"
+      - "--health-check-port"
+      - "8080"
     env:
     - name: ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES
       value: "300"

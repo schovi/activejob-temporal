@@ -2,6 +2,8 @@
 
 require "rbconfig"
 
+require_relative "bind_policy"
+
 module ActiveJob
   module Temporal
     # rubocop:disable Metrics/ClassLength
@@ -16,8 +18,10 @@ module ActiveJob
         process_adapter
         health_check_port
         health_check_bind
+        health_check_allow_public_bind
         metrics_port
         metrics_bind
+        metrics_allow_public_bind
         max_concurrent_activities
         max_concurrent_workflows
         restart_delay
@@ -106,8 +110,10 @@ module ActiveJob
       def configure_runtime_options(options)
         @health_check_port = optional_positive_integer(options.fetch(:health_check_port, nil), "health_check_port")
         @health_check_bind = options.fetch(:health_check_bind, nil)
+        @health_check_allow_public_bind = options.fetch(:health_check_allow_public_bind, false)
         @metrics_port = optional_positive_integer(options.fetch(:metrics_port, nil), "metrics_port")
         @metrics_bind = options.fetch(:metrics_bind, nil)
+        @metrics_allow_public_bind = options.fetch(:metrics_allow_public_bind, false)
         @max_concurrent_activities =
           optional_positive_integer(options.fetch(:max_concurrent_activities, nil), "max_concurrent_activities")
         @max_concurrent_workflows =
@@ -128,9 +134,11 @@ module ActiveJob
       def validate!
         raise ArgumentError, "worker_command must not be empty" if @worker_command.empty?
         raise ArgumentError, "restart_delay must be finite and non-negative" unless finite_non_negative?(@restart_delay)
-        return if finite_non_negative?(@shutdown_timeout)
+        unless finite_non_negative?(@shutdown_timeout)
+          raise ArgumentError, "shutdown_timeout must be finite and non-negative"
+        end
 
-        raise ArgumentError, "shutdown_timeout must be finite and non-negative"
+        validate_public_binds!
       end
 
       def positive_integer(value, name)
@@ -150,6 +158,26 @@ module ActiveJob
 
       def finite_non_negative?(value)
         value.finite? && !value.negative?
+      end
+
+      def validate_public_binds!
+        if @health_check_port
+          BindPolicy.validate!(
+            endpoint: "health check",
+            bind_address: @health_check_bind,
+            allow_public_bind: @health_check_allow_public_bind,
+            warn_on_allowed: false
+          )
+        end
+
+        return unless @metrics_port
+
+        BindPolicy.validate!(
+          endpoint: "metrics",
+          bind_address: @metrics_bind,
+          allow_public_bind: @metrics_allow_public_bind,
+          warn_on_allowed: false
+        )
       end
 
       def ensure_fork_supported!
@@ -197,8 +225,10 @@ module ActiveJob
 
         environment["ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT"] = (@health_check_port + index).to_s if @health_check_port
         environment["ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND"] = @health_check_bind.to_s if @health_check_bind
+        environment["ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND"] = "true" if @health_check_allow_public_bind
         environment["ACTIVEJOB_TEMPORAL_METRICS_PORT"] = (@metrics_port + index).to_s if @metrics_port
         environment["ACTIVEJOB_TEMPORAL_METRICS_BIND"] = @metrics_bind.to_s if @metrics_bind
+        environment["ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND"] = "true" if @metrics_allow_public_bind
         if @max_concurrent_activities
           environment["ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES"] = @max_concurrent_activities.to_s
         end

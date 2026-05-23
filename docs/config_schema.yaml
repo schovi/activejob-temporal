@@ -332,10 +332,20 @@ attributes:
       default: "127.0.0.1"
       validation_rules:
         - "Must be present"
-        - "Use 0.0.0.0 only when Prometheus must scrape from outside the worker process namespace"
+        - "Non-loopback addresses require metrics_allow_public_bind"
       description: "Bind address for the worker Prometheus metrics endpoint."
       env_var_name: ACTIVEJOB_TEMPORAL_METRICS_BIND
       example: "0.0.0.0"
+
+    - name: metrics_allow_public_bind
+      type: Boolean
+      default: false
+      validation_rules:
+        - "Must be boolean (true or false)"
+        - "Set true only when the metrics endpoint is protected from untrusted networks"
+      description: "Allows the unauthenticated worker Prometheus metrics endpoint to bind a non-loopback address."
+      env_var_name: ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND
+      example: true
 
     - name: middleware_chain
       type: Middleware::Chain
@@ -479,6 +489,7 @@ examples:
       metrics_provider: ":none"
       metrics_port: null
       metrics_bind: "127.0.0.1"
+      metrics_allow_public_bind: false
       middleware_chain: "empty"
       max_payload_size_kb: 250
       payload_serializer: ":json"
@@ -525,6 +536,7 @@ examples:
       metrics_provider: ":prometheus"
       metrics_port: 9394
       metrics_bind: "127.0.0.1"
+      metrics_allow_public_bind: false
       middleware_chain: "empty"
       max_payload_size_kb: 250
       payload_serializer: ":json"
@@ -591,6 +603,7 @@ examples:
       metrics_provider: ":prometheus"
       metrics_port: 9394
       metrics_bind: "127.0.0.1"
+      metrics_allow_public_bind: false
       middleware_chain: "empty"
       max_payload_size_kb: 512
       payload_serializer: ":message_pack"
@@ -751,6 +764,11 @@ environment_variables:
     - name: ACTIVEJOB_TEMPORAL_METRICS_BIND
       maps_to: metrics_bind
       example: "0.0.0.0"
+
+    - name: ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND
+      maps_to: metrics_allow_public_bind
+      example: "true"
+      note: "Must be converted to boolean"
 
     - name: ACTIVEJOB_TEMPORAL_AUDIT_LOG
       maps_to: audit_log

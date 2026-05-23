@@ -5,6 +5,7 @@ require "io/wait"
 require "socket"
 
 require_relative "connection_worker_pool"
+require_relative "bind_policy"
 require_relative "http_line_reader"
 
 module ActiveJob
@@ -19,9 +20,10 @@ module ActiveJob
 
       attr_reader :port, :bind_address
 
-      def initialize(port:, state:, bind_address: DEFAULT_BIND_ADDRESS)
+      def initialize(port:, state:, bind_address: DEFAULT_BIND_ADDRESS, allow_public_bind: false)
         @requested_port = Integer(port)
         @bind_address = bind_address
+        @allow_public_bind = allow_public_bind
         @state = state
         @running = false
         @mutex = Mutex.new
@@ -31,6 +33,9 @@ module ActiveJob
         @mutex.synchronize do
           return self if @running
 
+          BindPolicy.validate!(
+            endpoint: "health check", bind_address: bind_address, allow_public_bind: @allow_public_bind
+          )
           @server = TCPServer.new(bind_address, @requested_port)
           @port = @server.addr[1]
           @connection_pool = ConnectionWorkerPool.new(

@@ -42,6 +42,7 @@ The canonical machine-readable schema for all configuration options is available
 | `metrics_provider` | Symbol | `:none` | Metrics provider. Set to `:prometheus` to collect built-in Prometheus metrics. |
 | `metrics_port` | Integer or `nil` | `nil` | Optional worker HTTP port for Prometheus metrics at `GET /metrics`. |
 | `metrics_bind` | String | `"127.0.0.1"` | Bind address for the Prometheus metrics endpoint. |
+| `metrics_allow_public_bind` | Boolean | `false` | Allows the unauthenticated metrics endpoint to bind a non-loopback address. Use only behind network controls. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 | `payload_serializer` | Symbol | `:json` | Serializer for job execution payloads. Supports `:json`, `:message_pack`, `:msgpack`, and `:marshal`. |
@@ -86,6 +87,7 @@ Configuration can also be set via environment variables for 12-factor app compli
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | `metrics_provider` | Symbol | `:none` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | `metrics_port` | Integer | `nil` |
 | `ACTIVEJOB_TEMPORAL_METRICS_BIND` | `metrics_bind` | String | `"127.0.0.1"` |
+| `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND` | `metrics_allow_public_bind` | Boolean | `false` |
 | `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | `audit_log` | Boolean | `false` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE` | `dead_letter_queue` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS` | `dead_letter_after_attempts` | Integer | `nil` |
@@ -208,7 +210,7 @@ bundle exec temporal-worker
 bundle exec temporal-worker --metrics-port 9394
 ```
 
-`metrics_provider` accepts `:none` or `:prometheus`. `metrics_port` is optional; when set, the worker exposes `GET /metrics`. `metrics_bind` defaults to localhost. Use `0.0.0.0` only when Prometheus runs outside the worker process namespace. Enqueue and payload size metrics are recorded by the process that calls `perform_later`, so expose `ActiveJob::Temporal::Metrics.render` from that process if Prometheus should scrape those series.
+`metrics_provider` accepts `:none` or `:prometheus`. `metrics_port` is optional; when set, the worker exposes `GET /metrics`. `metrics_bind` defaults to localhost. Use `0.0.0.0` with `metrics_allow_public_bind = true` only when Prometheus runs outside the worker process namespace and network controls prevent untrusted access. Enqueue and payload size metrics are recorded by the process that calls `perform_later`, so expose `ActiveJob::Temporal::Metrics.render` from that process if Prometheus should scrape those series.
 
 See the [Metrics Guide](metrics.md) for metric names, scrape configuration, and Grafana dashboard setup.
 

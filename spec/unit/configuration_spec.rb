@@ -79,6 +79,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.metrics_provider).to be(:none)
       expect(configuration.metrics_port).to be_nil
       expect(configuration.metrics_bind).to eq("127.0.0.1")
+      expect(configuration.metrics_allow_public_bind).to be(false)
     end
 
     it "disables audit logging by default" do
@@ -291,6 +292,14 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(config.metrics_bind).to eq("0.0.0.0")
     end
 
+    it "reads metrics public bind opt-in from ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND").and_return("true")
+
+      config = described_class.new
+      expect(config.metrics_allow_public_bind).to be(true)
+    end
+
     it "reads dead letter queue settings from environment variables" do
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE").and_return("failed_jobs")
@@ -475,6 +484,21 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects invalid ports" do
       expect { configuration.metrics_port = 70_000 }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /Metrics port must be between 1 and 65535/)
+    end
+  end
+
+  describe "#metrics_allow_public_bind=" do
+    it "accepts boolean values" do
+      configuration.metrics_allow_public_bind = true
+      expect(configuration.metrics_allow_public_bind).to be(true)
+
+      configuration.metrics_allow_public_bind = false
+      expect(configuration.metrics_allow_public_bind).to be(false)
+    end
+
+    it "rejects non-boolean values" do
+      expect { configuration.metrics_allow_public_bind = "true" }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Metrics allow public bind must be true or false/)
     end
   end
 

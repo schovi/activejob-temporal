@@ -215,6 +215,7 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `metrics_provider` | Symbol | `:none` | Metrics provider to use. Set to `:prometheus` to collect built-in Prometheus metrics. |
 | `metrics_port` | Integer or `nil` | `nil` | Optional worker HTTP port for Prometheus metrics at `GET /metrics`. |
 | `metrics_bind` | String | `"127.0.0.1"` | Bind address for the Prometheus metrics endpoint. |
+| `metrics_allow_public_bind` | Boolean | `false` | Allows the metrics endpoint to bind a non-loopback address. Require network controls when enabled. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 | `payload_serializer` | Symbol | `:json` | Serializer for job execution payloads. Supports `:json`, `:message_pack`, `:msgpack`, and `:marshal`. |
@@ -992,13 +993,19 @@ curl http://localhost:8080/health
 For container probes or remote load balancers, bind the endpoint outside localhost:
 
 ```bash
-bundle exec temporal-worker --health-check-bind 0.0.0.0 --health-check-port 8080
+bundle exec temporal-worker \
+  --health-check-bind 0.0.0.0 \
+  --allow-public-health-check-bind \
+  --health-check-port 8080
 ```
 
 Expose Prometheus metrics for scraping:
 
 ```bash
-bundle exec temporal-worker --metrics-bind 0.0.0.0 --metrics-port 9394
+bundle exec temporal-worker \
+  --metrics-bind 0.0.0.0 \
+  --allow-public-metrics-bind \
+  --metrics-port 9394
 curl http://localhost:9394/metrics
 ```
 
@@ -1041,9 +1048,13 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity. Defaults to `100`, an I/O-oriented starting point. Lower this near CPU core count for CPU-bound MRI workers. | `50` or `200` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` or `50` |
 | `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE` | No | Number of child worker processes for `temporal-worker` to supervise. Defaults to `1`. | `3` |
+| `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT` | No | Expose `GET /health`. Off by default. | `8080` |
+| `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND` | No | Bind address for the health endpoint. Defaults to localhost. Non-loopback addresses require `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND=true`. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND` | No | Allow the unauthenticated health endpoint to bind a non-loopback address. Use only behind network controls. | `true` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
 | `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. | `9394` |
-| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. Non-loopback addresses require `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND=true`. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND` | No | Allow the unauthenticated metrics endpoint to bind a non-loopback address. Use only behind network controls. | `true` |
 | `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | No | Enable structured lifecycle audit events. | `true` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE` | No | Task queue for parked dead letter workflows. | `failed_jobs` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS` | No | Retry attempt limit before routing to the dead letter queue. | `3` |

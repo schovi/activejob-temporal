@@ -27,6 +27,12 @@ RSpec.describe ActiveJob::Temporal::HealthCheckServer do
       expect(@server.bind_address).to eq("127.0.0.1")
     end
 
+    it "rejects public binds without explicit opt-in" do
+      expect do
+        described_class.new(port: 0, bind_address: "0.0.0.0", state: state).start
+      end.to raise_error(ArgumentError, /health check endpoint.*public bind opt-in/)
+    end
+
     it "serves worker health as JSON" do
       state.mark_started!
       state.record_task_started!(now: Time.utc(2026, 5, 20, 10, 1, 0))

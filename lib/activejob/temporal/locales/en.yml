@@ -50,6 +50,9 @@ en:
             metrics_bind:
               blank: "must be present when metrics are configured"
 
+            metrics_allow_public_bind:
+              not_boolean: "must be true or false, got: %{value}"
+
             audit_log:
               not_boolean: "must be true or false, got: %{value}"
 

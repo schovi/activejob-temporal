@@ -92,8 +92,10 @@ RSpec.describe ActiveJob::Temporal::WorkerPool do
     pool = build_pool(
       size: 3,
       health_check_bind: "0.0.0.0",
+      health_check_allow_public_bind: true,
       health_check_port: 8080,
       metrics_bind: "0.0.0.0",
+      metrics_allow_public_bind: true,
       metrics_port: 9394,
       max_concurrent_activities: 200,
       max_concurrent_workflows: 25
@@ -107,7 +109,9 @@ RSpec.describe ActiveJob::Temporal::WorkerPool do
       .to eq(%w[9394 9395 9396])
     expect(process_adapter.forks.first.environment).to include(
       "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND" => "0.0.0.0",
+      "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND" => "true",
       "ACTIVEJOB_TEMPORAL_METRICS_BIND" => "0.0.0.0",
+      "ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND" => "true",
       "ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES" => "200",
       "ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS" => "25",
       "ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE" => "1"
@@ -231,5 +235,17 @@ RSpec.describe ActiveJob::Temporal::WorkerPool do
   it "rejects invalid pool sizes" do
     expect { build_pool(size: 0) }
       .to raise_error(ArgumentError, /pool size must be a positive integer/)
+  end
+
+  it "rejects public health binds without explicit opt-in" do
+    expect do
+      build_pool(health_check_port: 8080, health_check_bind: "0.0.0.0")
+    end.to raise_error(ArgumentError, /health check endpoint.*public bind opt-in/)
+  end
+
+  it "rejects public metrics binds without explicit opt-in" do
+    expect do
+      build_pool(metrics_port: 9394, metrics_bind: "0.0.0.0")
+    end.to raise_error(ArgumentError, /metrics endpoint.*public bind opt-in/)
   end
 end

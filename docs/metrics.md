@@ -11,6 +11,7 @@ ActiveJob::Temporal.configure do |config|
   config.metrics_provider = :prometheus
   config.metrics_port = 9394
   config.metrics_bind = "127.0.0.1"
+  config.metrics_allow_public_bind = false
 end
 ```
 
@@ -21,7 +22,7 @@ bundle exec temporal-worker --metrics-port 9394
 curl http://localhost:9394/metrics
 ```
 
-Use `--metrics-bind 0.0.0.0` only when Prometheus scrapes the worker from outside the process namespace, such as from another container or pod.
+Use `--metrics-bind 0.0.0.0 --allow-public-metrics-bind` only when Prometheus scrapes the worker from outside the process namespace, such as from another container or pod, and network controls prevent untrusted access.
 
 ## Metrics
 

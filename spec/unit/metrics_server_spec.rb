@@ -23,6 +23,12 @@ RSpec.describe ActiveJob::Temporal::MetricsServer do
       expect(@server.bind_address).to eq("127.0.0.1")
     end
 
+    it "rejects public binds without explicit opt-in" do
+      expect do
+        described_class.new(port: 0, bind_address: "0.0.0.0", provider: provider).start
+      end.to raise_error(ArgumentError, /metrics endpoint.*public bind opt-in/)
+    end
+
     it "serves Prometheus text metrics" do
       @server = described_class.new(port: 0, bind_address: "127.0.0.1", provider: provider).start
 

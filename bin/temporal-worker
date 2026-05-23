@@ -16,8 +16,12 @@ options = {
     "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND",
     ActiveJob::Temporal::HealthCheckServer::DEFAULT_BIND_ADDRESS
   ),
+  health_check_allow_public_bind: ActiveJob::Temporal::BindPolicy.allow_public_bind?(
+    ENV.fetch("ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND", nil)
+  ),
   health_check_port: ENV.fetch("ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT", nil),
   metrics_bind: ENV.fetch("ACTIVEJOB_TEMPORAL_METRICS_BIND", nil),
+  metrics_allow_public_bind: nil,
   metrics_port: ENV.fetch("ACTIVEJOB_TEMPORAL_METRICS_PORT", nil),
   pool_size: ENV.fetch("ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE", 1)
 }
@@ -33,12 +37,23 @@ OptionParser.new do |parser|
     options[:health_check_bind] = host
   end
 
+  parser.on(
+    "--allow-public-health-check-bind",
+    "Allow health endpoint to bind non-loopback addresses"
+  ) do
+    options[:health_check_allow_public_bind] = true
+  end
+
   parser.on("--metrics-port PORT", Integer, "Expose GET /metrics on PORT") do |port|
     options[:metrics_port] = port
   end
 
   parser.on("--metrics-bind HOST", "Bind metrics endpoint to HOST") do |host|
     options[:metrics_bind] = host
+  end
+
+  parser.on("--allow-public-metrics-bind", "Allow metrics endpoint to bind non-loopback addresses") do
+    options[:metrics_allow_public_bind] = true
   end
 
   parser.on("--pool-size SIZE", Integer, "Run SIZE worker processes under a supervising pool") do |size|
@@ -75,6 +90,7 @@ max_concurrent_activities = config.max_concurrent_activities
 max_concurrent_workflows = config.max_concurrent_workflow_tasks
 metrics_port = options[:metrics_port] || config.metrics_port
 metrics_bind = options[:metrics_bind] || config.metrics_bind
+metrics_allow_public_bind = options[:metrics_allow_public_bind].nil? ? config.metrics_allow_public_bind : true
 begin
   pool_size = Integer(options[:pool_size])
 rescue ArgumentError, TypeError
@@ -96,13 +112,48 @@ unless Signal.list.key?(reload_signal) && !ActiveJob::Temporal::UNTRAPPABLE_SIGN
   exit(1)
 end
 
+public_bind_errors = []
+if options[:health_check_port] &&
+   ActiveJob::Temporal::BindPolicy.public_bind?(options[:health_check_bind]) &&
+   !options[:health_check_allow_public_bind]
+  public_bind_errors << [
+    "health check",
+    options[:health_check_bind],
+    "--allow-public-health-check-bind",
+    "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND=true"
+  ]
+end
+if metrics_port &&
+   ActiveJob::Temporal::BindPolicy.public_bind?(metrics_bind) &&
+   !metrics_allow_public_bind
+  public_bind_errors << [
+    "metrics",
+    metrics_bind,
+    "--allow-public-metrics-bind",
+    "ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND=true"
+  ]
+end
+
+unless public_bind_errors.empty?
+  public_bind_errors.each do |endpoint, bind_address, flag, env_var|
+    warn(
+      "Error: refusing to expose unauthenticated #{endpoint} endpoint on non-loopback address " \
+      "#{bind_address.inspect} without explicit public bind opt-in"
+    )
+    warn "Pass #{flag} or set #{env_var} only when the endpoint is protected from untrusted networks."
+  end
+  exit(1)
+end
+
 if pool_size > 1
   pool = ActiveJob::Temporal::WorkerPool.new(
     size: pool_size,
     health_check_port: options[:health_check_port],
     health_check_bind: options[:health_check_bind],
+    health_check_allow_public_bind: options[:health_check_allow_public_bind],
     metrics_port: metrics_port,
     metrics_bind: metrics_bind,
+    metrics_allow_public_bind: metrics_allow_public_bind,
     max_concurrent_activities: max_concurrent_activities,
     max_concurrent_workflows: max_concurrent_workflows
   )
@@ -159,6 +210,7 @@ if options[:health_check_port]
   health_check_server = ActiveJob::Temporal::HealthCheckServer.new(
     port: options[:health_check_port],
     bind_address: options[:health_check_bind],
+    allow_public_bind: options[:health_check_allow_public_bind],
     state: worker_health
   ).start
 
@@ -175,6 +227,7 @@ if metrics_port
   metrics_server = ActiveJob::Temporal::MetricsServer.new(
     port: metrics_port,
     bind_address: metrics_bind,
+    allow_public_bind: metrics_allow_public_bind,
     provider: ActiveJob::Temporal::Metrics.provider(config)
   ).start
 
