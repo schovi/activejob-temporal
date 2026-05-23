@@ -88,6 +88,26 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
       expect(policy[:initial_interval]).to eq(30)
     end
 
+    it "falls back to numeric Temporal settings for exponentially longer waits" do
+      policy = described_class.for(ExponentiallyLongerRetryJob)
+
+      expect(policy).to include(
+        initial_interval: 30,
+        backoff_coefficient: 2.0,
+        maximum_attempts: 5
+      )
+    end
+
+    it "falls back to numeric Temporal settings for polynomially longer waits" do
+      policy = described_class.for(PolynomiallyLongerRetryJob)
+
+      expect(policy).to include(
+        initial_interval: 30,
+        backoff_coefficient: 2.0,
+        maximum_attempts: 6
+      )
+    end
+
     it "uses default attempts when the job declares a non-numeric value" do
       expect(ActiveJob::Temporal::Logger).to receive(:warn).with(
         "retry_attempts_fallback",

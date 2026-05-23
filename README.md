@@ -151,7 +151,6 @@ Workers can also read environment variables such as `ACTIVEJOB_TEMPORAL_TARGET`,
 ## Current Constraints
 
 - Chains are linear. Use child workflows for parent-owned fan-out and dependencies for independently enqueued job gates.
-- Algorithmic retry waits such as `:exponentially_longer`, `:polynomially_longer`, and Proc waits fall back to numeric Temporal retry policy settings.
 - Cancellation inside running Ruby job code is cooperative. Long-running activities need heartbeats or explicit cancellation checks.
 - Nexus remains an explicit workflow-layer integration. Ordinary ActiveJob execution stays activity-based. See [Nexus Integration](docs/nexus.md).
 

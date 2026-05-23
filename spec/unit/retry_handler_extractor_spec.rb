@@ -76,6 +76,22 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
       expect(handlers.first[:wait]).to eq(:custom_wait)
     end
 
+    it "extracts exponentially longer waits as symbol metadata" do
+      handlers = extractor.retry_handlers(ExponentiallyLongerRetryJob)
+
+      expect(handlers.size).to eq(1)
+      expect(handlers.first[:wait]).to eq(:exponentially_longer)
+      expect(handlers.first[:attempts]).to eq(5)
+    end
+
+    it "extracts polynomially longer waits as symbol metadata" do
+      handlers = extractor.retry_handlers(PolynomiallyLongerRetryJob)
+
+      expect(handlers.size).to eq(1)
+      expect(handlers.first[:wait]).to eq(:polynomially_longer)
+      expect(handlers.first[:attempts]).to eq(6)
+    end
+
     it "extracts handlers with invalid attempts values" do
       handlers = extractor.retry_handlers(InvalidAttemptsJob)
 

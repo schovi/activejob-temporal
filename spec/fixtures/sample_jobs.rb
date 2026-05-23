@@ -63,6 +63,14 @@ class SymbolWaitRetryJob < ActiveJob::Base
   retry_on SampleJobError, wait: :custom_wait
 end
 
+class ExponentiallyLongerRetryJob < ActiveJob::Base
+  retry_on SampleJobError, wait: :exponentially_longer, attempts: 5
+end
+
+class PolynomiallyLongerRetryJob < ActiveJob::Base
+  retry_on SampleJobError, wait: :polynomially_longer, attempts: 6
+end
+
 class InvalidAttemptsJob < ActiveJob::Base
   retry_on SampleJobError, attempts: "five"
 end
