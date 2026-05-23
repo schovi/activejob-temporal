@@ -37,9 +37,10 @@ module ActiveJob
           ensure
             configuration.in_configure_block = false
           end
-        end
 
-        validate!
+          configuration.validate!
+          configuration
+        end
       end
 
       # Validates the current configuration.

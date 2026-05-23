@@ -305,5 +305,46 @@ RSpec.describe ActiveJob::Temporal do
           (log.index("thread2_end") < log.index("thread1_start"))
       end
     end
+
+    it "validates before another configure block can mutate configuration" do
+      configuration = described_class.config
+      access_log = []
+      access_mutex = Mutex.new
+      validation_started = Queue.new
+      release_validation = Queue.new
+
+      allow(configuration).to receive(:validate!) do
+        access_mutex.synchronize { access_log << :validate_start }
+        validation_started << true
+        release_validation.pop
+        access_mutex.synchronize { access_log << :validate_end }
+      end
+
+      first_thread = Thread.new do
+        described_class.configure do
+          access_mutex.synchronize { access_log << :first_configure }
+        end
+      end
+
+      validation_started.pop
+
+      second_thread = Thread.new do
+        described_class.configure do
+          access_mutex.synchronize { access_log << :second_configure }
+        end
+      end
+
+      sleep 0.05
+      second_entered_before_first_validation_finished =
+        access_mutex.synchronize { access_log.include?(:second_configure) }
+
+      release_validation << true
+      validation_started.pop
+      release_validation << true
+
+      [first_thread, second_thread].each(&:join)
+
+      expect(second_entered_before_first_validation_finished).to be(false)
+    end
   end
 end
