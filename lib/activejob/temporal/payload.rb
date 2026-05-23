@@ -60,6 +60,8 @@ module ActiveJob
         dependencies
         dependency_failure_policy
         activity_task_queue
+        continue_as_new
+        workflow_state
       ].freeze
 
       # Converts an ActiveJob instance into a serializable payload hash.

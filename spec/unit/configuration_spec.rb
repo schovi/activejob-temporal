@@ -57,6 +57,10 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.max_concurrent_workflow_tasks).to eq(5)
     end
 
+    it "leaves continue-as-new threshold disabled by default" do
+      expect(configuration.continue_as_new_history_event_threshold).to be_nil
+    end
+
     it "sets task_queue to 'default'" do
       expect(configuration.task_queue).to eq("default")
     end
@@ -272,6 +276,15 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       config = described_class.new
       expect(config.max_concurrent_workflow_tasks).to eq(300)
+    end
+
+    it "reads continue-as-new threshold from ACTIVEJOB_TEMPORAL_CONTINUE_AS_NEW_HISTORY_EVENT_THRESHOLD" do
+      env_var = "ACTIVEJOB_TEMPORAL_CONTINUE_AS_NEW_HISTORY_EVENT_THRESHOLD"
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with(env_var).and_return("10000")
+
+      config = described_class.new
+      expect(config.continue_as_new_history_event_threshold).to eq(10_000)
     end
 
     it "reads metrics provider from ACTIVEJOB_TEMPORAL_METRICS_PROVIDER" do

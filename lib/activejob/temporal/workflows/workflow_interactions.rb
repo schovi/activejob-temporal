@@ -71,10 +71,23 @@ module ActiveJob
         end
 
         def configure_workflow_state(payload)
+          restore_workflow_state(payload)
           workflow_state["job_class"] = payload[:job_class] || payload["job_class"]
           workflow_state["job_id"] = payload[:job_id] || payload["job_id"]
           workflow_state["queue_name"] = payload[:queue_name] || payload["queue_name"]
           workflow_state["phase"] = "initialized"
+        end
+
+        def restore_workflow_state(payload)
+          state = payload[:workflow_state] || payload["workflow_state"]
+          return unless state.is_a?(Hash)
+
+          @workflow_state = deep_copy(state)
+          workflow_state["phase"] ||= "initialized"
+          workflow_state["paused"] = false unless workflow_state.key?("paused")
+          workflow_state["signals"] ||= {}
+          workflow_state["updates"] ||= {}
+          workflow_state["custom"] ||= {}
         end
 
         def configure_workflow_interactions(payload)

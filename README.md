@@ -235,6 +235,7 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `metrics_bind` | String | `"127.0.0.1"` | Bind address for the Prometheus metrics endpoint. |
 | `metrics_allow_public_bind` | Boolean | `false` | Allows the metrics endpoint to bind a non-loopback address. Require network controls when enabled. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
+| `continue_as_new_history_event_threshold` | Integer or `nil` | `nil` | Optional workflow history event count that lets a running ActiveJob workflow continue as new before doing more orchestration work. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 | `payload_serializer` | Symbol | `:json` | Serializer for job execution payloads. Supports `:json`, `:message_pack`, `:msgpack`, and `:marshal`. |
 | `encrypt_payload` | Boolean | `false` | Encrypt serialized job execution payloads before sending them to Temporal. |
