@@ -7,7 +7,18 @@ module ActiveJob
     module AuditLog
       extend self
 
-      SENSITIVE_ATTRIBUTE_NAMES = %i[arguments args payload result].freeze
+      SENSITIVE_ATTRIBUTE_NAMES = %w[
+        arguments
+        args
+        cause
+        error
+        error_message
+        exception
+        message
+        payload
+        result
+        target
+      ].freeze
 
       def record(event_name, attributes = {})
         config = ActiveJob::Temporal.config
@@ -60,7 +71,7 @@ module ActiveJob
 
       def sanitized_attributes(attributes)
         attributes.to_h.each_with_object({}) do |(key, value), result|
-          next if SENSITIVE_ATTRIBUTE_NAMES.include?(key.to_sym)
+          next if SENSITIVE_ATTRIBUTE_NAMES.include?(key.to_s)
           next if value.nil?
 
           result[key] = value

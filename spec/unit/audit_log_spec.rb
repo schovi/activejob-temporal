@@ -88,6 +88,43 @@ RSpec.describe ActiveJob::Temporal::AuditLog do
       expect(payload).not_to have_key("payload")
       expect(payload).not_to have_key("result")
     end
+
+    it "removes free-form upstream error fields from attributes" do
+      ActiveJob::Temporal.config.audit_log = true
+
+      described_class.record(
+        "job.failed",
+        job_id: "job-1",
+        message: "connection failed for postgres://user:secret@db.internal",
+        target: "temporal://token:secret@temporal.internal:7233",
+        error: "OpenSSL::SSL::SSLError: private-key secret",
+        error_message: "x-temporal-api-key=secret",
+        exception: RuntimeError.new("bearer secret"),
+        cause: RuntimeError.new("nested secret")
+      )
+
+      payload = parsed_lines.first
+      expect(payload).to include("job_id" => "job-1")
+      expect(payload).not_to have_key("message")
+      expect(payload).not_to have_key("target")
+      expect(payload).not_to have_key("error")
+      expect(payload).not_to have_key("error_message")
+      expect(payload).not_to have_key("exception")
+      expect(payload).not_to have_key("cause")
+      expect(log_io.string).not_to include("secret")
+    end
+  end
+
+  describe ".error_attributes" do
+    it "includes a stable fingerprint without the raw error message" do
+      error = RuntimeError.new("postgres://user:secret@db.internal")
+
+      attributes = described_class.error_attributes(error)
+
+      expect(attributes).to include(error_class: "RuntimeError")
+      expect(attributes[:error_fingerprint]).to match(/\A[0-9a-f]{64}\z/)
+      expect(attributes.values).not_to include(error.message)
+    end
   end
 
   describe ".activity_attributes_from_payload" do
