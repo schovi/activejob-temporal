@@ -223,7 +223,7 @@ Temporal policy with default configuration:
 
 Retry delays after the initial failed attempt: 30s, 60s, 120s, 240s.
 
-Use static `wait:` values and tune `default_retry_backoff` when you need a predictable curve. See [Migration Guide - Known Limitations](migration_guide.md#known-limitations) for migration notes.
+Use static `wait:` values and tune `default_retry_backoff` when you need a predictable curve.
 
 ### 9. Proc Wait Fallback
 

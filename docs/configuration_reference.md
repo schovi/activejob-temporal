@@ -381,7 +381,7 @@ Disabling `encrypt_payload` only affects new payloads. Workers still need `encry
 | Level | Behavior | Typical Use |
 | --- | --- | --- |
 | `:strict` | Raises `ActiveJob::Temporal::ConfigurationError`. This is the default. | Production and normal application boot. |
-| `:warn` | Logs validation warnings through the configured logger and continues. | Gradual migrations where invalid values must be visible before enforcement. |
+| `:warn` | Logs validation warnings through the configured logger and continues. | Staged configuration changes where invalid values must be visible before enforcement. |
 | `:none` | Skips configuration validation entirely. | Tests or local setup code that intentionally creates partial configuration. |
 
 ```ruby

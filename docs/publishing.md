@@ -70,7 +70,7 @@ The gem itself is ready for publication:
 | Tests | ✅ PASSED | 115 examples, 0 failures |
 | Coverage | ✅ PASSED | 99.32% line, 84.4% branch |
 | Linting | ✅ PASSED | 0 Rubocop offenses |
-| Documentation | ✅ COMPLETE | README, API docs, migration guide |
+| Documentation | ✅ COMPLETE | README, API docs, and repository guides |
 | Gemspec | ✅ VALID | All metadata configured |
 | Gem Build | ✅ SUCCESS | `pkg/activejob-temporal-0.1.0.gem` |
 | Git Tag | ✅ CREATED | `v0.1.0` exists locally |
@@ -309,7 +309,7 @@ Use this checklist when you're ready to publish:
 - [ ] All tests passing: `rvm 4.0.3 do bundle exec rspec` shows 0 failures
 - [ ] Code coverage adequate: >95% line coverage
 - [ ] No linting offenses: `rvm 4.0.3 do bundle exec rubocop` shows 0 offenses
-- [ ] Documentation complete: README, API docs, migration guide
+- [ ] Documentation complete: README, API docs, and repository guides
 - [ ] Changelog finalized: `CHANGELOG.md` has v0.1.0 entry
 
 ### Gem Readiness

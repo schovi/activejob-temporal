@@ -17,12 +17,11 @@ Use this index to find the main guides for activejob-temporal.
 - [Troubleshooting Guide](troubleshooting.md) covers common enqueue, execution, retry, cancellation, payload, connection, and performance issues.
 - [Security](security.md) covers dependency scanning, input validation, TLS notes, and payload handling.
 
-## Configuration And Migration
+## Configuration
 
 - [Configuration Reference](configuration_reference.md) lists configuration options, environment variables, search attributes, and payload size settings.
 - [Configuration Schema](config_schema.yaml) is the machine-readable configuration schema.
 - [Ruby Baseline](ruby_baseline.md) documents the Ruby 4+ source of truth, local validation commands, and external tooling notes.
-- [Migration Guide](migration_guide.md) covers migration from Sidekiq, Resque, Delayed Job, and other queue adapters.
 - [Comparison Guide](comparison.md) helps choose between activejob-temporal, Sidekiq, GoodJob, Solid Queue, and Delayed Job.
 - [Retry Policy Guide](retry_policies.md) explains how ActiveJob retry and discard declarations map to Temporal retry policies.
 

@@ -593,7 +593,7 @@ If you set `RAILS_ROOT`, use the real app root path. The worker refuses missing 
 
 - Read the [main README](../../README.md) for complete API documentation
 - Check [configuration reference](../../docs/configuration_reference.md) for all options
-- See [migration guide](../../docs/migration_guide.md) to integrate into existing Rails apps
+- Use the [comparison guide](../../docs/comparison.md) to decide when this adapter fits
 - Check [Worker Setup Guide](../../docs/worker_setup.md) for additional worker configuration
 
 ## Support
