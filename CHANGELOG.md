@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 **Implemented enhancements:**
 
 - TASK.014 - Signals and Queries support [\#14](https://github.com/schovi/activejob-temporal/issues/14)
+- TASK.050 - Add child workflows [\#61](https://github.com/schovi/activejob-temporal/issues/61)
 - TASK.017 - Worker pool management [\#17](https://github.com/schovi/activejob-temporal/issues/17)
 - TASK.035 - Add rate limiting support [\#22](https://github.com/schovi/activejob-temporal/issues/22)
 - TASK.022 - Add payload serialization options [\#19](https://github.com/schovi/activejob-temporal/issues/19)
@@ -72,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Signal/query APIs via `ActiveJob::Temporal.signal` and `ActiveJob::Temporal.query`, with built-in pause/resume workflow state and deterministic custom job handlers.
+- Child workflow orchestration via `set(child_workflows:)`, with parent-owned child workflow IDs, cancellation propagation, result collection, and chain handoff.
 - Global and per-job rate limiting with a pluggable limiter backend and durable workflow waits.
 - Supervised worker pools via `ActiveJob::Temporal::WorkerPool` and `temporal-worker --pool-size`.
 - Configurable payload serializer envelopes for MessagePack and Marshal while keeping JSON as the default wire format.

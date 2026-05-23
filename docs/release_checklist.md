@@ -99,7 +99,7 @@ This document tracks all quality checks required before releasing activejob-temp
 ## Known Limitations (Documented & Acceptable)
 
 - [x] Workflow interaction limits documented in README
-- [x] No child workflows or multi-activity orchestration (documented in README)
+- [x] Child workflows are available for parent-owned fan-out; general DAG orchestration remains outside v0.1 scope
 - [x] No Temporal Schedules API for recurring jobs (documented in README)
 - [x] No custom DLQ UI (documented in README)
 - [x] No workflow versioning (documented in README)

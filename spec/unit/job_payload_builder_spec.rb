@@ -138,6 +138,89 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     )
   end
 
+  it "includes child workflow payloads with child workflow IDs and execution metadata" do
+    config.rate_limiter = ->(_rate_limits) { 0 }
+    config.priority_task_queues = { 7 => "priority_reports" }
+    config.task_queue_prefix = "prod-"
+    config.enable_search_attributes = true
+    child_job_class = Class.new(ActiveJob::Base) do
+      def self.name = "PayloadBuilderChildJob"
+
+      queue_as :mailers
+      retry_on StandardError, wait: 10.seconds, attempts: 4
+      temporal_options start_to_close_timeout: 2.hours
+      rate_limit 5, per: :minute
+    end
+    stub_const("PayloadBuilderChildJob", child_job_class)
+    final_child_job_class = Class.new(ActiveJob::Base) do
+      def self.name = "PayloadBuilderFinalChildJob"
+    end
+    stub_const("PayloadBuilderFinalChildJob", final_child_job_class)
+    job = build_job("PayloadBuilderChildRootJob")
+    job.define_singleton_method(:temporal_child_workflows) do
+      [
+        {
+          job_class: child_job_class.name,
+          options: {}
+        },
+        {
+          job_class: final_child_job_class.name,
+          options: {
+            queue: "reporting",
+            priority: 7,
+            tags: %w[fanout urgent]
+          }
+        }
+      ]
+    end
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:child_workflows]).to contain_exactly(
+      hash_including(
+        job_class: "PayloadBuilderChildJob",
+        job_id: "#{job.job_id}:child:1",
+        workflow_id: "ajwf:PayloadBuilderChildJob:#{job.job_id}:child:1",
+        queue_name: "mailers",
+        arguments: [],
+        activity_task_queue: "prod-mailers",
+        workflow_task_queue: "prod-mailers",
+        temporal_options: { start_to_close_timeout: 7200.0 },
+        retry_policy: hash_including(initial_interval: 10.0, maximum_attempts: 4),
+        rate_limits: [
+          {
+            limit: 5,
+            interval: 60.0,
+            key: "activejob-temporal:job:PayloadBuilderChildJob"
+          }
+        ],
+        search_attributes: hash_including(
+          job_class: "PayloadBuilderChildJob",
+          job_id: "#{job.job_id}:child:1",
+          queue_name: "mailers",
+          enqueued_at: a_kind_of(String),
+          tags: []
+        )
+      ),
+      hash_including(
+        job_class: "PayloadBuilderFinalChildJob",
+        job_id: "#{job.job_id}:child:2",
+        workflow_id: "ajwf:PayloadBuilderFinalChildJob:#{job.job_id}:child:2",
+        queue_name: "reporting",
+        arguments: [],
+        activity_task_queue: "prod-priority_reports",
+        workflow_task_queue: "prod-priority_reports",
+        retry_policy: hash_including(maximum_attempts: 1),
+        search_attributes: hash_including(
+          job_class: "PayloadBuilderFinalChildJob",
+          job_id: "#{job.job_id}:child:2",
+          queue_name: "reporting",
+          tags: %w[fanout urgent]
+        )
+      )
+    )
+  end
+
   it "includes dependency metadata with default workflow references" do
     job = build_job("DependencyBuilderJob")
     job.define_singleton_method(:temporal_dependencies) do
@@ -294,6 +377,16 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         }
       ]
     end
+    job.define_singleton_method(:temporal_child_workflows) do
+      [
+        {
+          job_class: "EncryptedBuilderNextJob",
+          options: {
+            queue: "reporting"
+          }
+        }
+      ]
+    end
     job.define_singleton_method(:temporal_dependencies) do
       [{ job_id: "parent-123", workflow_id: "custom-parent-workflow" }]
     end
@@ -327,6 +420,15 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         signals: ["pause"],
         queries: ["paused"]
       ),
+      child_workflows: [
+        hash_including(
+          job_class: "EncryptedBuilderNextJob",
+          queue_name: "reporting",
+          activity_task_queue: "reporting",
+          workflow_task_queue: "reporting",
+          workflow_id: "ajwf:EncryptedBuilderNextJob:#{job.job_id}:child:1"
+        )
+      ],
       chain: [
         hash_including(
           job_class: "EncryptedBuilderNextJob",
@@ -354,6 +456,13 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
           "activity_task_queue" => "reporting"
         )
       ],
+      child_workflows: [
+        hash_including(
+          "job_class" => "EncryptedBuilderNextJob",
+          "queue_name" => "reporting",
+          "workflow_task_queue" => "reporting"
+        )
+      ],
       dependencies: [
         hash_including("job_id" => "parent-123", "workflow_id" => "custom-parent-workflow")
       ],
@@ -369,6 +478,12 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
           activity_task_queue: "tampered"
         }
       ],
+      child_workflows: [
+        {
+          job_class: "TamperedChildJob",
+          workflow_task_queue: "tampered"
+        }
+      ],
       dependencies: [
         { job_id: "tampered-parent", workflow_id: "tampered-workflow" }
       ],
@@ -382,6 +497,12 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         hash_including(
           "job_class" => "EncryptedBuilderNextJob",
           "activity_task_queue" => "reporting"
+        )
+      ],
+      child_workflows: [
+        hash_including(
+          "job_class" => "EncryptedBuilderNextJob",
+          "workflow_task_queue" => "reporting"
         )
       ],
       dependencies: [
@@ -402,6 +523,16 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       def self.name = "SerializedBuilderNextJob"
     end)
     job.define_singleton_method(:temporal_chain) do
+      [
+        {
+          job_class: "SerializedBuilderNextJob",
+          options: {
+            queue: "reporting"
+          }
+        }
+      ]
+    end
+    job.define_singleton_method(:temporal_child_workflows) do
       [
         {
           job_class: "SerializedBuilderNextJob",
@@ -437,6 +568,15 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         signals: ["pause"],
         queries: ["paused"]
       ),
+      child_workflows: [
+        hash_including(
+          job_class: "SerializedBuilderNextJob",
+          queue_name: "reporting",
+          activity_task_queue: "reporting",
+          workflow_task_queue: "reporting",
+          workflow_id: "ajwf:SerializedBuilderNextJob:#{job.job_id}:child:1"
+        )
+      ],
       chain: [
         hash_including(
           job_class: "SerializedBuilderNextJob",
@@ -464,6 +604,13 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
           job_class: "SerializedBuilderNextJob",
           queue_name: "reporting",
           activity_task_queue: "reporting"
+        )
+      ],
+      child_workflows: [
+        hash_including(
+          job_class: "SerializedBuilderNextJob",
+          queue_name: "reporting",
+          workflow_task_queue: "reporting"
         )
       ],
       dependencies: [

@@ -18,6 +18,7 @@ RSpec.describe "job payload schema" do
           "dead_letter" => { "type" => "object" },
           "workflow_interactions" => { "$ref" => "#/definitions/workflow_interactions" },
           "rate_limits" => { "$ref" => "#/definitions/rate_limits" },
+          "child_workflows" => { "$ref" => "#/definitions/child_workflows" },
           "chain" => { "$ref" => "#/definitions/chain" },
           "dependencies" => { "$ref" => "#/definitions/dependencies" },
           "dependency_failure_policy" => { "type" => "string", "enum" => %w[fail ignore] },
@@ -114,6 +115,23 @@ RSpec.describe "job payload schema" do
         "job_class" => { "type" => "string", "minLength" => 1 },
         "job_id" => { "type" => "string", "minLength" => 1 },
         "workflow_id" => { "type" => "string", "minLength" => 1 }
+      )
+    )
+  end
+
+  it "defines child workflow metadata" do
+    child_workflow_schema = schema.fetch("definitions").fetch("child_workflow")
+
+    expect(child_workflow_schema).to include(
+      "type" => "object",
+      "additionalProperties" => false,
+      "required" => contain_exactly("job_class", "job_id", "workflow_id", "queue_name", "arguments"),
+      "properties" => include(
+        "job_class" => { "type" => "string", "minLength" => 1 },
+        "job_id" => { "type" => "string", "minLength" => 1 },
+        "workflow_id" => { "type" => "string", "minLength" => 1 },
+        "workflow_task_queue" => { "type" => "string", "minLength" => 1 },
+        "search_attributes" => { "$ref" => "#/definitions/child_workflow_search_attributes" }
       )
     )
   end

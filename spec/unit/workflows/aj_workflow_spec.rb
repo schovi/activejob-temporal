@@ -4,24 +4,6 @@ require "spec_helper"
 require "time"
 require "activejob/temporal/workflows/aj_workflow"
 
-module Temporalio
-  module Workflow
-    class << self
-      def now
-        @now || Time.utc(2024, 1, 1, 12, 0, 0)
-      end
-
-      def sleep(_duration); end
-
-      def execute_activity(*)
-        nil
-      end
-
-      def wait_condition; end
-    end
-  end
-end
-
 RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
   subject(:workflow) { described_class.new }
 
@@ -49,9 +31,11 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
   before do
     stub_const("SampleJob", Class.new)
+    allow(Temporalio::Workflow).to receive(:now).and_return(Time.utc(2024, 1, 1, 12, 0, 0))
     allow(Temporalio::Workflow).to receive(:execute_activity).and_return(:activity_result)
     allow(Temporalio::Workflow).to receive(:sleep)
     allow(Temporalio::Workflow).to receive(:start_child_workflow)
+    allow(Temporalio::Workflow).to receive(:wait_condition)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return({})
   end
 
@@ -392,6 +376,111 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
             retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
           )
         )
+      end
+    end
+
+    context "when child workflow metadata is present" do
+      it "starts child workflows, waits for results, and returns a result collection" do
+        payload = base_payload.merge(
+          "child_workflows" => [
+            {
+              "job_class" => "ChildWorkflowJob",
+              "job_id" => "abc-123:child:1",
+              "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
+              "queue_name" => "children",
+              "arguments" => [],
+              "activity_task_queue" => "children",
+              "workflow_task_queue" => "children",
+              "default_activity_options" => base_payload.fetch("default_activity_options"),
+              "retry_policy" => retry_policy_hash
+            }
+          ]
+        )
+        child_handle = instance_double(Temporalio::Workflow::ChildWorkflowHandle, result: "child-result")
+        allow(Temporalio::Workflow).to receive(:execute_activity).and_return("parent-result")
+        allow(Temporalio::Workflow).to receive(:start_child_workflow).and_return(child_handle)
+
+        expect(workflow.execute(payload)).to eq(
+          "parent_result" => "parent-result",
+          "child_results" => [
+            {
+              "job_class" => "ChildWorkflowJob",
+              "job_id" => "abc-123:child:1",
+              "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
+              "result" => "child-result"
+            }
+          ]
+        )
+        expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
+          described_class,
+          hash_including(
+            "job_class" => "ChildWorkflowJob",
+            "job_id" => "abc-123:child:1",
+            "arguments" => ["parent-result"]
+          ),
+          id: "ajwf:ChildWorkflowJob:abc-123:child:1",
+          task_queue: "children",
+          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::REQUEST_CANCEL,
+          cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
+        )
+      end
+
+      it "passes the child result collection into later chain steps" do
+        payload = base_payload.merge(
+          "child_workflows" => [
+            {
+              "job_class" => "ChildWorkflowJob",
+              "job_id" => "abc-123:child:1",
+              "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
+              "queue_name" => "children",
+              "arguments" => [],
+              "activity_task_queue" => "children",
+              "workflow_task_queue" => "children",
+              "default_activity_options" => base_payload.fetch("default_activity_options"),
+              "retry_policy" => retry_policy_hash
+            }
+          ],
+          "chain" => [
+            {
+              "job_class" => "AfterChildrenJob",
+              "job_id" => "abc-123:chain:1",
+              "queue_name" => "default",
+              "arguments" => [],
+              "activity_task_queue" => "default",
+              "default_activity_options" => base_payload.fetch("default_activity_options"),
+              "retry_policy" => retry_policy_hash
+            }
+          ]
+        )
+        child_handle = instance_double(Temporalio::Workflow::ChildWorkflowHandle, result: "child-result")
+        calls = []
+        allow(Temporalio::Workflow).to receive(:start_child_workflow).and_return(child_handle)
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **options|
+          calls << [args, options]
+          calls.size == 1 ? "parent-result" : "chain-result"
+        end
+
+        expect(workflow.execute(payload)).to eq("chain-result")
+
+        activity_class, activity_payload, raw_arguments = calls.last.first
+        expected_chain_argument = {
+          "parent_result" => "parent-result",
+          "child_results" => [
+            {
+              "job_class" => "ChildWorkflowJob",
+              "job_id" => "abc-123:child:1",
+              "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
+              "result" => "child-result"
+            }
+          ]
+        }
+
+        expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+        expect(activity_payload).to include(
+          "job_class" => "AfterChildrenJob",
+          "arguments" => [expected_chain_argument]
+        )
+        expect(raw_arguments).to eq([expected_chain_argument])
       end
     end
 

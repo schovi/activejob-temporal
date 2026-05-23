@@ -31,6 +31,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Conditional enqueueing:** Use `MyJob.perform_later_if(condition, args)` to skip jobs when no work is needed
 - ✅ **Bulk enqueueing:** Use `ActiveJob::Temporal.enqueue_batch` to enqueue many prepared jobs and inspect per-job results
 - ✅ **Job chaining:** Use `MyJob.set(chain: [NextJob]).perform_later(args)` to run sequential activities in one workflow
+- ✅ **Child workflows:** Use `MyJob.set(child_workflows: [ChildJob]).perform_later(args)` to fan out child ActiveJob workflows
 - ✅ **Job dependencies:** Use `MyJob.set(depends_on: parent_job).perform_later(args)` to wait for independently enqueued jobs
 - ✅ **Retry mapping:** ActiveJob `retry_on` declarations automatically map to Temporal retry policies with exponential backoff
 - ✅ **Discard mapping:** `discard_on` maps to non-retryable errors, preventing wasted retry attempts
@@ -519,6 +520,53 @@ BuildInvoicePayloadJob
 ```
 
 Run workers for every task queue used by the root job and its chained steps.
+
+## Child Workflows
+
+Use `set(child_workflows:)` when a parent job should start separate ActiveJob-backed Temporal workflows and wait for their results. The parent job runs first. Each child workflow receives the parent result as its single argument, runs as its own `AjWorkflow`, and returns its job result back to the parent:
+
+```ruby
+class BuildInvoiceBatchJob < ApplicationJob
+  def perform(batch_id)
+    InvoiceBatch.find(batch_id).invoice_ids
+  end
+end
+
+class SendInvoiceJob < ApplicationJob
+  queue_as :mailers
+
+  def perform(invoice_ids)
+    Invoice.where(id: invoice_ids).find_each do |invoice|
+      InvoiceMailer.invoice_ready(invoice).deliver_now
+    end
+    invoice_ids.size
+  end
+end
+
+BuildInvoiceBatchJob
+  .set(child_workflows: [SendInvoiceJob.set(queue: :mailers, tags: %w[invoices])])
+  .perform_later(batch.id)
+```
+
+Child workflow IDs are owned by the parent and use the child job class plus a deterministic child job ID derived from the parent job ID. Parent cancellation requests cancellation of started children, and parent close requests child cancellation instead of abandoning the child workflow.
+
+When child workflows are present, the parent result becomes a collection containing the parent result and each child result:
+
+```ruby
+{
+  "parent_result" => invoice_ids,
+  "child_results" => [
+    {
+      "job_class" => "SendInvoiceJob",
+      "job_id" => "#{parent_job_id}:child:1",
+      "workflow_id" => "ajwf:SendInvoiceJob:#{parent_job_id}:child:1",
+      "result" => 25
+    }
+  ]
+}
+```
+
+If `set(chain:)` is also configured, the first chain step receives this collection as its single argument. Child workflows preserve the child job class's retry policy, timeouts, rate limits, queue routing, and search metadata. Run workers for every task queue used by the parent and child jobs.
 
 ## Job Dependencies
 
@@ -1158,13 +1206,12 @@ Additional guides:
 
 The following features are **not yet implemented** in v0.1 but are planned for future releases:
 
-- **Child workflows** → Planned for v0.3
 - **Rails generators** (for scaffolding jobs, initializers, etc.) → Planned for v1.0
 - **ActiveRecord callback interception** (e.g., automatic transactional enqueue) → Deferred
 
 **Other constraints:**
 - **250KB payload size limit** (configurable via `max_payload_size_kb`). Jobs with larger plaintext or encrypted payloads will raise `ActiveJob::SerializationError`. Store large data externally (e.g., S3, database) and pass references instead.
-- **Linear chains only:** `set(chain:)` supports sequential activities inside one workflow. Use `set(depends_on:)` for independently enqueued job gates. Child-workflow DAG orchestration is not yet supported.
+- **Linear chains only:** `set(chain:)` supports sequential activities inside one workflow. Use `set(child_workflows:)` for parent-owned fan-out and `set(depends_on:)` for independently enqueued job gates. General DAG orchestration is not yet supported.
 
 ## Migration from Sidekiq/Resque
 

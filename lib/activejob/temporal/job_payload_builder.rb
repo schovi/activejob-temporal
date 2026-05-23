@@ -1,17 +1,20 @@
 # frozen_string_literal: true
 
 require_relative "payload"
+require_relative "job_payload_child_workflows"
 require_relative "job_payload_chain_builder"
 require_relative "job_payload_dependencies"
+require_relative "job_payload_rate_limits"
 require_relative "job_payload_workflow_interactions"
-require_relative "rate_limit_options"
 require_relative "retry_mapper"
 
 module ActiveJob
   module Temporal
     class JobPayloadBuilder
+      include JobPayloadChildWorkflows
       include JobPayloadChainBuilder
       include JobPayloadDependencies
+      include JobPayloadRateLimits
       include JobPayloadWorkflowInteractions
 
       TIMEOUT_CONFIG_ATTRIBUTES = {
@@ -33,6 +36,7 @@ module ActiveJob
         apply_temporal_options(payload, job.class)
         apply_rate_limits(payload, job)
         apply_workflow_interactions(payload, job.class)
+        apply_child_workflows(payload, job)
         apply_chain(payload, job)
         apply_dependencies(payload, job)
 
@@ -56,11 +60,6 @@ module ActiveJob
         payload[:temporal_options] = temporal_options if temporal_options.any?
       end
 
-      def apply_rate_limits(payload, job)
-        rate_limits = rate_limits_for(job.class)
-        payload[:rate_limits] = rate_limits if rate_limits.any?
-      end
-
       def metrics_payload_for(job)
         {
           job_class: job.class.name,
@@ -73,43 +72,6 @@ module ActiveJob
         return {} unless job_class.respond_to?(:temporal_options)
 
         job_class.temporal_options
-      end
-
-      def rate_limits_for(job_class)
-        rate_limits = [
-          configured_global_rate_limit,
-          configured_job_rate_limit(job_class)
-        ].compact
-        validate_rate_limiter!(rate_limits)
-        rate_limits
-      end
-
-      def configured_global_rate_limit
-        return unless @config.respond_to?(:global_rate_limit) && @config.global_rate_limit
-
-        normalize_rate_limit(@config.global_rate_limit, default_key: "activejob-temporal:global")
-      end
-
-      def configured_job_rate_limit(job_class)
-        return unless job_class.respond_to?(:rate_limit)
-
-        rate_limit = job_class.rate_limit
-        return if rate_limit.empty?
-
-        normalize_rate_limit(rate_limit, default_key: "activejob-temporal:job:#{job_class.name}")
-      end
-
-      def normalize_rate_limit(rate_limit, default_key:)
-        normalized = RateLimitOptions.normalize_hash(rate_limit)
-        normalized[:key] ||= default_key
-        normalized
-      end
-
-      def validate_rate_limiter!(rate_limits)
-        return if rate_limits.empty?
-        return if @config.respond_to?(:rate_limiter) && @config.rate_limiter
-
-        raise ConfigurationError, "rate_limiter is required when rate limits are configured"
       end
 
       def dead_letter_enabled?

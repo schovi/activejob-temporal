@@ -55,6 +55,7 @@ module ActiveJob
         dead_letter
         rate_limits
         workflow_interactions
+        child_workflows
         chain
         dependencies
         dependency_failure_policy

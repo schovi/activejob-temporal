@@ -19,6 +19,12 @@ module ActiveJob
 
         def execute_activity_sequence(payload)
           result = execute_activity_payload(payload)
+          execute_chain_sequence(payload, result) do |chain_payload|
+            yield chain_payload if block_given?
+          end
+        end
+
+        def execute_chain_sequence(payload, result)
           chain_payloads(payload).each_with_index do |chain_payload, index|
             workflow_state["chain_index"] = index + 1
             raw_arguments = [result]
@@ -27,6 +33,8 @@ module ActiveJob
             result = execute_activity_payload(activity_payload, raw_arguments: raw_arguments)
           end
           result
+        ensure
+          workflow_state.delete("chain_index")
         end
 
         def execute_activity_payload(payload, raw_arguments: nil)
