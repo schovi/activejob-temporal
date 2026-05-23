@@ -335,6 +335,13 @@ module ActiveJob
         description: "Enable Temporal search attributes for job metadata"
       },
 
+      continue_as_new_history_event_threshold: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_CONTINUE_AS_NEW_HISTORY_EVENT_THRESHOLD",
+        type: :integer,
+        description: "Optional workflow history event threshold for continuing ActiveJob workflows as new"
+      },
+
       max_concurrent_activities: {
         default: 100,
         env_var: "ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES",
@@ -559,6 +566,13 @@ module ActiveJob
                   only_integer: true,
                   message: :concurrent_workflow_tasks_invalid,
                   allow_nil: false
+                }
+
+      validates :continue_as_new_history_event_threshold,
+                numericality: {
+                  greater_than: 0,
+                  only_integer: true,
+                  allow_nil: true
                 }
 
       validates :validation_level,

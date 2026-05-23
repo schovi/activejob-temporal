@@ -32,6 +32,10 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
   before do
     stub_const("SampleJob", Class.new)
     allow(Temporalio::Workflow).to receive(:now).and_return(Time.utc(2024, 1, 1, 12, 0, 0))
+    allow(Temporalio::Workflow).to receive(:current_history_length).and_return(1)
+    allow(Temporalio::Workflow).to receive(:continue_as_new_suggested).and_return(false)
+    allow(Temporalio::Workflow).to receive(:search_attributes).and_return(nil)
+    allow(Temporalio::Workflow).to receive(:all_handlers_finished?).and_return(true)
     allow(Temporalio::Workflow).to receive(:execute_activity).and_return(:activity_result)
     allow(Temporalio::Workflow).to receive(:sleep)
     allow(Temporalio::Workflow).to receive(:start_child_workflow)
@@ -152,6 +156,75 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           expect(options[:start_to_close_timeout]).to eq(activity_timeout)
           expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
         end
+      end
+    end
+
+    context "when continue-as-new is configured" do
+      it "does not roll over while workflow history stays below the threshold" do
+        payload = base_payload.merge("continue_as_new" => { "history_event_threshold" => 10 })
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity)
+      end
+
+      it "rolls over with job payload, restored state, and current search attributes when threshold is reached" do
+        search_attributes = instance_double(Temporalio::SearchAttributes)
+        continue_error = StandardError.new("continue as new")
+        payload = base_payload.merge("continue_as_new" => { "history_event_threshold" => 5 })
+
+        allow(Temporalio::Workflow).to receive(:current_history_length).and_return(5)
+        allow(Temporalio::Workflow).to receive(:search_attributes).and_return(search_attributes)
+        allow(Temporalio::Workflow::ContinueAsNewError).to receive(:new).and_return(continue_error)
+
+        workflow.handle_dynamic_signal("pause", "manual hold")
+
+        expect { workflow.execute(payload) }.to raise_error(continue_error)
+
+        expect(Temporalio::Workflow).to have_received(:all_handlers_finished?)
+        expect(Temporalio::Workflow::ContinueAsNewError).to have_received(:new) do |rollover_payload, options|
+          expect(rollover_payload).to include(
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "queue_name" => "default",
+            "continue_as_new" => { "history_event_threshold" => 5 }
+          )
+          expect(rollover_payload["workflow_state"]).to include(
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "paused" => true,
+            "pause_reason" => "manual hold",
+            "phase" => "continuing_as_new"
+          )
+          expect(options).to eq(search_attributes: search_attributes)
+        end
+        expect(Temporalio::Workflow).not_to have_received(:execute_activity)
+      end
+
+      it "restores deterministic workflow state supplied by the previous run" do
+        payload = base_payload.merge(
+          "workflow_state" => {
+            "phase" => "waiting_dependencies",
+            "paused" => false,
+            "signals" => {
+              "progress" => {
+                "args" => [75],
+                "received_at" => "2024-01-01T12:00:00Z"
+              }
+            },
+            "updates" => {},
+            "custom" => { "progress" => 75 }
+          }
+        )
+
+        workflow.execute(payload)
+
+        expect(workflow.handle_dynamic_query("state")).to include(
+          "job_class" => "SampleJob",
+          "job_id" => "abc-123",
+          "signals" => hash_including("progress"),
+          "custom" => { "progress" => 75 }
+        )
       end
     end
 

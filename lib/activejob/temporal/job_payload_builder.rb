@@ -39,6 +39,7 @@ module ActiveJob
         apply_child_workflows(payload, job)
         apply_chain(payload, job)
         apply_dependencies(payload, job)
+        apply_continue_as_new(payload)
 
         payload = Payload.encrypt_payload(payload, config: @config, encryption_context: encryption_context)
         Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job), config: @config)
@@ -66,6 +67,13 @@ module ActiveJob
           job_id: job.job_id,
           queue_name: job.queue_name
         }
+      end
+
+      def apply_continue_as_new(payload)
+        threshold = @config.continue_as_new_history_event_threshold
+        return unless threshold
+
+        payload[:continue_as_new] = { history_event_threshold: threshold }
       end
 
       def extract_temporal_options(job_class)

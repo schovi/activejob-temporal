@@ -52,6 +52,15 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload[:temporal_options]).to eq(start_to_close_timeout: 7200.0)
   end
 
+  it "includes the configured continue-as-new threshold" do
+    config.continue_as_new_history_event_threshold = 10_000
+    job = build_job("ContinueAsNewPayloadJob")
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:continue_as_new]).to eq(history_event_threshold: 10_000)
+  end
+
   it "includes workflow interaction metadata for declared signals, queries, and updates" do
     job_class = Class.new(ActiveJob::Base) do
       def self.name = "WorkflowInteractionJob"
