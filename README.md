@@ -569,6 +569,12 @@ When child workflows are present, the parent result becomes a collection contain
 
 If `set(chain:)` is also configured, the first chain step receives this collection as its single argument. Child workflows preserve the child job class's retry policy, timeouts, rate limits, queue routing, and search metadata. Run workers for every task queue used by the parent and child jobs.
 
+## Nexus Integration
+
+Nexus support is an optional workflow-layer boundary for durable calls to external Temporal-backed services. Ordinary ActiveJob execution stays on the activity path through `AjRunnerActivity`, so adapter configuration, enqueue calls, retries, middleware, and payloads do not require Nexus concepts.
+
+Use a normal activity for work owned by the Rails job or worker deployment. Use Nexus only when workflow code explicitly needs a service contract with a separate Temporal-backed service. See the [Nexus Integration guide](docs/nexus.md) for the design boundary and current Ruby SDK constraint.
+
 ## Job Dependencies
 
 Use `set(depends_on:)` when a separately enqueued job should finish before another job starts. The dependent workflow checks dependency status through a Temporal activity, sleeps durably between checks, then runs the job activity once every dependency has completed:
@@ -1201,6 +1207,7 @@ Additional guides:
 - [Worker Setup Guide](docs/worker_setup.md)
 - [Migration Guide](docs/migration_guide.md)
 - [Comparison Guide](docs/comparison.md)
+- [Nexus Integration](docs/nexus.md)
 - [Security](docs/security.md)
 
 ## Limitations (v0.1)
@@ -1213,6 +1220,7 @@ The following features are **not yet implemented** in v0.1 but are planned for f
 **Other constraints:**
 - **250KB payload size limit** (configurable via `max_payload_size_kb`). Jobs with larger plaintext or encrypted payloads will raise `ActiveJob::SerializationError`. Store large data externally (e.g., S3, database) and pass references instead.
 - **Linear chains only:** `set(chain:)` supports sequential activities inside one workflow. Use `set(child_workflows:)` for parent-owned fan-out and `set(depends_on:)` for independently enqueued job gates. General DAG orchestration is not yet supported.
+- **Nexus is an explicit workflow integration:** Ordinary ActiveJob execution remains activity-based. Use the [Nexus Integration](docs/nexus.md) guide when a workflow needs durable calls to an external Temporal-backed service.
 
 ## Migration from Sidekiq/Resque
 

@@ -103,6 +103,7 @@ This document tracks all quality checks required before releasing activejob-temp
 - [x] No Temporal Schedules API for recurring jobs (documented in README)
 - [x] No custom DLQ UI (documented in README)
 - [x] Workflow versioning seam documented in migration guide
+- [x] Nexus integration boundary documented; ordinary jobs remain activity-based
 - [x] Manual heartbeating required for cancellation (documented in README and example app)
 
 ## Final Sign-Off

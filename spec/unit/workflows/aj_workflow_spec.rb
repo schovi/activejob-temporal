@@ -45,6 +45,18 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
     allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return({})
   end
 
+  describe "Nexus integration seam" do
+    it "creates Nexus clients from the workflow layer" do
+      nexus_client = instance_double("Temporalio::Workflow::NexusClient")
+
+      allow(Temporalio::Workflow).to receive(:create_nexus_client)
+        .with(endpoint: "payments", service: "authorization")
+        .and_return(nexus_client)
+
+      expect(workflow.send(:nexus_client_for, endpoint: "payments", service: "authorization")).to eq(nexus_client)
+    end
+  end
+
   describe "#execute" do
     context "when payload has no scheduled_at" do
       it "invokes the activity immediately" do

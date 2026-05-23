@@ -13,6 +13,7 @@ Use this index to find the main guides for activejob-temporal.
 - [Performance Benchmarks](benchmarks.md) describes the benchmark suite, covered operations, and baseline numbers.
 - [Middleware Guide](middleware.md) explains how to wrap job execution with tracing, metrics, logging, and tenant context middleware.
 - [Recurring Jobs Guide](recurring_jobs.md) explains cron schedules, registration, overlap policies, and schedule handles.
+- [Nexus Integration](nexus.md) documents the optional workflow-layer boundary for durable external service calls.
 - [Troubleshooting Guide](troubleshooting.md) covers common enqueue, execution, retry, cancellation, payload, connection, and performance issues.
 - [Security](security.md) covers dependency scanning, input validation, TLS notes, and payload handling.
 
