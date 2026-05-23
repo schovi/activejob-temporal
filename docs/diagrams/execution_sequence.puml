@@ -30,7 +30,7 @@ Worker -> Activity: execute(payload)
 activate Activity
 Activity -> Payload: deserialize_args(payload)
 Payload --> Activity: args/job metadata
-Activity -> Activity: set Thread.current[:aj_temporal_idempotency_key] = "#{workflow_id}/runner"
+Activity -> Activity: set Fiber[:aj_temporal_idempotency_key] = "#{workflow_id}/runner"
 note right of Activity: Idempotency key set here so job replays remain idempotent
 Activity -> Job: perform(*args)
 Job -> External: call downstream API
@@ -50,7 +50,7 @@ else Success path
   Activity -> Temporal: complete_activity(result)
 end
 
-Activity -> Activity: ensure { Thread.current[:aj_temporal_idempotency_key] = nil }
+Activity -> Activity: ensure { Fiber[:aj_temporal_idempotency_key] = nil }
 note right of Activity: Idempotency key cleared in ensure block to avoid leaking into other jobs
 deactivate Activity
 Temporal --> Workflow: activity result (or failure)

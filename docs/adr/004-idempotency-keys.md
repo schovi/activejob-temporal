@@ -1,4 +1,4 @@
-# ADR 004: Thread-Local Idempotency Keys
+# ADR 004: Execution-Local Idempotency Keys
 
 ## Status
 
@@ -10,11 +10,11 @@ Background jobs frequently interact with external APIs that require idempotency 
 
 Temporal automatically retries activities on transient failures. Without idempotency keys, a payment API timeout that occurs after processing but before response delivery causes duplicate charges on retry. Idempotency keys enable APIs to deduplicate requests and return original results.
 
-Requirements: unique key per job execution but same key across retries, accessible in job code without changing ActiveJob's API, no `perform` signature changes, thread safety (concurrent activities must not interfere), deterministic keys across worker failures, optional usage. Thread-local storage (`Thread.current[:key]`) is the only approach satisfying all requirements (vs. arguments violating API contract, instance variables requiring coupling, global variables lacking thread safety, context objects adding complexity).
+Requirements: unique key per job execution but same key across retries, accessible in job code without changing ActiveJob's API, no `perform` signature changes, execution isolation (concurrent activities must not interfere), deterministic keys across worker failures, optional usage. Execution-local storage (`Fiber[:key]`) satisfies these requirements while allowing jobs to pass the key into child fibers. `Thread.current[:key]` remains populated for existing synchronous job code.
 
 ## Decision
 
-We provide **thread-local idempotency keys** that are set before job execution and accessible via `Thread.current[:aj_temporal_idempotency_key]`.
+We provide **execution-local idempotency keys** that are set before job execution and accessible via `Fiber[:aj_temporal_idempotency_key]`. Existing jobs can continue to read `Thread.current[:aj_temporal_idempotency_key]` when they do not hop into child fibers.
 
 The idempotency key is derived from Temporal's workflow ID, which is deterministic per job (format: `ajwf:JobClass:job_id`). The key includes a `/runner` suffix to namespace it within the workflow's execution context.
 
@@ -22,7 +22,7 @@ The idempotency key is derived from Temporal's workflow ID, which is determinist
 
 #### Setting the Idempotency Key
 
-The `AjRunnerActivity` sets the thread-local key before calling the job's `perform` method:
+The `AjRunnerActivity` sets the execution-local key before calling the job's `perform` method:
 
 ```ruby
 # lib/activejob/temporal/activities/aj_runner_activity.rb (lines 108-121)
@@ -40,20 +40,21 @@ rescue StandardError => e
   handle_exception(job_class, e)
 ensure
   Thread.current[IDEMPOTENCY_KEY] = nil
+  Fiber[IDEMPOTENCY_KEY] = nil
 end
 ```
 
-The key is constructed from Temporal's workflow ID with `/runner` suffix: `Thread.current[:aj_temporal_idempotency_key] = "#{workflow_id}/runner"`. Workflow ID (`ajwf:SendInvoiceJob:abc-123`) is deterministic per job and persists across retries. Thread-local storage isolates keys per execution thread. The `ensure` block clears keys after execution to prevent thread pool leakage.
+The key is constructed from Temporal's workflow ID with `/runner` suffix: `Fiber[:aj_temporal_idempotency_key] = "#{workflow_id}/runner"`. Workflow ID (`ajwf:SendInvoiceJob:abc-123`) is deterministic per job and persists across retries. `Fiber[...]` makes the key available to child fibers, while `Thread.current[...]` preserves the existing same-fiber access path. The `ensure` block clears both stores after execution to prevent worker pool leakage.
 
 #### Accessing the Idempotency Key in Jobs
 
-Jobs can read the key from thread-local storage:
+Jobs can read the key from execution-local storage:
 
 ```ruby
 class CreatePaymentJob < ApplicationJob
   def perform(user_id, amount_cents)
     user = User.find(user_id)
-    idempotency_key = Thread.current[:aj_temporal_idempotency_key]
+    idempotency_key = Fiber[:aj_temporal_idempotency_key]
 
     StripeClient.create_charge(
       amount: amount_cents,
@@ -71,20 +72,20 @@ For `CreatePaymentJob.perform_later(123, 5000)`, the key is `"ajwf:CreatePayment
 ### Positive
 
 - **Zero API Changes**: Jobs access keys without modifying `perform` signatures.
-- **Thread Safety**: Concurrent activities have isolated keys, no collisions.
+- **Execution Isolation**: Concurrent activities have isolated keys, no collisions.
 - **Deterministic Keys Across Retries**: Workflow ID-based approach ensures retries use same key.
 - **Cross-Worker Recovery**: Activity restarts on different machines produce same key.
-- **Simple Access Pattern**: `Thread.current[:aj_temporal_idempotency_key]` requires no gem-specific APIs.
+- **Simple Access Pattern**: `Fiber[:aj_temporal_idempotency_key]` requires no gem-specific APIs.
 - **Optional Usage**: No performance penalty for jobs not using idempotency.
 - **Standardized Format**: `<workflow_id>/runner` format is consistent and debuggable.
 
 ### Negative
 
-- **Thread-Local Coupling**: Jobs must understand that idempotency keys are stored in thread-local storage. This is less explicit than a parameter or instance variable.
+- **Execution-Local Coupling**: Jobs must understand that idempotency keys are stored in execution-local storage. This is less explicit than a parameter or instance variable.
 
-- **Documentation Dependency**: Developers must know `Thread.current[:aj_temporal_idempotency_key]` exists (not self-documenting).
-- **Testing Complexity**: Tests must manually set/clear thread-local keys.
-- **Thread-Per-Execution Assumption**: Breaks if Ruby SDK switches to fiber-based execution (safe as of 2025).
+- **Documentation Dependency**: Developers must know `Fiber[:aj_temporal_idempotency_key]` exists (not self-documenting).
+- **Testing Complexity**: Tests must manually set/clear execution-local keys.
+- **Compatibility Surface**: The library keeps `Thread.current[...]` populated for synchronous jobs, but fiber-aware code should prefer `Fiber[...]`.
 - **No Built-In Validation**: Gem cannot detect if APIs ignore nil keys.
 
 ## Alternatives Considered
@@ -99,15 +100,15 @@ Set `@idempotency_key` on job instance before calling `perform`. **Why Not Chose
 
 ### Alternative 3: Context Object with Dynamic Binding
 
-Introduce context object via fiber-local storage. **Why Not Chosen:** Implementation complexity (context stack, edge cases), fiber-local storage incompatible with thread-based execution, adds abstraction without clear benefit, documentation burden.
+Introduce a gem-specific context object over fiber storage. **Why Not Chosen:** Implementation complexity (context stack, edge cases), adds abstraction without clear benefit, documentation burden.
 
 ### Alternative 4: Auto-Inject via Job Instrumentation
 
-Use `ActiveSupport::Notifications` to inject keys via callbacks. **Why Not Chosen:** Timing issues (hooks fire around execution, not before), compatibility risk (observability tool used for flow control), still requires thread-local storage (adds complexity without eliminating dependency).
+Use `ActiveSupport::Notifications` to inject keys via callbacks. **Why Not Chosen:** Timing issues (hooks fire around execution, not before), compatibility risk (observability tool used for flow control), still requires execution-local storage (adds complexity without eliminating dependency).
 
 ## References
 
 - [Stripe Idempotent Requests](https://stripe.com/docs/api/idempotent_requests)
-- [Ruby Thread Documentation](https://docs.ruby-lang.org/en/master/Thread.html)
+- [Ruby Fiber Documentation](https://docs.ruby-lang.org/en/master/Fiber.html)
 - [Temporal Activity Context](https://docs.temporal.io/activities#activity-context)
 - [ActiveJob Perform Documentation](https://guides.rubyonrails.org/active_job_basics.html#create-the-job)

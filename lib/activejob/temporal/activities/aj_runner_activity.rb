@@ -17,14 +17,15 @@ module ActiveJob
       #
       # @note Idempotency and Retries
       #   Activities may be re-executed on transient failures due to Temporal's retry logic.
-      #   Job implementations MUST be idempotent. This activity sets a thread-local
-      #   idempotency key (`Thread.current[:aj_temporal_idempotency_key]`) derived from
-      #   the workflow ID to assist with idempotent external operations (e.g., API requests).
+      #   Job implementations MUST be idempotent. This activity sets an execution-local
+      #   idempotency key (`Fiber[:aj_temporal_idempotency_key]`) derived from the
+      #   workflow ID to assist with idempotent external operations (e.g., API requests).
       #
-      # @note Thread-Local Idempotency Key
-      #   Jobs can access `Thread.current[:aj_temporal_idempotency_key]` to generate
-      #   unique idempotency tokens for external API calls. The key format is
-      #   "workflow_id/runner" and persists across retries for the same workflow execution.
+      # @note Execution-Local Idempotency Key
+      #   Jobs can access `Fiber[:aj_temporal_idempotency_key]` to generate unique
+      #   idempotency tokens for external API calls. `Thread.current[...]` remains
+      #   populated for existing synchronous jobs. The key format is "workflow_id/runner"
+      #   and persists across retries for the same workflow execution.
       #
       # @note Exception Handling
       #   If the job raises an exception that matches a `discard_on` declaration,
@@ -34,7 +35,7 @@ module ActiveJob
       # @example Activity execution flow
       #   1. Deserialize job arguments from payload
       #   2. Constantize job class
-      #   3. Set thread-local idempotency key
+      #   3. Set execution-local idempotency key
       #   4. Instantiate job and call `perform(*args)`
       #   5. Handle exceptions (discard vs. retry)
       #   6. Clear idempotency key
@@ -42,7 +43,7 @@ module ActiveJob
       # @example Using idempotency key in a job
       #   class ChargeCustomerJob < ApplicationJob
       #     def perform(customer_id, amount)
-      #       idempotency_key = Thread.current[:aj_temporal_idempotency_key]
+      #       idempotency_key = Fiber[:aj_temporal_idempotency_key]
       #       StripeAPI.charge(
       #         customer_id: customer_id,
       #         amount: amount,
@@ -54,7 +55,6 @@ module ActiveJob
       # @see https://docs.temporal.io/activities Temporal Activities Guide
       # @see https://docs.temporal.io/retry-policies Temporal Retry Policies
       class AjRunnerActivity < Temporalio::Activity::Definition
-        # Thread-local key for storing the idempotency token.
         IDEMPOTENCY_KEY = :aj_temporal_idempotency_key
         DESERIALIZATION_ERROR_CLASSES = [
           ActiveJob::SerializationError,
@@ -89,7 +89,7 @@ module ActiveJob
         # @example Accessing idempotency key in job
         #   class MyJob < ApplicationJob
         #     def perform(user_id)
-        #       key = Thread.current[:aj_temporal_idempotency_key]
+        #       key = Fiber[:aj_temporal_idempotency_key]
         #       ExternalAPI.create_user(user_id, idempotency_key: key)
         #     end
         #   end
@@ -123,7 +123,7 @@ module ActiveJob
           Metrics.record_retry(deserialized_payload || payload, e)
           handle_exception(job_class, e)
         ensure
-          Thread.current[IDEMPOTENCY_KEY] = nil
+          clear_idempotency_key
         end
 
         private
@@ -176,7 +176,6 @@ module ActiveJob
           AuditLog.elapsed_milliseconds(audit_context[:started_at])
         end
 
-        # Sets thread-local idempotency key from workflow ID.
         # @api private
         def set_idempotency_key
           workflow_id = if defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
@@ -184,7 +183,14 @@ module ActiveJob
                         else
                           "unknown-workflow"
                         end
-          Thread.current[IDEMPOTENCY_KEY] = "#{workflow_id}/runner"
+          idempotency_key = "#{workflow_id}/runner"
+          Thread.current[IDEMPOTENCY_KEY] = idempotency_key
+          Fiber[IDEMPOTENCY_KEY] = idempotency_key
+        end
+
+        def clear_idempotency_key
+          Thread.current[IDEMPOTENCY_KEY] = nil
+          Fiber[IDEMPOTENCY_KEY] = nil
         end
 
         def activity_encryption_context

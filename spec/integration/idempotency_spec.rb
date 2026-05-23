@@ -131,11 +131,8 @@ RSpec.describe "Idempotency key handling", :integration do
     # Give it time to execute and clean up
     sleep 0.5
 
-    # NOTE: In a real scenario with proper workflow execution,
-    # we would verify that the worker's thread-local key is cleared.
-    # Since we're testing the activity in isolation through the integration,
-    # we rely on the ensure block in AjRunnerActivity#execute to clean up.
-    # This test verifies the flow completes without hanging.
+    # NOTE: The activity unit specs cover execution-local cleanup directly.
+    # This integration test verifies the real worker flow completes without hanging.
     expect(@worker_thread).to be_alive
   end
 

@@ -40,6 +40,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).with(payload).and_return(args)
       allow(job_instance).to receive(:perform) do |*received_args|
         expect(Thread.current[idempotency_key]).to eq("#{workflow_id}/runner")
+        expect(Fiber[idempotency_key]).to eq("#{workflow_id}/runner")
         expect(received_args).to eq(args)
       end
 
@@ -48,6 +49,26 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(job_class).to have_received(:new)
       expect(job_instance).to have_received(:perform).with(*args)
       expect(Thread.current[idempotency_key]).to be_nil
+      expect(Fiber[idempotency_key]).to be_nil
+    end
+
+    it "makes the idempotency key available to child fibers" do
+      captured_keys = []
+      job_instance = instance_double("FiberRunnerJob")
+      class_double("FiberRunnerJob", new: job_instance).as_stubbed_const
+      payload = { "job_class" => "FiberRunnerJob", "arguments" => ["raw"] }
+
+      allow(job_instance).to receive(:perform) do
+        Fiber.new do
+          captured_keys << Fiber[idempotency_key]
+          captured_keys << Thread.current[idempotency_key]
+        end.resume
+      end
+
+      activity.execute(payload)
+
+      expect(captured_keys).to eq(["#{workflow_id}/runner", nil])
+      expect(Fiber[idempotency_key]).to be_nil
     end
 
     it "deserializes payloads with workflow encryption context" do

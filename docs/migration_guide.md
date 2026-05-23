@@ -151,7 +151,7 @@ bundle exec temporal-worker
 **Issue:** Jobs may execute multiple times. **Solution:** Use idempotency keys, DB constraints, check-then-act patterns:
 ```ruby
 return if payment.charged?
-PaymentGateway.charge(idempotency_key: Thread.current[:aj_temporal_idempotency_key])
+PaymentGateway.charge(idempotency_key: Fiber[:aj_temporal_idempotency_key])
 ```
 
 ### 3. Heartbeating for Cancellation

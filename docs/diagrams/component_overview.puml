@@ -19,7 +19,7 @@ Container_Boundary(workflow_boundary, "AjWorkflow") {
 Container_Boundary(activity_boundary, "AjRunnerActivity") {
   Component(job_instantiator, "JobInstantiator", "Ruby Method", "Deserializes payload, creates job instance")
   Component(error_mapper, "ErrorMapper", "Ruby Module", "Maps discard_on → ApplicationError(non_retryable)")
-  Component(idempotency_key, "IdempotencyKeyProvider", "Ruby Module", "Sets Thread.current[:aj_temporal_idempotency_key]")
+  Component(idempotency_key, "IdempotencyKeyProvider", "Ruby Module", "Sets Fiber[:aj_temporal_idempotency_key]")
 }
 
 Component_Ext(payload_module, "Payload Serializer", "Ruby Module", "from_job, deserialize_args")
@@ -53,7 +53,7 @@ Rel(workflow_orchestrator, temporal_cluster, "Persists workflow history", "Tempo
 Rel(job_instantiator, payload_module, "Calls deserialize_args", "Ruby")
 Rel(job_instantiator, job_class, "Instantiates & calls .perform", "Ruby")
 
-Rel(job_instantiator, idempotency_key, "Sets Thread.current key", "Ruby")
+Rel(job_instantiator, idempotency_key, "Sets execution-local key", "Ruby")
 Rel(job_instantiator, error_mapper, "Wraps exceptions", "Ruby")
 
 Rel(error_mapper, retry_mapper_module, "Calls discard_exception?", "Ruby")
