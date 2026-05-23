@@ -132,6 +132,22 @@ RSpec.describe ActiveJob::Temporal::WorkerPool do
     pool&.stop
   end
 
+  it "caps the restart count carried across chronic crash loops" do
+    stub_const("ActiveJob::Temporal::WorkerPool::MAX_RESTART_COUNT", 2)
+    pool = build_pool(size: 1)
+    pool.start(supervise: false)
+
+    4.times do |offset|
+      pool.__send__(:handle_worker_exit, 1001 + offset, WorkerPoolSpecSupport::FakeStatus.new(success?: false))
+    end
+
+    expect(ActiveJob::Temporal::Logger).to have_received(:log_event)
+      .with("worker_pool_worker_started", hash_including(worker_index: 0, restarts: 2))
+      .exactly(3).times
+  ensure
+    pool&.stop
+  end
+
   it "does not restart workers during shutdown" do
     pool = build_pool(size: 1)
     pool.start(supervise: false)

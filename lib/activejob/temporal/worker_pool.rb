@@ -12,6 +12,7 @@ module ActiveJob
 
       DEFAULT_RESTART_DELAY = 1.0
       DEFAULT_SHUTDOWN_TIMEOUT = 10.0
+      MAX_RESTART_COUNT = 1_000
       SHUTDOWN_SIGNALS = %w[INT TERM].freeze
       VALID_OPTIONS = %i[
         worker_command
@@ -269,7 +270,11 @@ module ActiveJob
         @process_adapter.sleep(@restart_delay) if @restart_delay.positive?
         return unless restart_allowed?
 
-        start_worker(child.index, restarts: child.restarts + 1)
+        start_worker(child.index, restarts: next_restart_count(child))
+      end
+
+      def next_restart_count(child)
+        [child.restarts + 1, MAX_RESTART_COUNT].min
       end
 
       def child_count
