@@ -61,6 +61,15 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload[:continue_as_new]).to eq(history_event_threshold: 10_000)
   end
 
+  it "includes configured local activity helpers" do
+    config.local_activity_helpers = [:rate_limit]
+    job = build_job("LocalActivityPayloadJob")
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:local_activity_helpers]).to eq(["rate_limit"])
+  end
+
   it "includes workflow interaction metadata for declared signals, queries, and updates" do
     job_class = Class.new(ActiveJob::Base) do
       def self.name = "WorkflowInteractionJob"

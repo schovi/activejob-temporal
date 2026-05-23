@@ -62,6 +62,7 @@ module ActiveJob
         activity_task_queue
         continue_as_new
         workflow_state
+        local_activity_helpers
       ].freeze
 
       # Converts an ActiveJob instance into a serializable payload hash.

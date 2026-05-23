@@ -61,6 +61,10 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.continue_as_new_history_event_threshold).to be_nil
     end
 
+    it "disables local activity helpers by default" do
+      expect(configuration.local_activity_helpers).to eq([])
+    end
+
     it "sets task_queue to 'default'" do
       expect(configuration.task_queue).to eq("default")
     end

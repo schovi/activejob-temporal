@@ -37,6 +37,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
     allow(Temporalio::Workflow).to receive(:search_attributes).and_return(nil)
     allow(Temporalio::Workflow).to receive(:all_handlers_finished?).and_return(true)
     allow(Temporalio::Workflow).to receive(:execute_activity).and_return(:activity_result)
+    allow(Temporalio::Workflow).to receive(:execute_local_activity).and_return(:activity_result)
     allow(Temporalio::Workflow).to receive(:sleep)
     allow(Temporalio::Workflow).to receive(:start_child_workflow)
     allow(Temporalio::Workflow).to receive(:wait_condition)
@@ -793,6 +794,26 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         expect(Temporalio::Workflow).to have_received(:execute_activity)
           .with(ActiveJob::Temporal::Activities::RateLimitActivity, rate_limited_payload, anything)
           .twice
+      end
+
+      it "can run rate limit checks as local activities while job execution stays remote" do
+        payload = rate_limited_payload.merge("local_activity_helpers" => ["rate_limit"])
+        waits = [1.0, 0.0]
+
+        allow(Temporalio::Workflow).to receive(:execute_local_activity) do |activity_class, payload_arg, options|
+          expect(activity_class).to eq(ActiveJob::Temporal::Activities::RateLimitActivity)
+          expect(payload_arg).to eq(payload)
+          expect(options[:start_to_close_timeout]).to eq(described_class::RATE_LIMIT_ACTIVITY_TIMEOUT)
+          waits.shift
+        end
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_local_activity).twice
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload_arg, _options|
+          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+          expect(payload_arg).to eq(payload)
+        end
       end
     end
 

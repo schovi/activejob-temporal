@@ -27,6 +27,7 @@ module ActiveJob
     VALIDATION_LEVELS = %i[strict warn none].freeze
     METRICS_PROVIDERS = %i[none prometheus].freeze
     PAYLOAD_SERIALIZERS = PayloadSerializers::SUPPORTED
+    LOCAL_ACTIVITY_HELPERS = %i[rate_limit].freeze
     UNTRAPPABLE_SIGNALS = %w[CHLD INT KILL PIPE QUIT STOP TERM].freeze
     POSITIONAL_PARAMETER_TYPES = %i[req opt rest].freeze
     MAX_TARGET_HOST_LENGTH = 253
@@ -342,6 +343,12 @@ module ActiveJob
         description: "Optional workflow history event threshold for continuing ActiveJob workflows as new"
       },
 
+      local_activity_helpers: {
+        default: -> { [] },
+        type: :array,
+        description: "Internal helper activity names that should run as Temporal local activities"
+      },
+
       max_concurrent_activities: {
         default: 100,
         env_var: "ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES",
@@ -610,6 +617,7 @@ module ActiveJob
       validate :validate_audit_settings
       validate :validate_encryption_settings
       validate :validate_tls_settings
+      validate :validate_local_activity_helpers
 
       private
 
@@ -705,6 +713,18 @@ module ActiveJob
       def validate_rate_limit_settings
         validate_rate_limiter
         validate_global_rate_limit
+      end
+
+      def validate_local_activity_helpers
+        unless local_activity_helpers.is_a?(Array)
+          errors.add(:local_activity_helpers, :invalid, value: local_activity_helpers.inspect)
+          return
+        end
+
+        unsupported_helper = local_activity_helpers.find do |helper|
+          !helper.respond_to?(:to_sym) || !LOCAL_ACTIVITY_HELPERS.include?(helper.to_sym)
+        end
+        errors.add(:local_activity_helpers, :invalid, value: unsupported_helper.inspect) if unsupported_helper
       end
 
       def validate_rate_limiter

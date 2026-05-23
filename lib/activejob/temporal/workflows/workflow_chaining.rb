@@ -13,6 +13,7 @@ module ActiveJob
           dead_letter
           rate_limits
           activity_task_queue
+          local_activity_helpers
         ].freeze
 
         private
