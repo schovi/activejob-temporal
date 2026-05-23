@@ -103,7 +103,7 @@ module ActiveJob
         @strategy.call(job)
       rescue ArgumentError => e
         raise ConfigurationError,
-              "workflow_id_generator must accept one ActiveJob argument: #{e.message}"
+              "workflow_id_generator must accept one positional ActiveJob argument: #{e.message}"
       end
     end
   end

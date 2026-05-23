@@ -68,7 +68,7 @@ RSpec.describe ActiveJob::Temporal::WorkflowIdBuilder do
       custom_builder = described_class.new(-> { "custom-id" })
 
       expect { custom_builder.build(job) }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must accept one ActiveJob argument/)
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must accept one positional ActiveJob argument/)
     end
 
     it "rejects blank workflow IDs" do

@@ -434,7 +434,7 @@ attributes:
       default: null
       validation_rules:
         - "Optional field, can be nil"
-        - "When provided, must respond to #call and accept an ActiveJob instance"
+        - "When provided, must respond to #call and accept one positional ActiveJob instance"
         - "Generated workflow ID must be a String"
         - "Generated workflow ID length must be 1..255 characters"
         - "Generated workflow ID must be valid UTF-8"

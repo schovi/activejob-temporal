@@ -28,6 +28,7 @@ module ActiveJob
     METRICS_PROVIDERS = %i[none prometheus].freeze
     PAYLOAD_SERIALIZERS = PayloadSerializers::SUPPORTED
     UNTRAPPABLE_SIGNALS = %w[CHLD INT KILL PIPE QUIT STOP TERM].freeze
+    POSITIONAL_PARAMETER_TYPES = %i[req opt rest].freeze
 
     # Central registry of all configuration attributes.
     #
@@ -867,9 +868,29 @@ module ActiveJob
       end
 
       def callable_accepts_one_positional_argument?(callable)
+        parameters = callable_parameters(callable)
+        return accepts_one_positional_argument_from_parameters?(parameters) if parameters
+
         arity = callable.respond_to?(:arity) ? callable.arity : callable.method(:call).arity
 
         arity == 1 || arity.negative?
+      end
+
+      def accepts_one_positional_argument_from_parameters?(parameters)
+        required_positional_count = parameters.count { |type, _name| type == :req }
+
+        required_positional_count <= 1 &&
+          parameters.any? { |type, _name| POSITIONAL_PARAMETER_TYPES.include?(type) }
+      end
+
+      def callable_parameters(callable)
+        if callable.respond_to?(:parameters)
+          callable.parameters
+        else
+          callable.method(:call).parameters
+        end
+      rescue NameError
+        nil
       end
 
       def validate_duration_attribute(attr_name, required: true)

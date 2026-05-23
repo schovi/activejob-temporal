@@ -24,7 +24,7 @@ The canonical machine-readable schema for all configuration options is available
 | `tls_domain` | String or `nil` | `nil` | Optional SNI domain override for TLS verification. |
 | `tls_cert_watch` | Boolean | `false` | Watch configured TLS certificate files and reload worker clients when they change. |
 | `tls_reload_signal` | String | `"HUP"` | Signal name used by workers for manual TLS reload. |
-| `workflow_id_generator` | Callable or `nil` | `nil` | Optional callable that receives an ActiveJob instance and returns a custom Temporal workflow ID. When unset, the adapter uses `"ajwf:<ClassName>:<job_id>"`. |
+| `workflow_id_generator` | Callable or `nil` | `nil` | Optional callable that receives one positional ActiveJob instance and returns a custom Temporal workflow ID. When unset, the adapter uses `"ajwf:<ClassName>:<job_id>"`. |
 | `default_activity_timeout` | `ActiveSupport::Duration` | `15.minutes` | Default `start_to_close` timeout applied to activities that do not override it. Must be positive. |
 | `default_heartbeat_timeout` | `ActiveSupport::Duration` or `nil` | `nil` | Default `heartbeat` timeout for long-running activities. Optional - only applied if set. |
 | `default_schedule_to_start_timeout` | `ActiveSupport::Duration` or `nil` | `nil` | Default `schedule_to_start` timeout controlling max wait before activity starts. Optional - only applied if set. |
@@ -399,6 +399,8 @@ ActiveJob::Temporal.configure do |config|
   end
 end
 ```
+
+The callable is invoked as `call(job)`, so keyword-only callables such as `->(job:) { ... }` are rejected during configuration validation.
 
 Generated IDs must be valid UTF-8 strings from 1 to 255 characters and must not contain control characters. Punctuation such as `/` and `@`, spaces, and Unicode letters are allowed. Invalid IDs raise `ActiveJob::Temporal::ConfigurationError` before the workflow is started.
 

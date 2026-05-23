@@ -465,6 +465,7 @@ ActiveJob::Temporal.cancel(MyJob, job.job_id)
 **Error messages**
 
 ```text
+workflow_id_generator must accept one positional ActiveJob argument
 workflow_id_generator must return a String
 workflow_id_generator returned an invalid workflow ID: must be valid UTF-8
 workflow_id_generator returned an invalid workflow ID: control characters are not allowed
@@ -481,7 +482,7 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-Avoid slashes, spaces, query fragments, and unbounded argument values.
+Avoid control characters and unbounded argument values.
 
 ## Activity Timeouts
 

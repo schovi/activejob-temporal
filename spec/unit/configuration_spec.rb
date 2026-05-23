@@ -665,7 +665,12 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "rejects callables that cannot accept a job argument" do
       expect { configuration.workflow_id_generator = -> { "custom-id" } }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must accept one ActiveJob argument/)
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must accept one positional ActiveJob argument/)
+    end
+
+    it "rejects keyword-only callables" do
+      expect { configuration.workflow_id_generator = ->(job:) { "custom:#{job.job_id}" } }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /one positional ActiveJob argument/)
     end
   end
 
