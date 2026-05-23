@@ -29,6 +29,7 @@ The gem is designed as a **drop-in replacement** for existing ActiveJob adapters
 - ✅ **Scheduled execution:** Use `MyJob.set(wait: 5.minutes).perform_later(args)` or `MyJob.set(wait_until: Time.zone.now + 1.hour).perform_later(args)` for delayed jobs
 - ✅ **Recurring jobs:** Declare cron schedules on job classes and register them through Temporal Schedules
 - ✅ **Conditional enqueueing:** Use `MyJob.perform_later_if(condition, args)` to skip jobs when no work is needed
+- ✅ **Bulk enqueueing:** Use `ActiveJob::Temporal.enqueue_batch` to enqueue many prepared jobs and inspect per-job results
 - ✅ **Job chaining:** Use `MyJob.set(chain: [NextJob]).perform_later(args)` to run sequential activities in one workflow
 - ✅ **Job dependencies:** Use `MyJob.set(depends_on: parent_job).perform_later(args)` to wait for independently enqueued jobs
 - ✅ **Retry mapping:** ActiveJob `retry_on` declarations automatically map to Temporal retry policies with exponential backoff
@@ -159,6 +160,21 @@ SendInvoiceJob.perform_later_if(
   ->(arguments) { Invoice.find(arguments.first).ready? },
   invoice.id
 )
+```
+
+To enqueue prepared jobs in one call, use `ActiveJob::Temporal.enqueue_batch`. Each item can be a job instance, or a hash with `:job` and optional `:scheduled_at`.
+
+```ruby
+jobs = [
+  SendInvoiceJob.new(invoice.id),
+  { job: SendInvoiceJob.new(other_invoice.id), scheduled_at: 10.minutes.from_now }
+]
+
+result = ActiveJob::Temporal.enqueue_batch(jobs, concurrency: 4)
+
+result.success_count
+result.duplicate_count
+result.failures.map(&:to_h)
 ```
 
 ### Step 6: Start a Temporal worker

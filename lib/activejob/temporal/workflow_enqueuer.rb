@@ -4,6 +4,7 @@ require "time"
 
 require_relative "dead_letter_payload_validation"
 require_relative "job_payload_builder"
+require_relative "workflow_enqueuer_batch"
 require_relative "workflow_id_builder"
 
 module ActiveJob
@@ -23,6 +24,8 @@ module ActiveJob
     #   enqueuer = WorkflowEnqueuer.new(client, config)
     #   enqueuer.enqueue(job)
     class WorkflowEnqueuer
+      include WorkflowEnqueuerBatch
+
       # @param client [Temporalio::Client] Temporal client connection
       # @param config [ActiveJob::Temporal::Configuration] Configuration object
       # @param logger [Logger] Optional logger instance

@@ -39,6 +39,9 @@ require_relative "temporal/temporal_options"
 require_relative "temporal/schedule"
 require_relative "temporal/schedulable"
 require_relative "temporal/workflow_id_builder"
+require_relative "temporal/batch_enqueue_result"
+require_relative "temporal/batch_enqueuer"
+require_relative "temporal/workflow_enqueuer_batch"
 require_relative "temporal/workflow_enqueuer"
 require_relative "temporal/adapter"
 require_relative "temporal/workflows/aj_workflow"
@@ -204,6 +207,14 @@ module ActiveJob
 
       def cancel_where(filters)
         Cancel.cancel_where(filters)
+      end
+
+      def enqueue_batch(items, concurrency: 1)
+        WorkflowEnqueuer.new(
+          -> { client },
+          config,
+          config.logger
+        ).enqueue_batch(items, concurrency: concurrency)
       end
 
       def status(job_class, job_id)

@@ -411,6 +411,155 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
     end
   end
 
+  describe "#enqueue_batch" do
+    let(:first_job) do
+      job = SimpleJob.new
+      job.job_id = "batch-job-1"
+      job.queue_name = "mailers"
+      job
+    end
+
+    let(:second_job) do
+      job = ScheduledJob.new
+      job.job_id = "batch-job-2"
+      job.queue_name = "reports"
+      job
+    end
+
+    before do
+      allow(client).to receive(:start_workflow).and_return("workflow-handle")
+      allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+      allow(ActiveJob::Temporal::AuditLog).to receive(:record)
+      allow(ActiveJob::Temporal::Metrics).to receive(:record_enqueue)
+    end
+
+    it "enqueues multiple jobs and returns per-job success results" do
+      allow(client).to receive(:start_workflow).and_return("first-handle", "second-handle")
+
+      result = enqueuer.enqueue_batch([first_job, second_job])
+
+      expect(result.success?).to be true
+      expect(result.success_count).to eq(2)
+      expect(result.duplicate_count).to eq(0)
+      expect(result.failure_count).to eq(0)
+      expect(result.results.map(&:to_h)).to contain_exactly(
+        hash_including(
+          index: 0,
+          job_class: "SimpleJob",
+          job_id: "batch-job-1",
+          status: :success,
+          handle: "first-handle"
+        ),
+        hash_including(
+          index: 1,
+          job_class: "ScheduledJob",
+          job_id: "batch-job-2",
+          status: :success,
+          handle: "second-handle"
+        )
+      )
+    end
+
+    it "preserves per-job scheduled times and task queue routing" do
+      scheduled_time = 1.hour.from_now
+      calls = []
+
+      allow(client).to receive(:start_workflow) do |_klass, payload, **options|
+        calls << { payload: payload, options: options }
+        "handle-#{calls.length}"
+      end
+      entries = [
+        first_job,
+        { job: second_job, scheduled_at: scheduled_time }
+      ]
+
+      enqueuer.enqueue_batch(entries)
+
+      expect(calls[0][:options][:task_queue]).to eq("mailers")
+      expect(calls[0][:payload][:scheduled_at]).to be_nil
+      expect(calls[1][:options][:task_queue]).to eq("reports")
+      expect(calls[1][:payload][:scheduled_at]).to eq(scheduled_time.iso8601)
+    end
+
+    it "reports duplicate jobs per item" do
+      error = Class.new(StandardError)
+      stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
+      call_count = 0
+
+      allow(client).to receive(:start_workflow) do
+        call_count += 1
+        raise error, "already started" if call_count == 2
+
+        "first-handle"
+      end
+
+      result = enqueuer.enqueue_batch([first_job, second_job])
+
+      expect(result.success_count).to eq(1)
+      expect(result.duplicate_count).to eq(1)
+      expect(result.failure_count).to eq(0)
+      expect(result.results[1].status).to eq(:duplicate)
+      expect(result.results[1].handle).to be_nil
+    end
+
+    it "reports enqueue failures per item without stopping the batch" do
+      call_count = 0
+
+      allow(client).to receive(:start_workflow) do
+        call_count += 1
+        raise StandardError, "connection failed" if call_count == 2
+
+        "first-handle"
+      end
+
+      result = enqueuer.enqueue_batch([first_job, second_job])
+
+      expect(result.success?).to be false
+      expect(result.success_count).to eq(1)
+      expect(result.failure_count).to eq(1)
+      expect(result.failures.first.index).to eq(1)
+      expect(result.failures.first.error).to be_a(ActiveJob::EnqueueError)
+    end
+
+    it "validates all inputs before starting any workflows" do
+      blank_queue_job = SimpleJob.new
+      blank_queue_job.job_id = "blank-queue"
+      blank_queue_job.queue_name = nil
+      entries = [
+        first_job,
+        { job: second_job, scheduled_at: "not-a-date" },
+        blank_queue_job,
+        Object.new
+      ]
+
+      expect do
+        enqueuer.enqueue_batch(entries)
+      end.to raise_error(ActiveJob::Temporal::BatchEnqueueValidationError) { |error|
+        expect(error.errors.map { |entry| entry[:index] }).to eq([1, 2, 3])
+        expect(error.message).to include("scheduled_at must be")
+        expect(error.message).to include("queue name cannot be blank")
+        expect(error.message).to include("ActiveJob instance")
+      }
+
+      expect(client).not_to have_received(:start_workflow)
+    end
+
+    it "rejects invalid concurrency limits" do
+      expect do
+        enqueuer.enqueue_batch([first_job], concurrency: 0)
+      end.to raise_error(ArgumentError, /concurrency must be a positive integer/)
+
+      expect(client).not_to have_received(:start_workflow)
+    end
+
+    it "enqueues all jobs when concurrency is greater than one" do
+      result = enqueuer.enqueue_batch([first_job, second_job], concurrency: 2)
+
+      expect(result.success_count).to eq(2)
+      expect(client).to have_received(:start_workflow).twice
+    end
+  end
+
   describe "initialization" do
     it "accepts optional logger" do
       custom_logger = instance_double(Logger)
@@ -434,5 +583,29 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
     config.namespace = "default"
     config.task_queue_prefix = nil
     config
+  end
+end
+
+RSpec.describe ActiveJob::Temporal do
+  describe ".enqueue_batch" do
+    it "delegates to a workflow enqueuer with the current client and configuration" do
+      configuration = ActiveJob::Temporal::Configuration.new
+      configuration.target = "localhost:7233"
+      configuration.namespace = "default"
+      enqueuer = instance_double(ActiveJob::Temporal::WorkflowEnqueuer)
+      items = [SimpleJob.new]
+      result = ActiveJob::Temporal::BatchEnqueueResult.new([])
+
+      allow(described_class).to receive(:client).and_return("client")
+      allow(described_class).to receive(:config).and_return(configuration)
+      allow(ActiveJob::Temporal::WorkflowEnqueuer).to receive(:new)
+        .with(instance_of(Proc), configuration, configuration.logger)
+        .and_return(enqueuer)
+      allow(enqueuer).to receive(:enqueue_batch)
+        .with(items, concurrency: 3)
+        .and_return(result)
+
+      expect(described_class.enqueue_batch(items, concurrency: 3)).to be(result)
+    end
   end
 end
