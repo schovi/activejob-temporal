@@ -162,7 +162,7 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
     end
 
     it "rejects invalid configured workflow IDs before starting a workflow" do
-      config.workflow_id_generator = ->(_job) { "invalid workflow/id" }
+      config.workflow_id_generator = ->(_job) { "invalid\nworkflow" }
       enqueuer = described_class.new(client, config, logger)
 
       expect { enqueuer.enqueue(job) }

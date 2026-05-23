@@ -49,6 +49,14 @@ RSpec.describe ActiveJob::Temporal::WorkflowIdBuilder do
       expect(custom_builder.build(job)).to eq("tenant-42:ajwf:SimpleJob:abc-123")
     end
 
+    it "allows Temporal-compatible punctuation and Unicode workflow IDs" do
+      custom_builder = described_class.new(
+        ->(job) { "tenant/acme@example.com/ajwf:RésuméJob:#{job.job_id}" }
+      )
+
+      expect(custom_builder.build(job)).to eq("tenant/acme@example.com/ajwf:RésuméJob:abc-123")
+    end
+
     it "rejects non-string strategy output" do
       custom_builder = described_class.new(->(_job) { 123 })
 
@@ -70,11 +78,18 @@ RSpec.describe ActiveJob::Temporal::WorkflowIdBuilder do
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /must not be blank/)
     end
 
-    it "rejects workflow IDs with unsupported characters" do
-      custom_builder = described_class.new(->(_job) { "bad workflow/id" })
+    it "rejects workflow IDs with control characters" do
+      custom_builder = described_class.new(->(_job) { "bad\nworkflow" })
 
       expect { custom_builder.build(job) }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /only letters, numbers/)
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /control characters/)
+    end
+
+    it "rejects workflow IDs that are not UTF-8 compatible" do
+      custom_builder = described_class.new(->(_job) { "\xC3".b })
+
+      expect { custom_builder.build(job) }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /valid UTF-8/)
     end
 
     it "rejects workflow IDs longer than 255 characters" do

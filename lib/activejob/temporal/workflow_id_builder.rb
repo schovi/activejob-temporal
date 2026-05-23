@@ -11,7 +11,7 @@ module ActiveJob
     class WorkflowIdBuilder
       DEFAULT_PREFIX = "ajwf"
       MAX_WORKFLOW_ID_LENGTH = 255
-      VALID_WORKFLOW_ID_PATTERN = /\A[A-Za-z0-9_.:-]+\z/
+      CONTROL_CHARACTER_PATTERN = /[[:cntrl:]]/
 
       # @param strategy [#call, nil] Optional callable that receives the job and returns a workflow ID
       def initialize(strategy = nil)
@@ -72,17 +72,28 @@ module ActiveJob
             raise ConfigurationError, "workflow_id_generator returned an invalid workflow ID: must not be blank"
           end
 
+          unless utf8_compatible?(workflow_id)
+            raise ConfigurationError,
+                  "workflow_id_generator returned an invalid workflow ID: must be valid UTF-8"
+          end
+
           if workflow_id.length > MAX_WORKFLOW_ID_LENGTH
             raise ConfigurationError,
                   "workflow_id_generator returned an invalid workflow ID: maximum length is " \
                   "#{MAX_WORKFLOW_ID_LENGTH} characters (got #{workflow_id.length})"
           end
 
-          return if workflow_id.match?(VALID_WORKFLOW_ID_PATTERN)
+          return unless workflow_id.match?(CONTROL_CHARACTER_PATTERN)
 
           raise ConfigurationError,
-                "workflow_id_generator returned an invalid workflow ID: only letters, numbers, " \
-                "underscore, hyphen, period, and colon are allowed (got #{workflow_id.inspect})"
+                "workflow_id_generator returned an invalid workflow ID: control characters are not allowed " \
+                "(got #{workflow_id.inspect})"
+        end
+
+        private
+
+        def utf8_compatible?(workflow_id)
+          workflow_id.valid_encoding? && (workflow_id.encoding == Encoding::UTF_8 || workflow_id.ascii_only?)
         end
       end
 

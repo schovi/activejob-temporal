@@ -400,7 +400,7 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-Generated IDs must be strings from 1 to 255 characters and may only contain letters, numbers, underscores, hyphens, periods, and colons. Invalid IDs raise `ActiveJob::Temporal::ConfigurationError` before the workflow is started.
+Generated IDs must be valid UTF-8 strings from 1 to 255 characters and must not contain control characters. Punctuation such as `/` and `@`, spaces, and Unicode letters are allowed. Invalid IDs raise `ActiveJob::Temporal::ConfigurationError` before the workflow is started.
 
 ## Middleware
 

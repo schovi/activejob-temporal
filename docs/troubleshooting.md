@@ -466,13 +466,14 @@ ActiveJob::Temporal.cancel(MyJob, job.job_id)
 
 ```text
 workflow_id_generator must return a String
-workflow_id_generator returned an invalid workflow ID: only letters, numbers, underscore, hyphen, period, and colon are allowed
+workflow_id_generator returned an invalid workflow ID: must be valid UTF-8
+workflow_id_generator returned an invalid workflow ID: control characters are not allowed
 workflow_id_generator returned an invalid workflow ID: maximum length is 255 characters
 ```
 
 **Fix**
 
-Return a short string with only supported characters:
+Return a short valid UTF-8 string without control characters:
 
 ```ruby
 ActiveJob::Temporal.configure do |config|

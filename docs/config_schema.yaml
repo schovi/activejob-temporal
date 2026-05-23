@@ -437,7 +437,8 @@ attributes:
         - "When provided, must respond to #call and accept an ActiveJob instance"
         - "Generated workflow ID must be a String"
         - "Generated workflow ID length must be 1..255 characters"
-        - "Generated workflow ID may contain only letters, numbers, underscores, hyphens, periods, and colons"
+        - "Generated workflow ID must be valid UTF-8"
+        - "Generated workflow ID must not contain control characters"
       description: "Optional callable for custom Temporal workflow ID generation. When unset, IDs use ajwf:<ClassName>:<job_id>."
       env_var_name: null
       example: "->(job) { \"tenant-#{job.arguments.first.tenant_id}:ajwf:#{job.class.name}:#{job.job_id}\" }"
