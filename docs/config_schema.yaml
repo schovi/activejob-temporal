@@ -22,8 +22,10 @@ attributes:
       type: String
       default: "127.0.0.1:7233"
       validation_rules:
-        - "Must match host:port format (alphanumeric, dots, hyphens in host; 1-5 digit port)"
-        - "Validated by regex: /^[\\w.-]+:\\d{1,5}$/"
+        - "Must match host:port format"
+        - "Host must use DNS-style labels or an IPv4 address, with no underscores, leading dots, trailing dots, or leading/trailing hyphens in labels"
+        - "Host length must be <= 253 characters and each label must be <= 63 characters"
+        - "Port must be an integer from 1 to 65535"
         - "Examples: localhost:7233, temporal.example.com:7233, 10.0.0.1:7233"
       description: "Temporal server host and port for gRPC connection. Supports DNS names and IP addresses."
       env_var_name: ACTIVEJOB_TEMPORAL_TARGET
@@ -33,8 +35,8 @@ attributes:
       type: String
       default: "default"
       validation_rules:
-        - "Must contain only alphanumeric characters, hyphens, and underscores"
-        - "Validated by regex: /^[\\w-]+$/"
+        - "Must be 1-1000 characters"
+        - "Must start and end with an alphanumeric character"
         - "Cannot contain spaces or special characters except hyphen and underscore"
       description: "Temporal namespace for workflow and activity execution. Namespaces provide logical isolation."
       env_var_name: ACTIVEJOB_TEMPORAL_NAMESPACE
@@ -689,8 +691,8 @@ validation:
 
   validation_rules:
     - "validation_level - Must be one of :strict, :warn, or :none"
-    - "target - Must be in host:port format with alphanumeric/dots/hyphens in host and 1-5 digit port"
-    - "namespace - Must contain only alphanumeric characters, hyphens, and underscores"
+    - "target - Must be in host:port format with DNS-style host labels or IPv4 address and TCP port 1-65535"
+    - "namespace - Must be 1-1000 characters, start and end alphanumeric, and contain only alphanumeric characters, hyphens, and underscores"
     - "default_activity_timeout - Must be a positive duration"
     - "default_retry_initial_interval - Must be a positive duration"
     - "default_retry_backoff - Must be >= 1.0"

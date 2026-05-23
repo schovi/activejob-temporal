@@ -5,12 +5,12 @@ en:
         active_job/temporal/config_validator:
           attributes:
             target:
-              target_required: "Target host is required (set TEMPORAL_TARGET or config.target)"
-              invalid_format: "must be in format 'host:port' (e.g., 'localhost:7233' or 'temporal.example.com:7233'), got: %{target}"
+              target_required: "Target host is required (set ACTIVEJOB_TEMPORAL_TARGET or config.target)"
+              invalid_format: "must be in format 'host:port' with DNS-style host labels and TCP port 1-65535 (e.g., 'localhost:7233' or 'temporal.example.com:7233'), got: %{target}"
 
             namespace:
-              namespace_required: "Namespace is required (set TEMPORAL_NAMESPACE or config.namespace)"
-              invalid_format: "must contain only alphanumeric characters, hyphens, and underscores (got: %{namespace}). Use 'prod-default' not 'prod_default!'"
+              namespace_required: "Namespace is required (set ACTIVEJOB_TEMPORAL_NAMESPACE or config.namespace)"
+              invalid_format: "must be 1-1000 characters, start and end with an alphanumeric character, and contain only alphanumeric characters, hyphens, and underscores (got: %{namespace})"
 
             default_activity_timeout:
               not_a_duration: "must be a duration (e.g., 10.minutes or 30.seconds), got: %{value}"

@@ -29,6 +29,11 @@ module ActiveJob
     PAYLOAD_SERIALIZERS = PayloadSerializers::SUPPORTED
     UNTRAPPABLE_SIGNALS = %w[CHLD INT KILL PIPE QUIT STOP TERM].freeze
     POSITIONAL_PARAMETER_TYPES = %i[req opt rest].freeze
+    MAX_TARGET_HOST_LENGTH = 253
+    MAX_NAMESPACE_LENGTH = 1000
+    TARGET_HOST_LABEL_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\z/
+    TARGET_PORT_PATTERN = /\A[1-9]\d{0,4}\z/
+    NAMESPACE_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?\z/
 
     # Central registry of all configuration attributes.
     #
@@ -595,20 +600,37 @@ module ActiveJob
 
       private
 
-      # Validates target is in host:port format
       def validate_target_format
         return if target.blank? # presence validation handles nil/empty
-        return if target =~ /^[\w.-]+:\d{1,5}$/
+
+        host, port = split_target
+        return if host && port && valid_target_host?(host) && valid_target_port?(port)
 
         errors.add(:target, :invalid_format, target: target)
       end
 
-      # Validates namespace contains only alphanumeric, hyphens, underscores
       def validate_namespace_format
         return if namespace.blank?
-        return if namespace =~ /^[\w-]+$/
+        return if namespace.length <= MAX_NAMESPACE_LENGTH && namespace.match?(NAMESPACE_PATTERN)
 
         errors.add(:namespace, :invalid_format, namespace: namespace)
+      end
+
+      def split_target
+        return unless target.count(":") == 1
+
+        target.split(":", 2)
+      end
+
+      def valid_target_host?(host)
+        return false if host.length > MAX_TARGET_HOST_LENGTH
+
+        labels = host.split(".", -1)
+        labels.any? && labels.all? { |label| label.match?(TARGET_HOST_LABEL_PATTERN) }
+      end
+
+      def valid_target_port?(port)
+        port.match?(TARGET_PORT_PATTERN) && port.to_i.between?(1, 65_535)
       end
 
       # Validates duration attributes are positive durations

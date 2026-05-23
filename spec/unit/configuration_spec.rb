@@ -979,6 +979,16 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     context "when target is invalid" do
+      it "accepts DNS names, localhost, and IPv4 host targets" do
+        %w[localhost:7233 temporal.example.com:7233 127.0.0.1:7233].each do |target|
+          configuration.in_configure_block = true
+          configuration.target = target
+          configuration.in_configure_block = false
+
+          expect { configuration.validate! }.not_to raise_error
+        end
+      end
+
       it "raises ConfigurationError for missing port" do
         configuration.in_configure_block = true
         configuration.target = "localhost"
@@ -1019,6 +1029,16 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         )
       end
 
+      it "raises ConfigurationError for ports outside the TCP range" do
+        configuration.in_configure_block = true
+        configuration.target = "localhost:65536"
+        configuration.in_configure_block = false
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /[Tt]arget must.*host:port/
+        )
+      end
+
       it "raises ConfigurationError for invalid characters" do
         configuration.in_configure_block = true
         configuration.target = "host with spaces:7233"
@@ -1027,6 +1047,19 @@ RSpec.describe ActiveJob::Temporal::Configuration do
           ActiveJob::Temporal::ConfigurationError,
           /[Tt]arget must.*host:port/
         )
+      end
+
+      it "raises ConfigurationError for invalid host labels" do
+        %w[_temporal:7233 .temporal:7233 temporal.:7233 temporal-.example.com:7233].each do |target|
+          configuration.in_configure_block = true
+          configuration.target = target
+          configuration.in_configure_block = false
+
+          expect { configuration.validate! }.to raise_error(
+            ActiveJob::Temporal::ConfigurationError,
+            /[Tt]arget must.*host:port/
+          )
+        end
       end
 
       it "raises ConfigurationError when target is nil" do
@@ -1047,7 +1080,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /[Nn]amespace must contain only/
+          /[Nn]amespace must/
         )
       end
 
@@ -1057,7 +1090,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /[Nn]amespace must contain only/
+          /[Nn]amespace must/
         )
       end
 
@@ -1067,7 +1100,30 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.in_configure_block = false
         expect { configuration.validate! }.to raise_error(
           ActiveJob::Temporal::ConfigurationError,
-          /[Nn]amespace must contain only/
+          /[Nn]amespace must/
+        )
+      end
+
+      it "raises ConfigurationError for namespaces that do not start and end alphanumeric" do
+        %w[_namespace namespace_ -namespace namespace-].each do |namespace|
+          configuration.in_configure_block = true
+          configuration.namespace = namespace
+          configuration.in_configure_block = false
+
+          expect { configuration.validate! }.to raise_error(
+            ActiveJob::Temporal::ConfigurationError,
+            /[Nn]amespace must/
+          )
+        end
+      end
+
+      it "raises ConfigurationError for namespaces longer than the Temporal ID limit" do
+        configuration.in_configure_block = true
+        configuration.namespace = "a" * 1001
+        configuration.in_configure_block = false
+        expect { configuration.validate! }.to raise_error(
+          ActiveJob::Temporal::ConfigurationError,
+          /[Nn]amespace must/
         )
       end
 
