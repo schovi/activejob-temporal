@@ -411,6 +411,8 @@ Older version 1 envelopes without key IDs are still decryptable with Base64 stri
 
 Use `perform_later_if` when a job should only be enqueued if a runtime condition matches. The condition receives the job arguments as an array. If the condition returns a falsey value, the method returns `nil` and does not call the queue adapter.
 
+Pass only developer-defined condition symbols, strings, or callables. Do not derive condition names from request params or other user-controlled input, because symbol and string conditions call public methods on the job class.
+
 ```ruby
 ProcessAccountJob.perform_later_if(
   ->(arguments) { Account.find(arguments.first).active? },
