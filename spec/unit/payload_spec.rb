@@ -15,6 +15,36 @@ class FakeGlobalModel
   end
 end
 
+class MemoryPayloadStorageAdapter
+  attr_reader :references
+
+  def initialize
+    @references = []
+    @payloads = {}
+    @metadata = {}
+  end
+
+  def dump(payload, metadata:)
+    reference = "payload-#{@references.length + 1}"
+    @references << reference
+    @payloads[reference] = payload
+    @metadata[reference] = metadata
+    reference
+  end
+
+  def load(reference)
+    @payloads.fetch(reference)
+  end
+
+  def payload_for(reference)
+    @payloads.fetch(reference)
+  end
+
+  def metadata_for(reference)
+    @metadata.fetch(reference)
+  end
+end
+
 RSpec.describe ActiveJob::Temporal::Payload do
   before do
     ActiveJob::Temporal.configure do |config|
@@ -23,6 +53,8 @@ RSpec.describe ActiveJob::Temporal::Payload do
       config.encryption_key = nil
       config.encryption_old_keys = []
       config.payload_serializer = :json
+      config.payload_storage_adapter = nil
+      config.payload_storage_threshold_kb = nil
     end
 
     allow(ActiveJob::Temporal::Logger).to receive(:info)
@@ -699,6 +731,117 @@ RSpec.describe ActiveJob::Temporal::Payload do
     end
   end
 
+  describe "external payload storage" do
+    it "offloads payloads that exceed the configured storage threshold" do
+      adapter = memory_payload_storage_adapter
+      job = SimpleJob.new(["x" * 2048])
+
+      ActiveJob::Temporal.configure do |config|
+        config.payload_storage_adapter = adapter
+        config.payload_storage_threshold_kb = 1
+      end
+
+      payload = described_class.from_job(job, storage_metadata: { workflow_id: "workflow-1" })
+
+      expect(payload).to include(
+        external_payload: true,
+        external_payload_version: 1,
+        external_payload_reference: a_kind_of(String)
+      )
+      expect(payload).not_to have_key(:job_class)
+      expect(adapter.metadata_for(payload.fetch(:external_payload_reference))).to include(workflow_id: "workflow-1")
+      expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+    end
+
+    it "stores encrypted transport payloads when payload encryption is enabled" do
+      adapter = memory_payload_storage_adapter
+      job = SimpleJob.new(["secret" * 500])
+      encryption_context = { namespace: "payments", workflow_id: "workflow-1" }
+
+      ActiveJob::Temporal.configure do |config|
+        config.payload_storage_adapter = adapter
+        config.payload_storage_threshold_kb = 1
+      end
+      configure_payload_encryption
+
+      payload = described_class.from_job(
+        job,
+        encryption_context: encryption_context,
+        storage_metadata: encryption_context
+      )
+      stored_payload = adapter.payload_for(payload.fetch(:external_payload_reference))
+
+      expect(payload).to include(external_payload: true)
+      expect(stored_payload).to include(encrypted_payload: true, encrypted_payload_version: 2)
+      expect(stored_payload[:encrypted_data]).not_to include("secret")
+      expect(described_class.deserialize_args(payload, encryption_context: encryption_context)).to eq(job.arguments)
+    end
+
+    it "keeps small payloads inline" do
+      adapter = memory_payload_storage_adapter
+      job = SimpleJob.new(["small"])
+
+      ActiveJob::Temporal.configure do |config|
+        config.payload_storage_adapter = adapter
+        config.payload_storage_threshold_kb = 10
+      end
+
+      payload = described_class.from_job(job)
+
+      expect(payload).to include(job_class: job.class.name)
+      expect(payload).not_to include(external_payload: true)
+      expect(adapter.references).to be_empty
+    end
+
+    it "raises a serialization error when external payloads cannot be loaded" do
+      adapter = Class.new do
+        def dump(_payload, metadata:); end
+
+        def load(_reference)
+          raise ActiveJob::SerializationError, "external payload is missing"
+        end
+      end.new
+
+      ActiveJob::Temporal.configure do |config|
+        config.payload_storage_adapter = adapter
+        config.payload_storage_threshold_kb = 1
+      end
+
+      payload = {
+        external_payload: true,
+        external_payload_version: 1,
+        external_payload_reference: "missing"
+      }
+
+      expect { described_class.deserialize_payload(payload) }
+        .to raise_error(ActiveJob::SerializationError, /external payload is missing/)
+    end
+
+    it "lets transient external storage load errors retry the activity" do
+      adapter = Class.new do
+        def dump(_payload, metadata:); end
+
+        def load(_reference)
+          raise "storage timeout"
+        end
+      end.new
+
+      ActiveJob::Temporal.configure do |config|
+        config.payload_storage_adapter = adapter
+        config.payload_storage_threshold_kb = 1
+      end
+
+      payload = {
+        external_payload: true,
+        external_payload_version: 1,
+        external_payload_reference: "payload-1"
+      }
+
+      expect { described_class.deserialize_payload(payload) }
+        .to raise_error(RuntimeError, /storage timeout/)
+    end
+  end
+
   describe ".deserialize_args" do
     it "round-trips job arguments" do
       job = SimpleJob.new(["string", 123, { foo: "bar" }])
@@ -782,5 +925,9 @@ RSpec.describe ActiveJob::Temporal::Payload do
 
   def encryption_key_for(label)
     Base64.strict_encode64(label.ljust(32, "-")[0, 32])
+  end
+
+  def memory_payload_storage_adapter
+    MemoryPayloadStorageAdapter.new
   end
 end

@@ -213,6 +213,27 @@
         "payload_serializer": ["payload_serializer_version"],
         "payload_serializer_version": ["payload_serializer"]
       }
+    },
+    {
+      "additionalProperties": false,
+      "required": ["external_payload", "external_payload_version", "external_payload_reference"],
+      "properties": {
+        "external_payload": { "const": true },
+        "external_payload_version": { "type": "integer", "enum": [1] },
+        "external_payload_reference": {},
+        "scheduled_at": { "type": "string", "format": "date-time" },
+        "default_activity_options": { "type": "object" },
+        "retry_policy": { "type": "object" },
+        "temporal_options": { "type": "object" },
+        "dead_letter": { "type": "object" },
+        "rate_limits": { "$ref": "#/definitions/rate_limits" },
+        "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
+        "child_workflows": { "$ref": "#/definitions/child_workflows" },
+        "chain": { "$ref": "#/definitions/chain" },
+        "dependencies": { "$ref": "#/definitions/dependencies" },
+        "dependency_failure_policy": { "type": "string", "enum": ["fail", "ignore"] },
+        "activity_task_queue": { "type": "string", "minLength": 1 }
+      }
     }
   ]
 }

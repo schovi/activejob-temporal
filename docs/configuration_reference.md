@@ -47,6 +47,8 @@ The canonical machine-readable schema for all configuration options is available
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 | `payload_serializer` | Symbol | `:json` | Serializer for job execution payloads. Supports `:json`, `:message_pack`, `:msgpack`, and `:marshal`. |
+| `payload_storage_adapter` | Object or `nil` | `nil` | Optional external payload storage adapter responding to `dump(payload, metadata:)` and `load(reference)`. |
+| `payload_storage_threshold_kb` | Integer or `nil` | `nil` | Payload size threshold for external storage. Required when `payload_storage_adapter` is configured. |
 | `encrypt_payload` | Boolean | `false` | Encrypt serialized job execution payloads before sending them to Temporal. |
 | `encryption_key` | String, Hash, or `nil` | `nil` | Base64-encoded 32-byte AES-256-GCM payload encryption key, or `{ id:, key: }` metadata. Required when `encrypt_payload` is true. |
 | `encryption_old_keys` | Array | `[]` | Previous encryption keys accepted for decryption during key rotation. Entries may be Base64 strings or `{ id:, key:, decrypt_until: }` hashes. |
@@ -538,7 +540,43 @@ If you encounter payload size errors, consider these strategies to reduce payloa
    ProcessImageJob.perform_later(blob.id)
    ```
 
-3. **Store large data externally**
+3. **Configure native external payload storage**
+
+   For applications that need to keep large execution payloads out of Temporal history, configure a storage adapter and threshold:
+
+   ```ruby
+   ActiveJob::Temporal.configure do |config|
+     config.payload_storage_adapter = MyPayloadStorage.new
+     config.payload_storage_threshold_kb = 200
+   end
+   ```
+
+   The adapter receives the final transport payload after payload serialization and encryption settings are applied. It must return a JSON-serializable reference.
+
+   ```ruby
+   class MyPayloadStorage
+     def dump(payload, metadata:)
+       key = "activejob-temporal/#{metadata.fetch(:workflow_id)}.json"
+       S3_CLIENT.put_object(bucket: "job-payloads", key: key, body: JSON.generate(payload))
+       { "bucket" => "job-payloads", "key" => key }
+     end
+
+     def load(reference)
+       object = S3_CLIENT.get_object(bucket: reference.fetch("bucket"), key: reference.fetch("key"))
+       JSON.parse(object.body.read)
+     end
+
+     def delete(reference)
+       S3_CLIENT.delete_object(bucket: reference.fetch("bucket"), key: reference.fetch("key"))
+     end
+   end
+   ```
+
+   If the adapter implements `delete(reference)`, the worker calls it after the job successfully performs. Cleanup is best effort. Storage lifecycle and TTL remain the adapter's responsibility because crashes, retrying activities, scheduled jobs, and workflow start failures can leave references the gem cannot reliably clean up.
+
+   `load` should raise `ActiveJob::SerializationError` when the referenced payload is missing or corrupt. Other storage errors are treated as activity failures so Temporal can retry them.
+
+4. **Store large data externally yourself**
 
    For complex data structures, consider storing them in Redis, S3, or your database, then pass only the reference key:
 
@@ -551,7 +589,7 @@ If you encounter payload size errors, consider these strategies to reduce payloa
    ProcessDataJob.perform_later(key)
    ```
 
-4. **Increase the limit (use cautiously)**
+5. **Increase the limit (use cautiously)**
 
    If you have sufficient Temporal capacity and genuinely need larger payloads, you can increase `max_payload_size_kb`. However, be aware that:
    - Temporal has a hard limit of ~2 MB for workflow payloads

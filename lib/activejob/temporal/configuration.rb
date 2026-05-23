@@ -310,6 +310,18 @@ module ActiveJob
         description: "Payload serializer for job execution data: :json, :message_pack, :msgpack, or :marshal"
       },
 
+      payload_storage_adapter: {
+        default: nil,
+        type: :object,
+        description: "Optional external payload storage adapter responding to #dump and #load"
+      },
+
+      payload_storage_threshold_kb: {
+        default: nil,
+        type: :integer,
+        description: "Optional payload size threshold in kilobytes for external payload storage"
+      },
+
       encrypt_payload: {
         default: false,
         env_var: "ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD",
@@ -616,6 +628,7 @@ module ActiveJob
       validate :validate_metrics_settings
       validate :validate_audit_settings
       validate :validate_encryption_settings
+      validate :validate_payload_storage_settings
       validate :validate_tls_settings
       validate :validate_local_activity_helpers
 
@@ -859,6 +872,35 @@ module ActiveJob
         return if encryption_old_keys.all? { |key| PayloadEncryption.valid_key?(key) }
 
         errors.add(:encryption_old_keys, :invalid, bytes: PayloadEncryption.key_length, value: "[FILTERED]")
+      end
+
+      def validate_payload_storage_settings
+        validate_payload_storage_adapter
+        validate_payload_storage_threshold
+      end
+
+      def validate_payload_storage_adapter
+        return if payload_storage_adapter.nil?
+        return if payload_storage_adapter.respond_to?(:dump) && payload_storage_adapter.respond_to?(:load)
+
+        errors.add(:payload_storage_adapter, :invalid, value: payload_storage_adapter.inspect)
+      end
+
+      def validate_payload_storage_threshold
+        if payload_storage_adapter && payload_storage_threshold_kb.nil?
+          errors.add(:payload_storage_threshold_kb, :required)
+          return
+        end
+
+        if payload_storage_threshold_kb && payload_storage_adapter.nil?
+          errors.add(:payload_storage_threshold_kb, :requires_adapter)
+          return
+        end
+
+        return if payload_storage_threshold_kb.nil?
+        return if payload_storage_threshold_kb.is_a?(Integer) && payload_storage_threshold_kb.positive?
+
+        errors.add(:payload_storage_threshold_kb, :invalid, value: payload_storage_threshold_kb.inspect)
       end
 
       def validate_tls_settings

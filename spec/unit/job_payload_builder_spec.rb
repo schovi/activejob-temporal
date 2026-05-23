@@ -16,6 +16,8 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       global_config.encryption_old_keys = []
       global_config.rate_limiter = nil
       global_config.global_rate_limit = nil
+      global_config.payload_storage_adapter = nil
+      global_config.payload_storage_threshold_kb = nil
     end
 
     allow(ActiveJob::Temporal::Logger).to receive(:info)
@@ -650,6 +652,41 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
   end
 
+  it "offloads payloads after workflow-control fields are added" do
+    adapter = memory_payload_storage_adapter
+    config.payload_storage_adapter = adapter
+    config.payload_storage_threshold_kb = 1
+    config.max_payload_size_kb = 1
+    config.continue_as_new_history_event_threshold = 10_000
+    job = build_job("ExternalBuilderJob")
+    job.arguments = ["x" * 2048]
+
+    payload = described_class.new(config).build(
+      job,
+      encryption_context: { namespace: "default", workflow_id: "workflow-1" }
+    )
+
+    expect(payload).to include(
+      external_payload: true,
+      external_payload_version: 1,
+      external_payload_reference: a_kind_of(String),
+      default_activity_options: hash_including(start_to_close_timeout: 900.0),
+      retry_policy: hash_including(maximum_attempts: 1),
+      continue_as_new: { history_event_threshold: 10_000 }
+    )
+    expect(adapter.metadata_for(payload.fetch(:external_payload_reference))).to include(
+      namespace: "default",
+      workflow_id: "workflow-1",
+      job_class: "ExternalBuilderJob",
+      job_id: job.job_id,
+      queue_name: "default"
+    )
+    expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
+      job_class: "ExternalBuilderJob",
+      continue_as_new: { history_event_threshold: 10_000 }
+    )
+  end
+
   it "serializes once when enforcing final payload size" do
     job = build_job("SingleSizeBuilderJob")
     allow(JSON).to receive(:generate).and_call_original
@@ -673,5 +710,29 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
 
   def encryption_key
     Base64.strict_encode64("builder-key".ljust(32, "-")[0, 32])
+  end
+
+  def memory_payload_storage_adapter
+    Class.new do
+      def initialize
+        @payloads = {}
+        @metadata = {}
+      end
+
+      def dump(payload, metadata:)
+        reference = "payload-#{@payloads.length + 1}"
+        @payloads[reference] = payload
+        @metadata[reference] = metadata
+        reference
+      end
+
+      def load(reference)
+        @payloads.fetch(reference)
+      end
+
+      def metadata_for(reference)
+        @metadata.fetch(reference)
+      end
+    end.new
   end
 end

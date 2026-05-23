@@ -71,6 +71,8 @@ Workflow tasks are orchestration work. They schedule activities, process complet
 
 Temporal must store and move the job payload. Smaller payloads reduce enqueue time, worker memory, Temporal history size, log volume, and replay cost.
 
+For large execution payloads that should stay transparent to job callers, configure `payload_storage_adapter` and `payload_storage_threshold_kb` so the adapter stores the final transport payload externally and passes a small reference through Temporal.
+
 Prefer stable references:
 
 ```ruby

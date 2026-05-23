@@ -214,6 +214,8 @@ payload_size_exceeded
 
 **Fix**
 
+For payloads that should stay transparent to callers, configure native external payload storage with `payload_storage_adapter` and `payload_storage_threshold_kb`. See [Payload Size Limits](configuration_reference.md#payload-size-limits).
+
 Pass references instead of full objects:
 
 ```ruby

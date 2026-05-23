@@ -117,6 +117,7 @@ module ActiveJob
             perform_job(job, args)
           end
           audit_completed(audit_context)
+          Payload.delete_external_payload(payload)
           result
         rescue StandardError => e
           audit_failed(audit_context || empty_audit_context, e)

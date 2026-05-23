@@ -397,6 +397,31 @@ attributes:
       env_var_name: ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER
       example: ":message_pack"
 
+    - name: payload_storage_adapter
+      type: Object
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must respond to #dump and #load"
+        - "#dump receives payload and metadata keyword argument"
+        - "#load receives the reference returned by #dump"
+        - "#delete is optional and is called best-effort after successful job execution"
+      description: "External storage adapter for payloads that exceed payload_storage_threshold_kb. Retention and lifecycle policy remain the adapter's responsibility."
+      env_var_name: null
+      example: "MyPayloadStorage.new"
+
+    - name: payload_storage_threshold_kb
+      type: Integer
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "Required when payload_storage_adapter is configured"
+        - "When provided, payload_storage_adapter must also be configured"
+        - "Must be > 0"
+      description: "Serialized transport payload size threshold for external payload storage. The threshold is evaluated after serializer and encryption settings are applied."
+      env_var_name: null
+      example: 200
+
     - name: encrypt_payload
       type: Boolean
       default: false
@@ -702,6 +727,8 @@ validation:
     - "dead_letter_auto_discard_after - Optional, but when set must be a positive duration and requires dead_letter_queue"
     - "max_payload_size_kb - Must be between 1 and 2,097,152 KB"
     - "payload_serializer - Must be one of :json, :message_pack, :msgpack, or :marshal"
+    - "payload_storage_adapter - When present, must respond to #dump and #load"
+    - "payload_storage_threshold_kb - Required with payload_storage_adapter and must be positive"
     - "encrypt_payload - Must be true or false"
     - "encryption_key - Required when encrypt_payload is true; when present, must be a Base64-encoded 32-byte key or key metadata"
     - "encryption_old_keys - Must be an array of Base64-encoded 32-byte keys or key metadata"

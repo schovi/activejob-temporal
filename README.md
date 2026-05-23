@@ -123,6 +123,7 @@ Open Temporal UI and look for workflows named `ajwf:SendInvoiceJob:<job_id>`.
 | Add runtime middleware | `config.add_middleware MiddlewareClass` | [Middleware](docs/middleware.md) |
 | Expose Prometheus metrics | `metrics_provider = :prometheus` | [Metrics Guide](docs/metrics.md) |
 | Encrypt job payloads | `encrypt_payload = true` | [Configuration Reference](docs/configuration_reference.md#payload-encryption) |
+| Store large payloads externally | `payload_storage_adapter = MyPayloadStorage.new` | [Configuration Reference](docs/configuration_reference.md#payload-size-limits) |
 
 Baseline behavior also includes transaction-aware enqueueing through ActiveJob, GlobalID-compatible argument serialization, structured JSON logs, searchable `set(tags:)` metadata, and JSON payloads with opt-in MessagePack or Marshal envelopes.
 
@@ -149,7 +150,6 @@ Workers can also read environment variables such as `ACTIVEJOB_TEMPORAL_TARGET`,
 
 ## Current Constraints
 
-- Payloads default to a 250KB limit through `max_payload_size_kb`. Store large data externally and pass references.
 - Chains are linear. Use child workflows for parent-owned fan-out and dependencies for independently enqueued job gates.
 - Algorithmic retry waits such as `:exponentially_longer`, `:polynomially_longer`, and Proc waits fall back to numeric Temporal retry policy settings.
 - Cancellation inside running Ruby job code is cooperative. Long-running activities need heartbeats or explicit cancellation checks.

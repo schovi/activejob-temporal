@@ -111,6 +111,11 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.payload_serializer).to be(:json)
     end
 
+    it "disables external payload storage by default" do
+      expect(configuration.payload_storage_adapter).to be_nil
+      expect(configuration.payload_storage_threshold_kb).to be_nil
+    end
+
     it "uses the default workflow ID generator when none is configured" do
       expect(configuration.workflow_id_generator).to be_nil
     end
@@ -442,6 +447,56 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       configuration.priority_task_queues = { 10 => " " }
 
       expect_configuration_error(/task queue names must be present/)
+    end
+  end
+
+  describe "#payload_storage_adapter=" do
+    it "accepts adapters that respond to dump and load with a positive threshold" do
+      adapter = Class.new do
+        def dump(_payload, metadata:); end
+        def load(_reference); end
+      end.new
+
+      configuration.payload_storage_adapter = adapter
+      configuration.payload_storage_threshold_kb = 200
+
+      expect { configuration.validate! }.not_to raise_error
+    end
+
+    it "rejects adapters missing the required methods" do
+      configuration.payload_storage_adapter = Object.new
+      configuration.payload_storage_threshold_kb = 200
+
+      expect_configuration_error(/Payload storage adapter must respond to #dump and #load/)
+    end
+
+    it "requires a threshold when an adapter is configured" do
+      adapter = Class.new do
+        def dump(_payload, metadata:); end
+        def load(_reference); end
+      end.new
+
+      configuration.payload_storage_adapter = adapter
+
+      expect_configuration_error(/Payload storage threshold kb is required/)
+    end
+
+    it "requires an adapter when a threshold is configured" do
+      configuration.payload_storage_threshold_kb = 200
+
+      expect_configuration_error(/Payload storage threshold kb requires payload_storage_adapter/)
+    end
+
+    it "rejects non-positive thresholds" do
+      adapter = Class.new do
+        def dump(_payload, metadata:); end
+        def load(_reference); end
+      end.new
+
+      configuration.payload_storage_adapter = adapter
+      configuration.payload_storage_threshold_kb = 0
+
+      expect_configuration_error(/Payload storage threshold kb must be a positive integer/)
     end
   end
 

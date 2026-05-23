@@ -94,6 +94,25 @@ RSpec.describe "job payload schema" do
     )
   end
 
+  it "allows external payload envelopes" do
+    external_branch = schema.fetch("oneOf").find do |branch|
+      branch.fetch("required").include?("external_payload")
+    end
+
+    expect(external_branch).to include(
+      "required" => contain_exactly(
+        "external_payload",
+        "external_payload_version",
+        "external_payload_reference"
+      ),
+      "properties" => include(
+        "external_payload" => { "const" => true },
+        "external_payload_version" => { "type" => "integer", "enum" => [1] },
+        "external_payload_reference" => {}
+      )
+    )
+  end
+
   it "requires normalized rate limit entries" do
     rate_limit_schema = schema.fetch("definitions").fetch("rate_limit")
 

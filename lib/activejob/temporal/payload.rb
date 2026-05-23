@@ -9,10 +9,12 @@ require "active_job/serializers"
 require "active_job/arguments"
 
 require_relative "payload_encryption"
+require_relative "payload_storage"
 require_relative "payload_serializers"
 
 module ActiveJob
   module Temporal
+    # rubocop:disable Metrics/ModuleLength
     # Payload serialization and deserialization for ActiveJob.
     #
     # This module converts ActiveJob instances into JSON-serializable hash payloads
@@ -128,6 +130,7 @@ module ActiveJob
       #   To reduce payload size, prefer passing database IDs instead of full ActiveRecord
       #   objects. For example, pass user.id instead of user. This is especially important
       #   for jobs with large argument lists or complex nested objects.
+      # rubocop:disable Metrics/AbcSize
       def from_job(
         job,
         scheduled_at: nil,
@@ -136,7 +139,9 @@ module ActiveJob
         **options
       )
         encrypt = options.fetch(:encrypt, true)
+        offload = options.fetch(:offload, enforce_size)
         encryption_context = options[:encryption_context]
+        storage_metadata = options[:storage_metadata]
         payload = {
           job_class: job.class.name,
           job_id: job.job_id,
@@ -151,9 +156,11 @@ module ActiveJob
         final_payload = serializer_for(config).dump(payload)
         final_payload[:scheduled_at] = scheduled_timestamp if scheduled_timestamp
         final_payload = encrypt_payload_for_transport(final_payload, encrypt, config, encryption_context)
+        final_payload = offload_payload_for_transport(final_payload, storage_metadata, config) if offload
         enforce_size!(final_payload, metrics_payload: payload, config: config) if enforce_size
         final_payload
       end
+      # rubocop:enable Metrics/AbcSize
 
       # Deserializes job arguments from a payload hash.
       #
@@ -196,16 +203,12 @@ module ActiveJob
       end
 
       def deserialize_payload(payload, config: ActiveJob::Temporal.config, encryption_context: nil)
-        transport_payload = if PayloadEncryption.encrypted?(payload)
-                              decrypted_payload = PayloadEncryption.decrypt(
-                                payload,
-                                config,
-                                context: encryption_context
-                              )
-                              preserve_workflow_control_fields(payload, decrypted_payload, fields: %i[scheduled_at])
-                            else
-                              payload
-                            end
+        stored_payload = PayloadStorage.load(
+          payload,
+          config: config,
+          workflow_control_fields: WORKFLOW_CONTROL_FIELDS
+        )
+        transport_payload = decrypt_transport_payload(stored_payload, config, encryption_context)
 
         execution_payload = serializer_for_transport_payload(transport_payload, config).load(transport_payload)
         preserve_workflow_control_fields(transport_payload, execution_payload)
@@ -213,6 +216,19 @@ module ActiveJob
 
       def encrypt_payload(payload, config: ActiveJob::Temporal.config, encryption_context: nil)
         encrypt_payload_if_configured(payload, config, encryption_context: encryption_context)
+      end
+
+      def offload_payload(payload, metadata:, config: ActiveJob::Temporal.config)
+        PayloadStorage.offload_if_needed(
+          payload,
+          config: config,
+          metadata: metadata,
+          workflow_control_fields: WORKFLOW_CONTROL_FIELDS
+        )
+      end
+
+      def delete_external_payload(payload, config: ActiveJob::Temporal.config)
+        PayloadStorage.delete(payload, config: config)
       end
 
       def enforce_size!(payload, metrics_payload: payload, config: ActiveJob::Temporal.config)
@@ -243,6 +259,17 @@ module ActiveJob
         return payload unless encrypt
 
         encrypt_payload(payload, config: config, encryption_context: encryption_context)
+      end
+
+      def offload_payload_for_transport(payload, storage_metadata, config)
+        offload_payload(payload, metadata: storage_metadata || {}, config: config)
+      end
+
+      def decrypt_transport_payload(payload, config, encryption_context)
+        return payload unless PayloadEncryption.encrypted?(payload)
+
+        decrypted_payload = PayloadEncryption.decrypt(payload, config, context: encryption_context)
+        preserve_workflow_control_fields(payload, decrypted_payload, fields: %i[scheduled_at])
       end
 
       def encrypt_payload_if_configured(payload, config, encryption_context:)
@@ -364,5 +391,6 @@ module ActiveJob
         false
       end
     end
+    # rubocop:enable Metrics/ModuleLength
   end
 end

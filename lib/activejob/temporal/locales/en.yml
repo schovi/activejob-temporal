@@ -32,6 +32,14 @@ en:
             payload_serializer:
               unsupported_serializer: "is not supported. Use one of: json, message_pack, msgpack, marshal"
 
+            payload_storage_adapter:
+              invalid: "must respond to #dump and #load, got: %{value}"
+
+            payload_storage_threshold_kb:
+              required: "is required when payload_storage_adapter is configured"
+              requires_adapter: "requires payload_storage_adapter"
+              invalid: "must be a positive integer, got: %{value}"
+
             max_concurrent_activities:
               concurrent_activities_invalid: "must be positive (got: %{value}). Typical values: 50 (low), 100 (default), 200+ (high throughput)"
 

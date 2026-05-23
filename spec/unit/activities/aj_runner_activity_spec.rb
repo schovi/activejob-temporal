@@ -160,6 +160,28 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(payload)
     end
 
+    it "deletes external payloads after successful perform" do
+      job_instance = instance_double("ExternalPayloadRunnerJob")
+      class_double("ExternalPayloadRunnerJob", new: job_instance).as_stubbed_const
+      payload = { "job_class" => "ExternalPayloadRunnerJob", "arguments" => ["raw"] }
+      allow(job_instance).to receive(:perform).and_return("performed")
+
+      expect(ActiveJob::Temporal::Payload).to receive(:delete_external_payload).with(payload)
+
+      expect(activity.execute(payload)).to eq("performed")
+    end
+
+    it "keeps external payloads when perform fails" do
+      payload = { "job_class" => "RetryableJob" }
+      job_instance = instance_double(RetryableJob.name)
+      allow(RetryableJob).to receive(:new).and_return(job_instance)
+      allow(job_instance).to receive(:perform).and_raise(SampleJobError, "boom")
+
+      expect(ActiveJob::Temporal::Payload).not_to receive(:delete_external_payload)
+
+      expect { activity.execute(payload) }.to raise_error(SampleJobError)
+    end
+
     it "decrypts encrypted payloads before metrics, audit, and job execution" do
       stub_const("EncryptedRunnerJob", Class.new(ActiveJob::Base))
       job = EncryptedRunnerJob.new(*args)

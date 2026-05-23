@@ -10,6 +10,7 @@ require_relative "retry_mapper"
 
 module ActiveJob
   module Temporal
+    # rubocop:disable Metrics/ClassLength
     class JobPayloadBuilder
       include JobPayloadChildWorkflows
       include JobPayloadChainBuilder
@@ -29,7 +30,7 @@ module ActiveJob
       end
 
       def build(job, scheduled_at: nil, encryption_context: nil)
-        payload = Payload.from_job(job, scheduled_at:, enforce_size: false, encrypt: false, config: @config)
+        payload = base_payload_for(job, scheduled_at)
         payload[:default_activity_options] = default_activity_options
 
         apply_retry_policy(payload, job)
@@ -42,12 +43,23 @@ module ActiveJob
         apply_continue_as_new(payload)
         apply_local_activity_helpers(payload)
 
-        payload = Payload.encrypt_payload(payload, config: @config, encryption_context: encryption_context)
+        payload = transport_payload(payload, job, scheduled_at, encryption_context)
         Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job), config: @config)
         payload
       end
 
       private
+
+      def base_payload_for(job, scheduled_at)
+        Payload.from_job(
+          job,
+          scheduled_at:,
+          enforce_size: false,
+          encrypt: false,
+          offload: false,
+          config: @config
+        )
+      end
 
       def apply_retry_policy(payload, job)
         retry_policy = retry_policy_for(job.class)
@@ -68,6 +80,23 @@ module ActiveJob
           job_id: job.job_id,
           queue_name: job.queue_name
         }
+      end
+
+      def transport_payload(payload, job, scheduled_at, encryption_context)
+        encrypted_payload = Payload.encrypt_payload(payload, config: @config, encryption_context: encryption_context)
+        Payload.offload_payload(
+          encrypted_payload,
+          metadata: storage_metadata_for(job, scheduled_at, encryption_context),
+          config: @config
+        )
+      end
+
+      def storage_metadata_for(job, scheduled_at, encryption_context)
+        metrics_payload_for(job).merge(
+          namespace: @config.namespace,
+          workflow_id: encryption_context&.fetch(:workflow_id, nil),
+          scheduled_at: scheduled_at.respond_to?(:iso8601) ? scheduled_at.iso8601 : scheduled_at
+        )
       end
 
       def apply_continue_as_new(payload)
@@ -141,5 +170,6 @@ module ActiveJob
         value
       end
     end
+    # rubocop:enable Metrics/ClassLength
   end
 end
