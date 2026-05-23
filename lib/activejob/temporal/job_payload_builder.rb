@@ -40,6 +40,7 @@ module ActiveJob
         apply_chain(payload, job)
         apply_dependencies(payload, job)
         apply_continue_as_new(payload)
+        apply_local_activity_helpers(payload)
 
         payload = Payload.encrypt_payload(payload, config: @config, encryption_context: encryption_context)
         Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job), config: @config)
@@ -74,6 +75,14 @@ module ActiveJob
         return unless threshold
 
         payload[:continue_as_new] = { history_event_threshold: threshold }
+      end
+
+      def apply_local_activity_helpers(payload)
+        helpers = Array(@config.local_activity_helpers).filter_map do |helper|
+          helper_name = helper.to_s.strip
+          helper_name unless helper_name.empty?
+        end.uniq
+        payload[:local_activity_helpers] = helpers if helpers.any?
       end
 
       def extract_temporal_options(job_class)

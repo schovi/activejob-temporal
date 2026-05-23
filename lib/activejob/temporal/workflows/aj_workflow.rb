@@ -14,6 +14,7 @@ require_relative "workflow_chaining"
 require_relative "workflow_dependencies"
 require_relative "workflow_execution_steps"
 require_relative "workflow_interactions"
+require_relative "workflow_local_activities"
 
 module ActiveJob
   module Temporal
@@ -58,6 +59,7 @@ module ActiveJob
         include WorkflowDependencies
         include WorkflowExecutionSteps
         include WorkflowInteractions
+        include WorkflowLocalActivities
 
         DEFAULT_START_TO_CLOSE_TIMEOUT = 900.0
         RATE_LIMIT_ACTIVITY_TIMEOUT = 30.0
@@ -195,7 +197,9 @@ module ActiveJob
           workflow_state["phase"] = "waiting_rate_limit"
           loop do
             wait_while_paused
-            wait_time = Temporalio::Workflow.execute_activity(
+            wait_time = execute_helper_activity(
+              payload,
+              :rate_limit,
               ActiveJob::Temporal::Activities::RateLimitActivity,
               payload,
               schedule_to_close_timeout: RATE_LIMIT_ACTIVITY_TIMEOUT,
