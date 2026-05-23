@@ -577,7 +577,7 @@ The gem's `temporal-worker` executable uses **smart Rails auto-detection** (simi
 
 This means:
 - **No duplicate binstubs needed** - just use the gem's executable
-- **Works from any Rails app** - no special setup required
+- **Works from a Rails app root** - run from the app directory or set `RAILS_ROOT` to the canonical app path
 - **Auto-detects automatically** - run from the app directory and it "just works"
 
 To use in your own Rails app:
@@ -587,6 +587,7 @@ bundle exec temporal-worker
 ```
 
 The worker will automatically detect your Rails app and load it!
+If you set `RAILS_ROOT`, use the real app root path. The worker refuses missing apps, missing `config/environment.rb`, environment symlink escapes, and group/world-writable root or config paths before connecting to Temporal.
 
 ## Next Steps
 

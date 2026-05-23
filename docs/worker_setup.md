@@ -59,7 +59,7 @@ The worker automatically detects your Rails environment and loads your job class
 - **`--metrics-port PORT`**: Optional Prometheus metrics endpoint at `GET /metrics`. Can also be set with `ACTIVEJOB_TEMPORAL_METRICS_PORT`.
 - **`--metrics-bind HOST`**: Metrics endpoint bind address. Defaults to `127.0.0.1`; non-loopback addresses require `--allow-public-metrics-bind`.
 - **`--allow-public-metrics-bind`**: Allow the unauthenticated metrics endpoint to bind a non-loopback address. Use only behind network controls.
-- **`RAILS_ROOT`**: Optional path to Rails app. Auto-detected if omitted (uses current directory).
+- **`RAILS_ROOT`**: Optional path to the Rails app. Auto-detected if omitted (uses current directory). Explicit roots are canonicalized and rejected when the app path is missing, `config/environment.rb` is missing, the environment file resolves outside the app root, or the root/config paths are writable by group or world.
 
 ### Examples
 

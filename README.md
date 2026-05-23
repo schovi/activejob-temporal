@@ -982,6 +982,7 @@ bundle exec temporal-worker
 ```
 
 The worker automatically detects your Rails app (by checking for `config/application.rb`) and loads your environment, making job classes and initializers available.
+When `RAILS_ROOT` is set explicitly, point it at the canonical app root. The worker exits before connecting to Temporal if the app path is missing, `config/environment.rb` is missing, the environment file resolves outside the app root, or the root/config paths are writable by group or world.
 
 Enable an optional health endpoint for load balancers or orchestrators:
 
