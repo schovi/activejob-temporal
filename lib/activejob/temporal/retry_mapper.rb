@@ -123,7 +123,7 @@ module ActiveJob
         {
           initial_interval: interval_from(retry_entry&.fetch(:wait, nil), config),
           backoff_coefficient: config.default_retry_backoff,
-          maximum_attempts: attempts_from(retry_entry&.fetch(:attempts, nil), config),
+          maximum_attempts: attempts_from(retry_entry&.fetch(:attempts, nil), config, job_class),
           non_retryable_error_types: discard_exception_names(job_class)
         }
       end
@@ -201,7 +201,7 @@ module ActiveJob
 
       # Extracts maximum attempts from retry_on attempts value.
       # @api private
-      def attempts_from(value, config)
+      def attempts_from(value, config, job_class)
         case value
         when nil
           config.default_retry_max_attempts
@@ -210,10 +210,24 @@ module ActiveJob
         else
           Integer(value)
         end
-      rescue ArgumentError, TypeError
+      rescue ArgumentError, TypeError => e
+        log_attempts_fallback(job_class, value, config.default_retry_max_attempts, e)
         config.default_retry_max_attempts
       end
       private_class_method :attempts_from
+
+      def log_attempts_fallback(job_class, value, default_attempts, error)
+        ActiveJob::Temporal::Logger.warn(
+          "retry_attempts_fallback",
+          job_class: job_class&.name,
+          attempts: value.inspect,
+          default_attempts: default_attempts,
+          error_class: error.class.name
+        )
+      rescue StandardError
+        nil
+      end
+      private_class_method :log_attempts_fallback
 
       # Checks if handler_class handles the given exception.
       # Delegates to the extractor's private method via duck typing.

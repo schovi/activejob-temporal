@@ -89,6 +89,14 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
     end
 
     it "uses default attempts when the job declares a non-numeric value" do
+      expect(ActiveJob::Temporal::Logger).to receive(:warn).with(
+        "retry_attempts_fallback",
+        job_class: "InvalidAttemptsJob",
+        attempts: "\"five\"",
+        default_attempts: 1,
+        error_class: "ArgumentError"
+      )
+
       policy = described_class.for(InvalidAttemptsJob)
 
       expect(policy[:maximum_attempts]).to eq(1)
