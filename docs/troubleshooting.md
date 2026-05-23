@@ -440,6 +440,7 @@ Check:
 - The `job_id` is the ActiveJob UUID, not the Temporal run ID.
 - Search attributes were registered before the workflow was started.
 - Custom `workflow_id_generator` values are valid and still attach the standard search attributes.
+- The dead letter workflow was not auto-discarded by `dead_letter_auto_discard_after`.
 - The workflow has not aged out of Temporal retention.
 
 ## Invalid Job ID Format

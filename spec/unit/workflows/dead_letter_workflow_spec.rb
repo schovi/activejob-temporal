@@ -61,4 +61,42 @@ RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
     expect(workflow.entry).to include("state" => "retried", "retry_workflow_id" => "retry-workflow-1")
     expect(workflow.entry).not_to have_key("discard_reason")
   end
+
+  it "auto-discards pending entries when the configured retention expires" do
+    allow(Temporalio::Workflow).to receive(:timeout).and_raise(Timeout::Error)
+
+    result = workflow.execute(
+      entry.merge(
+        "metadata" => entry.fetch("metadata").merge("auto_discard_after_seconds" => 86_400)
+      )
+    )
+
+    expect(result).to include(
+      "state" => "discarded",
+      "discard_reason" => "auto_discard_after_expired",
+      "discarded_at" => "2026-05-21T10:00:00Z"
+    )
+    expect(Temporalio::Workflow).to have_received(:timeout).with(
+      86_400.0,
+      Timeout::Error,
+      "dead letter auto-discard expired",
+      summary: "Dead letter auto-discard"
+    )
+  end
+
+  it "does not auto-discard when the entry reaches a terminal state before retention expires" do
+    allow(Temporalio::Workflow).to receive(:timeout) do |*_args, **_kwargs, &block|
+      block.call
+    end
+    workflow.mark_retried("retry-workflow-1")
+
+    result = workflow.execute(
+      entry.merge(
+        "metadata" => entry.fetch("metadata").merge("auto_discard_after_seconds" => 86_400)
+      )
+    )
+
+    expect(result).to include("state" => "retried", "retry_workflow_id" => "retry-workflow-1")
+    expect(result).not_to include("discard_reason")
+  end
 end

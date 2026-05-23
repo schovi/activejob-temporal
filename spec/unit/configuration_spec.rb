@@ -73,6 +73,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "disables dead letter queue routing by default" do
       expect(configuration.dead_letter_queue).to be_nil
       expect(configuration.dead_letter_after_attempts).to be_nil
+      expect(configuration.dead_letter_auto_discard_after).to be_nil
     end
 
     it "disables metrics by default" do
@@ -301,13 +302,16 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "reads dead letter queue settings from environment variables" do
+      auto_discard_env = "ACTIVEJOB_TEMPORAL_DEAD_LETTER_AUTO_DISCARD_AFTER_SECONDS"
       allow(ENV).to receive(:[]).and_call_original
       allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE").and_return("failed_jobs")
       allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS").and_return("3")
+      allow(ENV).to receive(:[]).with(auto_discard_env).and_return("86400")
 
       config = described_class.new
       expect(config.dead_letter_queue).to eq("failed_jobs")
       expect(config.dead_letter_after_attempts).to eq(3)
+      expect(config.dead_letter_auto_discard_after).to eq(86_400.0)
     end
 
     it "reads audit logging from ACTIVEJOB_TEMPORAL_AUDIT_LOG" do
@@ -453,6 +457,32 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "requires a dead letter queue when a threshold is configured" do
       expect { configuration.dead_letter_after_attempts = 3 }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /requires dead_letter_queue/)
+    end
+  end
+
+  describe "#dead_letter_auto_discard_after=" do
+    it "accepts nil and positive durations" do
+      configuration.dead_letter_queue = "failed_jobs"
+      configuration.dead_letter_auto_discard_after = 7.days
+      expect(configuration.dead_letter_auto_discard_after).to eq(7.days)
+
+      configuration.dead_letter_auto_discard_after = nil
+      expect(configuration.dead_letter_auto_discard_after).to be_nil
+    end
+
+    it "rejects zero and negative durations" do
+      configuration.dead_letter_queue = "failed_jobs"
+
+      expect { configuration.dead_letter_auto_discard_after = 0 }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter auto discard after must be positive/)
+
+      expect { configuration.dead_letter_auto_discard_after = -1 }
+        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter auto discard after must be positive/)
+    end
+
+    it "requires a dead letter queue when configured" do
+      expect { configuration.dead_letter_auto_discard_after = 1.day }
         .to raise_error(ActiveJob::Temporal::ConfigurationError, /requires dead_letter_queue/)
     end
   end

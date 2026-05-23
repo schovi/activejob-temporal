@@ -155,7 +155,7 @@ The encrypted envelope protects job class, job ID, queue name, serialized argume
 - dead letter metadata
 - rate-limit metadata
 
-Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, search attributes are plaintext in Temporal visibility APIs, rate-limit keys stay in workflow-control metadata, and dead letter queue entries keep failure metadata plaintext so operators can inspect and triage failed jobs. For privacy-sensitive workloads, configure `workflow_id_generator` so workflow IDs do not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags. Do not put secrets in workflow IDs, queue names, tags, tenant IDs, rate-limit keys, DLQ failure messages, or custom search metadata.
+Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, search attributes are plaintext in Temporal visibility APIs, rate-limit keys stay in workflow-control metadata, and dead letter queue entries keep failure and auto-discard metadata plaintext so operators can inspect and triage failed jobs. For privacy-sensitive workloads, configure `workflow_id_generator` so workflow IDs do not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags. Do not put secrets in workflow IDs, queue names, tags, tenant IDs, rate-limit keys, DLQ failure messages, or custom search metadata.
 
 For key rotation, set the new primary key metadata in `encryption_key` and keep previous key metadata in `encryption_old_keys` until all workflows encrypted with old keys complete or age out of Temporal history:
 

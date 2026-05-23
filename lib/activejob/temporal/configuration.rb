@@ -207,6 +207,13 @@ module ActiveJob
         description: "Optional retry attempt limit before routing jobs to the dead letter queue"
       },
 
+      dead_letter_auto_discard_after: {
+        default: nil,
+        env_var: "ACTIVEJOB_TEMPORAL_DEAD_LETTER_AUTO_DISCARD_AFTER_SECONDS",
+        type: :duration,
+        description: "Optional time to keep dead letter workflows queryable before auto-discarding them"
+      },
+
       # Observability
       logger: {
         default: lambda {
@@ -450,7 +457,7 @@ module ActiveJob
       def convert_env_value(value, type)
         case type
         when :integer then value.to_i
-        when :float then value.to_f
+        when :float, :duration then value.to_f
         when :boolean then value == "true"
         when :symbol then value.to_sym
         else value
@@ -614,6 +621,7 @@ module ActiveJob
         validate_duration_attribute(:default_heartbeat_timeout, required: false)
         validate_duration_attribute(:default_schedule_to_start_timeout, required: false)
         validate_duration_attribute(:default_schedule_to_close_timeout, required: false)
+        validate_duration_attribute(:dead_letter_auto_discard_after, required: false)
       end
 
       def validate_workflow_id_generator
@@ -693,6 +701,7 @@ module ActiveJob
       def validate_dead_letter_settings
         validate_dead_letter_queue
         validate_dead_letter_after_attempts
+        validate_dead_letter_auto_discard_after
       end
 
       def validate_dead_letter_queue
@@ -712,6 +721,13 @@ module ActiveJob
         return if dead_letter_after_attempts.is_a?(Integer) && dead_letter_after_attempts.positive?
 
         errors.add(:dead_letter_after_attempts, :invalid, value: dead_letter_after_attempts.inspect)
+      end
+
+      def validate_dead_letter_auto_discard_after
+        return if dead_letter_auto_discard_after.nil?
+        return if dead_letter_queue.to_s.strip.present?
+
+        errors.add(:dead_letter_auto_discard_after, :requires_queue)
       end
 
       def validate_metrics_settings

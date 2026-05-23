@@ -225,6 +225,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
   it "adds dead letter metadata when a dead letter queue is configured" do
     config.dead_letter_queue = "failed_jobs"
     config.dead_letter_after_attempts = 3
+    config.dead_letter_auto_discard_after = 7.days
     job = build_job("DeadLetterBuilderJob")
 
     payload = described_class.new(config).build(job)
@@ -232,6 +233,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload[:dead_letter]).to eq(
       queue: "failed_jobs",
       after_attempts: 3,
+      auto_discard_after_seconds: 604_800.0,
       job_class: "DeadLetterBuilderJob",
       job_id: job.job_id,
       queue_name: "default"

@@ -124,16 +124,15 @@ module ActiveJob
       end
 
       def dead_letter_metadata(job_class_name, job_id, queue_name, retry_policy, task_queue: nil)
-        metadata = {
+        {
           queue: @config.dead_letter_queue,
           job_class: job_class_name,
           job_id: job_id,
-          queue_name: queue_name
-        }
-        metadata[:task_queue] = task_queue if task_queue
-        after_attempts = dead_letter_attempt_limit(retry_policy)
-        metadata[:after_attempts] = after_attempts if after_attempts
-        metadata
+          queue_name: queue_name,
+          task_queue: task_queue,
+          after_attempts: dead_letter_attempt_limit(retry_policy),
+          auto_discard_after_seconds: @config.dead_letter_auto_discard_after&.to_f
+        }.compact
       end
 
       def dead_letter_attempt_limit(retry_policy)

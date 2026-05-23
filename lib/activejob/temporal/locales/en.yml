@@ -97,6 +97,11 @@ en:
               requires_queue: "requires dead_letter_queue"
               invalid: "must be greater than 0, got: %{value}"
 
+            dead_letter_auto_discard_after:
+              requires_queue: "requires dead_letter_queue"
+              not_a_duration: "must be a duration (e.g., 1.day or 6.hours), got: %{value}"
+              duration_not_positive: "must be positive (got: %{seconds} seconds). Use values like 1.hour or 7.days"
+
             tls_cert_path:
               requires_key_path: "requires tls_key_path so the client certificate and private key rotate together"
               invalid_path: "must be a non-empty file path, got: %{value}"

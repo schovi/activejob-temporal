@@ -277,6 +277,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           "dead_letter" => {
             "queue" => "failed_jobs",
             "after_attempts" => 3,
+            "auto_discard_after_seconds" => 86_400.0,
             "job_class" => "SampleJob",
             "job_id" => "abc-123",
             "queue_name" => "default"
@@ -293,6 +294,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
               "dead_letter" => {
                 "queue" => "failed_jobs",
                 "after_attempts" => 3,
+                "auto_discard_after_seconds" => 86_400.0,
                 "job_class" => "SecondChainJob",
                 "job_id" => "abc-123:chain:1",
                 "queue_name" => "reporting",
@@ -326,7 +328,8 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
               "job_class" => "SecondChainJob",
               "job_id" => "abc-123:chain:1",
               "original_queue_name" => "reporting",
-              "original_task_queue" => "priority_reports"
+              "original_task_queue" => "priority_reports",
+              "auto_discard_after_seconds" => 86_400.0
             )
           ),
           id: "ajdlq:SecondChainJob:abc-123:chain:1",
@@ -867,6 +870,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           "dead_letter" => {
             "queue" => "failed_jobs",
             "after_attempts" => 3,
+            "auto_discard_after_seconds" => 86_400.0,
             "job_class" => "SampleJob",
             "job_id" => "abc-123",
             "queue_name" => "default"
@@ -890,6 +894,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
               "original_queue_name" => "default",
               "original_task_queue" => "default",
               "workflow_id" => "ajwf:SampleJob:abc-123",
+              "auto_discard_after_seconds" => 86_400.0,
               "failed_at" => "2026-05-21T10:00:00Z"
             ),
             "failure" => hash_including(

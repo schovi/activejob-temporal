@@ -32,11 +32,39 @@ module ActiveJob
         def execute(entry)
           @entry = deep_stringify(entry)
           apply_pending_action
-          Temporalio::Workflow.wait_condition { terminal? }
+          wait_until_terminal_or_expired
           @entry
         end
 
         private
+
+        def wait_until_terminal_or_expired
+          auto_discard_after = auto_discard_after_seconds
+          return Temporalio::Workflow.wait_condition { terminal? } unless auto_discard_after
+
+          begin
+            Temporalio::Workflow.timeout(
+              auto_discard_after,
+              Timeout::Error,
+              "dead letter auto-discard expired",
+              summary: "Dead letter auto-discard"
+            ) do
+              Temporalio::Workflow.wait_condition { terminal? }
+            end
+          rescue Timeout::Error
+            mark_discarded_entry("auto_discard_after_expired")
+          end
+        end
+
+        def auto_discard_after_seconds
+          value = @entry.dig("metadata", "auto_discard_after_seconds")
+          return if value.nil?
+
+          seconds = Float(value)
+          seconds if seconds.positive?
+        rescue ArgumentError, TypeError
+          nil
+        end
 
         def apply_pending_action
           action, value = @pending_action

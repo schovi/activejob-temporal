@@ -196,6 +196,17 @@ attributes:
       env_var_name: ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS
       example: 3
 
+    - name: dead_letter_auto_discard_after
+      type: Duration
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, dead_letter_queue must also be configured"
+        - "Must be a positive duration"
+      description: "Retention window before pending dead letter workflows auto-discard and complete."
+      env_var_name: ACTIVEJOB_TEMPORAL_DEAD_LETTER_AUTO_DISCARD_AFTER_SECONDS
+      example: "30.days"
+
   # Operational settings control runtime behavior and observability
   operational:
     - name: task_queue_prefix
@@ -686,6 +697,7 @@ validation:
     - "default_retry_max_attempts - Must be >= 0"
     - "dead_letter_queue - Optional, but when set must not be blank"
     - "dead_letter_after_attempts - Optional, but when set must be > 0 and requires dead_letter_queue"
+    - "dead_letter_auto_discard_after - Optional, but when set must be a positive duration and requires dead_letter_queue"
     - "max_payload_size_kb - Must be between 1 and 2,097,152 KB"
     - "payload_serializer - Must be one of :json, :message_pack, :msgpack, or :marshal"
     - "encrypt_payload - Must be true or false"
@@ -787,6 +799,11 @@ environment_variables:
       maps_to: dead_letter_after_attempts
       example: "3"
       note: "Must be converted to integer"
+
+    - name: ACTIVEJOB_TEMPORAL_DEAD_LETTER_AUTO_DISCARD_AFTER_SECONDS
+      maps_to: dead_letter_auto_discard_after
+      example: "2592000"
+      note: "Must be converted to duration seconds"
 
     - name: ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD
       maps_to: encrypt_payload

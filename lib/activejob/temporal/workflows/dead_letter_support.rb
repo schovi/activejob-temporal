@@ -57,6 +57,7 @@ module ActiveJob
             "workflow_run_id" => workflow_run_id,
             "attempt" => metadata_value(metadata, :after_attempts),
             "max_attempts" => metadata_value(metadata, :after_attempts),
+            "auto_discard_after_seconds" => metadata_value(metadata, :auto_discard_after_seconds),
             "failed_at" => Temporalio::Workflow.now.iso8601
           }.compact
         end

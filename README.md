@@ -207,6 +207,7 @@ The gem exposes a configuration DSL for customizing Temporal client behavior, ti
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
 | `dead_letter_queue` | String or `nil` | `nil` | Optional Temporal task queue for parked dead letter workflows. |
 | `dead_letter_after_attempts` | Integer or `nil` | `nil` | Optional retry attempt limit before a job is routed to the dead letter queue. |
+| `dead_letter_auto_discard_after` | `ActiveSupport::Duration` or `nil` | `nil` | Optional retention window before pending dead letter workflows auto-discard. |
 | `logger` | `Logger` | `Rails.logger` or `Logger.new($stdout)` | Destination for adapter log output. |
 | `audit_log` | Boolean | `false` | Enables structured job lifecycle audit events. |
 | `audit_logger` | `Logger` or `nil` | `nil` | Optional destination for audit events. Falls back to `logger`. |
@@ -238,6 +239,7 @@ ActiveJob::Temporal.configure do |config|
   config.default_retry_max_attempts = 5
   config.dead_letter_queue = "failed_jobs"
   config.dead_letter_after_attempts = 3
+  config.dead_letter_auto_discard_after = 30.days
   config.validation_level = :strict
   config.enable_tracing = false
   config.audit_log = true
@@ -649,10 +651,11 @@ Configure a dead letter queue when permanently failed jobs should remain inspect
 ActiveJob::Temporal.configure do |config|
   config.dead_letter_queue = "failed_jobs"
   config.dead_letter_after_attempts = 3
+  config.dead_letter_auto_discard_after = 30.days
 end
 ```
 
-When activity retries are exhausted, the workflow starts an `ActiveJobTemporalDeadLetterWorkflow` on the configured queue and then fails normally. Run a worker polling that queue, for example `ACTIVEJOB_TEMPORAL_TASK_QUEUE=failed_jobs bundle exec temporal-worker`, so the DLQ workflow can initialize and answer queries. The DLQ workflow stores the original payload, failure class/message/fingerprint, job class, job ID, original queue, original workflow ID, attempt threshold, and failure time.
+When activity retries are exhausted, the workflow starts an `ActiveJobTemporalDeadLetterWorkflow` on the configured queue and then fails normally. Run a worker polling that queue, for example `ACTIVEJOB_TEMPORAL_TASK_QUEUE=failed_jobs bundle exec temporal-worker`, so the DLQ workflow can initialize and answer queries. The DLQ workflow stores the original payload, failure class/message/fingerprint, job class, job ID, original queue, original workflow ID, attempt threshold, optional auto-discard retention, and failure time.
 
 ```ruby
 entries = ActiveJob::Temporal.dead_letter_entries(queue: "failed_jobs", limit: 50)
@@ -664,6 +667,8 @@ ActiveJob::Temporal.discard_dead_letter(SendInvoiceJob, job_id, reason: "handled
 Manual retry uses a deterministic retry workflow ID. Repeating the same retry request returns or marks the same retry workflow instead of starting another copy of the job.
 
 `dead_letter_after_attempts` overrides the activity retry `maximum_attempts` for DLQ-enabled jobs so the configured DLQ threshold is authoritative. If you configure only `dead_letter_queue`, jobs move to the DLQ after their normal `retry_on` or default retry policy is exhausted.
+
+`dead_letter_auto_discard_after` is optional. When present, the DLQ workflow waits that long for a manual retry or discard signal, then marks itself discarded with reason `auto_discard_after_expired`. Discarded entries complete and no longer appear in `dead_letter_entries`, which lists only running pending DLQ workflows.
 
 DLQ metadata is plaintext Temporal workflow metadata, even when payload encryption is enabled. The original job execution payload remains encrypted when `encrypt_payload` is true, but DLQ inspection fields such as job class, job ID, queue, failure class, and failure message remain visible.
 
@@ -1060,6 +1065,7 @@ See [examples/basic_rails_app/](examples/basic_rails_app/) for a complete workin
 | `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | No | Enable structured lifecycle audit events. | `true` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE` | No | Task queue for parked dead letter workflows. | `failed_jobs` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS` | No | Retry attempt limit before routing to the dead letter queue. | `3` |
+| `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AUTO_DISCARD_AFTER_SECONDS` | No | Seconds to keep pending dead letter workflows before auto-discarding. | `2592000` |
 | `ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER` | No | Serializer for new job execution payloads. | `json`, `message_pack`, or `marshal` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD` | No | Encrypt job execution payloads before sending them to Temporal. | `true` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY` | Required when encryption is enabled | Base64-encoded 32-byte AES-256-GCM encryption key. | `SecureRandom.base64(32)` |
