@@ -1,40 +1,41 @@
 # Documentation
 
-Use this index to find the main guides for activejob-temporal.
+Use the root [README](../README.md) for install, first job, and a compact capability map. Use these guides when you need implementation detail.
+
+## Start Here
+
+- [Usage Patterns](usage_patterns.md): ActiveJob-facing APIs after setup, including scheduled jobs, conditional enqueueing, bulk enqueueing, chains, child workflows, dependencies, timeouts, rate limiting, cancellation, status, signals, queries, and updates.
+- [Configuration Reference](configuration_reference.md): configuration options, environment variables, task queue routing, TLS, audit logging, payload serialization, encryption, search attributes, payload limits, and production tuning.
+- [Worker Setup](worker_setup.md): worker startup, environment variables, health checks, metrics endpoints, worker pools, mTLS reloads, expected logs, and process shutdown.
+- [Troubleshooting](troubleshooting.md): common enqueue, execution, retry, cancellation, payload, connection, and performance issues.
 
 ## Operations
 
-- [Worker Setup Guide](worker_setup.md) covers worker startup, deployment patterns, concurrency tuning, and expected logs.
-- [Systemd Worker Examples](../examples/systemd/) provide VM and bare-metal service units, restart policy, file logging, and log rotation.
-- [Basic Rails App](../examples/basic_rails_app/) provides a Docker Compose example with Rails, Temporal, Temporal UI, search attribute setup, a worker, seeded GlobalID records, and example tests.
-- [Video Walkthrough Script](video_walkthrough_script.md) provides the recording plan and acceptance checklist for the quickstart walkthrough.
-- [Performance Tuning Guide](performance_tuning.md) covers workload-specific concurrency, payload optimization, timeouts, database pooling, benchmarks, and monitoring.
-- [Metrics Guide](metrics.md) covers Prometheus metrics, scrape endpoint setup, and the Grafana dashboard example.
-- [Performance Benchmarks](benchmarks.md) describes the benchmark suite, covered operations, and baseline numbers.
-- [Middleware Guide](middleware.md) explains how to wrap job execution with tracing, metrics, logging, and tenant context middleware.
-- [Recurring Jobs Guide](recurring_jobs.md) explains cron schedules, registration, overlap policies, and schedule handles.
-- [Nexus Integration](nexus.md) documents the optional workflow-layer boundary for durable external service calls.
-- [Troubleshooting Guide](troubleshooting.md) covers common enqueue, execution, retry, cancellation, payload, connection, and performance issues.
-- [Security](security.md) covers dependency scanning, input validation, TLS notes, and payload handling.
+- [Performance Tuning](performance_tuning.md): workload-specific concurrency, payload optimization, timeouts, database pooling, monitoring, and queue isolation.
+- [Metrics Guide](metrics.md): Prometheus metrics, scrape endpoint setup, useful queries, and the Grafana dashboard example.
+- [Performance Benchmarks](benchmarks.md): benchmark suite coverage and baseline numbers.
+- [Security](security.md): dependency scanning, input validation, TLS notes, payload handling, logging, and reporting.
+- [Systemd Worker Examples](../examples/systemd/): VM and bare-metal service units, restart policy, file logging, and log rotation.
+- [Basic Rails App](../examples/basic_rails_app/): Docker Compose example with Rails, Temporal, Temporal UI, search attributes, worker, seeded GlobalID records, and tests.
 
-## Configuration
+## Feature Guides
 
-- [Configuration Reference](configuration_reference.md) lists configuration options, environment variables, search attributes, and payload size settings.
-- [Configuration Schema](config_schema.yaml) is the machine-readable configuration schema.
-- [Ruby Baseline](ruby_baseline.md) documents the Ruby 4+ source of truth, local validation commands, and external tooling notes.
-- [Comparison Guide](comparison.md) helps choose between activejob-temporal, Sidekiq, GoodJob, Solid Queue, and Delayed Job.
-- [Retry Policy Guide](retry_policies.md) explains how ActiveJob retry and discard declarations map to Temporal retry policies.
+- [Recurring Jobs](recurring_jobs.md): cron schedules, registration, overlap policies, and schedule handles.
+- [Retry Policy Guide](retry_policies.md): how ActiveJob `retry_on` and `discard_on` declarations map to Temporal retry policies.
+- [Middleware](middleware.md): wrapping job execution with tracing, metrics, logging, tenant context, or cleanup middleware.
+- [Nexus Integration](nexus.md): optional workflow-layer boundary for durable external service calls.
+- [Comparison Guide](comparison.md): when to choose activejob-temporal instead of Sidekiq, GoodJob, Solid Queue, or Delayed Job.
 
-## Release And Publishing
+## Release And Maintenance
 
-- [Publishing](publishing.md) covers release and gem publishing steps.
-- [Release Checklist](release_checklist.md) captures release validation status.
+- [Ruby Baseline](ruby_baseline.md): Ruby 4+ source of truth, local validation commands, CI coverage, and external tooling notes.
+- [Release Checklist](release_checklist.md): release validation checklist.
+- [Publishing](publishing.md): gem publishing prerequisites, procedure, rollback path, and command reference.
+- [Configuration Schema](config_schema.yaml): machine-readable configuration schema.
 
-## Project Management
+## Project Notes
 
-- [Issue Triage Handoff](issue_triage.md) records the project sorting model, blocked issue queue, and resume checklist.
-
-## Architecture
-
-- [Architecture Decision Records](adr/README.md) collects design decisions.
-- [Diagrams](diagrams/) contains component, sequence, cancellation, and data model diagrams.
+- [Issue Triage Handoff](issue_triage.md): project sorting model, blocked issue queue, and resume checklist.
+- [Video Walkthrough Script](video_walkthrough_script.md): recording plan and acceptance checklist for the quickstart walkthrough.
+- [Architecture Decision Records](adr/README.md): design decisions.
+- [Diagrams](diagrams/): component, sequence, cancellation, and data model diagrams.
