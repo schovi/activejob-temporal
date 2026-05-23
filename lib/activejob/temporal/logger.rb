@@ -40,6 +40,8 @@ module ActiveJob
     module Logger
       extend self
 
+      CONTROL_CHARACTER_PATTERN = /[[:cntrl:]]/
+
       # Logs an event at INFO level.
       #
       # @param event_name [String, Symbol] Name of the event (e.g., "job.enqueued")
@@ -115,7 +117,7 @@ module ActiveJob
         validate_event!(event_name)
         attributes = normalize_attributes(attributes)
 
-        payload = build_payload(event_name, attributes)
+        payload = build_payload(sanitize_log_value(event_name), sanitize_log_value(attributes))
         return unless configured_logger.respond_to?(level)
 
         if semantic_logger?(configured_logger)
@@ -123,6 +125,45 @@ module ActiveJob
         else
           configured_logger.public_send(level, JSON.generate(payload))
         end
+      end
+
+      def sanitize_log_value(value)
+        case value
+        when String
+          escape_control_characters(value)
+        when Symbol
+          sanitize_symbol(value)
+        when Hash
+          value.each_with_object({}) do |(key, nested_value), result|
+            result[sanitize_log_key(key)] = sanitize_log_value(nested_value)
+          end
+        when Array
+          value.map { |element| sanitize_log_value(element) }
+        else
+          value
+        end
+      end
+
+      def sanitize_log_key(key)
+        case key
+        when String
+          escape_control_characters(key)
+        when Symbol
+          sanitize_symbol(key)
+        else
+          key
+        end
+      end
+
+      def sanitize_symbol(value)
+        sanitized = escape_control_characters(value.to_s)
+        sanitized == value.to_s ? value : sanitized
+      end
+
+      def escape_control_characters(value)
+        return value unless value.match?(CONTROL_CHARACTER_PATTERN)
+
+        value.gsub(CONTROL_CHARACTER_PATTERN) { |character| format("\\u%04X", character.ord) }
       end
 
       # Builds structured log payload with event and timestamp.

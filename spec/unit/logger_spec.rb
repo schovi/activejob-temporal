@@ -145,6 +145,21 @@ RSpec.describe ActiveJob::Temporal::Logger do
       expect(parsed["event"]).to eq("json_test")
       expect(parsed["key"]).to eq("value")
     end
+
+    it "escapes control characters before writing JSON payloads" do
+      logger_helper.info(
+        "event\rname",
+        job_id: "job-1\nforged",
+        nested: { "reason\n" => "bad\tvalue" },
+        tags: ["one", "two\r"]
+      )
+
+      payload = parsed_lines.first
+      expect(payload["event"]).to eq("event\\u000Dname")
+      expect(payload["job_id"]).to eq("job-1\\u000Aforged")
+      expect(payload["nested"]).to eq("reason\\u000A" => "bad\\u0009value")
+      expect(payload["tags"]).to eq(["one", "two\\u000D"])
+    end
   end
 
   describe "SemanticLogger detection" do
@@ -163,6 +178,14 @@ RSpec.describe ActiveJob::Temporal::Logger do
       logged = log_io.string.strip
       parsed = JSON.parse(logged)
       expect(parsed).to be_a(Hash)
+    end
+
+    it "escapes control characters before sending structured SemanticLogger payloads" do
+      semantic_logger = build_semantic_logger
+
+      logger_helper.info("semantic_event", workflow_id: "wf-1\nforged")
+
+      expect(semantic_logger.payload[:workflow_id]).to eq("wf-1\\u000Aforged")
     end
   end
 
