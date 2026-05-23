@@ -308,7 +308,7 @@ attributes:
         - ":strict raises ActiveJob::Temporal::ConfigurationError"
         - ":warn logs validation warnings and allows configuration to continue"
         - ":none skips validation entirely"
-      description: "Controls how configuration validation failures are handled. Use :strict for normal boot, :warn for gradual migrations, and :none only for intentional partial test configuration."
+      description: "Controls how configuration validation failures are handled. Use :strict for normal boot, :warn for staged configuration changes, and :none only for intentional partial test configuration."
       env_var_name: null
       example: ":warn"
 
@@ -679,7 +679,7 @@ validation:
       # Validation happens automatically here!
     end
 
-    # During gradual migrations, warn without raising:
+    # During staged configuration changes, warn without raising:
     ActiveJob::Temporal.configure do |config|
       config.validation_level = :warn
       config.target = ENV["ACTIVEJOB_TEMPORAL_TARGET"]

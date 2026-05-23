@@ -274,7 +274,7 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-Use `validation_level = :warn` during gradual configuration migrations when boot should continue but warnings should be visible. Use `validation_level = :none` only for test setups that intentionally build partial configuration.
+Use `validation_level = :warn` during staged configuration changes when boot should continue but warnings should be visible. Use `validation_level = :none` only for test setups that intentionally build partial configuration.
 
 For detailed configuration documentation, see [Configuration Reference](docs/configuration_reference.md).
 
@@ -658,7 +658,7 @@ ActiveJob's `retry_on` and `discard_on` declarations are automatically translate
 
 For a full mapping table and more examples, see the [Retry Policy Guide](docs/retry_policies.md).
 
-> **Note:** Algorithmic wait strategies (`:exponentially_longer`, `:polynomially_longer`, and custom Procs) are not directly supported. Use static `wait:` values and Temporal's backoff configuration instead. See [Migration Guide - Known Limitations](docs/migration_guide.md#known-limitations) for details and examples.
+> **Note:** Algorithmic wait strategies (`:exponentially_longer`, `:polynomially_longer`, and custom Procs) are not directly supported. Use static `wait:` values and Temporal's backoff configuration instead. See the [Retry Policy Guide](docs/retry_policies.md#8-algorithmic-wait-strategies) for details and examples.
 
 ### Basic Retry
 
@@ -1205,43 +1205,17 @@ Additional guides:
 - [Metrics Guide](docs/metrics.md)
 - [Retry Policy Guide](docs/retry_policies.md)
 - [Worker Setup Guide](docs/worker_setup.md)
-- [Migration Guide](docs/migration_guide.md)
 - [Comparison Guide](docs/comparison.md)
 - [Nexus Integration](docs/nexus.md)
 - [Security](docs/security.md)
 
-## Limitations (v0.1)
+## Current Constraints
 
-The following features are **not yet implemented** in v0.1 but are planned for future releases:
-
-- **Rails generators** (for scaffolding jobs, initializers, etc.) → Planned for v1.0
-- **ActiveRecord callback interception** (e.g., automatic transactional enqueue) → Deferred
-
-**Other constraints:**
 - **250KB payload size limit** (configurable via `max_payload_size_kb`). Jobs with larger plaintext or encrypted payloads will raise `ActiveJob::SerializationError`. Store large data externally (e.g., S3, database) and pass references instead.
 - **Linear chains only:** `set(chain:)` supports sequential activities inside one workflow. Use `set(child_workflows:)` for parent-owned fan-out and `set(depends_on:)` for independently enqueued job gates. General DAG orchestration is not yet supported.
 - **Nexus is an explicit workflow integration:** Ordinary ActiveJob execution remains activity-based. Use the [Nexus Integration](docs/nexus.md) guide when a workflow needs durable calls to an external Temporal-backed service.
-
-## Migration from Sidekiq/Resque
-
-Migrating from Sidekiq, Resque, or other queue adapters is straightforward:
-
-1. **Add the gem** to your Gemfile and run `bundle install`
-2. **Change the adapter** in `config/application.rb`:
-   ```ruby
-   config.active_job.queue_adapter = :temporal
-   ```
-3. **Configure Temporal** in an initializer (see [Configuration](#configuration))
-4. **Register Search Attributes** with your Temporal cluster (one-time setup)
-5. **Deploy workers** using `bin/temporal-worker` (see [Worker Deployment](#worker-deployment))
-6. **Drain the old queue** (if applicable) to ensure no jobs are lost during the transition
-7. **Monitor and verify** using Temporal UI and application logs
-
-**For detailed migration instructions, see the [Migration Guide](docs/migration_guide.md)**, which includes:
-- Dual-write migration strategy for zero-downtime cutover
-- Side-by-side code comparisons (Sidekiq → ActiveJob)
-- Common gotchas (payload size limits, idempotency, transaction safety)
-- Testing checklist and rollback procedures
+- **Algorithmic retry waits:** Symbol and Proc `wait:` values fall back to Temporal's numeric retry policy. Use static waits when the exact retry curve matters.
+- **Cancellation inside running job code is cooperative:** Long-running activities need heartbeats or explicit cancellation checks.
 
 ## Contributing
 

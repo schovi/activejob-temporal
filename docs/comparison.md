@@ -21,8 +21,8 @@ Choose a traditional queue when the work is short, operational simplicity matter
 | Long-running jobs | Possible with tuning | Possible with database/pool tuning | Possible with database/pool tuning | Possible with `max_run_time` tuning | Strong fit when jobs heartbeat and timeouts are set |
 | Built-in workflow history | Limited to queue/error records | Dashboard/job records | Queue records | Job table records | Temporal event history |
 | Built-in operational UI | Web UI | Web Dashboard | Mission Control Jobs for Rails | Third-party or custom | Temporal UI |
-| Scheduled jobs | Yes | Yes | Yes | Yes | ActiveJob delayed jobs; recurring Temporal schedules are planned |
-| Batches/chains/workflow composition | Sidekiq Pro/Enterprise for batches | Batches supported | Not the main model | Not the main model | Planned beyond the current single workflow plus activity pattern |
+| Scheduled jobs | Yes | Yes | Yes | Yes | ActiveJob delayed jobs and recurring Temporal schedules |
+| Batches/chains/workflow composition | Sidekiq Pro/Enterprise for batches | Batches supported | Not the main model | Not the main model | Sequential chains, child workflows, and dependency gates |
 | Cancellation API in this gem | Backend-specific | Backend-specific | Backend-specific | Backend-specific | `ActiveJob::Temporal.cancel`, `cancel_all`, and `cancel_where` |
 | Search/filter by job metadata | Backend-specific | Dashboard/database query | Backend-specific | Database query | Temporal Search Attributes |
 | Operational learning curve | Low to medium if Redis is familiar | Low if PostgreSQL is familiar | Low for Rails 8 apps | Low | Medium to high unless Temporal is already in use |
@@ -104,13 +104,13 @@ activejob-temporal is a good fit when:
 - You need Temporal UI, event history, Search Attributes, cancellation, and status inspection for ActiveJob work.
 - Jobs may run long enough to need heartbeats and explicit timeouts.
 - You already operate Temporal or are willing to adopt Temporal Cloud or a self-hosted Temporal service.
-- You want a migration path from ActiveJob queues to durable execution while keeping the ActiveJob API.
+- You want durable execution while keeping the ActiveJob API.
 
 Watch for:
 
 - You must operate Temporal or use Temporal Cloud.
 - Search Attributes must be registered before workflows can be filtered.
-- Current jobs use a single primary workflow plus activities. Child workflows are not yet supported.
+- General DAG orchestration is not supported. Use sequential chains, child workflows, or dependency gates for the supported composition shapes.
 - Temporal workflow determinism limits what code can run inside workflow definitions. This gem keeps user job code in activities, but upgrades still need care when workflow histories exist.
 - Payload size matters. The default maximum is `250` KB, so pass IDs or GlobalID records instead of large objects.
 
@@ -131,9 +131,9 @@ Use Sidekiq, GoodJob, Solid Queue, or Delayed Job when most answers are yes:
 - Is the current Redis or database queue already reliable enough for the workload?
 - Would introducing Temporal be more operational weight than the job requires?
 
-## Migration Notes
+## Adoption Notes
 
-Migrating from a queue to activejob-temporal is not only a gem swap. Plan for:
+Adopting activejob-temporal is not only a gem swap. Plan for:
 
 - Temporal cluster or Temporal Cloud access.
 - Search Attribute registration.
@@ -141,9 +141,8 @@ Migrating from a queue to activejob-temporal is not only a gem swap. Plan for:
 - Payload size checks.
 - Idempotency review.
 - Heartbeats for long-running jobs.
-- A rollback path while old queues drain.
 
-See the [Migration Guide](migration_guide.md), [Worker Setup Guide](worker_setup.md), [Performance Tuning Guide](performance_tuning.md), and [Troubleshooting Guide](troubleshooting.md) for implementation details.
+See the [Worker Setup Guide](worker_setup.md), [Performance Tuning Guide](performance_tuning.md), and [Troubleshooting Guide](troubleshooting.md) for implementation details.
 
 ## References
 

@@ -267,7 +267,7 @@ See `docs/adr/` for recorded architectural decisions and rationale behind major 
 ## Additional Resources
 
 - **Configuration Reference**: `docs/configuration_reference.md`
-- **Migration Guide**: `docs/migration_guide.md` (migrating from Sidekiq, Resque, etc.)
+- **Comparison Guide**: `docs/comparison.md` (choosing the right ActiveJob backend)
 - **Worker Setup**: `docs/worker_setup.md`
 - **Release Process**: `docs/publishing.md`, `docs/release_checklist.md`
 - **README**: Comprehensive user guide and quick start
