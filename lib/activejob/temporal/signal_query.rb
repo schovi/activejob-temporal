@@ -23,7 +23,7 @@ module ActiveJob
           end
         rescue ArgumentError, ActiveJob::Temporal::WorkflowNotFoundError
           raise
-        rescue StandardError => e
+        rescue Temporalio::Error::RPCError => e
           raise ActiveJob::Temporal::TemporalConnectionError,
                 "Failed to signal Temporal workflow for job_id #{job_id}: #{e.message}"
         end
@@ -38,9 +38,7 @@ module ActiveJob
           end
         rescue ArgumentError, ActiveJob::Temporal::WorkflowNotFoundError
           raise
-        rescue StandardError => e
-          raise if workflow_query_error?(e)
-
+        rescue Temporalio::Error::RPCError => e
           raise ActiveJob::Temporal::TemporalConnectionError,
                 "Failed to query Temporal workflow for job_id #{job_id}: #{e.message}"
         end
@@ -53,7 +51,7 @@ module ActiveJob
 
           begin
             return yield(default_handle)
-          rescue StandardError => e
+          rescue Temporalio::Error::RPCError => e
             raise unless rpc_not_found?(e)
           end
 
@@ -66,7 +64,7 @@ module ActiveJob
           )
           begin
             yield(fallback_handle)
-          rescue StandardError => e
+          rescue Temporalio::Error::RPCError => e
             raise workflow_not_found(job_id) if rpc_not_found?(e)
 
             raise
@@ -135,30 +133,12 @@ module ActiveJob
           )
         end
 
-        def workflow_query_error?(error)
-          query_failed_error?(error) || query_rejected_error?(error)
-        end
-
-        def query_failed_error?(error)
-          defined?(Temporalio::Error::WorkflowQueryFailedError) &&
-            error.is_a?(Temporalio::Error::WorkflowQueryFailedError)
-        end
-
-        def query_rejected_error?(error)
-          defined?(Temporalio::Error::WorkflowQueryRejectedError) &&
-            error.is_a?(Temporalio::Error::WorkflowQueryRejectedError)
-        end
-
         def rpc_not_found?(error)
-          defined?(Temporalio::Error::RPCError) &&
-            error.is_a?(Temporalio::Error::RPCError) &&
-            error.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+          error.code == Temporalio::Error::RPCError::Code::NOT_FOUND
         end
 
         def rpc_invalid_argument?(error)
-          defined?(Temporalio::Error::RPCError) &&
-            error.is_a?(Temporalio::Error::RPCError) &&
-            error.code == Temporalio::Error::RPCError::Code::INVALID_ARGUMENT
+          error.code == Temporalio::Error::RPCError::Code::INVALID_ARGUMENT
         end
       end
     end

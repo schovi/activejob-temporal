@@ -95,6 +95,16 @@ RSpec.describe ActiveJob::Temporal::SignalQuery do
         .to raise_error(ActiveJob::Temporal::WorkflowNotFoundError, /No running workflow/)
     end
 
+    it "does not wrap non-RPC default handle failures as connection errors" do
+      signal_error = RuntimeError.new("signal handler failed")
+
+      allow(default_handle).to receive(:signal).and_raise(signal_error)
+
+      expect { described_class.signal(job_class, job_id, :pause) }
+        .to raise_error(signal_error)
+      expect(client).not_to have_received(:list_workflows)
+    end
+
     it "validates arguments before contacting Temporal" do
       expect { described_class.signal(job_class, "not-a-uuid", :pause) }
         .to raise_error(ArgumentError, /Invalid job_id format/)
@@ -139,6 +149,16 @@ RSpec.describe ActiveJob::Temporal::SignalQuery do
 
       expect { described_class.query(job_class, job_id, :state) }
         .to raise_error(query_error)
+    end
+
+    it "does not wrap non-RPC default handle failures as connection errors" do
+      query_error = RuntimeError.new("query handler failed")
+
+      allow(default_handle).to receive(:query).and_raise(query_error)
+
+      expect { described_class.query(job_class, job_id, :state) }
+        .to raise_error(query_error)
+      expect(client).not_to have_received(:list_workflows)
     end
 
     it "raises WorkflowNotFoundError when no running workflow is found" do
