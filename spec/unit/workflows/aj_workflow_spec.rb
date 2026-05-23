@@ -36,6 +36,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
     allow(Temporalio::Workflow).to receive(:continue_as_new_suggested).and_return(false)
     allow(Temporalio::Workflow).to receive(:search_attributes).and_return(nil)
     allow(Temporalio::Workflow).to receive(:all_handlers_finished?).and_return(true)
+    allow(Temporalio::Workflow).to receive(:patched).and_return(true)
     allow(Temporalio::Workflow).to receive(:execute_activity).and_return(:activity_result)
     allow(Temporalio::Workflow).to receive(:execute_local_activity).and_return(:activity_result)
     allow(Temporalio::Workflow).to receive(:sleep)
@@ -169,6 +170,19 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         expect(Temporalio::Workflow).to have_received(:execute_activity)
       end
 
+      it "keeps rollover behind a deterministic workflow patch marker" do
+        payload = base_payload.merge("continue_as_new" => { "history_event_threshold" => 5 })
+
+        allow(Temporalio::Workflow).to receive(:current_history_length).and_return(5)
+        allow(Temporalio::Workflow).to receive(:patched)
+          .with("activejob-temporal.continue-as-new-v1")
+          .and_return(false)
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity)
+      end
+
       it "rolls over with job payload, restored state, and current search attributes when threshold is reached" do
         search_attributes = instance_double(Temporalio::SearchAttributes)
         continue_error = StandardError.new("continue as new")
@@ -225,6 +239,30 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           "job_id" => "abc-123",
           "signals" => hash_including("progress"),
           "custom" => { "progress" => 75 }
+        )
+      end
+
+      it "keeps restored workflow state behind a deterministic workflow patch marker" do
+        payload = base_payload.merge(
+          "workflow_state" => {
+            "phase" => "waiting_dependencies",
+            "paused" => false,
+            "signals" => {},
+            "updates" => {},
+            "custom" => { "progress" => 75 }
+          }
+        )
+
+        allow(Temporalio::Workflow).to receive(:patched)
+          .with("activejob-temporal.workflow-state-v1")
+          .and_return(false)
+
+        workflow.execute(payload)
+
+        expect(workflow.handle_dynamic_query("state")).to include(
+          "job_class" => "SampleJob",
+          "job_id" => "abc-123",
+          "custom" => {}
         )
       end
     end
@@ -814,6 +852,22 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
           expect(payload_arg).to eq(payload)
         end
+      end
+
+      it "falls back to standard helper activities when the local activity patch is disabled" do
+        payload = rate_limited_payload.merge("local_activity_helpers" => ["rate_limit"])
+        allow(Temporalio::Workflow).to receive(:patched)
+          .with("activejob-temporal.local-activity-helpers-v1")
+          .and_return(false)
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, _payload_arg, _options|
+          activity_class == ActiveJob::Temporal::Activities::RateLimitActivity ? 0.0 : :activity_result
+        end
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).not_to have_received(:execute_local_activity)
+        expect(Temporalio::Workflow).to have_received(:execute_activity)
+          .with(ActiveJob::Temporal::Activities::RateLimitActivity, payload, anything)
       end
     end
 

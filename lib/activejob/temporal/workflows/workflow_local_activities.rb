@@ -15,6 +15,8 @@ module ActiveJob
         end
 
         def local_activity_helper?(payload, helper_name)
+          return false unless workflow_patch_enabled?(:local_activity_helpers)
+
           local_activity_helper_names(payload).include?(helper_name.to_s)
         end
 

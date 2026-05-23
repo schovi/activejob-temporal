@@ -7,6 +7,8 @@ module ActiveJob
         private
 
         def continue_as_new_if_needed(payload)
+          return unless workflow_patch_enabled?(:continue_as_new)
+
           continue_as_new_options = payload[:continue_as_new] || payload["continue_as_new"]
           return unless continue_as_new_options
           return unless continue_as_new_threshold_reached?(continue_as_new_options)

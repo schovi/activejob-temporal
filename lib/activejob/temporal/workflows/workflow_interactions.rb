@@ -79,6 +79,8 @@ module ActiveJob
         end
 
         def restore_workflow_state(payload)
+          return unless workflow_patch_enabled?(:workflow_state)
+
           state = payload[:workflow_state] || payload["workflow_state"]
           return unless state.is_a?(Hash)
 

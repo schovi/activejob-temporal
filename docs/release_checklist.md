@@ -102,7 +102,7 @@ This document tracks all quality checks required before releasing activejob-temp
 - [x] Child workflows are available for parent-owned fan-out; general DAG orchestration remains outside v0.1 scope
 - [x] No Temporal Schedules API for recurring jobs (documented in README)
 - [x] No custom DLQ UI (documented in README)
-- [x] No workflow versioning (documented in README)
+- [x] Workflow versioning seam documented in migration guide
 - [x] Manual heartbeating required for cancellation (documented in README and example app)
 
 ## Final Sign-Off
