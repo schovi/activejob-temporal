@@ -17,6 +17,35 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
       expect(handlers.first[:attempts]).to eq(5)
     end
 
+    it "memoizes retry handler extraction per job class" do
+      allow(ActiveJob::Temporal::ActiveJobHandlerSource).to receive(:match?).and_call_original
+
+      2.times { extractor.retry_handlers(RetryableJob) }
+
+      expect(ActiveJob::Temporal::ActiveJobHandlerSource).to have_received(:match?)
+        .with(anything, :retry_on)
+        .once
+    end
+
+    it "refreshes memoized retry handlers when the job handlers change" do
+      first_handler = handler_with(
+        binding_double(wait: 1.second, attempts: 2),
+        active_job_handler_source_location(:retry_on)
+      )
+      second_handler = handler_with(
+        binding_double(wait: 2.seconds, attempts: 3),
+        active_job_handler_source_location(:retry_on)
+      )
+      rescue_handlers = [[SampleJobError, first_handler]]
+      job_class = job_class_with_rescue_handlers { rescue_handlers }
+
+      expect(extractor.retry_handlers(job_class).first[:attempts]).to eq(2)
+
+      rescue_handlers = [[SampleJobError, second_handler]]
+
+      expect(extractor.retry_handlers(job_class).first[:attempts]).to eq(3)
+    end
+
     it "extracts multiple retry handlers" do
       handlers = extractor.retry_handlers(MultiRetryJob)
 
@@ -130,6 +159,16 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
 
       expect(handlers.size).to eq(1)
       expect(handlers.first[:exception]).to eq(FatalJobError)
+    end
+
+    it "memoizes discard handler extraction per job class" do
+      allow(ActiveJob::Temporal::ActiveJobHandlerSource).to receive(:match?).and_call_original
+
+      2.times { extractor.discard_handlers(DiscardableJob) }
+
+      expect(ActiveJob::Temporal::ActiveJobHandlerSource).to have_received(:match?)
+        .with(anything, :discard_on)
+        .twice
     end
 
     it "extracts discard handlers from discard-only job" do
@@ -256,10 +295,12 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
     end.new(handler_binding, source_location)
   end
 
-  def job_class_with_rescue_handlers(rescue_handlers)
+  def job_class_with_rescue_handlers(rescue_handlers = nil, &rescue_handlers_block)
     Class.new.tap do |job_class|
+      rescue_handlers_source = rescue_handlers_block || proc { rescue_handlers }
+
       job_class.define_singleton_method(:name) { "FallbackRetryJob" }
-      job_class.define_singleton_method(:rescue_handlers) { rescue_handlers }
+      job_class.define_singleton_method(:rescue_handlers, &rescue_handlers_source)
     end
   end
 end

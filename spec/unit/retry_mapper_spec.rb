@@ -131,6 +131,16 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
       expect(policy[:initial_interval]).to eq(15)
       expect(policy[:maximum_attempts]).to eq(2)
     end
+
+    it "reuses extracted handler metadata across policy builds" do
+      described_class.remove_instance_variable(:@extractor) if described_class.instance_variable_defined?(:@extractor)
+      described_class.for(RetryableJob)
+      allow(File).to receive(:readlines).and_call_original
+
+      described_class.for(RetryableJob)
+
+      expect(File).not_to have_received(:readlines)
+    end
   end
 
   describe ".discard_exception?" do

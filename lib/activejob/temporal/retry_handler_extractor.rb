@@ -30,7 +30,14 @@ module ActiveJob
     # @example Extracting discard handlers
     #   discard_handlers = extractor.discard_handlers(MyJob)
     #   # => [{ exception: ActiveRecord::RecordNotFound, handler: ... }]
+    # rubocop:disable Metrics/ClassLength
     class RetryHandlerExtractor
+      def initialize
+        @cache_mutex = Mutex.new
+        @retry_handlers_by_job_class = ObjectSpace::WeakMap.new
+        @discard_handlers_by_job_class = ObjectSpace::WeakMap.new
+      end
+
       # Extracts retry handler entries from a job class's rescue_handlers.
       #
       # Iterates through the job class's rescue_handlers and filters for retry_on
@@ -54,8 +61,10 @@ module ActiveJob
       #   handlers = extractor.retry_handlers(MyJob)
       #   # => [{ exception: StandardError, wait: 5.0, attempts: 3, handler: #<Proc> }]
       def retry_handlers(job_class)
-        handler_entries(job_class) do |class_or_name, handler|
-          retry_handler_payload(job_class, class_or_name, handler)
+        cached_handler_entries(@retry_handlers_by_job_class, job_class) do |handlers|
+          handler_entries(job_class, handlers) do |class_or_name, handler|
+            retry_handler_payload(job_class, class_or_name, handler)
+          end
         end
       end
 
@@ -80,8 +89,10 @@ module ActiveJob
       #   handlers = extractor.discard_handlers(MyJob)
       #   # => [{ exception: ActiveRecord::RecordNotFound, handler: #<Proc> }]
       def discard_handlers(job_class)
-        handler_entries(job_class) do |class_or_name, handler|
-          discard_handler_payload(job_class, class_or_name, handler)
+        cached_handler_entries(@discard_handlers_by_job_class, job_class) do |handlers|
+          handler_entries(job_class, handlers) do |class_or_name, handler|
+            discard_handler_payload(job_class, class_or_name, handler)
+          end
         end
       end
 
@@ -114,6 +125,30 @@ module ActiveJob
 
       private
 
+      def cached_handler_entries(cache, job_class)
+        return [] unless job_class.respond_to?(:rescue_handlers)
+
+        handlers = job_class.rescue_handlers
+        return [] unless handlers.respond_to?(:reverse_each)
+
+        signature = rescue_handlers_signature(handlers)
+
+        @cache_mutex.synchronize do
+          cached = cache[job_class]
+          return cached[:entries] if cached && cached[:signature] == signature
+
+          entries = yield(handlers).map(&:freeze).freeze
+          cache[job_class] = { signature: signature, entries: entries }.freeze
+          entries
+        end
+      end
+
+      def rescue_handlers_signature(handlers)
+        handlers.reverse_each.map do |class_or_name, handler|
+          [class_or_name, handler.object_id]
+        end
+      end
+
       # Generic handler entry extractor (used by retry_handlers and discard_handlers).
       #
       # Walks through the job class's rescue_handlers in reverse order (ActiveJob's
@@ -124,13 +159,7 @@ module ActiveJob
       # @param job_class [Class] ActiveJob class
       # @yield [handler] Block that filters and transforms each handler
       # @return [Array<Hash>] Filtered and transformed handler entries
-      def handler_entries(job_class)
-        return [] unless job_class
-        return [] unless job_class.respond_to?(:rescue_handlers)
-
-        handlers = job_class.rescue_handlers
-        return [] unless handlers.respond_to?(:reverse_each)
-
+      def handler_entries(job_class, handlers)
         entries = []
         handlers.reverse_each do |class_or_name, handler|
           payload = yield(class_or_name, handler)
@@ -277,5 +306,6 @@ module ActiveJob
         candidate_class <= handler_class
       end
     end
+    # rubocop:enable Metrics/ClassLength
   end
 end
