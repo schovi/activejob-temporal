@@ -382,7 +382,6 @@ module ActiveJob
 
         define_method("#{attribute}=") do |value|
           @attributes[attribute] = value
-          validate! unless @in_configure_block
 
           value
         end

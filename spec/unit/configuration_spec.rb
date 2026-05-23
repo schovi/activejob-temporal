@@ -7,6 +7,11 @@ require "tmpdir"
 RSpec.describe ActiveJob::Temporal::Configuration do
   subject(:configuration) { described_class.new }
 
+  def expect_configuration_error(message)
+    expect { configuration.validate! }
+      .to raise_error(ActiveJob::Temporal::ConfigurationError, message)
+  end
+
   describe "defaults" do
     it "sets the Temporal endpoint" do
       expect(configuration.target).to eq("127.0.0.1:7233")
@@ -405,18 +410,21 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects non-hash values" do
-      expect { configuration.priority_task_queues = "high_priority" }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Priority task queues must be a hash/)
+      configuration.priority_task_queues = "high_priority"
+
+      expect_configuration_error(/Priority task queues must be a hash/)
     end
 
     it "rejects non-integer priority keys" do
-      expect { configuration.priority_task_queues = { high: "high_priority" } }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /priority keys must be integers/)
+      configuration.priority_task_queues = { high: "high_priority" }
+
+      expect_configuration_error(/priority keys must be integers/)
     end
 
     it "rejects blank task queue names" do
-      expect { configuration.priority_task_queues = { 10 => " " } }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /task queue names must be present/)
+      configuration.priority_task_queues = { 10 => " " }
+
+      expect_configuration_error(/task queue names must be present/)
     end
   end
 
@@ -430,8 +438,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects blank task queue names" do
-      expect { configuration.dead_letter_queue = " " }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter queue must be present/)
+      configuration.dead_letter_queue = " "
+
+      expect_configuration_error(/Dead letter queue must be present/)
     end
   end
 
@@ -448,16 +457,17 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects zero and negative thresholds" do
       configuration.dead_letter_queue = "failed_jobs"
 
-      expect { configuration.dead_letter_after_attempts = 0 }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter after attempts must be greater than 0/)
+      configuration.dead_letter_after_attempts = 0
+      expect_configuration_error(/Dead letter after attempts must be greater than 0/)
 
-      expect { configuration.dead_letter_after_attempts = -1 }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter after attempts must be greater than 0/)
+      configuration.dead_letter_after_attempts = -1
+      expect_configuration_error(/Dead letter after attempts must be greater than 0/)
     end
 
     it "requires a dead letter queue when a threshold is configured" do
-      expect { configuration.dead_letter_after_attempts = 3 }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /requires dead_letter_queue/)
+      configuration.dead_letter_after_attempts = 3
+
+      expect_configuration_error(/requires dead_letter_queue/)
     end
   end
 
@@ -474,16 +484,17 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "rejects zero and negative durations" do
       configuration.dead_letter_queue = "failed_jobs"
 
-      expect { configuration.dead_letter_auto_discard_after = 0 }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter auto discard after must be positive/)
+      configuration.dead_letter_auto_discard_after = 0
+      expect_configuration_error(/Dead letter auto discard after must be positive/)
 
-      expect { configuration.dead_letter_auto_discard_after = -1 }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Dead letter auto discard after must be positive/)
+      configuration.dead_letter_auto_discard_after = -1
+      expect_configuration_error(/Dead letter auto discard after must be positive/)
     end
 
     it "requires a dead letter queue when configured" do
-      expect { configuration.dead_letter_auto_discard_after = 1.day }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /requires dead_letter_queue/)
+      configuration.dead_letter_auto_discard_after = 1.day
+
+      expect_configuration_error(/requires dead_letter_queue/)
     end
   end
 
@@ -497,8 +508,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects unsupported providers" do
-      expect { configuration.metrics_provider = :statsd }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Metrics provider must be one of/)
+      configuration.metrics_provider = :statsd
+
+      expect_configuration_error(/Metrics provider must be one of/)
     end
   end
 
@@ -512,8 +524,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects invalid ports" do
-      expect { configuration.metrics_port = 70_000 }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Metrics port must be between 1 and 65535/)
+      configuration.metrics_port = 70_000
+
+      expect_configuration_error(/Metrics port must be between 1 and 65535/)
     end
   end
 
@@ -527,8 +540,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects non-boolean values" do
-      expect { configuration.metrics_allow_public_bind = "true" }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Metrics allow public bind must be true or false/)
+      configuration.metrics_allow_public_bind = "true"
+
+      expect_configuration_error(/Metrics allow public bind must be true or false/)
     end
   end
 
@@ -542,8 +556,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects non-boolean values" do
-      expect { configuration.audit_log = "true" }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Audit log must be true or false/)
+      configuration.audit_log = "true"
+
+      expect_configuration_error(/Audit log must be true or false/)
     end
   end
 
@@ -559,8 +574,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects values that cannot receive info logs" do
-      expect { configuration.audit_logger = Object.new }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Audit logger must respond to #info/)
+      configuration.audit_logger = Object.new
+
+      expect_configuration_error(/Audit logger must respond to #info/)
     end
   end
 
@@ -576,13 +592,15 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects non-boolean values" do
-      expect { configuration.encrypt_payload = "true" }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encrypt payload must be true or false/)
+      configuration.encrypt_payload = "true"
+
+      expect_configuration_error(/Encrypt payload must be true or false/)
     end
 
     it "requires a primary encryption key when enabled" do
-      expect { configuration.encrypt_payload = true }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption key is required/)
+      configuration.encrypt_payload = true
+
+      expect_configuration_error(/Encryption key is required/)
     end
   end
 
@@ -604,20 +622,23 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects keys that are not valid Base64" do
-      expect { configuration.encryption_key = "not base64" }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption key must be a Base64-encoded 32-byte/)
+      configuration.encryption_key = "not base64"
+
+      expect_configuration_error(/Encryption key must be a Base64-encoded 32-byte/)
     end
 
     it "rejects key metadata with unsafe ids" do
-      expect { configuration.encryption_key = { id: "bad key", key: valid_encryption_key } }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption key must be a Base64-encoded 32-byte/)
+      configuration.encryption_key = { id: "bad key", key: valid_encryption_key }
+
+      expect_configuration_error(/Encryption key must be a Base64-encoded 32-byte/)
     end
 
     it "rejects Base64 keys with the wrong decoded length" do
       short_key = Base64.strict_encode64("short")
 
-      expect { configuration.encryption_key = short_key }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption key must be a Base64-encoded 32-byte/)
+      configuration.encryption_key = short_key
+
+      expect_configuration_error(/Encryption key must be a Base64-encoded 32-byte/)
     end
   end
 
@@ -642,13 +663,15 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects non-array values" do
-      expect { configuration.encryption_old_keys = valid_encryption_key }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption old keys must be an array/)
+      configuration.encryption_old_keys = valid_encryption_key
+
+      expect_configuration_error(/Encryption old keys must be an array/)
     end
 
     it "rejects arrays containing invalid keys" do
-      expect { configuration.encryption_old_keys = [valid_encryption_key, "invalid"] }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Encryption old keys must contain only/)
+      configuration.encryption_old_keys = [valid_encryption_key, "invalid"]
+
+      expect_configuration_error(/Encryption old keys must contain only/)
     end
   end
 
@@ -668,8 +691,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects unsupported payload serializers" do
-      expect { configuration.payload_serializer = :yaml }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Payload serializer is not supported/)
+      configuration.payload_serializer = :yaml
+
+      expect_configuration_error(/Payload serializer is not supported/)
     end
   end
 
@@ -689,18 +713,21 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects non-callable values" do
-      expect { configuration.workflow_id_generator = "custom-id" }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Workflow id generator must respond to #call/)
+      configuration.workflow_id_generator = "custom-id"
+
+      expect_configuration_error(/Workflow id generator must respond to #call/)
     end
 
     it "rejects callables that cannot accept a job argument" do
-      expect { configuration.workflow_id_generator = -> { "custom-id" } }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must accept one positional ActiveJob argument/)
+      configuration.workflow_id_generator = -> { "custom-id" }
+
+      expect_configuration_error(/must accept one positional ActiveJob argument/)
     end
 
     it "rejects keyword-only callables" do
-      expect { configuration.workflow_id_generator = ->(job:) { "custom:#{job.job_id}" } }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /one positional ActiveJob argument/)
+      configuration.workflow_id_generator = ->(job:) { "custom:#{job.job_id}" }
+
+      expect_configuration_error(/one positional ActiveJob argument/)
     end
   end
 
@@ -724,13 +751,15 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects unsupported limiter backends" do
-      expect { configuration.rate_limiter = Object.new }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Rate limiter must respond to #wait_time_for or #call/)
+      configuration.rate_limiter = Object.new
+
+      expect_configuration_error(/Rate limiter must respond to #wait_time_for or #call/)
     end
 
     it "rejects limiter backends that do not accept rate limits" do
-      expect { configuration.rate_limiter = -> { 0 } }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Rate limiter must accept one rate_limits argument/)
+      configuration.rate_limiter = -> { 0 }
+
+      expect_configuration_error(/Rate limiter must accept one rate_limits argument/)
     end
   end
 
@@ -744,15 +773,17 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "requires a limiter backend" do
-      expect { configuration.global_rate_limit = { limit: 100, per: :second } }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Global rate limit requires rate_limiter/)
+      configuration.global_rate_limit = { limit: 100, per: :second }
+
+      expect_configuration_error(/Global rate limit requires rate_limiter/)
     end
 
     it "rejects invalid global rate limit hashes" do
       configuration.rate_limiter = ->(_rate_limits) { 0 }
 
-      expect { configuration.global_rate_limit = { limit: 0, per: :second } }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Global rate limit must be a hash/)
+      configuration.global_rate_limit = { limit: 0, per: :second }
+
+      expect_configuration_error(/Global rate limit must be a hash/)
     end
   end
 
@@ -779,8 +810,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects invalid middleware chain replacements" do
-      expect { configuration.middleware_chain = Object.new }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Middleware chain must respond to #add and #call/)
+      configuration.middleware_chain = Object.new
+
+      expect_configuration_error(/Middleware chain must respond to #add and #call/)
     end
   end
 
@@ -794,8 +826,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects unsupported validation levels" do
-      expect { configuration.validation_level = :relaxed }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /Validation level must be one of/)
+      configuration.validation_level = :relaxed
+
+      expect_configuration_error(/Validation level must be one of/)
     end
   end
 
@@ -828,16 +861,18 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "rejects a client certificate path without a matching key path" do
       with_tls_files do |cert_path, _key_path, _root_ca_path|
-        expect { configuration.tls_cert_path = cert_path }
-          .to raise_error(ActiveJob::Temporal::ConfigurationError, /requires tls_key_path/)
+        configuration.tls_cert_path = cert_path
+
+        expect_configuration_error(/requires tls_key_path/)
       end
     end
 
     it "rejects unreadable TLS paths" do
       missing_path = File.join(Dir.tmpdir, "missing-root-ca.pem")
 
-      expect { configuration.tls_server_root_ca_cert_path = missing_path }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /readable, non-symlink file/)
+      configuration.tls_server_root_ca_cert_path = missing_path
+
+      expect_configuration_error(/readable, non-symlink file/)
     end
 
     it "rejects symlink TLS paths" do
@@ -855,18 +890,21 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "rejects certificate watching when no TLS file paths are configured" do
-      expect { configuration.tls_cert_watch = true }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /requires at least one TLS certificate path/)
+      configuration.tls_cert_watch = true
+
+      expect_configuration_error(/requires at least one TLS certificate path/)
     end
 
     it "rejects non-boolean certificate watching values" do
-      expect { configuration.tls_cert_watch = "true" }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be true or false/)
+      configuration.tls_cert_watch = "true"
+
+      expect_configuration_error(/must be true or false/)
     end
 
     it "rejects blank TLS domain overrides" do
-      expect { configuration.tls_domain = " " }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be present/)
+      configuration.tls_domain = " "
+
+      expect_configuration_error(/must be present/)
     end
 
     it "accepts trappable TLS reload signal names" do
@@ -877,8 +915,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
     it "rejects invalid or reserved TLS reload signal names" do
       %w[HUP! HUP123 9 CHLD INT KILL PIPE QUIT STOP TERM].each do |signal_name|
-        expect { configuration.tls_reload_signal = signal_name }
-          .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be a signal name/)
+        configuration.tls_reload_signal = signal_name
+
+        expect_configuration_error(/must be a signal name/)
       end
     end
   end
@@ -921,6 +960,15 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.respond_to?(:namespace)).to be(true)
       expect(configuration.respond_to?(:namespace=)).to be(true)
     end
+
+    it "defers validation for known attribute setters" do
+      allow(configuration).to receive(:validate!)
+
+      configuration.target = "invalid target"
+
+      expect(configuration).not_to have_received(:validate!)
+      expect(configuration.target).to eq("invalid target")
+    end
   end
 
   describe "#default_activity_timeout=" do
@@ -930,15 +978,17 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "raises when duration is zero or negative" do
-      expect { configuration.default_activity_timeout = 0 }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be positive/)
-      expect { configuration.default_activity_timeout = -5 }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be positive/)
+      configuration.default_activity_timeout = 0
+      expect_configuration_error(/must be positive/)
+
+      configuration.default_activity_timeout = -5
+      expect_configuration_error(/must be positive/)
     end
 
     it "raises when value cannot be coerced into a duration" do
-      expect { configuration.default_activity_timeout = Object.new }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be a duration/)
+      configuration.default_activity_timeout = Object.new
+
+      expect_configuration_error(/must be a duration/)
     end
   end
 
@@ -949,13 +999,15 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "raises when duration is zero or negative" do
-      expect { configuration.default_retry_initial_interval = 0.seconds }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be positive/)
+      configuration.default_retry_initial_interval = 0.seconds
+
+      expect_configuration_error(/must be positive/)
     end
 
     it "raises when value lacks numeric semantics" do
-      expect { configuration.default_retry_initial_interval = Object.new }
-        .to raise_error(ActiveJob::Temporal::ConfigurationError, /must be a duration/)
+      configuration.default_retry_initial_interval = Object.new
+
+      expect_configuration_error(/must be a duration/)
     end
   end
 
