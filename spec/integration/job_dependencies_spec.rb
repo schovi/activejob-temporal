@@ -52,6 +52,52 @@ RSpec.describe "ActiveJob Temporal job dependencies", :integration do
     expect(sequence.index("parent_completed")).to be < sequence.index("child_started")
   end
 
+  it "waits for every independently enqueued dependency before executing" do
+    stub_const("FirstDependencyParentIntegrationJob", Class.new(ActiveJob::Base) do
+      def perform
+        TestState.instance.test_result ||= []
+        TestState.instance.test_result << "first_parent_started"
+        sleep 0.3
+        TestState.instance.test_result << "first_parent_completed"
+      end
+    end)
+    stub_const("SecondDependencyParentIntegrationJob", Class.new(ActiveJob::Base) do
+      def perform
+        TestState.instance.test_result ||= []
+        TestState.instance.test_result << "second_parent_started"
+        sleep 0.1
+        TestState.instance.test_result << "second_parent_completed"
+      end
+    end)
+    stub_const("FanInDependencyChildIntegrationJob", Class.new(ActiveJob::Base) do
+      def perform
+        TestState.instance.test_result ||= []
+        TestState.instance.test_result << "dependent_started"
+      end
+    end)
+    stub_const("ActiveJob::Temporal::Workflows::WorkflowDependencies::DEPENDENCY_WAIT_INTERVAL", 0.1)
+
+    task_queue = "dependency-fanin-test-#{SecureRandom.hex(4)}"
+    @worker_thread = start_worker(task_queue)
+    sleep 0.5
+
+    first_parent_job = FirstDependencyParentIntegrationJob.set(queue: task_queue).perform_later
+    second_parent_job = SecondDependencyParentIntegrationJob.set(queue: task_queue).perform_later
+    child_job = FanInDependencyChildIntegrationJob
+                .set(queue: task_queue, depends_on: [first_parent_job, second_parent_job])
+                .perform_later
+    @workflow_ids << ActiveJob::Temporal::Adapter.build_workflow_id(first_parent_job)
+    @workflow_ids << ActiveJob::Temporal::Adapter.build_workflow_id(second_parent_job)
+    @workflow_ids << ActiveJob::Temporal::Adapter.build_workflow_id(child_job)
+
+    wait_for_sequence("dependent_started")
+
+    sequence = TestState.instance.test_result
+    dependent_index = sequence.index("dependent_started")
+    expect(sequence.index("first_parent_completed")).to be < dependent_index
+    expect(sequence.index("second_parent_completed")).to be < dependent_index
+  end
+
   private
 
   def start_worker(task_queue)

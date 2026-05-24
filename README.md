@@ -148,12 +148,6 @@ end
 
 Workers can also read environment variables such as `ACTIVEJOB_TEMPORAL_TARGET`, `ACTIVEJOB_TEMPORAL_NAMESPACE`, `ACTIVEJOB_TEMPORAL_TASK_QUEUE`, `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`, `ACTIVEJOB_TEMPORAL_METRICS_PORT`, and TLS certificate settings. See [Worker Setup](docs/worker_setup.md) for the worker-focused list.
 
-## Current Constraints
-
-- Chains are linear. Use child workflows for parent-owned fan-out and dependencies for independently enqueued job gates.
-- Cancellation inside running Ruby job code is cooperative. Long-running activities need heartbeats or explicit cancellation checks.
-- Nexus remains an explicit workflow-layer integration. Ordinary ActiveJob execution stays activity-based. See [Nexus Integration](docs/nexus.md).
-
 ## Documentation
 
 Start with [docs/README.md](docs/README.md) for the complete documentation map.

@@ -63,6 +63,18 @@ result.failures.map(&:to_h)
 
 Bulk enqueue starts one workflow per job. It is not a single Temporal multi-start RPC.
 
+## Choosing An Orchestration Pattern
+
+Use the smallest primitive that matches ownership and data flow:
+
+| Pattern | Use when | Execution shape |
+| --- | --- | --- |
+| `set(chain:)` | One job should run after another in the same workflow | Linear sequence. Each step receives the previous result. |
+| `set(child_workflows:)` | A parent job owns follow-up work and should wait for child results | Parent-owned fan-out. Parent cancellation requests child cancellation. |
+| `set(depends_on:)` | A job was enqueued independently and another job should wait for it | External gate. The dependent workflow waits before its job activity starts. |
+
+These primitives intentionally stop short of a general DAG API. Model branching work as child workflows when the parent owns the children, or as independently enqueued jobs with dependency gates when jobs should keep separate lifecycle ownership.
+
 ## Job Chaining
 
 Use `set(chain:)` when one job should run after another in the same Temporal workflow. Each step runs as a separate `AjRunnerActivity`, and each step receives the previous job's return value as its single argument.
