@@ -20,7 +20,7 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       allow(client).to receive(:start_workflow).and_return("workflow-handle")
       allow(ActiveJob::Temporal::Logger).to receive(:log_event)
       allow(ActiveJob::Temporal::AuditLog).to receive(:record)
-      allow(ActiveJob::Temporal::Metrics).to receive(:record_enqueue)
+      allow(ActiveJob::Temporal::Observability).to receive(:emit)
     end
 
     it "delegates to client.start_workflow" do
@@ -29,12 +29,19 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       expect(client).to have_received(:start_workflow).once
     end
 
-    it "records enqueue metrics after a workflow starts" do
+    it "emits enqueue observability after a workflow starts" do
       enqueuer.enqueue(job)
 
-      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
-        job: job,
-        duplicate: false
+      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        :enqueue,
+        hash_including(
+          job_class: "SimpleJob",
+          job_id: "test-job-id",
+          queue: "default",
+          workflow_id: "ajwf:SimpleJob:test-job-id",
+          task_queue: "default",
+          duplicate: false
+        )
       )
     end
 
@@ -220,9 +227,15 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
 
       enqueuer.enqueue(priority_job)
 
-      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
-        job: priority_job,
-        duplicate: false
+      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        :enqueue,
+        hash_including(
+          job_class: "PriorityMetricJob",
+          job_id: "priority-metric-job-id",
+          queue: "default",
+          task_queue: "high_priority",
+          duplicate: false
+        )
       )
     end
 
@@ -264,9 +277,13 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       result = enqueuer.enqueue(job)
 
       expect(result).to be_nil
-      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
-        job: job,
-        duplicate: true
+      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        :enqueue,
+        hash_including(
+          job_class: "SimpleJob",
+          job_id: "test-job-id",
+          duplicate: true
+        )
       )
       expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
         "job.enqueued",
@@ -288,9 +305,9 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       result = enqueuer.enqueue(job)
 
       expect(result).to be_nil
-      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
-        job: job,
-        duplicate: true
+      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        :enqueue,
+        hash_including(job_class: "SimpleJob", job_id: "test-job-id", duplicate: true)
       )
     end
 
@@ -308,9 +325,9 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       result = enqueuer.enqueue(job)
 
       expect(result).to be_nil
-      expect(ActiveJob::Temporal::Metrics).to have_received(:record_enqueue).with(
-        job: job,
-        duplicate: true
+      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        :enqueue,
+        hash_including(job_class: "SimpleJob", job_id: "test-job-id", duplicate: true)
       )
     end
 
@@ -430,7 +447,7 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       allow(client).to receive(:start_workflow).and_return("workflow-handle")
       allow(ActiveJob::Temporal::Logger).to receive(:log_event)
       allow(ActiveJob::Temporal::AuditLog).to receive(:record)
-      allow(ActiveJob::Temporal::Metrics).to receive(:record_enqueue)
+      allow(ActiveJob::Temporal::Observability).to receive(:emit)
     end
 
     it "enqueues multiple jobs and returns per-job success results" do

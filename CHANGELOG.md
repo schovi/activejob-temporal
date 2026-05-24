@@ -58,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <!-- github_changelog_generator:end -->
 
 ### Changed
+- Replace Prometheus-specific metrics configuration with optional observability adapters backed by Rails notifications.
 - Reconfirm Ruby 4.0+ as the active repository baseline for local tooling, CI, dependency setup, and validation.
 - Migrate the supported Ruby baseline and CI validation target to Ruby 4.0+.
 - Pin the repository Ruby version for local development and document Ruby 4.0.3 validation commands.
@@ -72,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Declare `concurrent-ruby` as an explicit runtime dependency.
 
 ### Added
+- Optional Prometheus, OpenTelemetry, and Datadog observability adapters with trace context propagation through job payloads.
 - Signal/query APIs via `ActiveJob::Temporal.signal` and `ActiveJob::Temporal.query`, with built-in pause/resume workflow state and deterministic custom job handlers.
 - Child workflow orchestration via `set(child_workflows:)`, with parent-owned child workflow IDs, cancellation propagation, result collection, and chain handoff.
 - Global and per-job rate limiting with a pluggable limiter backend and durable workflow waits.
@@ -87,7 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conditional enqueueing via `perform_later_if` for callable or class-method conditions.
 - Optional worker health check endpoint via `temporal-worker --health-check-port PORT`.
 - Priority-based task queue routing via `config.priority_task_queues`.
-- Built-in Prometheus metrics and worker scrape endpoint via `temporal-worker --metrics-port PORT`.
+- Optional Prometheus metrics adapter and worker scrape endpoint via `temporal-worker --metrics-port PORT`.
 - Configuration validation levels via `validation_level` for strict, warning-only, or skipped validation.
 - Custom job search tags via `set(tags:)` and the `ajTags` Temporal search attribute.
 - Recurring job declarations and explicit Temporal Schedule registration via `schedule` and `create_temporal_schedule`.

@@ -6,8 +6,8 @@ require "timeout"
 
 RSpec.describe ActiveJob::Temporal::MetricsServer do
   let(:provider) do
-    instance_double(
-      ActiveJob::Temporal::Metrics::Prometheus,
+    double(
+      "PrometheusProvider",
       render: "# TYPE activejob_temporal_active_workers gauge\nactivejob_temporal_active_workers 1.0\n"
     )
   end

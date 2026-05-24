@@ -39,11 +39,7 @@ The canonical machine-readable schema for all configuration options is available
 | `audit_log` | Boolean | `false` | Enables structured job lifecycle audit events. |
 | `audit_logger` | `Logger` or `nil` | `nil` | Optional destination for audit events. Falls back to `logger`. |
 | `validation_level` | Symbol | `:strict` | Controls configuration validation: `:strict` raises, `:warn` logs warnings, `:none` skips validation. |
-| `enable_tracing` | Boolean | `true` | Enables instrumentation hooks that emit OpenTelemetry spans. |
-| `metrics_provider` | Symbol | `:none` | Metrics provider. Set to `:prometheus` to collect built-in Prometheus metrics. |
-| `metrics_port` | Integer or `nil` | `nil` | Optional worker HTTP port for Prometheus metrics at `GET /metrics`. |
-| `metrics_bind` | String | `"127.0.0.1"` | Bind address for the Prometheus metrics endpoint. |
-| `metrics_allow_public_bind` | Boolean | `false` | Allows the unauthenticated metrics endpoint to bind a non-loopback address. Use only behind network controls. |
+| `observability` | `ActiveJob::Temporal::Observability::Configuration` | Empty configuration | Optional Prometheus, OpenTelemetry, Datadog, or custom observability adapters. Rails `ActiveSupport::Notifications` events are always emitted. |
 | `middleware_chain` | `ActiveJob::Temporal::Middleware::Chain` | Empty chain | Ordered middleware chain used by `config.add_middleware` to wrap job execution inside activities. |
 | `max_payload_size_kb` | Integer | `250` | Maximum allowed size (in kilobytes) for serialized job payloads before raising `ActiveJob::SerializationError`. |
 | `payload_serializer` | Symbol | `:json` | Serializer for job execution payloads. Supports `:json`, `:message_pack`, `:msgpack`, and `:marshal`. |
@@ -87,10 +83,9 @@ Configuration can also be set via environment variables for 12-factor app compli
 | `ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER` | `payload_serializer` | Symbol | `:json` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | `max_concurrent_activities` | Integer | `100` |
 | `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | `max_concurrent_workflow_tasks` | Integer | `5` |
-| `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | `metrics_provider` | Symbol | `:none` |
-| `ACTIVEJOB_TEMPORAL_METRICS_PORT` | `metrics_port` | Integer | `nil` |
-| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | `metrics_bind` | String | `"127.0.0.1"` |
-| `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND` | `metrics_allow_public_bind` | Boolean | `false` |
+| `ACTIVEJOB_TEMPORAL_METRICS_PORT` | Prometheus worker CLI override | Integer | `nil` |
+| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | Prometheus worker CLI override | String | Adapter/default bind |
+| `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND` | Prometheus worker CLI override | Boolean | Adapter/default opt-in |
 | `ACTIVEJOB_TEMPORAL_AUDIT_LOG` | `audit_log` | Boolean | `false` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE` | `dead_letter_queue` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS` | `dead_letter_after_attempts` | Integer | `nil` |
@@ -132,11 +127,9 @@ ActiveJob::Temporal.configure do |config|
 
   # Other settings
   config.validation_level = :strict
-  config.enable_tracing = false
   config.audit_log = true
   config.audit_logger = Logger.new("log/activejob_temporal_audit.log")
-  config.metrics_provider = :prometheus
-  config.metrics_port = 9394
+  config.observability.use :prometheus
   config.max_payload_size_kb = 512
   config.payload_serializer = :json
   config.encrypt_payload = true
@@ -195,27 +188,29 @@ Priority mapping keys must be integers because ActiveJob priorities are numeric.
 
 ## Prometheus Metrics
 
-Set `metrics_provider` to `:prometheus` to collect built-in metrics:
+Require and enable the Prometheus adapter to collect built-in metrics:
 
 ```ruby
+require "activejob/temporal/observability/prometheus"
+
 ActiveJob::Temporal.configure do |config|
-  config.metrics_provider = :prometheus
-  config.metrics_port = 9394
-  config.metrics_bind = "127.0.0.1"
+  config.observability.use :prometheus do |prometheus|
+    prometheus.metrics_server.port = 9394
+    prometheus.metrics_server.bind = "127.0.0.1"
+  end
 end
 ```
 
-The worker can also enable the scrape endpoint from CLI flags or environment variables:
+The worker can override the scrape endpoint from CLI flags or environment variables after the adapter is enabled:
 
 ```bash
-ACTIVEJOB_TEMPORAL_METRICS_PROVIDER=prometheus \
 ACTIVEJOB_TEMPORAL_METRICS_PORT=9394 \
 bundle exec temporal-worker
 
 bundle exec temporal-worker --metrics-port 9394
 ```
 
-`metrics_provider` accepts `:none` or `:prometheus`. `metrics_port` is optional; when set, the worker exposes `GET /metrics`. `metrics_bind` defaults to localhost. Use `0.0.0.0` with `metrics_allow_public_bind = true` only when Prometheus runs outside the worker process namespace and network controls prevent untrusted access. Enqueue and payload size metrics are recorded by the process that calls `perform_later`, so expose `ActiveJob::Temporal::Metrics.render` from that process if Prometheus should scrape those series.
+`metrics_server.port` is optional; when set, the worker exposes `GET /metrics`. `metrics_server.bind` defaults to localhost. Use `0.0.0.0` with `metrics_server.allow_public_bind = true` only when Prometheus runs outside the worker process namespace and network controls prevent untrusted access. Enqueue and payload size metrics are recorded by the process that calls `perform_later`, so expose the configured Prometheus adapter's `render` output from that process if Prometheus should scrape those series.
 
 See the [Metrics Guide](metrics.md) for metric names, scrape configuration, and Grafana dashboard setup.
 

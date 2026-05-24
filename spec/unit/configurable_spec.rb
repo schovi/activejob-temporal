@@ -48,7 +48,7 @@ RSpec.describe ActiveJob::Temporal do
         config.default_retry_backoff = 3.0
         config.default_retry_max_attempts = 4
         config.logger = custom_logger
-        config.enable_tracing = false
+        config.observability = ActiveJob::Temporal::Observability::Configuration.new
         config.validation_level = :warn
       end
 
@@ -61,7 +61,7 @@ RSpec.describe ActiveJob::Temporal do
       expect(configured.default_retry_backoff).to eq(3.0)
       expect(configured.default_retry_max_attempts).to eq(4)
       expect(configured.logger).to be(custom_logger)
-      expect(configured.enable_tracing).to be(false)
+      expect(configured.observability).to be_a(ActiveJob::Temporal::Observability::Configuration)
       expect(configured.validation_level).to be(:warn)
     end
 

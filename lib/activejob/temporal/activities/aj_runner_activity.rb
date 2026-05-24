@@ -108,7 +108,7 @@ module ActiveJob
           deserialized_payload = Payload.deserialize_payload(payload, encryption_context: activity_encryption_context)
           audit_context = audit_started(deserialized_payload)
 
-          result = Metrics.instrument_perform(deserialized_payload) do
+          result = instrument_perform(deserialized_payload) do
             args = raw_arguments.nil? ? Payload.deserialize_payload_args(deserialized_payload) : Array(raw_arguments)
             job_class = constantize_job_class(deserialized_payload)
             job = job_class.new
@@ -121,7 +121,7 @@ module ActiveJob
           result
         rescue StandardError => e
           audit_failed(audit_context || empty_audit_context, e)
-          Metrics.record_retry(deserialized_payload || payload, e)
+          record_retry_observability(deserialized_payload || payload, e)
           handle_exception(job_class, e)
         ensure
           clear_idempotency_key
@@ -142,6 +142,19 @@ module ActiveJob
           ActiveJob::Temporal.config.middleware_chain.call(job) do
             job.perform(*args)
           end
+        end
+
+        def instrument_perform(payload, &)
+          Observability.instrument(:perform, Observability.attributes_from_payload(payload), &)
+        end
+
+        def record_retry_observability(payload, error)
+          return unless Observability.retry_attempt?
+
+          Observability.emit(
+            :retry,
+            Observability.attributes_from_payload(payload, error: error.class.name)
+          )
         end
 
         def audit_started(payload)

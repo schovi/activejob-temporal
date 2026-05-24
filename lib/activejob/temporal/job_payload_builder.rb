@@ -6,6 +6,7 @@ require_relative "job_payload_chain_builder"
 require_relative "job_payload_dependencies"
 require_relative "job_payload_rate_limits"
 require_relative "job_payload_workflow_interactions"
+require_relative "observability"
 require_relative "retry_mapper"
 
 module ActiveJob
@@ -32,6 +33,7 @@ module ActiveJob
       def build(job, scheduled_at: nil, encryption_context: nil)
         payload = base_payload_for(job, scheduled_at)
         payload[:default_activity_options] = default_activity_options
+        Observability.inject_trace_context(payload, observability_attributes_for(job, encryption_context))
 
         apply_retry_policy(payload, job)
         apply_temporal_options(payload, job.class)
@@ -80,6 +82,15 @@ module ActiveJob
           job_id: job.job_id,
           queue_name: job.queue_name
         }
+      end
+
+      def observability_attributes_for(job, encryption_context)
+        Observability.attributes_from_job(
+          job,
+          workflow_id: encryption_context&.fetch(:workflow_id, nil),
+          namespace: @config.namespace,
+          task_queue: Adapter.resolve_task_queue(job, config: @config)
+        )
       end
 
       def transport_payload(payload, job, scheduled_at, encryption_context)

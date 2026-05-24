@@ -312,56 +312,15 @@ attributes:
       env_var_name: null
       example: ":warn"
 
-    - name: enable_tracing
-      type: Boolean
-      default: true
+    - name: observability
+      type: Observability::Configuration
+      default: "empty configuration"
       validation_rules:
-        - "Must be boolean (true or false)"
-        - "No other validation performed"
-      description: "Enable OpenTelemetry distributed tracing instrumentation. When enabled, the adapter emits spans for workflow and activity execution."
+        - "Must respond to validate!"
+        - "Adapters are enabled explicitly through config.observability.use"
+      description: "Optional Prometheus, OpenTelemetry, Datadog, or custom observability adapters. ActiveSupport::Notifications events are always emitted."
       env_var_name: null
-      example: false
-
-    - name: metrics_provider
-      type: Symbol
-      default: ":none"
-      validation_rules:
-        - "Must be one of: :none, :prometheus"
-        - ":none disables built-in metrics"
-        - ":prometheus records built-in Prometheus metrics"
-      description: "Metrics provider for built-in job and worker metrics."
-      env_var_name: ACTIVEJOB_TEMPORAL_METRICS_PROVIDER
-      example: ":prometheus"
-
-    - name: metrics_port
-      type: Integer
-      default: null
-      validation_rules:
-        - "Optional field, can be nil"
-        - "When provided, must be between 1 and 65535"
-      description: "Optional HTTP port for the worker Prometheus scrape endpoint at GET /metrics."
-      env_var_name: ACTIVEJOB_TEMPORAL_METRICS_PORT
-      example: 9394
-
-    - name: metrics_bind
-      type: String
-      default: "127.0.0.1"
-      validation_rules:
-        - "Must be present"
-        - "Non-loopback addresses require metrics_allow_public_bind"
-      description: "Bind address for the worker Prometheus metrics endpoint."
-      env_var_name: ACTIVEJOB_TEMPORAL_METRICS_BIND
-      example: "0.0.0.0"
-
-    - name: metrics_allow_public_bind
-      type: Boolean
-      default: false
-      validation_rules:
-        - "Must be boolean (true or false)"
-        - "Set true only when the metrics endpoint is protected from untrusted networks"
-      description: "Allows the unauthenticated worker Prometheus metrics endpoint to bind a non-loopback address."
-      env_var_name: ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND
-      example: true
+      example: "config.observability.use :prometheus"
 
     - name: middleware_chain
       type: Middleware::Chain
@@ -527,11 +486,7 @@ examples:
       audit_log: false
       audit_logger: null
       validation_level: ":strict"
-      enable_tracing: true
-      metrics_provider: ":none"
-      metrics_port: null
-      metrics_bind: "127.0.0.1"
-      metrics_allow_public_bind: false
+      observability: "empty"
       middleware_chain: "empty"
       max_payload_size_kb: 250
       payload_serializer: ":json"
@@ -574,11 +529,7 @@ examples:
       audit_log: true
       audit_logger: "Logger.new('log/activejob_temporal_audit.log')"
       validation_level: ":strict"
-      enable_tracing: true
-      metrics_provider: ":prometheus"
-      metrics_port: 9394
-      metrics_bind: "127.0.0.1"
-      metrics_allow_public_bind: false
+      observability: "prometheus"
       middleware_chain: "empty"
       max_payload_size_kb: 250
       payload_serializer: ":json"
@@ -608,8 +559,7 @@ examples:
         config.default_retry_max_attempts = 3
         config.audit_log = true
         config.audit_logger = Logger.new("log/activejob_temporal_audit.log")
-        config.metrics_provider = :prometheus
-        config.metrics_port = 9394
+        config.observability.use :prometheus
         config.encrypt_payload = true
         config.encryption_key = {
           id: "2026-05",
@@ -641,11 +591,7 @@ examples:
       audit_log: true
       audit_logger: null
       validation_level: ":strict"
-      enable_tracing: true
-      metrics_provider: ":prometheus"
-      metrics_port: 9394
-      metrics_bind: "127.0.0.1"
-      metrics_allow_public_bind: false
+      observability: "prometheus"
       middleware_chain: "empty"
       max_payload_size_kb: 512
       payload_serializer: ":message_pack"
@@ -681,8 +627,7 @@ examples:
         config.payload_serializer = :message_pack
         config.max_concurrent_activities = 300
         config.max_concurrent_workflow_tasks = 25
-        config.metrics_provider = :prometheus
-        config.metrics_port = 9394
+        config.observability.use :prometheus
         config.encrypt_payload = true
         config.encryption_key = {
           id: "2026-05",
@@ -734,9 +679,7 @@ validation:
     - "encryption_old_keys - Must be an array of Base64-encoded 32-byte keys or key metadata"
     - "max_concurrent_activities - Must be > 0"
     - "max_concurrent_workflow_tasks - Must be > 0"
-    - "metrics_provider - Must be :none or :prometheus"
-    - "metrics_port - Optional, but when set must be between 1 and 65535"
-    - "metrics_bind - Must be present"
+    - "observability - Must be an observability configuration"
     - "audit_log - Must be true or false"
     - "audit_logger - Optional, but when set must respond to #info"
     - "middleware_chain - Must respond to #add and #call"
@@ -753,6 +696,7 @@ type_reference:
   Duration: "Numeric (seconds) or ActiveSupport::Duration object (e.g., 15.minutes, 30.seconds)"
   Logger: "Ruby Logger or Logger-compatible object with standard logging interface"
   Middleware::Chain: "Callable object that responds to #add and #call"
+  Observability::Configuration: "Adapter registry configured with config.observability.use"
   Array: "Ruby Array object"
 
 # Environment variable priority
@@ -796,22 +740,17 @@ environment_variables:
       example: "20"
       note: "Must be converted to integer"
 
-    - name: ACTIVEJOB_TEMPORAL_METRICS_PROVIDER
-      maps_to: metrics_provider
-      example: "prometheus"
-      note: "Must be converted to symbol"
-
     - name: ACTIVEJOB_TEMPORAL_METRICS_PORT
-      maps_to: metrics_port
+      maps_to: Prometheus adapter worker CLI override
       example: "9394"
       note: "Must be converted to integer"
 
     - name: ACTIVEJOB_TEMPORAL_METRICS_BIND
-      maps_to: metrics_bind
+      maps_to: Prometheus adapter worker CLI override
       example: "0.0.0.0"
 
     - name: ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND
-      maps_to: metrics_allow_public_bind
+      maps_to: Prometheus adapter worker CLI override
       example: "true"
       note: "Must be converted to boolean"
 

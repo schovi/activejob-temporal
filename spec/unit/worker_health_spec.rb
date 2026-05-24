@@ -14,9 +14,7 @@ RSpec.describe ActiveJob::Temporal::WorkerHealth do
   end
 
   before do
-    allow(ActiveJob::Temporal::Metrics).to receive(:record_worker_started)
-    allow(ActiveJob::Temporal::Metrics).to receive(:record_worker_stopped)
-    allow(ActiveJob::Temporal::Metrics).to receive(:record_active_tasks)
+    allow(ActiveJob::Temporal::Observability).to receive(:emit)
   end
 
   it "reports stopped state before the worker starts" do
@@ -46,7 +44,10 @@ RSpec.describe ActiveJob::Temporal::WorkerHealth do
     expect(payload[:worker_running]).to be(true)
     expect(payload[:started_at]).to eq("2026-05-20T10:00:00Z")
     expect(payload[:uptime_seconds]).to eq(12)
-    expect(ActiveJob::Temporal::Metrics).to have_received(:record_worker_started)
+    expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+      :worker_start,
+      hash_including(task_queue: "critical", namespace: "production")
+    )
   end
 
   it "tracks active activity tasks and last task start" do
@@ -61,8 +62,14 @@ RSpec.describe ActiveJob::Temporal::WorkerHealth do
     worker_health.record_task_finished!
 
     expect(worker_health.snapshot[:active_tasks]).to eq(0)
-    expect(ActiveJob::Temporal::Metrics).to have_received(:record_active_tasks).with(1)
-    expect(ActiveJob::Temporal::Metrics).to have_received(:record_active_tasks).with(0)
+    expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+      :active_tasks,
+      hash_including(task_queue: "critical", count: 1)
+    )
+    expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+      :active_tasks,
+      hash_including(task_queue: "critical", count: 0)
+    )
   end
 
   it "reports stopped after shutdown" do
@@ -71,7 +78,10 @@ RSpec.describe ActiveJob::Temporal::WorkerHealth do
 
     expect(worker_health.snapshot[:status]).to eq("stopped")
     expect(worker_health.snapshot[:worker_running]).to be(false)
-    expect(ActiveJob::Temporal::Metrics).to have_received(:record_worker_stopped)
+    expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+      :worker_stop,
+      hash_including(task_queue: "critical", namespace: "production")
+    )
   end
 
   it "wraps activity execution with health tracking" do

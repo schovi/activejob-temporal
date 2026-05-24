@@ -4,6 +4,7 @@ require "spec_helper"
 require "base64"
 require_relative "../../fixtures/sample_jobs"
 require "activejob/temporal/activities/aj_runner_activity"
+require "activejob/temporal/observability/prometheus"
 
 RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
   subject(:activity) { described_class.new }
@@ -26,8 +27,8 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_return(args)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?).and_return(false)
     allow(ActiveJob::Temporal.config).to receive(:middleware_chain).and_return(middleware_chain)
-    allow(ActiveJob::Temporal::Metrics).to receive(:instrument_perform).and_call_original
-    allow(ActiveJob::Temporal::Metrics).to receive(:record_retry)
+    allow(ActiveJob::Temporal::Observability).to receive(:instrument).and_call_original
+    allow(ActiveJob::Temporal::Observability).to receive(:emit).and_call_original
     allow(ActiveJob::Temporal::AuditLog).to receive(:record)
   end
 
@@ -149,7 +150,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
                            ])
     end
 
-    it "records job execution metrics around perform" do
+    it "records job execution observability around perform" do
       job_instance = instance_double("MetricsRunnerJob")
       class_double("MetricsRunnerJob", new: job_instance).as_stubbed_const
       payload = { "job_class" => "MetricsRunnerJob", "queue_name" => "critical" }
@@ -157,7 +158,10 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
 
       expect(activity.execute(payload)).to eq("performed")
 
-      expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(payload)
+      expect(ActiveJob::Temporal::Observability).to have_received(:instrument).with(
+        :perform,
+        hash_including(job_class: "MetricsRunnerJob", queue: "critical")
+      )
     end
 
     it "deletes external payloads after successful perform" do
@@ -198,8 +202,9 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
 
         expect(ActiveJob::Temporal::Payload).to have_received(:deserialize_payload).once
         expect(job_instance).to have_received(:perform).with(*args)
-        expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(
-          hash_including(job_class: "EncryptedRunnerJob", job_id: job.job_id, queue_name: "default")
+        expect(ActiveJob::Temporal::Observability).to have_received(:instrument).with(
+          :perform,
+          hash_including(job_class: "EncryptedRunnerJob", job_id: job.job_id, queue: "default")
         )
         expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
           "job.started",
@@ -222,8 +227,9 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(activity.execute(payload)).to eq("performed")
 
       expect(job_instance).to have_received(:perform).with(*args)
-      expect(ActiveJob::Temporal::Metrics).to have_received(:instrument_perform).with(
-        hash_including(job_class: "SerializedRunnerJob", job_id: job.job_id, queue_name: "default")
+      expect(ActiveJob::Temporal::Observability).to have_received(:instrument).with(
+        :perform,
+        hash_including(job_class: "SerializedRunnerJob", job_id: job.job_id, queue: "default")
       )
     ensure
       ActiveJob::Temporal.config.payload_serializer = :json
@@ -269,21 +275,18 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "records failed metrics for setup failures before perform starts" do
-      previous_provider = ActiveJob::Temporal.config.metrics_provider
       payload = { "job_class" => "SetupFailureJob", "queue_name" => "critical" }
       error = ArgumentError.new("bad payload")
-      ActiveJob::Temporal::Metrics.reset!
-      ActiveJob::Temporal.config.metrics_provider = :prometheus
+      adapter = ActiveJob::Temporal.config.observability.use(:prometheus)
       allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).with(payload).and_raise(error)
 
       expect { activity.execute(payload) }.to raise_error(error)
 
-      expect(ActiveJob::Temporal::Metrics.render).to include(
+      expect(adapter.render).to include(
         'activejob_temporal_jobs_failed_total{class="SetupFailureJob",queue="critical",error="ArgumentError"} 1.0'
       )
     ensure
-      ActiveJob::Temporal.config.metrics_provider = previous_provider if previous_provider
-      ActiveJob::Temporal::Metrics.reset!
+      ActiveJob::Temporal::Observability.reset!
     end
 
     it "wraps payload deserialization failures in non-retryable ApplicationError" do
@@ -374,7 +377,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(Thread.current[idempotency_key]).to be_nil
     end
 
-    it "records retry metrics for retry attempts that fail" do
+    it "records retry observability for retry attempts that fail" do
       activity_info = instance_double("Temporalio::Activity::Info", workflow_id: workflow_id, attempt: 2)
       activity_context = instance_double("Temporalio::Activity::Context", info: activity_info)
       allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
@@ -386,7 +389,10 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
 
       expect { activity.execute(payload) }.to raise_error(error)
 
-      expect(ActiveJob::Temporal::Metrics).to have_received(:record_retry).with(payload, error)
+      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        :retry,
+        hash_including(job_class: "RetryableJob", queue: "critical", error: "SampleJobError")
+      )
     end
 
     it "wraps discard_on exceptions in non-retryable ApplicationError" do

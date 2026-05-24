@@ -1,17 +1,24 @@
 # Metrics Guide
 
-`ActiveJob::Temporal` can record Prometheus metrics in any process that loads the gem. Metrics are disabled by default. The worker CLI can expose worker-process metrics at `GET /metrics`.
+`ActiveJob::Temporal` emits Rails instrumentation events in every process that loads the gem. Prometheus metrics are disabled by default and require the optional Prometheus adapter. The worker CLI can expose worker-process metrics at `GET /metrics` when that adapter is enabled.
 
 ## Enable Metrics
 
 Configure Prometheus metrics in the Rails initializer:
 
 ```ruby
+# Gemfile
+gem "prometheus-client"
+
+# config/initializers/activejob_temporal.rb
+require "activejob/temporal/observability/prometheus"
+
 ActiveJob::Temporal.configure do |config|
-  config.metrics_provider = :prometheus
-  config.metrics_port = 9394
-  config.metrics_bind = "127.0.0.1"
-  config.metrics_allow_public_bind = false
+  config.observability.use :prometheus do |prometheus|
+    prometheus.metrics_server.port = 9394
+    prometheus.metrics_server.bind = "127.0.0.1"
+    prometheus.metrics_server.allow_public_bind = false
+  end
 end
 ```
 
@@ -43,10 +50,11 @@ Metrics are process-local. Worker scrapes expose worker lifecycle, active task, 
 
 ```ruby
 get "/activejob_temporal/metrics", to: proc {
+  prometheus = ActiveJob::Temporal.config.observability.adapter(:prometheus)
   [
     200,
     { "Content-Type" => "text/plain; version=0.0.4" },
-    [ActiveJob::Temporal::Metrics.render]
+    [prometheus.render]
   ]
 }
 ```

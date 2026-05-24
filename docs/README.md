@@ -12,6 +12,7 @@ Use the root [README](../README.md) for install, first job, and a compact capabi
 ## Operations
 
 - [Performance Tuning](performance_tuning.md): workload-specific concurrency, payload optimization, timeouts, database pooling, monitoring, and queue isolation.
+- [Observability](observability.md): Rails notifications, tracing adapters, and optional Prometheus/OpenTelemetry/Datadog setup.
 - [Metrics Guide](metrics.md): Prometheus metrics, scrape endpoint setup, useful queries, and the Grafana dashboard example.
 - [Performance Benchmarks](benchmarks.md): benchmark suite coverage and baseline numbers.
 - [Security](security.md): dependency scanning, input validation, TLS notes, payload handling, logging, and reporting.

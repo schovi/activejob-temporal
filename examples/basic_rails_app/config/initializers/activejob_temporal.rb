@@ -37,9 +37,6 @@ ActiveJob::Temporal.configure do |config|
   # Logger (defaults to Rails.logger)
   config.logger = Rails.logger
 
-  # Enable OpenTelemetry tracing (default: true)
-  config.enable_tracing = true
-
   # Maximum payload size in KB (default: 250)
   # Defaults to ENV["ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB"] if not set
   config.max_payload_size_kb = ENV.fetch("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB", 250).to_i

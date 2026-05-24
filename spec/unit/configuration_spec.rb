@@ -41,8 +41,9 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.default_retry_max_attempts).to eq(1)
     end
 
-    it "enables tracing" do
-      expect(configuration.enable_tracing).to be(true)
+    it "initializes observability configuration" do
+      expect(configuration.observability).to be_a(ActiveJob::Temporal::Observability::Configuration)
+      expect(configuration.observability).not_to be_enabled
     end
 
     it "sets identity to nil by default" do
@@ -89,11 +90,8 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.dead_letter_auto_discard_after).to be_nil
     end
 
-    it "disables metrics by default" do
-      expect(configuration.metrics_provider).to be(:none)
-      expect(configuration.metrics_port).to be_nil
-      expect(configuration.metrics_bind).to eq("127.0.0.1")
-      expect(configuration.metrics_allow_public_bind).to be(false)
+    it "disables observability adapters by default" do
+      expect(configuration.observability.adapters).to eq([])
     end
 
     it "disables audit logging by default" do
@@ -294,38 +292,6 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       config = described_class.new
       expect(config.continue_as_new_history_event_threshold).to eq(10_000)
-    end
-
-    it "reads metrics provider from ACTIVEJOB_TEMPORAL_METRICS_PROVIDER" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_METRICS_PROVIDER").and_return("prometheus")
-
-      config = described_class.new
-      expect(config.metrics_provider).to be(:prometheus)
-    end
-
-    it "reads metrics port from ACTIVEJOB_TEMPORAL_METRICS_PORT and converts to integer" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_METRICS_PORT").and_return("9394")
-
-      config = described_class.new
-      expect(config.metrics_port).to eq(9394)
-    end
-
-    it "reads metrics bind address from ACTIVEJOB_TEMPORAL_METRICS_BIND" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_METRICS_BIND").and_return("0.0.0.0")
-
-      config = described_class.new
-      expect(config.metrics_bind).to eq("0.0.0.0")
-    end
-
-    it "reads metrics public bind opt-in from ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND").and_return("true")
-
-      config = described_class.new
-      expect(config.metrics_allow_public_bind).to be(true)
     end
 
     it "reads dead letter queue settings from environment variables" do
@@ -570,51 +536,20 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
   end
 
-  describe "#metrics_provider=" do
-    it "accepts prometheus and none" do
-      configuration.metrics_provider = :prometheus
-      expect(configuration.metrics_provider).to be(:prometheus)
+  describe "#observability=" do
+    it "accepts observability configuration objects" do
+      observability = ActiveJob::Temporal::Observability::Configuration.new
 
-      configuration.metrics_provider = :none
-      expect(configuration.metrics_provider).to be(:none)
+      configuration.observability = observability
+
+      expect(configuration.observability).to be(observability)
+      expect { configuration.validate! }.not_to raise_error
     end
 
-    it "rejects unsupported providers" do
-      configuration.metrics_provider = :statsd
+    it "rejects invalid observability configuration objects" do
+      configuration.observability = "bad"
 
-      expect_configuration_error(/Metrics provider must be one of/)
-    end
-  end
-
-  describe "#metrics_port=" do
-    it "accepts nil and valid TCP ports" do
-      configuration.metrics_port = nil
-      expect(configuration.metrics_port).to be_nil
-
-      configuration.metrics_port = 9394
-      expect(configuration.metrics_port).to eq(9394)
-    end
-
-    it "rejects invalid ports" do
-      configuration.metrics_port = 70_000
-
-      expect_configuration_error(/Metrics port must be between 1 and 65535/)
-    end
-  end
-
-  describe "#metrics_allow_public_bind=" do
-    it "accepts boolean values" do
-      configuration.metrics_allow_public_bind = true
-      expect(configuration.metrics_allow_public_bind).to be(true)
-
-      configuration.metrics_allow_public_bind = false
-      expect(configuration.metrics_allow_public_bind).to be(false)
-    end
-
-    it "rejects non-boolean values" do
-      configuration.metrics_allow_public_bind = "true"
-
-      expect_configuration_error(/Metrics allow public bind must be true or false/)
+      expect_configuration_error(/Observability must be an observability configuration/)
     end
   end
 

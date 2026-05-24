@@ -7,7 +7,6 @@ PATH
       concurrent-ruby (~> 1.1)
       globalid (>= 0.3)
       listen (~> 3.9)
-      prometheus-client (~> 4.2)
       temporalio (>= 1.4.0, < 1.5)
 
 GEM
@@ -223,8 +222,6 @@ GEM
       prettyprint
     prettyprint (0.2.0)
     prism (1.6.0)
-    prometheus-client (4.2.5)
-      base64
     psych (5.2.6)
       date
       stringio

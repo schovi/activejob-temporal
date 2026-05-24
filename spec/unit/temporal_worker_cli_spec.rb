@@ -34,15 +34,14 @@ RSpec.describe "temporal-worker CLI" do
     expect(stderr).to include("--allow-public-health-check-bind")
   end
 
-  it "rejects public metrics binds without explicit opt-in before connecting to Temporal" do
+  it "rejects metrics port without Prometheus adapter before connecting to Temporal" do
     _stdout, stderr, status = capture_worker(
-      "ACTIVEJOB_TEMPORAL_METRICS_PORT" => "9394",
-      "ACTIVEJOB_TEMPORAL_METRICS_BIND" => "0.0.0.0"
+      "ACTIVEJOB_TEMPORAL_METRICS_PORT" => "9394"
     )
 
     expect(status.exitstatus).to eq(1)
-    expect(stderr).to include("metrics endpoint")
-    expect(stderr).to include("--allow-public-metrics-bind")
+    expect(stderr).to include("Prometheus metrics require the Prometheus observability adapter")
+    expect(stderr).to include("config.observability.use :prometheus")
   end
 
   it "rejects an explicit missing RAILS_ROOT before connecting to Temporal" do

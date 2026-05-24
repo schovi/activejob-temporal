@@ -5,6 +5,7 @@ require "active_support/core_ext/numeric/time"
 require "active_model"
 
 require_relative "middleware"
+require_relative "observability"
 require_relative "payload_encryption"
 require_relative "payload_serializers"
 require_relative "rate_limit_options"
@@ -25,7 +26,6 @@ module ActiveJob
     class ConfigurationError < Error; end
 
     VALIDATION_LEVELS = %i[strict warn none].freeze
-    METRICS_PROVIDERS = %i[none prometheus].freeze
     PAYLOAD_SERIALIZERS = PayloadSerializers::SUPPORTED
     LOCAL_ACTIVITY_HELPERS = %i[rate_limit].freeze
     UNTRAPPABLE_SIGNALS = %w[CHLD INT KILL PIPE QUIT STOP TERM].freeze
@@ -249,38 +249,10 @@ module ActiveJob
         description: "Configuration validation behavior: :strict, :warn, or :none"
       },
 
-      enable_tracing: {
-        default: true,
-        type: :boolean,
-        description: "Enable OpenTelemetry distributed tracing"
-      },
-
-      metrics_provider: {
-        default: :none,
-        env_var: "ACTIVEJOB_TEMPORAL_METRICS_PROVIDER",
-        type: :symbol,
-        description: "Metrics provider: :none or :prometheus"
-      },
-
-      metrics_port: {
-        default: nil,
-        env_var: "ACTIVEJOB_TEMPORAL_METRICS_PORT",
-        type: :integer,
-        description: "Optional HTTP port for Prometheus metrics at /metrics"
-      },
-
-      metrics_bind: {
-        default: "127.0.0.1",
-        env_var: "ACTIVEJOB_TEMPORAL_METRICS_BIND",
-        type: :string,
-        description: "Bind address for the Prometheus metrics endpoint"
-      },
-
-      metrics_allow_public_bind: {
-        default: false,
-        env_var: "ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND",
-        type: :boolean,
-        description: "Allow the Prometheus metrics endpoint to bind non-loopback addresses"
+      observability: {
+        default: -> { Observability::Configuration.new },
+        type: :object,
+        description: "Optional observability adapters and trace propagation settings"
       },
 
       middleware_chain: {
@@ -391,8 +363,6 @@ module ActiveJob
     #   ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB,
     #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES,
     #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS,
-    #   ACTIVEJOB_TEMPORAL_METRICS_PROVIDER, ACTIVEJOB_TEMPORAL_METRICS_PORT,
-    #   ACTIVEJOB_TEMPORAL_METRICS_BIND, and ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND
     #   can provide defaults.
     #
     # @see ConfigValidator
@@ -600,12 +570,6 @@ module ActiveJob
                   message: :invalid_level
                 }
 
-      validates :metrics_provider,
-                inclusion: {
-                  in: METRICS_PROVIDERS,
-                  message: :unsupported_provider
-                }
-
       validates :payload_serializer,
                 inclusion: {
                   in: PAYLOAD_SERIALIZERS,
@@ -625,7 +589,7 @@ module ActiveJob
       validate :validate_priority_task_queues
       validate :validate_rate_limit_settings
       validate :validate_dead_letter_settings
-      validate :validate_metrics_settings
+      validate :validate_observability_settings
       validate :validate_audit_settings
       validate :validate_encryption_settings
       validate :validate_payload_storage_settings
@@ -798,29 +762,10 @@ module ActiveJob
         errors.add(:dead_letter_auto_discard_after, :requires_queue)
       end
 
-      def validate_metrics_settings
-        validate_metrics_port
-        validate_metrics_bind
-        validate_metrics_allow_public_bind
-      end
+      def validate_observability_settings
+        return if observability.respond_to?(:validate!)
 
-      def validate_metrics_port
-        return if metrics_port.nil?
-        return if metrics_port.is_a?(Integer) && metrics_port.between?(1, 65_535)
-
-        errors.add(:metrics_port, :invalid_port, value: metrics_port.inspect)
-      end
-
-      def validate_metrics_bind
-        return if metrics_bind.to_s.strip.present?
-
-        errors.add(:metrics_bind, :blank)
-      end
-
-      def validate_metrics_allow_public_bind
-        return if [true, false].include?(metrics_allow_public_bind)
-
-        errors.add(:metrics_allow_public_bind, :not_boolean, value: metrics_allow_public_bind.inspect)
+        errors.add(:observability, :invalid, value: observability.inspect)
       end
 
       def validate_audit_settings

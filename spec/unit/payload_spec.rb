@@ -60,7 +60,7 @@ RSpec.describe ActiveJob::Temporal::Payload do
     allow(ActiveJob::Temporal::Logger).to receive(:info)
     allow(ActiveJob::Temporal::Logger).to receive(:warn)
     allow(ActiveJob::Temporal::Logger).to receive(:error)
-    allow(ActiveJob::Temporal::Metrics).to receive(:observe_payload_size)
+    allow(ActiveJob::Temporal::Observability).to receive(:emit)
   end
 
   describe ".from_job" do
@@ -79,12 +79,17 @@ RSpec.describe ActiveJob::Temporal::Payload do
       expect(payload[:arguments]).to eq(ActiveJob::Arguments.serialize(job.arguments))
     end
 
-    it "records serialized payload size metrics" do
+    it "emits serialized payload size observability" do
       payload = described_class.from_job(job)
 
-      expect(ActiveJob::Temporal::Metrics).to have_received(:observe_payload_size).with(
-        payload: payload,
-        bytes: kind_of(Integer)
+      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        :payload_serialize,
+        hash_including(
+          job_class: payload[:job_class],
+          job_id: payload[:job_id],
+          queue: payload[:queue_name],
+          bytes: kind_of(Integer)
+        )
       )
     end
 
@@ -651,12 +656,16 @@ RSpec.describe ActiveJob::Temporal::Payload do
         expect(decrypted_payload[:chain]).to be_nil
       end
 
-      it "records encrypted payload size with plaintext metric labels" do
+      it "emits encrypted payload size with plaintext labels" do
         payload = described_class.from_job(job)
 
-        expect(ActiveJob::Temporal::Metrics).to have_received(:observe_payload_size).with(
-          payload: hash_including(job_class: job.class.name, queue_name: job.queue_name),
-          bytes: JSON.generate(payload).bytesize
+        expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+          :payload_serialize,
+          hash_including(
+            job_class: job.class.name,
+            queue: job.queue_name,
+            bytes: JSON.generate(payload).bytesize
+          )
         )
       end
 

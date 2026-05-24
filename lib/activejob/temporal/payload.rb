@@ -11,6 +11,7 @@ require "active_job/arguments"
 require_relative "payload_encryption"
 require_relative "payload_storage"
 require_relative "payload_serializers"
+require_relative "observability"
 
 module ActiveJob
   module Temporal
@@ -65,6 +66,7 @@ module ActiveJob
         continue_as_new
         workflow_state
         local_activity_helpers
+        observability
       ].freeze
 
       # Converts an ActiveJob instance into a serializable payload hash.
@@ -238,7 +240,10 @@ module ActiveJob
         actual_size_kb = json.bytesize / 1024.0
         usage_ratio = json.bytesize.to_f / size_limit_bytes
 
-        Metrics.observe_payload_size(payload: metrics_payload, bytes: json.bytesize)
+        Observability.emit(
+          :payload_serialize,
+          Observability.attributes_from_payload(metrics_payload, bytes: json.bytesize)
+        )
         log_payload_size(metrics_payload, actual_size_kb, max_size_kb, usage_ratio)
         return if json.bytesize <= size_limit_bytes
 

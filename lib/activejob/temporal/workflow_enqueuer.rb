@@ -4,6 +4,7 @@ require "time"
 
 require_relative "dead_letter_payload_validation"
 require_relative "job_payload_builder"
+require_relative "observability"
 require_relative "workflow_enqueuer_batch"
 require_relative "workflow_id_builder"
 
@@ -23,6 +24,7 @@ module ActiveJob
     #   config = ActiveJob::Temporal.config
     #   enqueuer = WorkflowEnqueuer.new(client, config)
     #   enqueuer.enqueue(job)
+    # rubocop:disable Metrics/ClassLength
     class WorkflowEnqueuer
       include WorkflowEnqueuerBatch
 
@@ -169,7 +171,15 @@ module ActiveJob
 
         Logger.log_event("workflow_enqueued", **attributes)
         AuditLog.record("job.enqueued", attributes)
-        Metrics.record_enqueue(job: job, duplicate: duplicate)
+        Observability.emit(
+          :enqueue,
+          Observability.attributes_from_job(
+            job,
+            workflow_id: options[:id],
+            task_queue: options[:task_queue],
+            duplicate: duplicate
+          )
+        )
       end
 
       # Builds error message for enqueue failures.
@@ -217,5 +227,6 @@ module ActiveJob
         raise ArgumentError, "scheduled_at must be an ISO8601 string or respond to to_time"
       end
     end
+    # rubocop:enable Metrics/ClassLength
   end
 end

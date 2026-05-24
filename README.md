@@ -121,7 +121,7 @@ Open Temporal UI and look for workflows named `ajwf:SendInvoiceJob:<job_id>`.
 | Cancel or inspect jobs | `cancel`, `cancel_all`, `status`, `running?` | [Usage Patterns](docs/usage_patterns.md#cancellation-and-status) |
 | Pause, resume, query, or update workflow state | `signal`, `query`, `update` | [Usage Patterns](docs/usage_patterns.md#signals-queries-and-updates) |
 | Add runtime middleware | `config.add_middleware MiddlewareClass` | [Middleware](docs/middleware.md) |
-| Expose Prometheus metrics | `metrics_provider = :prometheus` | [Metrics Guide](docs/metrics.md) |
+| Expose Prometheus metrics | `config.observability.use :prometheus` | [Metrics Guide](docs/metrics.md) |
 | Encrypt job payloads | `encrypt_payload = true` | [Configuration Reference](docs/configuration_reference.md#payload-encryption) |
 | Store large payloads externally | `payload_storage_adapter = MyPayloadStorage.new` | [Configuration Reference](docs/configuration_reference.md#payload-size-limits) |
 

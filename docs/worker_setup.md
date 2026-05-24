@@ -21,10 +21,9 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT` | No | Expose `GET /health` on the given port. Off by default. | `8080` |
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND` | No | Bind address for the health endpoint. Defaults to localhost. Non-loopback addresses require `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND=true`. | `0.0.0.0` |
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND` | No | Allow the unauthenticated health endpoint to bind a non-loopback address. Use only behind network controls. | `true` |
-| `ACTIVEJOB_TEMPORAL_METRICS_PROVIDER` | No | Metrics provider. Set to `prometheus` to collect built-in metrics. | `prometheus` |
-| `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Expose Prometheus metrics at `GET /metrics`. Off by default. | `9394` |
-| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Bind address for the metrics endpoint. Defaults to localhost. Non-loopback addresses require `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND=true`. | `0.0.0.0` |
-| `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND` | No | Allow the unauthenticated metrics endpoint to bind a non-loopback address. Use only behind network controls. | `true` |
+| `ACTIVEJOB_TEMPORAL_METRICS_PORT` | No | Override the Prometheus adapter metrics port at `GET /metrics`. Requires `config.observability.use :prometheus`. | `9394` |
+| `ACTIVEJOB_TEMPORAL_METRICS_BIND` | No | Override the Prometheus metrics bind address. Non-loopback addresses require `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND=true`. | `0.0.0.0` |
+| `ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND` | No | Allow the unauthenticated Prometheus endpoint to bind a non-loopback address. Use only behind network controls. | `true` |
 | `ACTIVEJOB_TEMPORAL_TLS_CERT_PATH` | Required for mTLS client certs | Client certificate file path. | `/etc/certs/client.pem` |
 | `ACTIVEJOB_TEMPORAL_TLS_KEY_PATH` | Required with client cert path | Client private key file path. | `/etc/certs/client-key.pem` |
 | `ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH` | No | Root CA certificate file path for self-hosted TLS. | `/etc/certs/root-ca.pem` |
@@ -56,7 +55,7 @@ The worker automatically detects your Rails environment and loads your job class
 - **`--health-check-port PORT`**: Optional HTTP health endpoint at `GET /health`. Can also be set with `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT`.
 - **`--health-check-bind HOST`**: Health endpoint bind address. Defaults to `127.0.0.1`; non-loopback addresses require `--allow-public-health-check-bind`.
 - **`--allow-public-health-check-bind`**: Allow the unauthenticated health endpoint to bind a non-loopback address. Use only behind network controls.
-- **`--metrics-port PORT`**: Optional Prometheus metrics endpoint at `GET /metrics`. Can also be set with `ACTIVEJOB_TEMPORAL_METRICS_PORT`.
+- **`--metrics-port PORT`**: Optional Prometheus metrics endpoint at `GET /metrics`. Requires the Prometheus observability adapter. Can also be set with `ACTIVEJOB_TEMPORAL_METRICS_PORT`.
 - **`--metrics-bind HOST`**: Metrics endpoint bind address. Defaults to `127.0.0.1`; non-loopback addresses require `--allow-public-metrics-bind`.
 - **`--allow-public-metrics-bind`**: Allow the unauthenticated metrics endpoint to bind a non-loopback address. Use only behind network controls.
 - **`RAILS_ROOT`**: Optional path to the Rails app. Auto-detected if omitted (uses current directory). Explicit roots are canonicalized and rejected when the app path is missing, `config/environment.rb` is missing, the environment file resolves outside the app root, or the root/config paths are writable by group or world.
@@ -99,6 +98,16 @@ bundle exec temporal-worker \
 ```
 
 **Prometheus metrics endpoint:**
+Enable the Prometheus adapter in the Rails initializer before starting the worker:
+
+```ruby
+require "activejob/temporal/observability/prometheus"
+
+ActiveJob::Temporal.configure do |config|
+  config.observability.use :prometheus
+end
+```
+
 ```bash
 bundle exec temporal-worker \
   --metrics-bind 0.0.0.0 \

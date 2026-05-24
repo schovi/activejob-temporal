@@ -1,11 +1,21 @@
 # frozen_string_literal: true
 
-require "prometheus/client"
-require "prometheus/client/formats/text"
+require_relative "../metrics_server"
+require_relative "../observability"
 
 module ActiveJob
   module Temporal
-    module Metrics
+    module Observability
+      class MetricsServerConfiguration
+        attr_accessor :port, :bind, :allow_public_bind
+
+        def initialize
+          @port = nil
+          @bind = MetricsServer::DEFAULT_BIND_ADDRESS
+          @allow_public_bind = false
+        end
+      end
+
       module PrometheusErrorLabels
         LABEL_CLASSES = [
           ActiveJob::DeserializationError,
@@ -40,46 +50,116 @@ module ActiveJob
         end
       end
 
-      class Prometheus
+      # rubocop:disable Metrics/ClassLength
+      class Prometheus < Adapter
         DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120].freeze
         PAYLOAD_SIZE_BUCKETS = [512, 1024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144,
                                 524_288, 1_048_576].freeze
 
-        attr_reader :registry
+        attr_reader :registry, :metrics_server
 
-        def initialize(registry: ::Prometheus::Client::Registry.new,
-                       monotonic_clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
+        def initialize(registry: nil, monotonic_clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
+          super(:prometheus)
           @registry = registry
           @monotonic_clock = monotonic_clock
-          register_metrics
+          @metrics_server = MetricsServerConfiguration.new
+          @server = nil
+          @registered = false
         end
 
-        def record_enqueue(job_class:, queue:, duplicate: false)
-          return if duplicate
-
-          @jobs_enqueued.increment(labels: { class: label(job_class), queue: label(queue) })
+        def start!
+          super
+          ensure_metrics_registered
+          self
         end
 
-        def observe_payload_size(job_class:, bytes:)
-          @payload_size.observe(bytes, labels: { class: label(job_class) })
+        def stop!
+          stop_metrics_server
+          super
         end
 
-        def instrument_perform(job_class:, queue:)
+        def record(event_name, payload)
+          ensure_metrics_registered
+
+          case event_name
+          when :enqueue then record_enqueue(payload)
+          when :payload_serialize then observe_payload_size(payload)
+          when :retry then record_retry(payload)
+          when :worker_start then record_worker_started
+          when :worker_stop then record_worker_stopped
+          when :active_tasks then record_active_tasks(payload[:count])
+          end
+        end
+
+        def instrument(event_name, payload)
+          return yield unless event_name == :perform
+
+          ensure_metrics_registered
           started_at = monotonic_time
 
           result = yield
-          @jobs_completed.increment(labels: { class: label(job_class), queue: label(queue) })
+          @jobs_completed.increment(labels: { class: label(payload[:job_class]), queue: label(payload[:queue]) })
           result
         rescue StandardError => e
-          @jobs_failed.increment(labels: { class: label(job_class), queue: label(queue),
-                                           error: PrometheusErrorLabels.for(e) })
+          @jobs_failed.increment(labels: {
+                                   class: label(payload[:job_class]),
+                                   queue: label(payload[:queue]),
+                                   error: PrometheusErrorLabels.for(e)
+                                 })
           raise
         ensure
-          @job_duration.observe(monotonic_time - started_at, labels: { class: label(job_class) }) if started_at
+          if started_at
+            @job_duration.observe(monotonic_time - started_at, labels: { class: label(payload[:job_class]) })
+          end
         end
 
-        def record_retry(job_class:, error:)
-          @retries.increment(labels: { class: label(job_class), error: PrometheusErrorLabels.for(error) })
+        def render
+          ensure_metrics_registered
+          ::Prometheus::Client::Formats::Text.marshal(registry)
+        end
+
+        def start_metrics_server(port: metrics_server.port,
+                                 bind_address: metrics_server.bind,
+                                 allow_public_bind: metrics_server.allow_public_bind)
+          raise ArgumentError, "Prometheus metrics server port is required" unless port
+
+          @server = MetricsServer.new(
+            port: port,
+            bind_address: bind_address,
+            allow_public_bind: allow_public_bind,
+            provider: self
+          ).start
+        end
+
+        def stop_metrics_server
+          @server&.stop
+          @server = nil
+        end
+
+        def validate_dependencies!
+          require_dependency("prometheus-client", "prometheus/client", "Prometheus")
+          require_dependency("prometheus-client", "prometheus/client/formats/text", "Prometheus")
+          @registry ||= ::Prometheus::Client::Registry.new
+          self
+        end
+
+        private
+
+        def record_enqueue(payload)
+          return if payload[:duplicate]
+
+          @jobs_enqueued.increment(labels: { class: label(payload[:job_class]), queue: label(payload[:queue]) })
+        end
+
+        def observe_payload_size(payload)
+          @payload_size.observe(payload[:bytes], labels: { class: label(payload[:job_class]) })
+        end
+
+        def record_retry(payload)
+          @retries.increment(labels: {
+                               class: label(payload[:job_class]),
+                               error: PrometheusErrorLabels.for(payload[:error])
+                             })
         end
 
         def record_worker_started
@@ -92,14 +172,16 @@ module ActiveJob
         end
 
         def record_active_tasks(count)
-          @active_tasks.set(count)
+          @active_tasks.set(count.to_i)
         end
 
-        def render
-          ::Prometheus::Client::Formats::Text.marshal(registry)
-        end
+        def ensure_metrics_registered
+          validate_dependencies!
+          return if @registered
 
-        private
+          register_metrics
+          @registered = true
+        end
 
         def register_metrics
           register_counters
@@ -175,9 +257,15 @@ module ActiveJob
         end
 
         def label(value)
-          value.to_s
+          (value || "unknown").to_s
         end
       end
+      # rubocop:enable Metrics/ClassLength
     end
   end
 end
+
+ActiveJob::Temporal::Observability.register_adapter(
+  :prometheus,
+  ActiveJob::Temporal::Observability::Prometheus
+)

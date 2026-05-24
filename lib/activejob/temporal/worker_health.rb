@@ -3,6 +3,8 @@
 require "time"
 require "temporalio/worker/interceptor"
 
+require_relative "observability"
+
 module ActiveJob
   module Temporal
     class WorkerHealth
@@ -26,14 +28,14 @@ module ActiveJob
           @started_at ||= Time.now
           @worker_running = true
         end
-        Metrics.record_worker_started
+        Observability.emit(:worker_start, observability_attributes)
       end
 
       def mark_stopped!
         @mutex.synchronize do
           @worker_running = false
         end
-        Metrics.record_worker_stopped
+        Observability.emit(:worker_stop, observability_attributes)
       end
 
       def record_task_started!(now: Time.now)
@@ -42,7 +44,7 @@ module ActiveJob
           @last_poll = now
           @active_tasks
         end
-        Metrics.record_active_tasks(active_tasks)
+        Observability.emit(:active_tasks, observability_attributes(count: active_tasks))
       end
 
       def record_task_finished!
@@ -50,7 +52,7 @@ module ActiveJob
           @active_tasks = [@active_tasks - 1, 0].max
           @active_tasks
         end
-        Metrics.record_active_tasks(active_tasks)
+        Observability.emit(:active_tasks, observability_attributes(count: active_tasks))
       end
 
       def snapshot(now: Time.now)
@@ -86,6 +88,15 @@ module ActiveJob
         return 0 unless @started_at
 
         [now - @started_at, 0].max.round
+      end
+
+      def observability_attributes(**attributes)
+        {
+          task_queue: @task_queue,
+          namespace: @namespace,
+          target: @target,
+          worker_id: Process.pid
+        }.merge(attributes)
       end
 
       class ActivityInbound < Temporalio::Worker::Interceptor::Activity::Inbound

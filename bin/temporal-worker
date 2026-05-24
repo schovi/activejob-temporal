@@ -11,6 +11,11 @@ rescue LoadError => e
   exit(1)
 end
 
+metrics_public_bind_env = ENV.fetch("ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND", nil)
+metrics_allow_public_bind = unless metrics_public_bind_env.nil?
+                              ActiveJob::Temporal::BindPolicy.allow_public_bind?(metrics_public_bind_env)
+                            end
+
 options = {
   health_check_bind: ENV.fetch(
     "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND",
@@ -21,7 +26,7 @@ options = {
   ),
   health_check_port: ENV.fetch("ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT", nil),
   metrics_bind: ENV.fetch("ACTIVEJOB_TEMPORAL_METRICS_BIND", nil),
-  metrics_allow_public_bind: nil,
+  metrics_allow_public_bind: metrics_allow_public_bind,
   metrics_port: ENV.fetch("ACTIVEJOB_TEMPORAL_METRICS_PORT", nil),
   pool_size: ENV.fetch("ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE", 1)
 }
@@ -70,13 +75,26 @@ end
 
 # Read from configuration singleton (already set by Rails initializer)
 config = ActiveJob::Temporal.config
-config.metrics_provider = :prometheus if options[:metrics_port] && config.metrics_provider == :none
 task_queue = config.task_queue
 max_concurrent_activities = config.max_concurrent_activities
 max_concurrent_workflows = config.max_concurrent_workflow_tasks
-metrics_port = options[:metrics_port] || config.metrics_port
-metrics_bind = options[:metrics_bind] || config.metrics_bind
-metrics_allow_public_bind = options[:metrics_allow_public_bind].nil? ? config.metrics_allow_public_bind : true
+prometheus_adapter = config.observability.adapter(:prometheus)
+metrics_port = options[:metrics_port] || prometheus_adapter&.metrics_server&.port
+if metrics_port && !prometheus_adapter
+  warn(
+    "Error: Prometheus metrics require the Prometheus observability adapter. " \
+    "Add `require \"activejob/temporal/observability/prometheus\"` and enable " \
+    "`config.observability.use :prometheus`."
+  )
+  exit(1)
+end
+metrics_bind = options[:metrics_bind] || prometheus_adapter&.metrics_server&.bind ||
+               ActiveJob::Temporal::MetricsServer::DEFAULT_BIND_ADDRESS
+metrics_allow_public_bind = if options[:metrics_allow_public_bind].nil?
+                              prometheus_adapter&.metrics_server&.allow_public_bind || false
+                            else
+                              options[:metrics_allow_public_bind]
+                            end
 begin
   pool_size = Integer(options[:pool_size])
 rescue ArgumentError, TypeError
@@ -209,13 +227,11 @@ end
 
 metrics_server = nil
 if metrics_port
-  config.metrics_provider = :prometheus if config.metrics_provider == :none
-  metrics_server = ActiveJob::Temporal::MetricsServer.new(
+  metrics_server = prometheus_adapter.start_metrics_server(
     port: metrics_port,
     bind_address: metrics_bind,
-    allow_public_bind: metrics_allow_public_bind,
-    provider: ActiveJob::Temporal::Metrics.provider(config)
-  ).start
+    allow_public_bind: metrics_allow_public_bind
+  )
 
   ActiveJob::Temporal::Logger.log_event(
     "metrics_server_started",

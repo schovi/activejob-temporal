@@ -41,6 +41,34 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     )
   end
 
+  it "injects observability trace context into the workflow payload" do
+    adapter_class = Class.new(ActiveJob::Temporal::Observability::Adapter) do
+      def initialize
+        super(:payload_trace_spec)
+      end
+
+      def trace_context_for_enqueue(_payload)
+        { "traceparent" => "00-trace-span-01" }
+      end
+    end
+    ActiveJob::Temporal::Observability.register_adapter(:payload_trace_spec, adapter_class)
+    ActiveJob::Temporal.config.observability.use(:payload_trace_spec)
+    job = build_job("TracePayloadBuilderJob")
+
+    payload = described_class.new(ActiveJob::Temporal.config).build(
+      job,
+      encryption_context: { namespace: "default", workflow_id: "workflow-1" }
+    )
+
+    expect(payload[:observability]).to eq(
+      "trace_context" => {
+        "payload_trace_spec" => { "traceparent" => "00-trace-span-01" }
+      }
+    )
+  ensure
+    ActiveJob::Temporal::Observability.reset!
+  end
+
   it "includes per-job temporal options" do
     job_class = Class.new(ActiveJob::Base) do
       def self.name = "ScheduledTimeoutJob"
