@@ -23,7 +23,11 @@ RSpec.describe "job payload schema" do
           "chain" => { "$ref" => "#/definitions/chain" },
           "dependencies" => { "$ref" => "#/definitions/dependencies" },
           "dependency_failure_policy" => { "type" => "string", "enum" => %w[fail ignore] },
-          "activity_task_queue" => { "type" => "string", "minLength" => 1 }
+          "activity_task_queue" => { "type" => "string", "minLength" => 1 },
+          "schedule_id" => { "type" => "string", "minLength" => 1 },
+          "schedule_workflow_id_prefix" => { "type" => "string", "minLength" => 1 },
+          "schedule_execution_job_id" => { "type" => "string", "minLength" => 1 },
+          "payload_encryption_context" => { "$ref" => "#/definitions/payload_encryption_context" }
         )
       )
     )

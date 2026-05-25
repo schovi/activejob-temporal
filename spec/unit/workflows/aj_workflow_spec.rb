@@ -71,6 +71,36 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
         end
       end
+
+      it "uses the scheduled workflow occurrence ID as the activity job identity" do
+        workflow_info = instance_double(
+          "Temporalio::Workflow::Info",
+          workflow_id: "ajschwf:reports-2024-01-01T12:00:00Z",
+          first_execution_run_id: "run-123"
+        )
+        payload = base_payload.merge(
+          "job_id" => "ajsch:reports",
+          "schedule_id" => "ajsch:reports",
+          "schedule_workflow_id_prefix" => "ajschwf:reports"
+        )
+
+        allow(Temporalio::Workflow).to receive(:info).and_return(workflow_info)
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class,
+                                                                              activity_payload,
+                                                                              _options|
+          expect(activity_payload).to include(
+            "job_id" => "ajschwf:reports-2024-01-01T12:00:00Z:run-123",
+            "schedule_execution_job_id" => "ajschwf:reports-2024-01-01T12:00:00Z:run-123",
+            "schedule_id" => "ajsch:reports"
+          )
+        end
+        expect(workflow.handle_dynamic_query("state")).to include(
+          "job_id" => "ajschwf:reports-2024-01-01T12:00:00Z:run-123"
+        )
+      end
     end
 
     context "when payload is scheduled in the future" do

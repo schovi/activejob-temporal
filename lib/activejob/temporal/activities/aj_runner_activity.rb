@@ -120,7 +120,11 @@ module ActiveJob
         def execute(payload, raw_arguments = nil)
           job_class = nil
           audit_context = nil
-          deserialized_payload = Payload.deserialize_payload(payload, encryption_context: activity_encryption_context)
+          deserialized_payload = Payload.deserialize_payload(
+            payload,
+            encryption_context: activity_encryption_context(payload)
+          )
+          apply_schedule_execution_identity(deserialized_payload)
           audit_context = audit_started(deserialized_payload)
 
           side_effects = BestEffortSideEffects.new(audit_context)
@@ -163,7 +167,7 @@ module ActiveJob
           job = deserialize_job(job_data)
           intercept_active_job_retry(job)
 
-          set_idempotency_key
+          set_idempotency_key(payload)
           perform_job(job)
         end
 
@@ -171,6 +175,20 @@ module ActiveJob
           job_data = stringify_keys(payload[:active_job] || payload["active_job"] || legacy_active_job_data(payload))
           job_data["arguments"] = ActiveJob::Arguments.serialize(Array(raw_arguments)) unless raw_arguments.nil?
           job_data
+        end
+
+        def apply_schedule_execution_identity(payload)
+          return unless payload_value(payload, :schedule_id)
+
+          execution_job_id = payload_value(payload, :schedule_execution_job_id) || activity_workflow_execution_identity
+          return unless execution_job_id
+
+          payload[:job_id] = execution_job_id
+          active_job_payload = payload[:active_job] || payload["active_job"]
+          return unless active_job_payload.is_a?(Hash)
+
+          active_job_payload["job_id"] = execution_job_id
+          active_job_payload["provider_job_id"] = execution_job_id
         end
 
         def legacy_active_job_data(payload)
@@ -295,13 +313,10 @@ module ActiveJob
         end
 
         # @api private
-        def set_idempotency_key
-          workflow_id = if defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
-                          Temporalio::Activity::Context.current.info.workflow_id
-                        else
-                          "unknown-workflow"
-                        end
-          idempotency_key = "#{workflow_id}/runner"
+        def set_idempotency_key(payload = nil)
+          identity = payload && payload_value(payload, :schedule_execution_job_id)
+          identity ||= activity_workflow_id || "unknown-workflow"
+          idempotency_key = "#{identity}/runner"
           Thread.current[IDEMPOTENCY_KEY] = idempotency_key
           Fiber[IDEMPOTENCY_KEY] = idempotency_key
         end
@@ -311,7 +326,10 @@ module ActiveJob
           Fiber[IDEMPOTENCY_KEY] = nil
         end
 
-        def activity_encryption_context
+        def activity_encryption_context(payload = nil)
+          payload_context = payload && (payload[:payload_encryption_context] || payload["payload_encryption_context"])
+          return payload_context if payload_context
+
           return unless defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
 
           info = Temporalio::Activity::Context.current.info
@@ -320,7 +338,26 @@ module ActiveJob
                       else
                         ActiveJob::Temporal.config.namespace
                       end
-          { namespace: namespace, workflow_id: info.workflow_id }
+          { namespace: namespace, workflow_id: activity_workflow_id }
+        end
+
+        def activity_workflow_id
+          return unless defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
+
+          Temporalio::Activity::Context.current.info.workflow_id
+        end
+
+        def activity_workflow_execution_identity
+          return unless defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
+
+          info = Temporalio::Activity::Context.current.info
+          [info.workflow_id, activity_workflow_run_id(info)].compact.join(":")
+        end
+
+        def activity_workflow_run_id(info)
+          return info.workflow_run_id if info.respond_to?(:workflow_run_id)
+
+          info.run_id if info.respond_to?(:run_id)
         end
 
         # Handles exceptions by checking discard_on declarations.

@@ -71,6 +71,15 @@
         "workflow_id_prefix": { "type": "string", "minLength": 1 }
       }
     },
+    "payload_encryption_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "workflow_id"],
+      "properties": {
+        "namespace": { "type": "string", "minLength": 1 },
+        "workflow_id": { "type": "string", "minLength": 1 }
+      }
+    },
     "external_temporal_options": {
       "type": "object",
       "required": ["task_queue"],
@@ -235,7 +244,11 @@
         "chain": { "$ref": "#/definitions/chain" },
         "dependencies": { "$ref": "#/definitions/dependencies" },
         "dependency_failure_policy": { "type": "string", "enum": ["fail", "ignore"] },
-        "activity_task_queue": { "type": "string", "minLength": 1 }
+        "activity_task_queue": { "type": "string", "minLength": 1 },
+        "schedule_id": { "type": "string", "minLength": 1 },
+        "schedule_workflow_id_prefix": { "type": "string", "minLength": 1 },
+        "schedule_execution_job_id": { "type": "string", "minLength": 1 },
+        "payload_encryption_context": { "$ref": "#/definitions/payload_encryption_context" }
       }
     },
     {
@@ -258,7 +271,11 @@
         "chain": { "$ref": "#/definitions/chain" },
         "dependencies": { "$ref": "#/definitions/dependencies" },
         "dependency_failure_policy": { "type": "string", "enum": ["fail", "ignore"] },
-        "activity_task_queue": { "type": "string", "minLength": 1 }
+        "activity_task_queue": { "type": "string", "minLength": 1 },
+        "schedule_id": { "type": "string", "minLength": 1 },
+        "schedule_workflow_id_prefix": { "type": "string", "minLength": 1 },
+        "schedule_execution_job_id": { "type": "string", "minLength": 1 },
+        "payload_encryption_context": { "$ref": "#/definitions/payload_encryption_context" }
       }
     },
     {
@@ -285,7 +302,11 @@
         "chain": { "$ref": "#/definitions/chain" },
         "dependencies": { "$ref": "#/definitions/dependencies" },
         "dependency_failure_policy": { "type": "string", "enum": ["fail", "ignore"] },
-        "activity_task_queue": { "type": "string", "minLength": 1 }
+        "activity_task_queue": { "type": "string", "minLength": 1 },
+        "schedule_id": { "type": "string", "minLength": 1 },
+        "schedule_workflow_id_prefix": { "type": "string", "minLength": 1 },
+        "schedule_execution_job_id": { "type": "string", "minLength": 1 },
+        "payload_encryption_context": { "$ref": "#/definitions/payload_encryption_context" }
       },
       "dependencies": {
         "payload_serializer": ["payload_serializer_version"],
@@ -311,7 +332,11 @@
         "chain": { "$ref": "#/definitions/chain" },
         "dependencies": { "$ref": "#/definitions/dependencies" },
         "dependency_failure_policy": { "type": "string", "enum": ["fail", "ignore"] },
-        "activity_task_queue": { "type": "string", "minLength": 1 }
+        "activity_task_queue": { "type": "string", "minLength": 1 },
+        "schedule_id": { "type": "string", "minLength": 1 },
+        "schedule_workflow_id_prefix": { "type": "string", "minLength": 1 },
+        "schedule_execution_job_id": { "type": "string", "minLength": 1 },
+        "payload_encryption_context": { "$ref": "#/definitions/payload_encryption_context" }
       }
     }
   ]

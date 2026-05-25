@@ -77,6 +77,12 @@ handle.trigger
 handle.delete
 ```
 
+## Schedule And Execution Identity
+
+The schedule `id` is the stable control-plane identifier. Use it to register, pause, resume, trigger, or delete the schedule. The same `id` is also kept in Temporal search attributes so all occurrences from one schedule can be grouped together.
+
+Each fire starts a separate workflow execution. Temporal uses the configured workflow ID as a prefix and appends occurrence-specific entropy when it can. ActiveJob combines the occurrence workflow ID with the workflow run ID for `job_id`, `provider_job_id`, and the job idempotency key, so even two manual triggers in the same second get distinct execution identities.
+
 ## Worker Requirement
 
 Temporal Schedules start normal `ActiveJob::Temporal::Workflows::AjWorkflow` executions. Run a worker for the schedule's task queue:

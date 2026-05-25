@@ -68,6 +68,10 @@ module ActiveJob
         workflow_state
         local_activity_helpers
         observability
+        schedule_id
+        schedule_workflow_id_prefix
+        schedule_execution_job_id
+        payload_encryption_context
       ].freeze
 
       # Converts an ActiveJob instance into a serializable payload hash.

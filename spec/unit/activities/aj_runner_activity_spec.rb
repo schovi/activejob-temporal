@@ -25,8 +25,10 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
   let(:middleware_chain) { ActiveJob::Temporal::Middleware::Chain.new }
 
   before do
-    # Mock the real SDK's Activity Context API
     ActiveJob::Temporal.config.payload_serializer = :json
+    ActiveJob::Temporal.config.encrypt_payload = false
+    ActiveJob::Temporal.config.encryption_key = nil
+    ActiveJob::Temporal.config.encryption_old_keys = []
     allow(Temporalio::Activity::Context).to receive(:exist?).and_return(true)
     allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?).and_return(false)
@@ -95,6 +97,57 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         .and_return(payload)
 
       expect(activity.execute(payload)).to eq("performed")
+    end
+
+    it "deserializes scheduled payloads with the schedule encryption context" do
+      job_class = stub_const("ScheduleContextRunnerJob", Class.new(ActiveJob::Base) do
+        def perform
+          "performed"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new).merge(
+        payload_encryption_context: { namespace: "default", workflow_id: "ajschwf:daily-report" }
+      )
+
+      expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload)
+        .with(payload, encryption_context: { namespace: "default", workflow_id: "ajschwf:daily-report" })
+        .and_return(payload)
+
+      expect(activity.execute(payload)).to eq("performed")
+    end
+
+    it "uses the scheduled workflow occurrence ID as the ActiveJob execution identity" do
+      idempotency_key_name = idempotency_key
+      job_class = stub_const("ScheduleIdentityRunnerJob", Class.new(ActiveJob::Base) do
+        class << self
+          attr_accessor :performed
+        end
+
+        define_method(:perform) do
+          self.class.performed = {
+            job_id: job_id,
+            provider_job_id: provider_job_id,
+            idempotency_key: Thread.current[idempotency_key_name]
+          }
+        end
+      end)
+      job = job_class.new
+      job.job_id = "ajsch:daily-report"
+      execution_job_id = "ajschwf:daily-report-2024-01-01T12:00:00Z"
+      allow(activity_info).to receive(:workflow_id).and_return(execution_job_id)
+      payload = ActiveJob::Temporal::Payload.from_job(job).merge(
+        schedule_id: "ajsch:daily-report",
+        schedule_workflow_id_prefix: "ajschwf:daily-report",
+        schedule_execution_job_id: execution_job_id
+      )
+
+      activity.execute(payload)
+
+      expect(job_class.performed).to eq(
+        job_id: execution_job_id,
+        provider_job_id: execution_job_id,
+        idempotency_key: "#{execution_job_id}/runner"
+      )
     end
 
     it "uses optional raw arguments instead of deserializing payload arguments" do

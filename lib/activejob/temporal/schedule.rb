@@ -92,10 +92,12 @@ module ActiveJob
       def schedule_action
         job = build_job
         workflow_id = workflow_id_prefix
+        payload = @payload_builder.build(job, encryption_context: encryption_context_for(workflow_id))
+        payload = annotate_scheduled_payload(payload, workflow_id)
 
         Temporalio::Client::Schedule::Action::StartWorkflow.new(
           Workflows::AjWorkflow,
-          @payload_builder.build(job, encryption_context: encryption_context_for(workflow_id)),
+          payload,
           id: workflow_id,
           task_queue: Adapter.resolve_task_queue(job, config: @config),
           search_attributes: search_attributes_for(job)
@@ -139,6 +141,14 @@ module ActiveJob
 
       def encryption_context_for(workflow_id)
         { namespace: @config.namespace, workflow_id: workflow_id }
+      end
+
+      def annotate_scheduled_payload(payload, workflow_id)
+        payload.merge(
+          schedule_id: id,
+          schedule_workflow_id_prefix: workflow_id,
+          payload_encryption_context: encryption_context_for(workflow_id)
+        )
       end
 
       def schedule_already_running?(error)

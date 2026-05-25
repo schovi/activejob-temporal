@@ -42,6 +42,11 @@ RSpec.describe ActiveJob::Temporal::Schedule do
     expect(temporal_schedule.action.task_queue).to eq("reports")
     expect(temporal_schedule.action.args.first[:job_class]).to eq("ScheduledReportJob")
     expect(temporal_schedule.action.args.first[:arguments]).to eq(["daily"])
+    expect(temporal_schedule.action.args.first).to include(
+      schedule_id: "ajsch:ScheduledReportJob",
+      schedule_workflow_id_prefix: "ajschwf:ajsch:ScheduledReportJob",
+      payload_encryption_context: { namespace: "default", workflow_id: "ajschwf:ajsch:ScheduledReportJob" }
+    )
   end
 
   it "creates the schedule through the Temporal client" do
@@ -136,6 +141,37 @@ RSpec.describe ActiveJob::Temporal::Schedule do
     expect(temporal_schedule.action.task_queue).to eq("billing")
   end
 
+  it "keeps the schedule ID in search attributes for occurrence grouping" do
+    schedule = described_class.new(
+      job_class,
+      cron: "0 3 * * *",
+      client: client,
+      config: config
+    )
+
+    expect(ActiveJob::Temporal::SearchAttributes).to receive(:for) do |job|
+      expect(job.job_id).to eq("ajsch:ScheduledReportJob")
+      "search-attributes"
+    end
+
+    expect(schedule.to_temporal_schedule.action.search_attributes).to eq("search-attributes")
+  end
+
+  it "lets Temporal append occurrence entropy to scheduled workflow IDs" do
+    schedule = described_class.new(
+      job_class,
+      id: "billing-reports",
+      cron: "0 3 * * *",
+      client: client,
+      config: config
+    )
+
+    temporal_schedule = schedule.to_temporal_schedule
+
+    expect(temporal_schedule.action.id).to eq("ajschwf:billing-reports")
+    expect(temporal_schedule.policy._to_proto.keep_original_workflow_id).to eq(false)
+  end
+
   it "builds encrypted payloads with the scheduled workflow context" do
     payload_builder = instance_double(ActiveJob::Temporal::JobPayloadBuilder)
     payload = { job_class: "ScheduledReportJob", job_id: "ajsch:ScheduledReportJob", queue_name: "reports" }
@@ -156,7 +192,13 @@ RSpec.describe ActiveJob::Temporal::Schedule do
 
     temporal_schedule = schedule.to_temporal_schedule
 
-    expect(temporal_schedule.action.args.first).to be(payload)
+    expect(temporal_schedule.action.args.first).to eq(
+      payload.merge(
+        schedule_id: "ajsch:ScheduledReportJob",
+        schedule_workflow_id_prefix: "ajschwf:ajsch:ScheduledReportJob",
+        payload_encryption_context: { namespace: "default", workflow_id: "ajschwf:ajsch:ScheduledReportJob" }
+      )
+    )
     expect(payload_builder).to have_received(:build).with(
       an_instance_of(job_class),
       encryption_context: { namespace: "default", workflow_id: "ajschwf:ajsch:ScheduledReportJob" }

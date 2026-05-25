@@ -151,6 +151,7 @@ module ActiveJob
         #
         # @see Activities::AjRunnerActivity#execute
         def execute(payload)
+          payload = schedule_execution_payload(payload)
           current_activity_payload = payload
           configure_workflow_state(payload)
           configure_workflow_interactions(payload)
@@ -170,6 +171,27 @@ module ActiveJob
         end
 
         private
+
+        def schedule_execution_payload(payload)
+          return payload unless payload_value(payload, :schedule_id)
+
+          execution_job_id = schedule_execution_identity
+          payload.merge(
+            "job_id" => execution_job_id,
+            "schedule_execution_job_id" => execution_job_id
+          )
+        end
+
+        def schedule_execution_identity
+          info = Temporalio::Workflow.info
+          run_id = if info.respond_to?(:first_execution_run_id)
+                     info.first_execution_run_id
+                   elsif info.respond_to?(:run_id)
+                     info.run_id
+                   end
+
+          [info.workflow_id, run_id].compact.join(":")
+        end
 
         # Extracts scheduled execution time from payload.
         # @api private
