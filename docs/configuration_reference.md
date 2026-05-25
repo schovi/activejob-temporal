@@ -315,7 +315,7 @@ Applications that use MessagePack must add `gem "msgpack"` to their own Gemfile.
 
 Set `:marshal` only for trusted deployments where all processes that can write or read workflow history run compatible Ruby and application code. Marshal payloads are Ruby-specific, can break when classes or Ruby versions change, and must never be treated as safe for untrusted Temporal histories. The adapter still serializes job arguments through `ActiveJob::Arguments` first, so Marshal does not bypass ActiveJob's supported argument types.
 
-Serializer metadata is stored with each non-JSON payload. During a rolling deploy, deploy readers first, then switch enqueueing processes to the new serializer after every worker can decode it. Existing JSON payloads continue to run without configuration changes.
+Serializer metadata is stored with each non-JSON payload, and workers use that metadata when reading existing workflow payloads. Legacy JSON payloads without serializer metadata are always read as JSON, regardless of the current `payload_serializer` setting. During a rolling deploy, deploy readers first, then switch enqueueing processes to the new serializer after every worker can decode it.
 
 ## Payload Encryption
 
