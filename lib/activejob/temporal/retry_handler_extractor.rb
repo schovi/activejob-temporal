@@ -215,9 +215,17 @@ module ActiveJob
         {
           wait: binding.local_variable_get(:wait),
           attempts: binding.local_variable_get(:attempts)
-        }
+        }.merge(exception_execution_key_from_binding(binding))
       rescue StandardError
         nil
+      end
+
+      def exception_execution_key_from_binding(binding)
+        return {} unless local_variable_defined?(binding, :exceptions)
+
+        { exception_execution_key: binding.local_variable_get(:exceptions).to_s }
+      rescue StandardError
+        {}
       end
 
       def fallback_binding_value(binding, name)

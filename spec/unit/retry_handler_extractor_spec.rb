@@ -15,6 +15,7 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
       expect(handlers.first[:exception]).to eq(SampleJobError)
       expect(handlers.first[:wait]).to eq(60.seconds)
       expect(handlers.first[:attempts]).to eq(5)
+      expect(handlers.first[:exception_execution_key]).to eq("[SampleJobError]")
     end
 
     it "memoizes retry handler extraction per job class" do

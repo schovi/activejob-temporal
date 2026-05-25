@@ -133,7 +133,6 @@ module ActiveJob
       #   To reduce payload size, prefer passing database IDs instead of full ActiveRecord
       #   objects. For example, pass user.id instead of user. This is especially important
       #   for jobs with large argument lists or complex nested objects.
-      # rubocop:disable Metrics/AbcSize
       def from_job(
         job,
         scheduled_at: nil,
@@ -145,14 +144,7 @@ module ActiveJob
         offload = options.fetch(:offload, enforce_size)
         encryption_context = options[:encryption_context]
         storage_metadata = options[:storage_metadata]
-        payload = {
-          job_class: job.class.name,
-          job_id: job.job_id,
-          queue_name: job.queue_name,
-          arguments: serialize_arguments(job.arguments || []),
-          executions: job.executions || 0,
-          exception_executions: job.exception_executions || {}
-        }
+        payload = payload_from_job_attributes(job)
         payload[:scheduled_at] = iso8601_timestamp(scheduled_at) if scheduled_at
 
         scheduled_timestamp = payload.delete(:scheduled_at)
@@ -163,7 +155,6 @@ module ActiveJob
         enforce_size!(final_payload, metrics_payload: payload, config: config) if enforce_size
         final_payload
       end
-      # rubocop:enable Metrics/AbcSize
 
       # Deserializes job arguments from a payload hash.
       #
@@ -346,6 +337,32 @@ module ActiveJob
         ActiveJob::Arguments.serialize(arguments)
       rescue StandardError => e
         raise ActiveJob::SerializationError, e.message
+      end
+
+      def serialized_active_job(job)
+        return unless job.respond_to?(:serialize)
+
+        original_arguments = job.arguments
+        job.arguments = [] if original_arguments.nil? && job.respond_to?(:arguments=)
+        job.serialize
+      ensure
+        if defined?(original_arguments) && original_arguments.nil? && job.respond_to?(:arguments=)
+          job.arguments = original_arguments
+        end
+      end
+
+      def payload_from_job_attributes(job)
+        payload = {
+          job_class: job.class.name,
+          job_id: job.job_id,
+          queue_name: job.queue_name,
+          arguments: serialize_arguments(job.arguments || []),
+          executions: job.executions || 0,
+          exception_executions: job.exception_executions || {}
+        }
+        active_job_payload = serialized_active_job(job)
+        payload[:active_job] = active_job_payload if active_job_payload
+        payload
       end
 
       # Converts a value to ISO8601 timestamp string.

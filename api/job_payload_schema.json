@@ -17,6 +17,28 @@
       "type": "array",
       "items": { "$ref": "#/definitions/rate_limit" }
     },
+    "active_job_payload": {
+      "type": "object",
+      "required": ["job_class", "job_id", "queue_name", "arguments"],
+      "additionalProperties": true,
+      "properties": {
+        "job_class": { "type": "string", "minLength": 1 },
+        "job_id": { "type": "string", "minLength": 1 },
+        "provider_job_id": { "type": ["string", "null"] },
+        "queue_name": { "type": "string", "minLength": 1 },
+        "priority": { "type": ["integer", "null"] },
+        "arguments": { "type": "array" },
+        "executions": { "type": "integer", "minimum": 0 },
+        "exception_executions": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "locale": { "type": "string" },
+        "timezone": { "type": ["string", "null"] },
+        "enqueued_at": { "type": "string", "format": "date-time" },
+        "scheduled_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
     "workflow_interactions": {
       "type": "object",
       "additionalProperties": false,
@@ -65,6 +87,7 @@
         "job_id": { "type": "string", "minLength": 1 },
         "queue_name": { "type": "string", "minLength": 1 },
         "arguments": { "type": "array" },
+        "active_job": { "$ref": "#/definitions/active_job_payload" },
         "executions": { "type": "integer", "minimum": 0 },
         "exception_executions": {
           "type": "object",
@@ -127,6 +150,7 @@
         "workflow_id": { "type": "string", "minLength": 1 },
         "queue_name": { "type": "string", "minLength": 1 },
         "arguments": { "type": "array" },
+        "active_job": { "$ref": "#/definitions/active_job_payload" },
         "executions": { "type": "integer", "minimum": 0 },
         "exception_executions": {
           "type": "object",
@@ -193,6 +217,7 @@
         "job_id": { "type": "string" },
         "queue_name": { "type": "string" },
         "arguments": { "type": "array" },
+        "active_job": { "$ref": "#/definitions/active_job_payload" },
         "executions": { "type": "integer", "minimum": 0 },
         "exception_executions": {
           "type": "object",

@@ -12,7 +12,12 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
   let(:workflow_id) { "wf-123" }
   let(:workflow_namespace) { "test-namespace" }
   let(:activity_info) do
-    instance_double("Temporalio::Activity::Info", workflow_id: workflow_id, workflow_namespace: workflow_namespace)
+    instance_double(
+      "Temporalio::Activity::Info",
+      workflow_id: workflow_id,
+      workflow_namespace: workflow_namespace,
+      attempt: 1
+    )
   end
   let(:activity_context) { instance_double("Temporalio::Activity::Context", info: activity_info) }
   let(:args) { [42, "payload"] }
@@ -24,7 +29,6 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     ActiveJob::Temporal.config.payload_serializer = :json
     allow(Temporalio::Activity::Context).to receive(:exist?).and_return(true)
     allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
-    allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_return(args)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?).and_return(false)
     allow(ActiveJob::Temporal.config).to receive(:middleware_chain).and_return(middleware_chain)
     allow(ActiveJob::Temporal::Observability).to receive(:instrument).and_call_original
@@ -34,37 +38,42 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
 
   describe "#execute" do
     it "instantiates the job, performs with deserialized args, and resets idempotency key" do
-      job_instance = instance_double("RunnerSpecJob")
-      job_class = class_double("RunnerSpecJob", new: job_instance).as_stubbed_const
-      payload = { "job_class" => "RunnerSpecJob", "arguments" => ["raw"] }
+      idempotency_key_name = idempotency_key
+      job_class = stub_const("RunnerSpecJob", Class.new(ActiveJob::Base) do
+        class << self
+          attr_accessor :received_args, :thread_key, :fiber_key
+        end
 
-      expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).with(payload).and_return(args)
-      allow(job_instance).to receive(:perform) do |*received_args|
-        expect(Thread.current[idempotency_key]).to eq("#{workflow_id}/runner")
-        expect(Fiber[idempotency_key]).to eq("#{workflow_id}/runner")
-        expect(received_args).to eq(args)
-      end
+        define_method(:perform) do |*received_args|
+          self.class.received_args = received_args
+          self.class.thread_key = Thread.current[idempotency_key_name]
+          self.class.fiber_key = Fiber[idempotency_key_name]
+          "performed"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new(*args))
 
-      activity.execute(payload)
+      expect(activity.execute(payload)).to eq("performed")
 
-      expect(job_class).to have_received(:new)
-      expect(job_instance).to have_received(:perform).with(*args)
+      expect(job_class.received_args).to eq(args)
+      expect(job_class.thread_key).to eq("#{workflow_id}/runner")
+      expect(job_class.fiber_key).to eq("#{workflow_id}/runner")
       expect(Thread.current[idempotency_key]).to be_nil
       expect(Fiber[idempotency_key]).to be_nil
     end
 
     it "makes the idempotency key available to child fibers" do
       captured_keys = []
-      job_instance = instance_double("FiberRunnerJob")
-      class_double("FiberRunnerJob", new: job_instance).as_stubbed_const
-      payload = { "job_class" => "FiberRunnerJob", "arguments" => ["raw"] }
-
-      allow(job_instance).to receive(:perform) do
-        Fiber.new do
-          captured_keys << Fiber[idempotency_key]
-          captured_keys << Thread.current[idempotency_key]
-        end.resume
-      end
+      idempotency_key_name = idempotency_key
+      job_class = stub_const("FiberRunnerJob", Class.new(ActiveJob::Base) do
+        define_method(:perform) do
+          Fiber.new do
+            captured_keys << Fiber[idempotency_key_name]
+            captured_keys << Thread.current[idempotency_key_name]
+          end.resume
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
       activity.execute(payload)
 
@@ -73,49 +82,187 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "deserializes payloads with workflow encryption context" do
-      job_instance = instance_double("ContextRunnerJob")
-      job_class = class_double("ContextRunnerJob", new: job_instance).as_stubbed_const
-      payload = { "job_class" => "ContextRunnerJob", "arguments" => ["raw"] }
+      job_class = stub_const("ContextRunnerJob", Class.new(ActiveJob::Base) do
+        def perform
+          "performed"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
       encryption_context = { namespace: workflow_namespace, workflow_id: workflow_id }
 
       expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload)
         .with(payload, encryption_context: encryption_context)
         .and_return(payload)
-      expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).with(payload).and_return(args)
-      allow(job_instance).to receive(:perform).and_return("performed")
 
       expect(activity.execute(payload)).to eq("performed")
-
-      expect(job_class).to have_received(:new)
     end
 
     it "uses optional raw arguments instead of deserializing payload arguments" do
       raw_arguments = ["previous-result"]
-      job_instance = instance_double("RawOverrideRunnerJob")
-      job_class = class_double("RawOverrideRunnerJob", new: job_instance).as_stubbed_const
-      payload = { "job_class" => "RawOverrideRunnerJob", "arguments" => ["serialized"] }
-      allow(job_instance).to receive(:perform).and_return("performed")
+      job_class = stub_const("RawOverrideRunnerJob", Class.new(ActiveJob::Base) do
+        class << self
+          attr_accessor :received_args
+        end
 
-      expect(ActiveJob::Temporal::Payload).not_to receive(:deserialize_payload_args)
+        def perform(*received_args)
+          self.class.received_args = received_args
+          "performed"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new("serialized"))
 
       expect(activity.execute(payload, raw_arguments)).to eq("performed")
-      expect(job_class).to have_received(:new)
-      expect(job_instance).to have_received(:perform).with(*raw_arguments)
+      expect(job_class.received_args).to eq(raw_arguments)
     end
 
-    it "re-raises retryable exceptions so Temporal can retry" do
-      payload = { "job_class" => "RetryableJob" }
-      job_instance = instance_double(RetryableJob.name)
-      allow(RetryableJob).to receive(:new).and_return(job_instance)
+    it "executes the deserialized job through ActiveJob callbacks with restored state" do
+      events = []
+      job_class = stub_const("LifecycleRunnerJob", Class.new(ActiveJob::Base) do
+        queue_as :critical
+
+        before_perform { |job| events << [:before, job.job_id, job.arguments] }
+        around_perform do |_job, block|
+          events << [:around_before]
+          block.call
+          events << [:around_after]
+        end
+        after_perform { |job| events << [:after, job.job_id] }
+
+        def perform(value)
+          self.class.events << [
+            :perform,
+            value,
+            job_id,
+            provider_job_id,
+            queue_name,
+            priority,
+            locale,
+            timezone
+          ]
+        end
+
+        class << self
+          attr_accessor :events
+        end
+      end)
+      job_class.events = events
+      job = job_class.new("payload")
+      job.job_id = "original-job-id"
+      job.provider_job_id = "provider-job-id"
+      job.priority = 7
+      job.locale = "en"
+      job.timezone = "UTC"
+      payload = ActiveJob::Temporal::Payload.from_job(job)
+      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_call_original
+
+      activity.execute(payload)
+
+      expect(events).to eq([
+                             [:before, "original-job-id", ["payload"]],
+                             [:around_before],
+                             [:perform, "payload", "original-job-id", "provider-job-id", "critical", 7, "en", "UTC"],
+                             [:after, "original-job-id"],
+                             [:around_after]
+                           ])
+    end
+
+    it "uses custom ActiveJob deserialization before performing" do
+      job_class = stub_const("CustomDeserializeRunnerJob", Class.new(ActiveJob::Base) do
+        attr_accessor :tenant
+
+        def serialize
+          super.merge("tenant" => tenant)
+        end
+
+        def deserialize(job_data)
+          super
+          self.tenant = job_data.fetch("tenant")
+        end
+
+        def perform
+          self.class.tenant_seen = tenant
+        end
+
+        class << self
+          attr_accessor :tenant_seen
+        end
+      end)
+      job = job_class.new
+      job.tenant = "tenant-42"
+      payload = ActiveJob::Temporal::Payload.from_job(job)
+
+      activity.execute(payload)
+
+      expect(job_class.tenant_seen).to eq("tenant-42")
+    end
+
+    it "raises a retryable application error when retry_on requests another attempt" do
+      error_class = stub_const("RuntimeRetryTimeoutError", Class.new(StandardError))
+      job_class = stub_const("RuntimeRetryRunnerJob", Class.new(ActiveJob::Base) do
+        retry_on StandardError, wait: 11.seconds, attempts: 2
+        retry_on RuntimeRetryTimeoutError, wait: 17.seconds, attempts: 6
+
+        def perform
+          raise self.class.error_to_raise
+        end
+
+        class << self
+          attr_accessor :error_to_raise
+        end
+      end)
+      job_class.error_to_raise = error_class.new("timeout")
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
+
+      expect { activity.execute(payload) }
+        .to raise_error(Temporalio::Error::ApplicationError) do |error|
+          expect(error.retryable?).to be(true)
+          expect(error.type).to eq("RuntimeRetryTimeoutError")
+          expect(error.next_retry_delay).to eq(17.0)
+        end
+    end
+
+    it "stops Temporal retries when the matching retry_on attempts are exhausted" do
+      stub_const("RuntimeRetryStandardError", Class.new(StandardError))
+      job_class = stub_const("RuntimeRetryExhaustedJob", Class.new(ActiveJob::Base) do
+        retry_on RuntimeRetryStandardError, wait: 11.seconds, attempts: 2
+        retry_on NetworkTimeoutError, wait: 17.seconds, attempts: 6
+
+        def perform
+          raise RuntimeRetryStandardError, "standard failure"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
+      retry_activity_info = instance_double(
+        "Temporalio::Activity::Info",
+        workflow_id: workflow_id,
+        workflow_namespace: workflow_namespace,
+        attempt: 2
+      )
+      allow(Temporalio::Activity::Context).to receive(:current)
+        .and_return(instance_double("Temporalio::Activity::Context", info: retry_activity_info))
+
+      expect { activity.execute(payload) }
+        .to raise_error(Temporalio::Error::ApplicationError) do |error|
+          expect(error.non_retryable).to be(true)
+          expect(error.type).to eq("RuntimeRetryStandardError")
+        end
+    end
+
+    it "re-raises exceptions without ActiveJob retry handlers so Temporal can retry" do
       error = SampleJobError.new("boom")
-      allow(job_instance).to receive(:perform).and_raise(error)
+      job_class = stub_const("PlainFailureRunnerJob", Class.new(ActiveJob::Base) do
+        define_method(:perform) do
+          raise error
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
       expect do
         activity.execute(payload)
       end.to raise_error(error)
 
       expect(Thread.current[idempotency_key]).to be_nil
-      expect(ActiveJob::Temporal::RetryMapper).to have_received(:discard_exception?).with(RetryableJob, error)
+      expect(ActiveJob::Temporal::RetryMapper).to have_received(:discard_exception?).with(job_class, error)
     end
 
     it "executes the job through configured middleware" do
@@ -134,27 +281,34 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
       end
       middleware_chain.add(middleware_class, events, idempotency_key)
-      job_instance = instance_double("MiddlewareRunnerJob")
-      class_double("MiddlewareRunnerJob", new: job_instance).as_stubbed_const
-      payload = { "job_class" => "MiddlewareRunnerJob" }
-      allow(job_instance).to receive(:perform) do |*received_args|
-        events << [:perform, received_args]
-        "performed"
-      end
+      job_class = stub_const("MiddlewareRunnerJob", Class.new(ActiveJob::Base) do
+        define_method(:perform) do |*received_args|
+          events << [:perform, received_args]
+          "performed"
+        end
+      end)
+      job = job_class.new(*args)
+      payload = ActiveJob::Temporal::Payload.from_job(job)
 
       expect(activity.execute(payload)).to eq("performed")
-      expect(events).to eq([
-                             [:before, job_instance, "#{workflow_id}/runner"],
-                             [:perform, args],
-                             [:after, "performed"]
-                           ])
+      expect(events[0][0]).to eq(:before)
+      expect(events[0][1]).to be_a(job_class)
+      expect(events[0][2]).to eq("#{workflow_id}/runner")
+      expect(events[1..]).to eq([
+                                  [:perform, args],
+                                  [:after, "performed"]
+                                ])
     end
 
     it "records job execution observability around perform" do
-      job_instance = instance_double("MetricsRunnerJob")
-      class_double("MetricsRunnerJob", new: job_instance).as_stubbed_const
-      payload = { "job_class" => "MetricsRunnerJob", "queue_name" => "critical" }
-      allow(job_instance).to receive(:perform).and_return("performed")
+      job_class = stub_const("MetricsRunnerJob", Class.new(ActiveJob::Base) do
+        queue_as :critical
+
+        def perform
+          "performed"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
       expect(activity.execute(payload)).to eq("performed")
 
@@ -165,10 +319,12 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "deletes external payloads after successful perform" do
-      job_instance = instance_double("ExternalPayloadRunnerJob")
-      class_double("ExternalPayloadRunnerJob", new: job_instance).as_stubbed_const
-      payload = { "job_class" => "ExternalPayloadRunnerJob", "arguments" => ["raw"] }
-      allow(job_instance).to receive(:perform).and_return("performed")
+      job_class = stub_const("ExternalPayloadRunnerJob", Class.new(ActiveJob::Base) do
+        def perform
+          "performed"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
       expect(ActiveJob::Temporal::Payload).to receive(:delete_external_payload).with(payload)
 
@@ -176,10 +332,12 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "keeps external payloads when perform fails" do
-      payload = { "job_class" => "RetryableJob" }
-      job_instance = instance_double(RetryableJob.name)
-      allow(RetryableJob).to receive(:new).and_return(job_instance)
-      allow(job_instance).to receive(:perform).and_raise(SampleJobError, "boom")
+      job_class = stub_const("ExternalPayloadFailureRunnerJob", Class.new(ActiveJob::Base) do
+        def perform
+          raise SampleJobError, "boom"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
       expect(ActiveJob::Temporal::Payload).not_to receive(:delete_external_payload)
 
@@ -187,21 +345,26 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "decrypts encrypted payloads before metrics, audit, and job execution" do
-      stub_const("EncryptedRunnerJob", Class.new(ActiveJob::Base))
-      job = EncryptedRunnerJob.new(*args)
+      job_class = stub_const("EncryptedRunnerJob", Class.new(ActiveJob::Base) do
+        class << self
+          attr_accessor :received_args
+        end
+
+        def perform(*received_args)
+          self.class.received_args = received_args
+          "performed"
+        end
+      end)
+      job = job_class.new(*args)
 
       with_payload_encryption do
         encrypted_payload = ActiveJob::Temporal::Payload.from_job(job)
-        job_instance = instance_double("EncryptedRunnerJob")
-        allow(EncryptedRunnerJob).to receive(:new).and_return(job_instance)
-        allow(job_instance).to receive(:perform).and_return("performed")
         allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload).and_call_original
-        allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_call_original
 
         expect(activity.execute(encrypted_payload)).to eq("performed")
 
         expect(ActiveJob::Temporal::Payload).to have_received(:deserialize_payload).once
-        expect(job_instance).to have_received(:perform).with(*args)
+        expect(job_class.received_args).to eq(args)
         expect(ActiveJob::Temporal::Observability).to have_received(:instrument).with(
           :perform,
           hash_including(job_class: "EncryptedRunnerJob", job_id: job.job_id, queue: "default")
@@ -214,19 +377,24 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "executes jobs from serialized payload envelopes" do
-      stub_const("SerializedRunnerJob", Class.new(ActiveJob::Base))
-      job = SerializedRunnerJob.new(*args)
+      job_class = stub_const("SerializedRunnerJob", Class.new(ActiveJob::Base) do
+        class << self
+          attr_accessor :received_args
+        end
+
+        def perform(*received_args)
+          self.class.received_args = received_args
+          "performed"
+        end
+      end)
+      job = job_class.new(*args)
 
       ActiveJob::Temporal.config.payload_serializer = :message_pack
       payload = ActiveJob::Temporal::Payload.from_job(job)
-      job_instance = instance_double("SerializedRunnerJob")
-      allow(SerializedRunnerJob).to receive(:new).and_return(job_instance)
-      allow(job_instance).to receive(:perform).and_return("performed")
-      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_call_original
 
       expect(activity.execute(payload)).to eq("performed")
 
-      expect(job_instance).to have_received(:perform).with(*args)
+      expect(job_class.received_args).to eq(args)
       expect(ActiveJob::Temporal::Observability).to have_received(:instrument).with(
         :perform,
         hash_including(job_class: "SerializedRunnerJob", job_id: job.job_id, queue: "default")
@@ -236,15 +404,16 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "records started and completed audit events without raw arguments or result" do
-      job_instance = instance_double("AuditRunnerJob")
-      class_double("AuditRunnerJob", new: job_instance).as_stubbed_const
-      payload = {
-        "job_class" => "AuditRunnerJob",
-        "job_id" => "job-1",
-        "queue_name" => "critical",
-        "arguments" => ["secret"]
-      }
-      allow(job_instance).to receive(:perform).and_return("secret-result")
+      job_class = stub_const("AuditRunnerJob", Class.new(ActiveJob::Base) do
+        queue_as :critical
+
+        def perform(_value)
+          "secret-result"
+        end
+      end)
+      job = job_class.new("secret")
+      job.job_id = "job-1"
+      payload = ActiveJob::Temporal::Payload.from_job(job)
 
       expect(activity.execute(payload)).to eq("secret-result")
 
@@ -275,10 +444,11 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "records failed metrics for setup failures before perform starts" do
+      stub_const("SetupFailureJob", Class.new(ActiveJob::Base))
       payload = { "job_class" => "SetupFailureJob", "queue_name" => "critical" }
       error = ArgumentError.new("bad payload")
       adapter = ActiveJob::Temporal.config.observability.use(:prometheus)
-      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).with(payload).and_raise(error)
+      allow(ActiveJob::Base).to receive(:deserialize).and_raise(error)
 
       expect { activity.execute(payload) }.to raise_error(error)
 
@@ -306,18 +476,23 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "records failed audit events with error metadata" do
-      payload = { "job_class" => "RetryableJob", "job_id" => "job-1", "queue_name" => "critical" }
-      job_instance = instance_double(RetryableJob.name)
-      allow(RetryableJob).to receive(:new).and_return(job_instance)
-      error = SampleJobError.new("boom")
-      allow(job_instance).to receive(:perform).and_raise(error)
+      job_class = stub_const("AuditFailureRunnerJob", Class.new(ActiveJob::Base) do
+        queue_as :critical
 
-      expect { activity.execute(payload) }.to raise_error(error)
+        def perform
+          raise SampleJobError, "boom"
+        end
+      end)
+      job = job_class.new
+      job.job_id = "job-1"
+      payload = ActiveJob::Temporal::Payload.from_job(job)
+
+      expect { activity.execute(payload) }.to raise_error(SampleJobError)
 
       expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
         "job.failed",
         hash_including(
-          job_class: "RetryableJob",
+          job_class: "AuditFailureRunnerJob",
           job_id: "job-1",
           queue: "critical",
           error_class: "SampleJobError",
@@ -334,18 +509,23 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     end
 
     it "records cancelled audit events for Temporal cancellation errors" do
-      payload = { "job_class" => "RetryableJob", "job_id" => "job-1", "queue_name" => "critical" }
-      job_instance = instance_double(RetryableJob.name)
-      allow(RetryableJob).to receive(:new).and_return(job_instance)
-      error = Temporalio::Error::CanceledError.new("cancelled")
-      allow(job_instance).to receive(:perform).and_raise(error)
+      job_class = stub_const("CancelledRunnerJob", Class.new(ActiveJob::Base) do
+        queue_as :critical
 
-      expect { activity.execute(payload) }.to raise_error(error)
+        def perform
+          raise Temporalio::Error::CanceledError, "cancelled"
+        end
+      end)
+      job = job_class.new
+      job.job_id = "job-1"
+      payload = ActiveJob::Temporal::Payload.from_job(job)
+
+      expect { activity.execute(payload) }.to raise_error(Temporalio::Error::CanceledError)
 
       expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
         "job.cancelled",
         hash_including(
-          job_class: "RetryableJob",
+          job_class: "CancelledRunnerJob",
           job_id: "job-1",
           queue: "critical",
           status: "observed"
@@ -365,52 +545,73 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
       end
       middleware_chain.add(middleware_class, error)
-      payload = { "job_class" => "RetryableJob" }
-      job_instance = instance_double(RetryableJob.name)
-      allow(RetryableJob).to receive(:new).and_return(job_instance)
-      allow(job_instance).to receive(:perform)
+      job_class = stub_const("MiddlewareFailureRunnerJob", Class.new(ActiveJob::Base) do
+        class << self
+          attr_accessor :performed
+        end
+
+        def perform
+          self.class.performed = true
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
       expect { activity.execute(payload) }.to raise_error(error)
 
-      expect(job_instance).not_to have_received(:perform)
-      expect(ActiveJob::Temporal::RetryMapper).to have_received(:discard_exception?).with(RetryableJob, error)
+      expect(job_class.performed).to be_nil
+      expect(ActiveJob::Temporal::RetryMapper).to have_received(:discard_exception?).with(job_class, error)
       expect(Thread.current[idempotency_key]).to be_nil
     end
 
     it "records retry observability for retry attempts that fail" do
-      activity_info = instance_double("Temporalio::Activity::Info", workflow_id: workflow_id, attempt: 2)
+      activity_info = instance_double(
+        "Temporalio::Activity::Info",
+        workflow_id: workflow_id,
+        workflow_namespace: workflow_namespace,
+        attempt: 2
+      )
       activity_context = instance_double("Temporalio::Activity::Context", info: activity_info)
       allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
-      payload = { "job_class" => "RetryableJob", "queue_name" => "critical" }
-      job_instance = instance_double(RetryableJob.name)
-      allow(RetryableJob).to receive(:new).and_return(job_instance)
-      error = SampleJobError.new("boom")
-      allow(job_instance).to receive(:perform).and_raise(error)
+      job_class = stub_const("RetryObservabilityRunnerJob", Class.new(ActiveJob::Base) do
+        queue_as :critical
 
-      expect { activity.execute(payload) }.to raise_error(error)
+        def perform
+          raise SampleJobError, "boom"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
+
+      expect { activity.execute(payload) }.to raise_error(SampleJobError)
 
       expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
         :retry,
-        hash_including(job_class: "RetryableJob", queue: "critical", error: "SampleJobError")
+        hash_including(job_class: "RetryObservabilityRunnerJob", queue: "critical", error: "SampleJobError")
       )
     end
 
-    it "wraps discard_on exceptions in non-retryable ApplicationError" do
-      payload = { "job_class" => "DiscardOnlyJob" }
-      job_instance = instance_double(DiscardOnlyJob.name)
-      allow(DiscardOnlyJob).to receive(:new).and_return(job_instance)
-      original_error = FatalJobError.new("fail fast")
-      allow(job_instance).to receive(:perform).and_raise(original_error)
-      allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?)
-        .with(DiscardOnlyJob, original_error)
-        .and_return(true)
+    it "lets ActiveJob discard handlers handle discard_on exceptions" do
+      job_class = stub_const("DiscardHandlerRunnerJob", Class.new(ActiveJob::Base) do
+        discard_on FatalJobError
 
-      expect { activity.execute(payload) }
-        .to raise_error(Temporalio::Error::ApplicationError) do |error|
-          expect(error.non_retryable).to eq(true)
-          expect(error.message).to eq(original_error.message)
+        class << self
+          attr_accessor :discarded_error
         end
 
+        after_discard do |_job, error|
+          self.class.discarded_error = error
+        end
+
+        def perform
+          raise FatalJobError, "fail fast"
+        end
+      end)
+      payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
+
+      result = nil
+      expect { result = activity.execute(payload) }.not_to raise_error
+
+      expect(result).to be_a(FatalJobError)
+      expect(job_class.discarded_error).to be_a(FatalJobError)
       expect(Thread.current[idempotency_key]).to be_nil
     end
   end

@@ -45,6 +45,29 @@ RSpec.describe "job payload schema" do
     )
   end
 
+  it "defines nested ActiveJob execution metadata" do
+    active_job_schema = schema.fetch("definitions").fetch("active_job_payload")
+
+    expect(active_job_schema).to include(
+      "type" => "object",
+      "additionalProperties" => true,
+      "required" => contain_exactly("job_class", "job_id", "queue_name", "arguments"),
+      "properties" => include(
+        "job_class" => { "type" => "string", "minLength" => 1 },
+        "job_id" => { "type" => "string", "minLength" => 1 },
+        "queue_name" => { "type" => "string", "minLength" => 1 },
+        "arguments" => { "type" => "array" }
+      )
+    )
+
+    json_payload_branch = schema.fetch("oneOf").find do |branch|
+      branch.fetch("required").include?("job_class")
+    end
+    expect(json_payload_branch.fetch("properties")).to include(
+      "active_job" => { "$ref" => "#/definitions/active_job_payload" }
+    )
+  end
+
   it "defines workflow identity metadata" do
     identity_schema = schema.fetch("definitions").fetch("workflow_identity")
 

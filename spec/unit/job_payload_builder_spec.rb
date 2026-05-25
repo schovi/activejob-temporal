@@ -41,6 +41,29 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     )
   end
 
+  it "includes the full ActiveJob serialized payload" do
+    job_class = Class.new(ActiveJob::Base) do
+      attr_accessor :tenant
+
+      def self.name = "CustomSerializedPayloadJob"
+
+      def serialize
+        super.merge("tenant" => tenant)
+      end
+    end
+    job = job_class.new("payload")
+    job.tenant = "tenant-42"
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:active_job]).to include(
+      "job_class" => "CustomSerializedPayloadJob",
+      "job_id" => job.job_id,
+      "queue_name" => "default",
+      "tenant" => "tenant-42"
+    )
+  end
+
   it "injects observability trace context into the workflow payload" do
     adapter_class = Class.new(ActiveJob::Temporal::Observability::Adapter) do
       def initialize

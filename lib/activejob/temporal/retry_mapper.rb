@@ -118,14 +118,23 @@ module ActiveJob
       #   first handler in the list is used.
       def for(job_class, exception = nil)
         config = ActiveJob::Temporal.config
-        retry_entry = select_retry_entry(job_class, exception)
+        retry_entries = extractor.retry_handlers(job_class)
+        retry_entry = select_retry_entry(job_class, exception, retry_entries)
 
         {
           initial_interval: interval_from(retry_entry&.fetch(:wait, nil), config),
           backoff_coefficient: config.default_retry_backoff,
-          maximum_attempts: attempts_from(retry_entry&.fetch(:attempts, nil), config, job_class),
+          maximum_attempts: maximum_attempts_from(retry_entries, retry_entry, exception, config, job_class),
           non_retryable_error_types: discard_exception_names(job_class)
         }
+      end
+
+      def retry_handler(job_class, exception)
+        select_retry_entry(job_class, exception)
+      end
+
+      def exception_execution_keys(job_class)
+        extractor.retry_handlers(job_class).filter_map { |handler| handler[:exception_execution_key] }.uniq
       end
 
       # Checks if an exception should be discarded (not retried).
@@ -160,8 +169,7 @@ module ActiveJob
 
       # Selects the matching retry handler entry for the given exception.
       # @api private
-      def select_retry_entry(job_class, exception)
-        handlers = extractor.retry_handlers(job_class)
+      def select_retry_entry(job_class, exception, handlers = extractor.retry_handlers(job_class))
         return nil if handlers.empty?
 
         return handlers.find { |handler| handles_exception?(handler[:exception], exception) } if exception
@@ -215,6 +223,18 @@ module ActiveJob
         config.default_retry_max_attempts
       end
       private_class_method :attempts_from
+
+      def maximum_attempts_from(retry_entries, retry_entry, exception, config, job_class)
+        return attempts_from(retry_entry&.fetch(:attempts, nil), config, job_class) if exception || retry_entries.empty?
+
+        attempts = retry_entries.map do |entry|
+          attempts_from(entry.fetch(:attempts, nil), config, job_class)
+        end
+        return 0 if attempts.include?(0)
+
+        attempts.max || config.default_retry_max_attempts
+      end
+      private_class_method :maximum_attempts_from
 
       def log_attempts_fallback(job_class, value, default_attempts, error)
         ActiveJob::Temporal::Logger.warn(
