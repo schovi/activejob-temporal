@@ -449,7 +449,7 @@ attributes:
         - "Recommended starting value is 100 for I/O-bound workloads"
         - "For CPU-bound MRI workers, start near Etc.nprocessors per worker process"
         - "Increase to 200-500 for high-throughput scenarios with sufficient memory"
-      description: "Maximum activity task polling capacity per worker process. This setting is used by the Temporal worker process to control activity throughput. The default is tuned for I/O-bound work. Higher capacity can use more memory when jobs run in parallel and can hurt CPU-bound MRI workloads through GVL contention. Monitor worker CPU, memory, and queue lag when changing this value."
+      description: "Maximum activity execution slots per worker process. This setting is used by the Temporal worker process to control simultaneous activity throughput. The default is tuned for I/O-bound work. Higher capacity can use more memory when jobs run in parallel and can hurt CPU-bound MRI workloads through GVL contention. Monitor worker CPU, memory, and queue lag when changing this value."
       env_var_name: ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES
       example: 200
 
@@ -461,7 +461,7 @@ attributes:
         - "Must be a positive integer"
         - "Recommended starting value is 5"
         - "Increase to 25-50 for high-throughput scenarios"
-      description: "Maximum number of workflow tasks that can be polled concurrently per worker process. This setting is used by the Temporal worker process to control workflow task processing capacity."
+      description: "Maximum workflow task execution slots per worker process. This setting is used by the Temporal worker process to control simultaneous workflow task processing capacity."
       env_var_name: ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS
       example: 20
 

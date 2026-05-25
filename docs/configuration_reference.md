@@ -49,8 +49,8 @@ The canonical machine-readable schema for all configuration options is available
 | `encryption_key` | String, Hash, or `nil` | `nil` | Base64-encoded 32-byte AES-256-GCM payload encryption key, or `{ id:, key: }` metadata. Required when `encrypt_payload` is true. |
 | `encryption_old_keys` | Array | `[]` | Previous encryption keys accepted for decryption during key rotation. Entries may be Base64 strings or `{ id:, key:, decrypt_until: }` hashes. |
 | `identity` | String or `nil` | `nil` | Optional worker identity string for observability and debugging. Useful in multi-worker deployments. |
-| `max_concurrent_activities` | Integer | `100` | Maximum activity task poll capacity per worker process. The default is tuned for I/O-bound work; lower it near CPU core count for CPU-bound MRI workers. |
-| `max_concurrent_workflow_tasks` | Integer | `5` | Maximum workflow task poll capacity per worker process. |
+| `max_concurrent_activities` | Integer | `100` | Maximum activity execution slots per worker process. The default is tuned for I/O-bound work; lower it near CPU core count for CPU-bound MRI workers. |
+| `max_concurrent_workflow_tasks` | Integer | `5` | Maximum workflow task execution slots per worker process. |
 
 ## Rate Limit Configuration
 
@@ -629,11 +629,11 @@ This error is raised immediately when calling `perform_later`, before the job re
 
 ## Production Tuning
 
-The `max_concurrent_activities` and `max_concurrent_workflow_tasks` configuration options control worker process activity and workflow task polling capacity. They are the main exposed worker capacity knobs for high-throughput scenarios.
+The `max_concurrent_activities` and `max_concurrent_workflow_tasks` configuration options control worker process activity and workflow task execution slots. They are the main exposed worker capacity knobs for high-throughput scenarios.
 
 ### Worker Concurrency Settings
 
-These settings control how many activity and workflow task polls the worker can run within a single worker process. They are passed to the Temporal worker process and affect resource utilization and throughput.
+These settings control how many activity and workflow tasks the worker can execute at the same time within a single worker process. They are passed to the Temporal worker as fixed execution slots. Temporal SDK poller behavior remains separate and uses the SDK defaults.
 
 ```ruby
 ActiveJob::Temporal.configure do |config|
@@ -650,7 +650,7 @@ ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=20 \
 bundle exec temporal-worker
 ```
 
-The default `100` activity poll setting assumes jobs spend meaningful time waiting on I/O. For CPU-bound MRI jobs, start closer to `Etc.nprocessors` activity polls per worker process, then raise it only if CPU has headroom and Temporal queue lag remains high.
+The default `100` activity slot setting assumes jobs spend meaningful time waiting on I/O. For CPU-bound MRI jobs, start closer to `Etc.nprocessors` activity slots per worker process, then raise it only if CPU has headroom and Temporal queue lag remains high.
 
 ### When to Adjust These Settings
 
@@ -669,14 +669,14 @@ Do **not** increase these values if:
 
 ### Trade-offs and Recommendations
 
-**Memory Usage**: Higher poll capacity can feed more work to the worker. Actual memory growth depends on Temporal worker execution slots, job runtime behavior, and your job's data structures (loaded ActiveRecord models, local variables, etc.). Measure worker memory before and after increasing these settings.
+**Memory Usage**: Higher activity slot capacity can run more work at once. Actual memory growth depends on job runtime behavior and your job's data structures (loaded ActiveRecord models, local variables, etc.). Measure worker memory before and after increasing these settings.
 
 **CPU Usage**: If your jobs are CPU-bound (heavy computation, data processing), higher worker load will not improve throughput and may degrade performance due to GVL contention and context switching overhead.
 
 **Recommended Starting Values**:
-- **Default (100 activity polls, 5 workflow task polls)**: Appropriate for I/O-bound or mixed workloads with resource headroom.
-- **High-throughput (300-500 activity polls, 25-50 workflow task polls)**: For short I/O-bound workloads with sufficient memory and downstream capacity.
-- **Resource-constrained (10-50 activity polls, 2-5 workflow task polls)**: For memory-limited workers, CPU-intensive jobs, or database-heavy jobs.
+- **Default (100 activity slots, 5 workflow task slots)**: Appropriate for I/O-bound or mixed workloads with resource headroom.
+- **High-throughput (300-500 activity slots, 25-50 workflow task slots)**: For short I/O-bound workloads with sufficient memory and downstream capacity.
+- **Resource-constrained (10-50 activity slots, 2-5 workflow task slots)**: For memory-limited workers, CPU-intensive jobs, or database-heavy jobs.
 
 **Example: High-throughput configuration**
 
@@ -696,7 +696,7 @@ When tuning worker capacity:
 
 1. **Monitor worker resource usage**: Track memory and CPU utilization per worker process
 2. **Measure queue lag**: Use Temporal UI to track task queue backlog depth
-3. **Increase incrementally**: Raise activity poll capacity by 50-100 at a time, observe for 10-15 minutes
+3. **Increase incrementally**: Raise activity slots by 50-100 at a time, observe for 10-15 minutes
 4. **Watch for OOM kills**: If workers are terminated due to memory exhaustion, reduce worker capacity
 5. **Profile job memory**: Use Ruby memory profilers to understand per-job memory footprint
 
