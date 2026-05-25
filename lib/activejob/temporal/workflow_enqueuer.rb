@@ -48,7 +48,7 @@ module ActiveJob
       #
       # @param job [ActiveJob::Base] The job to enqueue
       # @param scheduled_at [Time, nil] Time to schedule job, nil for immediate execution
-      # @return [Object, nil] Workflow run handle (or nil if duplicate job_id)
+      # @return [Object] Workflow run handle
       #
       # @raise [ActiveJob::SerializationError] If payload serialization fails or exceeds max size
       # @raise [ActiveJob::EnqueueError] If workflow cannot be started
@@ -62,7 +62,7 @@ module ActiveJob
       #
       # @example Duplicate job (FAIL conflict policy)
       #   enqueuer.enqueue(job) # => handle
-      #   enqueuer.enqueue(job) # => nil (FAIL conflict returns nil)
+      #   enqueuer.enqueue(job) # raises DuplicateEnqueueError
       def enqueue(job, scheduled_at: nil)
         validate_job_for_enqueueing(job)
         scheduled_at = validate_scheduled_at!(scheduled_at)
@@ -137,7 +137,7 @@ module ActiveJob
       rescue StandardError => e
         if workflow_already_started?(e)
           log_enqueued(job, options, payload, duplicate: true)
-          return nil
+          raise DuplicateEnqueueError, build_duplicate_enqueue_error_message(job, options)
         end
 
         raise ActiveJob::EnqueueError.new(build_enqueue_error_message(job, e)), cause: e
@@ -190,6 +190,15 @@ module ActiveJob
           job_class: job.class.name,
           job_id: job.job_id,
           error: error.message
+        )
+      end
+
+      def build_duplicate_enqueue_error_message(job, options)
+        format(
+          "Job %<job_class>s (%<job_id>s) was already enqueued as workflow %<workflow_id>s",
+          job_class: job.class.name,
+          job_id: job.job_id,
+          workflow_id: options[:id]
         )
       end
 

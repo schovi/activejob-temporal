@@ -103,19 +103,37 @@ module ActiveJob
 
       def enqueue_entry(entry, results)
         handle = enqueue_job.call(entry[:job], scheduled_at: entry[:scheduled_at])
-        status = handle.nil? ? :duplicate : :success
-        results[entry[:index]] = BatchEnqueueItemResult.new(
+        results[entry[:index]] = success_result(entry, handle)
+      rescue DuplicateEnqueueError => e
+        results[entry[:index]] = duplicate_result(entry, e)
+      rescue StandardError => e
+        results[entry[:index]] = failed_result(entry, e)
+      end
+
+      def success_result(entry, handle)
+        BatchEnqueueItemResult.new(
           index: entry[:index],
           job: entry[:job],
-          status: status,
+          status: :success,
           handle: handle
         )
-      rescue StandardError => e
-        results[entry[:index]] = BatchEnqueueItemResult.new(
+      end
+
+      def duplicate_result(entry, error)
+        BatchEnqueueItemResult.new(
+          index: entry[:index],
+          job: entry[:job],
+          status: :duplicate,
+          error: error
+        )
+      end
+
+      def failed_result(entry, error)
+        BatchEnqueueItemResult.new(
           index: entry[:index],
           job: entry[:job],
           status: :failed,
-          error: e
+          error: error
         )
       end
     end

@@ -277,14 +277,12 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
       expect { adapter.enqueue(job) }.to raise_error(ActiveJob::EnqueueError)
     end
 
-    it "handles duplicate enqueue (nil result)" do
+    it "raises a duplicate enqueue error for duplicate workflows" do
       error = Class.new(StandardError)
       stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
       allow(client).to receive(:start_workflow).and_raise(error.new("already started"))
 
-      result = adapter.enqueue(job)
-
-      expect(result).to be_nil
+      expect { adapter.enqueue(job) }.to raise_error(ActiveJob::Temporal::DuplicateEnqueueError)
     end
   end
 
@@ -309,15 +307,13 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
       expect(result).to eq("workflow-handle")
     end
 
-    it "handles duplicate enqueue for scheduled jobs" do
+    it "raises a duplicate enqueue error for duplicate scheduled workflows" do
       error = Class.new(StandardError)
       stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
       allow(client).to receive(:start_workflow).and_raise(error.new("already started"))
       allow(Time).to receive(:at).with(timestamp).and_return(scheduled_time)
 
-      result = adapter.enqueue_at(job, timestamp)
-
-      expect(result).to be_nil
+      expect { adapter.enqueue_at(job, timestamp) }.to raise_error(ActiveJob::Temporal::DuplicateEnqueueError)
     end
 
     it "rejects past timestamps before starting a workflow" do
@@ -335,6 +331,36 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
     it "returns true to enable transaction-aware enqueuing" do
       expect(adapter.enqueue_after_transaction_commit?).to be true
     end
+  end
+end
+
+RSpec.describe "Temporal duplicate enqueue handling through ActiveJob" do
+  let(:client) { instance_double(Temporalio::Client) }
+  let(:config) { build_configuration }
+  let(:duplicate_error) { Class.new(StandardError) }
+
+  before do
+    stub_const("Temporalio::Client::WorkflowAlreadyStartedError", duplicate_error)
+    allow(ActiveJob::Temporal).to receive(:client).and_return(client)
+    allow(ActiveJob::Temporal).to receive(:config).and_return(config)
+    allow(client).to receive(:start_workflow).and_raise(duplicate_error.new("already started"))
+    allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+  end
+
+  it "returns false and exposes a duplicate enqueue error to perform_later callers" do
+    job_class = stub_const("DuplicatePerformLaterJob", Class.new(ActiveJob::Base) do
+      self.queue_adapter = :temporal
+
+      def perform; end
+    end)
+    enqueued_job = nil
+
+    result = job_class.perform_later { |job| enqueued_job = job }
+
+    expect(result).to be false
+    expect(enqueued_job.successfully_enqueued?).to be false
+    expect(enqueued_job.enqueue_error).to be_a(ActiveJob::Temporal::DuplicateEnqueueError)
+    expect(enqueued_job.enqueue_error.message).to include("already enqueued")
   end
 end
 
