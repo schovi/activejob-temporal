@@ -41,7 +41,8 @@ RSpec.describe ActiveJob::Temporal::Schedule do
     expect(temporal_schedule.action.workflow).to eq("AjWorkflow")
     expect(temporal_schedule.action.task_queue).to eq("reports")
     expect(temporal_schedule.action.args.first[:job_class]).to eq("ScheduledReportJob")
-    expect(temporal_schedule.action.args.first[:arguments]).to eq(["daily"])
+    expect(temporal_schedule.action.args.first).not_to have_key(:arguments)
+    expect(temporal_schedule.action.args.first[:active_job]["arguments"]).to eq(["daily"])
     expect(temporal_schedule.action.args.first).to include(
       schedule_id: "ajsch:ScheduledReportJob",
       schedule_workflow_id_prefix: "ajschwf:ajsch:ScheduledReportJob",

@@ -38,7 +38,10 @@ module ActiveJob
     #     job_class: "MyJob",
     #     job_id: "abc-123",
     #     queue_name: "default",
-    #     arguments: [{"_aj_serialized"=>"ActiveJob::Serializers::ObjectSerializer", ...}],
+    #     active_job: {
+    #       "arguments" => [{"_aj_serialized"=>"ActiveJob::Serializers::ObjectSerializer", ...}],
+    #       ...
+    #     },
     #     executions: 0,
     #     exception_executions: {},
     #     scheduled_at: "2025-10-29T12:00:00Z" # optional
@@ -83,7 +86,7 @@ module ActiveJob
       #   - :job_class [String] Fully-qualified job class name
       #   - :job_id [String] Unique job identifier
       #   - :queue_name [String] Target queue name
-      #   - :arguments [Array] Serialized job arguments (via ActiveJob::Arguments)
+      #   - :active_job [Hash] ActiveJob serialized payload, including arguments
       #   - :executions [Integer] Current execution count (default 0)
       #   - :exception_executions [Hash] Exception execution counts (default {})
       #   - :scheduled_at [String] ISO8601 timestamp (optional)
@@ -98,7 +101,7 @@ module ActiveJob
       # @example Basic job payload
       #   job = MyJob.new
       #   payload = Payload.from_job(job)
-      #   # => { job_class: "MyJob", job_id: "...", arguments: [...], ... }
+      #   # => { job_class: "MyJob", job_id: "...", active_job: { "arguments" => [...] }, ... }
       #
       # @example Scheduled job payload
       #   job = MyJob.new
@@ -162,12 +165,14 @@ module ActiveJob
 
       # Deserializes job arguments from a payload hash.
       #
-      # Extracts the serialized arguments array from the payload and uses
-      # ActiveJob's built-in deserialization to reconstruct Ruby objects
+      # Extracts the serialized arguments array from ActiveJob's canonical
+      # serialized job data, falling back to legacy top-level arguments, then
+      # uses ActiveJob's built-in deserialization to reconstruct Ruby objects
       # (including GlobalID references to ActiveRecord models).
       #
-      # @param payload [Hash] Payload hash containing serialized arguments
-      # @option payload [Array] :arguments Serialized arguments (required)
+      # @param payload [Hash] Payload hash containing serialized ActiveJob data
+      # @option payload [Hash] :active_job Full ActiveJob serialized payload
+      # @option payload [Array] :arguments Legacy serialized arguments
       #
       # @return [Array] Deserialized arguments array ready for job.perform(*args)
       #
@@ -175,13 +180,13 @@ module ActiveJob
       # @raise [GlobalID::RecordNotFound] if a GlobalID reference points to a deleted record
       #
       # @example Deserialize arguments
-      #   payload = { arguments: [{"_aj_serialized"=>"..."}] }
+      #   payload = { active_job: { "arguments" => [{"_aj_serialized"=>"..."}] } }
       #   args = Payload.deserialize_args(payload)
       #   # => [actual_ruby_object]
       #
       # @example GlobalID deserialization with deleted record
       #   begin
-      #     payload = { arguments: [{"_aj_globalid"=>"gid://app/User/999"}] }
+      #     payload = { active_job: { "arguments" => [{"_aj_globalid"=>"gid://app/User/999"}] } }
       #     args = Payload.deserialize_args(payload)
       #   rescue ActiveRecord::RecordNotFound => e
       #     # Record was deleted between enqueue and execution
@@ -192,7 +197,7 @@ module ActiveJob
       end
 
       def deserialize_payload_args(payload)
-        serialized_args = payload[:arguments] || payload["arguments"]
+        serialized_args = active_job_arguments(payload) || payload[:arguments] || payload["arguments"]
         ActiveJob::Arguments.deserialize(serialized_args)
       rescue ActiveJob::SerializationError, ActiveJob::Temporal::ConfigurationError
         raise
@@ -327,6 +332,13 @@ module ActiveJob
         end
       end
 
+      def active_job_arguments(payload)
+        active_job_payload = payload[:active_job] || payload["active_job"]
+        return unless active_job_payload.respond_to?(:[])
+
+        active_job_payload[:arguments] || active_job_payload["arguments"]
+      end
+
       # Serializes job arguments using ActiveJob's built-in serializer.
       # @api private
       def serialize_arguments(arguments)
@@ -352,12 +364,12 @@ module ActiveJob
           job_class: job.class.name,
           job_id: job.job_id,
           queue_name: job.queue_name,
-          arguments: serialize_arguments(job.arguments || []),
           executions: job.executions || 0,
           exception_executions: job.exception_executions || {}
         }
         active_job_payload = serialized_active_job(job)
         payload[:active_job] = active_job_payload if active_job_payload
+        payload[:arguments] = serialize_arguments(job.arguments || []) unless active_job_payload
         payload
       end
 

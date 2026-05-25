@@ -67,7 +67,15 @@ RSpec.describe "job payload schema" do
     json_payload_branch = schema.fetch("oneOf").find do |branch|
       branch.fetch("required").include?("job_class")
     end
+    expect(json_payload_branch).to include(
+      "required" => contain_exactly("job_class", "job_id", "queue_name"),
+      "anyOf" => contain_exactly(
+        { "required" => ["active_job"] },
+        { "required" => ["arguments"] }
+      )
+    )
     expect(json_payload_branch.fetch("properties")).to include(
+      "arguments" => { "type" => "array" },
       "active_job" => { "$ref" => "#/definitions/active_job_payload" }
     )
   end

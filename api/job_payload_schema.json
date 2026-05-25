@@ -220,7 +220,11 @@
   "oneOf": [
     {
       "additionalProperties": false,
-      "required": ["job_class", "job_id", "queue_name", "arguments"],
+      "required": ["job_class", "job_id", "queue_name"],
+      "anyOf": [
+        { "required": ["active_job"] },
+        { "required": ["arguments"] }
+      ],
       "properties": {
         "job_class": { "type": "string" },
         "job_id": { "type": "string" },

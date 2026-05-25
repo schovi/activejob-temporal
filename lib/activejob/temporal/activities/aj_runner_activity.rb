@@ -78,10 +78,11 @@ module ActiveJob
 
         # Executes the job inside the Temporal activity context.
         #
-        # @param payload [Hash] Job payload with serialized arguments and metadata
+        # @param payload [Hash] Job payload with serialized ActiveJob data and metadata
         # @option payload [String] :job_class Fully-qualified job class name (required)
         # @option payload [String] :job_id Unique job identifier
-        # @option payload [Array] :arguments Serialized job arguments (via ActiveJob::Arguments)
+        # @option payload [Hash] :active_job Full ActiveJob serialized payload
+        # @option payload [Array] :arguments Legacy serialized job arguments
         # @option payload [String] :queue_name Target queue name
         # @option payload [Integer] :executions Current execution count
         # @option payload [Hash] :exception_executions Exception execution counts
@@ -98,7 +99,9 @@ module ActiveJob
         #   execute({
         #     job_class: "MyJob",
         #     job_id: "123",
-        #     arguments: [{ "_aj_serialized" => "ActiveJob::Serializers::ObjectSerializer", "value" => {...} }]
+        #     active_job: {
+        #       "arguments" => [{ "_aj_serialized" => "ActiveJob::Serializers::ObjectSerializer", "value" => {...} }]
+        #     }
         #   })
         #
         # @example Accessing idempotency key in job

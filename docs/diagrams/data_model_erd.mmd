@@ -15,9 +15,11 @@ erDiagram
         string job_class
         string job_id
         string queue_name
+        jsonb active_job
         jsonb arguments
         timestamp scheduled_at
     }
+    %% arguments present only for legacy or non-ActiveJob fallback payloads
     %% scheduled_at present only for delayed jobs
 
     %% ActivityExecution in docs → Activity entity here

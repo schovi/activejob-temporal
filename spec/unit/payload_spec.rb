@@ -108,6 +108,33 @@ RSpec.describe ActiveJob::Temporal::Payload do
       )
     end
 
+    it "uses active_job as the canonical argument representation for ActiveJob payloads" do
+      job_class = Class.new(ActiveJob::Base) do
+        def self.name = "CanonicalArgumentsPayloadJob"
+      end
+      active_job = job_class.new("payload")
+
+      payload = described_class.from_job(active_job)
+
+      expect(payload).not_to have_key(:arguments)
+      expect(payload[:active_job]["arguments"]).to eq(ActiveJob::Arguments.serialize(active_job.arguments))
+      expect(described_class.deserialize_args(payload)).to eq(active_job.arguments)
+    end
+
+    it "does not duplicate large serialized arguments in new payloads" do
+      job_class = Class.new(ActiveJob::Base) do
+        def self.name = "LargeArgumentsPayloadJob"
+      end
+      large_job = job_class.new("x" * 50_000)
+      serialized_arguments = ActiveJob::Arguments.serialize(large_job.arguments)
+
+      payload = described_class.from_job(large_job)
+      legacy_payload = payload.merge(arguments: serialized_arguments)
+
+      expect(payload).not_to have_key(:arguments)
+      expect(JSON.generate(payload).bytesize).to be < (JSON.generate(legacy_payload).bytesize * 0.65)
+    end
+
     it "emits serialized payload size observability" do
       payload = described_class.from_job(job)
 
@@ -891,6 +918,30 @@ RSpec.describe ActiveJob::Temporal::Payload do
       payload = described_class.from_job(job)
 
       expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+    end
+
+    it "deserializes legacy payloads with top-level arguments" do
+      job = SimpleJob.new(["legacy"])
+      payload = {
+        job_class: job.class.name,
+        job_id: job.job_id,
+        queue_name: job.queue_name,
+        arguments: ActiveJob::Arguments.serialize(job.arguments)
+      }
+
+      expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+    end
+
+    it "prefers canonical ActiveJob arguments when duplicate legacy arguments exist" do
+      job_class = Class.new(ActiveJob::Base) do
+        def self.name = "DuplicateArgumentsPayloadJob"
+      end
+      job = job_class.new("canonical")
+      payload = described_class.from_job(job).merge(
+        arguments: ActiveJob::Arguments.serialize(["legacy"])
+      )
+
+      expect(described_class.deserialize_args(payload)).to eq(["canonical"])
     end
 
     it "uses the provided config when deserializing encrypted arguments" do

@@ -6,6 +6,8 @@ activejob-temporal runs jobs through ActiveJob's execution contract while Tempor
 
 `perform_later` serializes the full ActiveJob job data and stores it in the workflow payload alongside Temporal control metadata. The Temporal workflow owns durable concerns such as schedule delays, rate limits, dependency gates, child workflows, chains, and activity retry execution.
 
+For new ActiveJob payloads, serialized arguments live in the nested `active_job` data. Top-level `arguments` remain supported for legacy payloads that were written before full ActiveJob serialization became canonical, but new payloads do not store the same argument array twice.
+
 When the workflow reaches a Rails-backed job activity, `AjRunnerActivity` deserializes the stored job data through ActiveJob and runs `perform_now` inside the configured activejob-temporal middleware chain.
 
 ```text
@@ -55,4 +57,4 @@ Payload deserialization failures that happen before the job can be hydrated are 
 
 ## Legacy Payloads
 
-Older activejob-temporal payloads stored a smaller set of job fields outside ActiveJob's serialized job data. The activity still reconstructs enough ActiveJob job data to execute those payloads. New payloads store full ActiveJob serialization so future executions preserve the complete lifecycle state.
+Older activejob-temporal payloads stored a smaller set of job fields outside ActiveJob's serialized job data, including top-level `arguments`. The activity still reconstructs enough ActiveJob job data to execute those payloads. New payloads store full ActiveJob serialization so future executions preserve the complete lifecycle state, and they use the nested `active_job.arguments` array as the canonical argument representation.

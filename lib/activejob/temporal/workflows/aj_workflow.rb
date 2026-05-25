@@ -109,7 +109,8 @@ module ActiveJob
         # @option payload [String] :job_class Fully-qualified job class name (required)
         # @option payload [String] :job_id Unique job identifier (required)
         # @option payload [String] :queue_name Target queue name (required)
-        # @option payload [Array] :arguments Serialized job arguments (required)
+        # @option payload [Hash] :active_job Full ActiveJob serialized payload
+        # @option payload [Array] :arguments Legacy serialized job arguments
         # @option payload [Hash] :default_activity_options Global activity timeout defaults (required)
         # @option payload [Hash] :retry_policy Retry policy for activity execution (required)
         # @option payload [Hash] :temporal_options Per-job timeout configuration (optional)
@@ -127,14 +128,14 @@ module ActiveJob
         #   The timer persists across worker restarts and does not block worker threads.
         #
         # @example Immediate execution
-        #   execute({ job_class: "MyJob", job_id: "123", arguments: ["arg1"] })
+        #   execute({ job_class: "MyJob", job_id: "123", active_job: { "arguments" => ["arg1"] } })
         #
         # @example Scheduled execution (non-blocking sleep)
         #   execute({
         #     job_class: "MyJob",
         #     job_id: "123",
         #     scheduled_at: "2025-10-31T12:00:00Z",
-        #     arguments: []
+        #     active_job: { "arguments" => [] }
         #   })
         #   # Workflow sleeps until scheduled time without consuming worker resources
         #
