@@ -39,12 +39,18 @@ class ProcessAccountJob < ApplicationJob
   end
 end
 
-ProcessAccountJob
-  .set(queue: :low_priority)
-  .perform_later_if(:should_enqueue?, account.id)
+ProcessAccountJob.perform_later_if(:should_enqueue?, account.id)
 ```
 
 Pass only developer-defined symbols, strings, or callables. Do not derive condition names from request params or other user-controlled input, because symbol and string conditions call public methods on the job class.
+
+When the condition also needs job configuration, prefer an explicit public-API branch:
+
+```ruby
+if ProcessAccountJob.should_enqueue?([account.id])
+  ProcessAccountJob.set(queue: :low_priority).perform_later(account.id)
+end
+```
 
 ## Transaction-Aware Enqueueing
 
@@ -137,7 +143,7 @@ Failures stop the chain. Chain return values are stored in Temporal history befo
 
 Use a bare job class when a chain step should use its class defaults. Use `ActiveJob::Temporal.job(JobClass, queue:, priority:)` when a chain step needs per-step ActiveJob routing options. Chain descriptors intentionally support only `queue` and `priority`; scheduling options such as `wait` do not apply because the chain is already owned by the root workflow.
 
-`JobClass.set(...)` remains accepted in `chain:` for compatibility with existing apps, but it depends on Rails' `ActiveJob::ConfiguredJob` internals. The adapter logs `active_job_configured_job_private_api` with `feature: "chain"` when that fallback is used. Prefer `ActiveJob::Temporal.job(...)` for new chain entries.
+`ActiveJob::Temporal.job(...)` is the stable API for configured chain entries. `JobClass.set(...)` remains accepted only as a compatibility fallback for existing apps, and that fallback is isolated behind Rails-version contract tests because Rails does not expose configured-job readers as public API. The adapter logs `active_job_configured_job_private_api` with `feature: "chain"` when the fallback is used.
 
 ## External Temporal Steps
 
@@ -255,7 +261,7 @@ Child workflow IDs are owned by the parent and use the child job class plus a de
 
 Use a bare job class when a child workflow should use its class defaults. Use `ActiveJob::Temporal.job(ChildJob, queue:, priority:, tags:)` when a child needs specific routing or search metadata. Child descriptors support `queue`, `priority`, and `tags`.
 
-`JobClass.set(...)` remains accepted in `child_workflows:` for compatibility with existing apps, but it depends on Rails' `ActiveJob::ConfiguredJob` internals. The adapter logs `active_job_configured_job_private_api` with `feature: "child_workflows"` when that fallback is used. Prefer `ActiveJob::Temporal.job(...)` for new child workflow entries.
+`ActiveJob::Temporal.job(...)` is the stable API for configured child workflow entries. `JobClass.set(...)` remains accepted only as a compatibility fallback for existing apps, and that fallback is isolated behind Rails-version contract tests because Rails does not expose configured-job readers as public API. The adapter logs `active_job_configured_job_private_api` with `feature: "child_workflows"` when the fallback is used.
 
 When child workflows are present, the parent result becomes a collection:
 

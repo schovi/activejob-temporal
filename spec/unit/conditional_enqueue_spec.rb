@@ -73,16 +73,34 @@ RSpec.describe ActiveJob::Temporal::ConditionalEnqueue do
   end
 
   it "supports configured jobs from set" do
+    allow(ActiveJob::Temporal::Logger).to receive(:warn)
+
     job = job_class.set(queue: "critical").perform_later_if(:should_enqueue?, :allowed)
 
     expect(job).to be_a(job_class)
     expect(test_adapter.enqueued_jobs.size).to eq(1)
     expect(test_adapter.enqueued_jobs.first[:queue]).to eq("critical")
+    expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+      "active_job_configured_job_private_api",
+      hash_including(feature: "conditional_enqueue")
+    )
   end
 
   it "returns nil for configured jobs when the condition returns false" do
+    allow(ActiveJob::Temporal::Logger).to receive(:warn)
+
     expect(job_class.set(queue: "critical").perform_later_if(:should_enqueue?, :blocked)).to be_nil
     expect(test_adapter.enqueued_jobs).to be_empty
+  end
+
+  it "fails clearly when configured job internals are unsupported" do
+    configured_job = ActiveJob::ConfiguredJob.allocate
+
+    expect { configured_job.perform_later_if(:should_enqueue?, :allowed) }
+      .to raise_error(
+        ArgumentError,
+        /ActiveJob::ConfiguredJob internals changed for conditional_enqueue.*@job_class/
+      )
   end
 
   it "passes keyword arguments to the condition as job arguments" do

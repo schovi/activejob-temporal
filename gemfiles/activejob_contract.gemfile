@@ -1,0 +1,8 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gemspec path: ".."
+
+gem "activejob", ENV.fetch("ACTIVEJOB_VERSION")
+gem "activemodel", ENV.fetch("ACTIVEMODEL_VERSION", ENV.fetch("ACTIVEJOB_VERSION"))

@@ -2,6 +2,7 @@
 
 require "active_job"
 require "active_support/concern"
+require_relative "configured_job_compatibility"
 
 module ActiveJob
   module Temporal
@@ -39,7 +40,7 @@ module ActiveJob
     # Adds conditional enqueue helpers to ActiveJob configured jobs.
     module ConfiguredConditionalEnqueue
       def perform_later_if(condition, *arguments, **keyword_arguments, &)
-        job_class = instance_variable_get(:@job_class)
+        job_class = ConfiguredJobCompatibility.job_class(self, feature: "conditional_enqueue")
         condition_arguments = ConditionalEnqueue.job_arguments(arguments, keyword_arguments)
         return nil unless ConditionalEnqueue.condition_allows_enqueue?(job_class, condition, condition_arguments)
 
