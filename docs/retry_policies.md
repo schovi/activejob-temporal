@@ -1,12 +1,24 @@
 # Retry Policy Guide
 
-This guide shows how ActiveJob retry declarations map to Temporal activity retry policies.
+activejob-temporal keeps ActiveJob retry declarations as the source of truth for job behavior, while Temporal provides durable retry execution.
 
-## How To Read The Examples
+## Execution Model
 
-activejob-temporal builds one Temporal `RetryPolicy` for each enqueued job. The policy is stored in the workflow payload and later used when the workflow executes `AjRunnerActivity`.
+ActiveJob does not expose `retry_on` and `discard_on` metadata through a public configuration API. activejob-temporal reads the handler metadata when a job is enqueued and stores a Temporal retry envelope in the workflow payload. If retry metadata cannot be read after a framework change, the gem logs a warning and falls back to configured retry defaults instead of failing enqueue.
 
-Unless noted otherwise, examples assume the default retry configuration:
+The retry envelope gives Temporal enough activity attempts to cover the job's declared retry budget. When multiple `retry_on` declarations exist, the envelope uses the broadest attempt budget, including unlimited attempts when any matching declaration is unlimited.
+
+The exact retry decision happens at activity runtime:
+
+1. ActiveJob deserializes the job and runs `perform_now`.
+2. ActiveJob selects `retry_on`, `discard_on`, and `rescue_from` handlers using normal handler precedence.
+3. When `retry_on` calls `retry_job`, activejob-temporal converts that request into a retryable Temporal application error.
+4. Temporal records the failed activity attempt and schedules the next attempt in workflow history.
+5. When the matching `retry_on` declaration is exhausted, activejob-temporal raises a non-retryable Temporal application error so retries stop.
+
+## Defaults
+
+Unless configured otherwise, examples use:
 
 ```ruby
 ActiveJob::Temporal.configure do |config|
@@ -16,32 +28,28 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-`attempts:` maps to Temporal `maximum_attempts`, which is the total number of activity attempts, including the first execution. For example, `attempts: 5` allows one initial activity attempt plus four retries.
+`attempts:` is the total number of activity attempts, including the first execution. For example, `attempts: 5` allows one initial activity attempt plus four retries.
 
-activejob-temporal reads `retry_on` and `discard_on` declarations from ActiveJob handler metadata because ActiveJob does not currently expose a public retry configuration API. If retry metadata cannot be read after a framework change, the gem logs a warning and uses the configured retry defaults instead of failing during enqueue. If `discard_on` binding metadata changes, the gem falls back to ActiveJob handler source information when available.
-
-When `dead_letter_queue` is enabled, jobs move to a Temporal-backed DLQ workflow after activity retries are exhausted. If `dead_letter_after_attempts` is configured, it overrides the generated `maximum_attempts` so the DLQ threshold controls when the job is parked. If `dead_letter_auto_discard_after` is configured, pending DLQ workflows auto-discard after that retention window.
+`attempts: :unlimited` maps to Temporal unlimited activity attempts. The activity retries until it succeeds, is cancelled, reaches a timeout, or raises a non-retryable error.
 
 ## Quick Mapping
 
-| ActiveJob pattern | Temporal policy fields | Retry delays after the initial failed attempt |
-| --- | --- | --- |
-| No `retry_on` | `initial_interval: 30`, `backoff_coefficient: 2.0`, `maximum_attempts: 1` | None |
-| `retry_on StandardError, wait: 60.seconds, attempts: 5` | `initial_interval: 60`, `backoff_coefficient: 2.0`, `maximum_attempts: 5` | 60s, 120s, 240s, 480s |
-| Global `default_retry_backoff = 1.5` with `wait: 20.seconds, attempts: 4` | `initial_interval: 20`, `backoff_coefficient: 1.5`, `maximum_attempts: 4` | 20s, 30s, 45s |
-| `attempts: :unlimited` | `maximum_attempts: 0` | Continues until success, cancellation, timeout, or a non-retryable error |
-| `discard_on UnprocessableJobError` | `non_retryable_error_types: ["UnprocessableJobError"]` | None for matching errors |
-| `retry_on` plus `discard_on` | Retry fields plus `non_retryable_error_types` | Retryable errors follow the retry policy, discarded errors stop immediately |
-| Multiple `retry_on` declarations | First handler in ActiveJob precedence order, usually the last declared rule | Depends on the selected handler |
-| Symbol or Proc `wait:` | Falls back to `default_retry_initial_interval` | Uses the configured Temporal backoff curve |
-| Non-numeric `attempts:` | Falls back to `default_retry_max_attempts` | Depends on the configured default |
-| `dead_letter_after_attempts = 3` | Sets `maximum_attempts: 3` for DLQ-enabled jobs | 2 retry delays, then parks the failed job in the DLQ |
+| ActiveJob pattern | Temporal behavior |
+| --- | --- |
+| No `retry_on` | Uses configured defaults. With the default `maximum_attempts: 1`, the job runs once. |
+| `retry_on StandardError, wait: 60.seconds, attempts: 5` | Matching failures retry up to 5 total attempts. Temporal uses a 60 second retry delay request for `retry_job`. |
+| Multiple `retry_on` declarations | ActiveJob chooses the matching handler at failure time using reverse declaration precedence. |
+| `attempts: :unlimited` | Temporal receives an unlimited retry envelope. |
+| `discard_on UnprocessableJobError` | ActiveJob handles the discard path. Matching unhandled errors are treated as non-retryable. |
+| Symbol or Proc `wait:` | ActiveJob can still request the retry, but Temporal can only receive a numeric retry delay. Non-numeric waits fall back to the outer retry policy timing. |
+| Non-numeric `attempts:` | Falls back to `default_retry_max_attempts` and logs `retry_attempts_fallback`. |
+| `dead_letter_after_attempts = 3` | DLQ routing caps the outer retry envelope at 3 attempts before parking the failed job. |
 
 ## Common Patterns
 
-### 1. Default Policy
+### Default Policy
 
-Jobs without `retry_on` or `discard_on` use the configured defaults.
+Jobs without `retry_on` or `discard_on` use configured defaults.
 
 ```ruby
 class SyncCustomerJob < ApplicationJob
@@ -51,20 +59,9 @@ class SyncCustomerJob < ApplicationJob
 end
 ```
 
-Temporal policy:
-
-```ruby
-{
-  initial_interval: 30,
-  backoff_coefficient: 2.0,
-  maximum_attempts: 1,
-  non_retryable_error_types: []
-}
-```
-
 With the default `maximum_attempts: 1`, Temporal tries the activity once and does not retry after a failure.
 
-### 2. Fixed Delay
+### Fixed Delay
 
 ```ruby
 class SendInvoiceJob < ApplicationJob
@@ -72,66 +69,22 @@ class SendInvoiceJob < ApplicationJob
 end
 ```
 
-Temporal policy:
+When `SomeTransientError` is raised, ActiveJob selects that handler and calls `retry_job`. activejob-temporal converts the retry request into a retryable Temporal application error with a 60 second retry delay. Temporal retries the same activity until the job succeeds or reaches 5 total attempts.
+
+### Multiple `retry_on` Declarations
 
 ```ruby
-{
-  initial_interval: 60,
-  backoff_coefficient: 2.0,
-  maximum_attempts: 5,
-  non_retryable_error_types: []
-}
-```
-
-Retry delays after the initial failed attempt: 60s, 120s, 240s, 480s.
-
-### 3. Fixed Delay With Custom Backoff
-
-```ruby
-ActiveJob::Temporal.configure do |config|
-  config.default_retry_backoff = 1.5
-end
-
-class SyncInventoryJob < ApplicationJob
-  retry_on NetworkError, wait: 20.seconds, attempts: 4
+class MultiRetryJob < ApplicationJob
+  retry_on StandardError, wait: 40.seconds, attempts: 2
+  retry_on Timeout::Error, wait: 10.seconds, attempts: 6
 end
 ```
 
-Temporal policy:
+ActiveJob evaluates retry handlers in reverse declaration order. `Timeout::Error` matches the second declaration and may run for 6 total attempts. Other `StandardError` failures match the broader declaration and stop after 2 total attempts.
 
-```ruby
-{
-  initial_interval: 20,
-  backoff_coefficient: 1.5,
-  maximum_attempts: 4,
-  non_retryable_error_types: []
-}
-```
+The Temporal retry envelope is broad enough for the larger budget, but activejob-temporal checks the matching ActiveJob handler on every failure. When the selected handler is exhausted, it marks the error non-retryable so Temporal stops retrying.
 
-Retry delays after the initial failed attempt: 20s, 30s, 45s.
-
-### 4. Unlimited Retries
-
-```ruby
-class RefreshCacheJob < ApplicationJob
-  retry_on TransientCacheError, wait: 30.seconds, attempts: :unlimited
-end
-```
-
-Temporal policy:
-
-```ruby
-{
-  initial_interval: 30,
-  backoff_coefficient: 2.0,
-  maximum_attempts: 0,
-  non_retryable_error_types: []
-}
-```
-
-Temporal treats `maximum_attempts: 0` as unlimited. The activity retries until it succeeds, is cancelled, reaches a timeout, or raises a non-retryable error.
-
-### 5. Discard Non-Retryable Errors
+### Discard Non-Retryable Errors
 
 ```ruby
 class ImportRowJob < ApplicationJob
@@ -139,20 +92,9 @@ class ImportRowJob < ApplicationJob
 end
 ```
 
-Temporal policy:
+`discard_on` runs through ActiveJob's normal rescue path. If ActiveJob handles the discard, including any discard block and `after_discard` callbacks, the activity completes from Temporal's perspective.
 
-```ruby
-{
-  initial_interval: 30,
-  backoff_coefficient: 2.0,
-  maximum_attempts: 1,
-  non_retryable_error_types: ["UnprocessableRowError"]
-}
-```
-
-If the job raises `UnprocessableRowError`, the activity raises a non-retryable Temporal application error and Temporal does not retry it.
-
-### 6. Retry Some Errors, Discard Others
+### Retry Some Errors, Discard Others
 
 ```ruby
 class ChargeCardJob < ApplicationJob
@@ -161,46 +103,9 @@ class ChargeCardJob < ApplicationJob
 end
 ```
 
-Temporal policy:
+`PaymentGatewayTimeout` follows the retry handler. `InvalidCardError` follows the discard handler. Unhandled errors use the outer retry envelope unless they match discard metadata or exhaust a matching `retry_on` declaration.
 
-```ruby
-{
-  initial_interval: 15,
-  backoff_coefficient: 2.0,
-  maximum_attempts: 4,
-  non_retryable_error_types: ["InvalidCardError"]
-}
-```
-
-`PaymentGatewayTimeout` follows the retry policy with delays of 15s, 30s, and 60s. `InvalidCardError` is non-retryable and stops immediately.
-
-### 7. Multiple `retry_on` Declarations
-
-```ruby
-class MultiRetryJob < ApplicationJob
-  retry_on StandardError, wait: 40.seconds, attempts: 2
-  retry_on SpecificError, wait: 10.seconds, attempts: 6
-end
-```
-
-ActiveJob evaluates retry handlers in reverse declaration order. activejob-temporal attaches one Temporal retry policy when the job is enqueued, before any raised exception exists, so it uses the first handler in that precedence order.
-
-In this example, the attached policy uses the `SpecificError` declaration:
-
-```ruby
-{
-  initial_interval: 10,
-  backoff_coefficient: 2.0,
-  maximum_attempts: 6,
-  non_retryable_error_types: []
-}
-```
-
-Retry delays after the initial failed attempt: 10s, 20s, 40s, 80s, 160s.
-
-If different exception families need different retry timing during the same job execution, prefer separate job classes. A single Temporal activity execution has one retry policy.
-
-### 8. Algorithmic Wait Strategies
+### Algorithmic Wait Strategies
 
 ```ruby
 class ReportJob < ApplicationJob
@@ -208,45 +113,11 @@ class ReportJob < ApplicationJob
 end
 ```
 
-Temporal policies cannot store arbitrary Ruby wait functions. Symbol and Proc waits fall back to `default_retry_initial_interval`.
+Temporal retry delay overrides must be numeric. Symbol and Proc waits still let ActiveJob decide that a retry should happen, but activejob-temporal falls back to the configured Temporal retry timing when it cannot convert the wait to seconds.
 
-Temporal policy with default configuration:
+Use static `wait:` values and tune `default_retry_backoff` when you need a predictable retry curve in Temporal history.
 
-```ruby
-{
-  initial_interval: 30,
-  backoff_coefficient: 2.0,
-  maximum_attempts: 5,
-  non_retryable_error_types: []
-}
-```
-
-Retry delays after the initial failed attempt: 30s, 60s, 120s, 240s.
-
-Use static `wait:` values and tune `default_retry_backoff` when you need a predictable curve.
-
-### 9. Proc Wait Fallback
-
-```ruby
-class DynamicWaitJob < ApplicationJob
-  retry_on StandardError, wait: ->(_executions) { 15.seconds }, attempts: 3
-end
-```
-
-Proc waits are not executed. With default configuration, the policy uses:
-
-```ruby
-{
-  initial_interval: 30,
-  backoff_coefficient: 2.0,
-  maximum_attempts: 3,
-  non_retryable_error_types: []
-}
-```
-
-Retry delays after the initial failed attempt: 30s, 60s.
-
-### 10. Invalid Attempt Values
+### Invalid Attempt Values
 
 ```ruby
 class InvalidAttemptsJob < ApplicationJob
@@ -254,37 +125,35 @@ class InvalidAttemptsJob < ApplicationJob
 end
 ```
 
-Non-numeric attempt values fall back to `default_retry_max_attempts`.
+Non-numeric attempt values fall back to `default_retry_max_attempts` and emit `retry_attempts_fallback`.
 
-Temporal policy with default configuration:
+## Dead Letter Queue Interaction
 
-```ruby
-{
-  initial_interval: 10,
-  backoff_coefficient: 2.0,
-  maximum_attempts: 1,
-  non_retryable_error_types: []
-}
-```
+When `dead_letter_queue` is enabled, jobs move to a Temporal-backed DLQ workflow after activity retries are exhausted. If `dead_letter_after_attempts` is configured, it overrides the generated outer `maximum_attempts` so the DLQ threshold controls when the job is parked. If `dead_letter_auto_discard_after` is configured, pending DLQ workflows auto-discard after that retention window.
 
 ## Troubleshooting
 
-### My job did not retry
+### My Job Did Not Retry
 
-Check `maximum_attempts`. A value of `1` means one total activity attempt and no retries. Use `attempts: 2` or higher to allow retry attempts.
+Check the matching handler's `attempts:` value. A value of `1` means one total activity attempt and no retries. Use `attempts: 2` or higher to allow retry attempts.
 
-### My `:exponentially_longer` wait became 30 seconds
+Also check whether `discard_on` or a custom `rescue_from` handler handled the exception inside ActiveJob. A handled exception completes the activity from Temporal's perspective.
 
-Symbol and Proc waits fall back to `default_retry_initial_interval`. Use a static wait value, for example `wait: 15.seconds`, and tune `default_retry_backoff` for the exponential curve.
+### My `:exponentially_longer` Wait Became The Default Delay
 
-### My discarded error retried anyway
+Temporal can only receive numeric retry delays. Symbol and Proc waits fall back to `default_retry_initial_interval` and the outer retry policy timing. Use a static wait value, for example `wait: 15.seconds`, when the Temporal delay must be exact.
 
-Make sure the raised error class matches a `discard_on` declaration. `discard_on` entries become Temporal `non_retryable_error_types`, and matching respects Ruby inheritance.
+### My Discarded Error Retried Anyway
 
-### My multiple retry rules picked the wrong wait
+Make sure the raised error class matches a `discard_on` declaration. Matching respects Ruby inheritance. If the error is wrapped by application code before it reaches ActiveJob, declare the wrapper class or re-raise the original error.
 
-Declare the retry rule you want Temporal to use after broader rules, and keep in mind that only one Temporal retry policy is attached to the activity at execution time.
+### My Multiple Retry Rules Used The Wrong Budget
 
-### I need different retry curves for different errors
+ActiveJob uses reverse declaration precedence. Put specific rules after broader rules:
 
-Prefer separate job classes when different exception families require substantially different retry timing. A single Temporal activity execution has one retry policy.
+```ruby
+retry_on StandardError, wait: 40.seconds, attempts: 2
+retry_on Timeout::Error, wait: 10.seconds, attempts: 6
+```
+
+In that order, `Timeout::Error` receives the specific 6-attempt budget and other `StandardError` failures receive the 2-attempt budget.
