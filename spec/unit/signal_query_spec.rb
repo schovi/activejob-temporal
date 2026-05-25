@@ -90,6 +90,24 @@ RSpec.describe ActiveJob::Temporal::SignalQuery do
       expect(custom_handle).to have_received(:signal).with("pause")
     end
 
+    it "escapes custom job IDs when searching fallback workflows" do
+      custom_job_id = "tenant'42:invoice-123"
+      custom_default_workflow_id = "ajwf:#{job_class.name}:#{custom_job_id}"
+      escaped_query = "ajClass='#{job_class.name}' AND ajJobId='tenant''42:invoice-123' " \
+                      "AND ExecutionStatus='Running'"
+
+      allow(client).to receive(:workflow_handle)
+        .with(custom_default_workflow_id, run_id: nil)
+        .and_return(default_handle)
+      allow(default_handle).to receive(:signal).and_raise(not_found_error)
+      allow(client).to receive(:list_workflows).with(escaped_query).and_return([workflow_execution])
+
+      described_class.signal(job_class, custom_job_id, :pause)
+
+      expect(client).to have_received(:list_workflows).with(escaped_query)
+      expect(custom_handle).to have_received(:signal).with("pause")
+    end
+
     it "raises WorkflowNotFoundError when no running workflow is found" do
       allow(default_handle).to receive(:signal).and_raise(not_found_error)
       allow(client).to receive(:list_workflows).with(search_query).and_return([])
@@ -109,8 +127,8 @@ RSpec.describe ActiveJob::Temporal::SignalQuery do
     end
 
     it "validates arguments before contacting Temporal" do
-      expect { described_class.signal(job_class, "not-a-uuid", :pause) }
-        .to raise_error(ArgumentError, /Invalid job_id format/)
+      expect { described_class.signal(job_class, "bad\nid", :pause) }
+        .to raise_error(ArgumentError, /control characters/)
       expect { described_class.signal("SignalQueryJob", job_id, :pause) }
         .to raise_error(ArgumentError, /job_class must be a named class/)
       expect { described_class.signal(job_class, job_id, "invalid-name") }
@@ -137,6 +155,21 @@ RSpec.describe ActiveJob::Temporal::SignalQuery do
       expect(result).to eq("custom-result")
       expect(client).to have_received(:list_workflows).with(search_query)
       expect(custom_handle).to have_received(:query).with("state")
+    end
+
+    it "queries custom non-UUID job IDs" do
+      custom_job_id = "invoice-123"
+      custom_default_workflow_id = "ajwf:#{job_class.name}:#{custom_job_id}"
+
+      allow(client).to receive(:workflow_handle)
+        .with(custom_default_workflow_id, run_id: nil)
+        .and_return(default_handle)
+
+      result = described_class.query(job_class, custom_job_id, :state)
+
+      expect(result).to eq("default-result")
+      expect(default_handle).to have_received(:query).with("state")
+      expect(client).not_to have_received(:list_workflows)
     end
 
     it "forwards an explicit query reject condition" do
@@ -171,6 +204,13 @@ RSpec.describe ActiveJob::Temporal::SignalQuery do
       expect { described_class.query(job_class, job_id, :state) }
         .to raise_error(ActiveJob::Temporal::WorkflowNotFoundError, /No running workflow/)
     end
+
+    it "validates job IDs before contacting Temporal" do
+      expect { described_class.query(job_class, "bad\nid", :state) }
+        .to raise_error(ArgumentError, /control characters/)
+
+      expect(client).not_to have_received(:workflow_handle)
+    end
   end
 
   describe ".update" do
@@ -192,6 +232,38 @@ RSpec.describe ActiveJob::Temporal::SignalQuery do
       expect(custom_handle).to have_received(:execute_update).with("set_progress", 75)
     end
 
+    it "updates custom non-UUID job IDs" do
+      custom_job_id = "invoice-123"
+      custom_default_workflow_id = "ajwf:#{job_class.name}:#{custom_job_id}"
+
+      allow(client).to receive(:workflow_handle)
+        .with(custom_default_workflow_id, run_id: nil)
+        .and_return(default_handle)
+
+      result = described_class.update(job_class, custom_job_id, :set_progress, 75)
+
+      expect(result).to eq("default-update-result")
+      expect(default_handle).to have_received(:execute_update).with("set_progress", 75)
+      expect(client).not_to have_received(:list_workflows)
+    end
+
+    it "updates schedule-style job IDs" do
+      schedule_job_id = "ajschwf:daily-report-2026-05-25T20:07:45Z:019e60c0-2587-710d-8633-a0f90e9dd6f9"
+      schedule_workflow_id = "ajschwf:daily-report-2026-05-25T20:07:45Z"
+      schedule_run_id = "019e60c0-2587-710d-8633-a0f90e9dd6f9"
+
+      allow(client).to receive(:workflow_handle)
+        .with(schedule_workflow_id, run_id: schedule_run_id)
+        .and_return(default_handle)
+
+      result = described_class.update(job_class, schedule_job_id, :set_progress, 75)
+
+      expect(result).to eq("default-update-result")
+      expect(default_handle).to have_received(:execute_update).with("set_progress", 75)
+      expect(client).to have_received(:workflow_handle).with(schedule_workflow_id, run_id: schedule_run_id)
+      expect(client).not_to have_received(:list_workflows)
+    end
+
     it "raises workflow update failures without wrapping them as connection errors" do
       update_error = Temporalio::Error::WorkflowUpdateFailedError.new
 
@@ -210,8 +282,8 @@ RSpec.describe ActiveJob::Temporal::SignalQuery do
     end
 
     it "validates arguments before contacting Temporal" do
-      expect { described_class.update(job_class, "not-a-uuid", :set_progress) }
-        .to raise_error(ArgumentError, /Invalid job_id format/)
+      expect { described_class.update(job_class, "bad\nid", :set_progress) }
+        .to raise_error(ArgumentError, /control characters/)
       expect { described_class.update("SignalQueryJob", job_id, :set_progress) }
         .to raise_error(ArgumentError, /job_class must be a named class/)
       expect { described_class.update(job_class, job_id, "invalid-name") }

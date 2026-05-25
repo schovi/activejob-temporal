@@ -2,13 +2,13 @@
 
 require "temporalio/client/workflow_execution_status"
 require "temporalio/error"
+require_relative "job_id_validation"
 require_relative "visibility_query"
 require_relative "workflow_id_builder"
 
 module ActiveJob
   module Temporal
     module Inspect
-      UUID_REGEX = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
       JOB_CLASS_NAME_PATTERN = /\A[A-Z]\w*(?:::[A-Z]\w*)*\z/
       WORKFLOW_STATES = {
         Temporalio::Client::WorkflowExecutionStatus::RUNNING => :running,
@@ -26,7 +26,8 @@ module ActiveJob
           validate_job_id!(job_id)
 
           client = ActiveJob::Temporal.client
-          describe_default_workflow(client, job_class, job_id) ||
+          describe_schedule_execution_workflow(client, job_id) ||
+            describe_default_workflow(client, job_class, job_id) ||
             describe_search_attribute_workflow(client, job_class, job_id)
         rescue ArgumentError
           raise
@@ -40,7 +41,9 @@ module ActiveJob
         def completed?(job_class, job_id) = workflow_state?(job_class, job_id, :completed)
 
         def failed?(job_class, job_id) = workflow_state?(job_class, job_id, :failed)
+      end
 
+      class << self
         private
 
         def workflow_state?(job_class, job_id, state)
@@ -58,15 +61,22 @@ module ActiveJob
         end
 
         def validate_job_id!(job_id)
-          return if job_id.is_a?(String) && job_id.match?(UUID_REGEX)
-
-          raise ArgumentError,
-                "Invalid job_id format: expected UUID (e.g., '550e8400-e29b-41d4-a716-446655440000'), " \
-                "got: #{job_id.inspect}"
+          JobIdValidation.validate!(job_id)
         end
 
         def describe_default_workflow(client, job_class, job_id)
           describe_workflow(client, default_workflow_reference(job_class, job_id))
+        rescue StandardError => e
+          raise unless rpc_not_found?(e)
+
+          nil
+        end
+
+        def describe_schedule_execution_workflow(client, job_id)
+          workflow_reference = JobIdValidation.schedule_execution_reference(job_id)
+          return unless workflow_reference
+
+          describe_workflow(client, workflow_reference)
         rescue StandardError => e
           raise unless rpc_not_found?(e)
 

@@ -36,7 +36,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
     end
     let(:temporal_client_class) do
       Class.new do
-        def workflow_handle(_workflow_id); end
+        def workflow_handle(_workflow_id, run_id: nil); end
         def list_workflows(_query = nil); end
       end
     end
@@ -216,34 +216,58 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       end
     end
 
-    context "job_id validation (security)" do
-      context "when job_id contains SQL injection attempt" do
-        let(:malicious_job_id) { "test' OR '1'='1" }
+    context "job_id validation" do
+      context "when job_id requires query escaping" do
+        let(:custom_job_id) { "test' OR '1'='1" }
+        let(:escaped_running_query) do
+          "ajClass='#{job_class.name}' AND ajJobId='test'' OR ''1''=''1' AND ExecutionStatus='Running'"
+        end
+        let(:escaped_workflow_id) { "ajwf:#{job_class.name}:#{custom_job_id}" }
+        let(:workflow_info) { double("WorkflowInfo") }
 
-        it "raises ArgumentError before making any queries" do
-          expect { described_class.cancel(job_class, malicious_job_id) }
-            .to raise_error(ArgumentError, /Invalid job_id format/)
+        before do
+          allow(client).to receive(:list_workflows)
+            .with(escaped_running_query)
+            .and_return([workflow_info])
+          allow(client).to receive(:workflow_handle).with(escaped_workflow_id).and_return(handle)
+        end
 
-          # Verify no queries were made
+        it "quotes the job ID before querying Temporal" do
+          described_class.cancel(job_class, custom_job_id)
+
+          expect(client).to have_received(:list_workflows).with(escaped_running_query)
+          expect(handle).to have_received(:cancel)
+        end
+      end
+
+      context "when job_id is a schedule-style execution ID" do
+        let(:schedule_job_id) do
+          "ajschwf:daily-report-2026-05-25T20:07:45Z:019e60c0-2587-710d-8633-a0f90e9dd6f9"
+        end
+        let(:schedule_workflow_id) { "ajschwf:daily-report-2026-05-25T20:07:45Z" }
+        let(:schedule_run_id) { "019e60c0-2587-710d-8633-a0f90e9dd6f9" }
+
+        before do
+          allow(client).to receive(:workflow_handle)
+            .with(schedule_workflow_id, run_id: schedule_run_id)
+            .and_return(handle)
+        end
+
+        it "accepts the schedule-style job ID" do
+          expect { described_class.cancel(job_class, schedule_job_id) }.not_to raise_error
+          expect(handle).to have_received(:cancel)
           expect(client).not_to have_received(:list_workflows)
         end
       end
 
-      context "when job_id contains single quotes" do
-        let(:malicious_job_id) { "test'123" }
-
-        it "raises ArgumentError" do
-          expect { described_class.cancel(job_class, malicious_job_id) }
-            .to raise_error(ArgumentError, /Invalid job_id format/)
-        end
-      end
-
-      context "when job_id is not a valid UUID format" do
-        let(:invalid_job_id) { "not-a-uuid" }
+      context "when job_id is blank" do
+        let(:blank_job_id) { " " }
 
         it "raises ArgumentError with helpful message" do
-          expect { described_class.cancel(job_class, invalid_job_id) }
-            .to raise_error(ArgumentError, /Invalid job_id format: expected UUID/)
+          expect { described_class.cancel(job_class, blank_job_id) }
+            .to raise_error(ArgumentError, /job_id must not be blank/)
+
+          expect(client).not_to have_received(:list_workflows)
         end
       end
 
@@ -252,7 +276,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
 
         it "raises ArgumentError" do
           expect { described_class.cancel(job_class, nil_job_id) }
-            .to raise_error(ArgumentError, /Invalid job_id format/)
+            .to raise_error(ArgumentError, /job_id must be a String/)
         end
       end
 
@@ -261,7 +285,29 @@ RSpec.describe ActiveJob::Temporal::Cancel do
 
         it "raises ArgumentError" do
           expect { described_class.cancel(job_class, integer_job_id) }
-            .to raise_error(ArgumentError, /Invalid job_id format/)
+            .to raise_error(ArgumentError, /job_id must be a String/)
+        end
+      end
+
+      context "when job_id contains control characters" do
+        let(:control_job_id) { "job\n123" }
+
+        it "raises ArgumentError before making any queries" do
+          expect { described_class.cancel(job_class, control_job_id) }
+            .to raise_error(ArgumentError, /control characters/)
+
+          expect(client).not_to have_received(:list_workflows)
+        end
+      end
+
+      context "when job_id is too long" do
+        let(:long_job_id) { "a" * (ActiveJob::Temporal::JobIdValidation::MAX_JOB_ID_LENGTH + 1) }
+
+        it "raises ArgumentError before making any queries" do
+          expect { described_class.cancel(job_class, long_job_id) }
+            .to raise_error(ArgumentError, /maximum length/)
+
+          expect(client).not_to have_received(:list_workflows)
         end
       end
 

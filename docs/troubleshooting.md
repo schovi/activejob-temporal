@@ -439,23 +439,26 @@ ActiveJob::Temporal.status(MyJob, "550e8400-e29b-41d4-a716-446655440000")
 
 Check:
 
-- The `job_id` is the ActiveJob UUID, not the Temporal run ID.
+- The `job_id` is the ActiveJob job ID, including custom or schedule-generated IDs, not the Temporal run ID.
 - Search attributes were registered before the workflow was started.
 - Custom `workflow_id_generator` values are valid and still attach the standard search attributes.
 - The dead letter workflow was not auto-discarded by `dead_letter_auto_discard_after`.
 - The workflow has not aged out of Temporal retention.
 
-## Invalid Job ID Format
+## Invalid Job ID
 
 **Error message**
 
 ```text
-Invalid job_id format: expected UUID (e.g., '550e8400-e29b-41d4-a716-446655440000'), got: ...
+job_id must not be blank
+job_id must be a String, got ...
+job_id control characters are not allowed
+job_id maximum length is 255 characters
 ```
 
 **Fix**
 
-Pass the ActiveJob `job_id`. Do not pass a database ID, Temporal workflow ID, or Temporal run ID:
+Pass the ActiveJob `job_id`. UUIDs, custom job IDs, and schedule-generated execution IDs are accepted when they are strings, non-blank, valid UTF-8, 255 characters or shorter, and free of control characters. Do not pass a database ID, Temporal workflow ID, or Temporal run ID:
 
 ```ruby
 job = MyJob.perform_later(record.id)
