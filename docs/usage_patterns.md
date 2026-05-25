@@ -103,11 +103,15 @@ class MarkInvoiceSentJob < ApplicationJob
 end
 
 BuildInvoicePayloadJob
-  .set(chain: [SendInvoicePayloadJob.set(queue: :mailers), MarkInvoiceSentJob])
+  .set(chain: [ActiveJob::Temporal.job(SendInvoicePayloadJob, queue: :mailers), MarkInvoiceSentJob])
   .perform_later(invoice.id)
 ```
 
 Failures stop the chain. Chain return values are stored in Temporal history before being passed to the next step, so prefer small primitives, IDs, and compact hashes. ActiveJob chain steps use the chained job class's retry, timeout, rate-limit metadata, and queue routing. Run workers for every task queue used by the root job and chained steps.
+
+Use a bare job class when a chain step should use its class defaults. Use `ActiveJob::Temporal.job(JobClass, queue:, priority:)` when a chain step needs per-step ActiveJob routing options. Chain descriptors intentionally support only `queue` and `priority`; scheduling options such as `wait` do not apply because the chain is already owned by the root workflow.
+
+`JobClass.set(...)` remains accepted in `chain:` for compatibility with existing apps, but it depends on Rails' `ActiveJob::ConfiguredJob` internals. The adapter logs `active_job_configured_job_private_api` with `feature: "chain"` when that fallback is used. Prefer `ActiveJob::Temporal.job(...)` for new chain entries.
 
 ## External Temporal Steps
 
@@ -217,11 +221,15 @@ class SendInvoiceJob < ApplicationJob
 end
 
 BuildInvoiceBatchJob
-  .set(child_workflows: [SendInvoiceJob.set(queue: :mailers, tags: %w[invoices])])
+  .set(child_workflows: [ActiveJob::Temporal.job(SendInvoiceJob, queue: :mailers, tags: %w[invoices])])
   .perform_later(batch.id)
 ```
 
 Child workflow IDs are owned by the parent and use the child job class plus a deterministic child job ID derived from the parent job ID. Parent cancellation requests cancellation of started children, and parent close requests child cancellation instead of abandoning the child workflow.
+
+Use a bare job class when a child workflow should use its class defaults. Use `ActiveJob::Temporal.job(ChildJob, queue:, priority:, tags:)` when a child needs specific routing or search metadata. Child descriptors support `queue`, `priority`, and `tags`.
+
+`JobClass.set(...)` remains accepted in `child_workflows:` for compatibility with existing apps, but it depends on Rails' `ActiveJob::ConfiguredJob` internals. The adapter logs `active_job_configured_job_private_api` with `feature: "child_workflows"` when that fallback is used. Prefer `ActiveJob::Temporal.job(...)` for new child workflow entries.
 
 When child workflows are present, the parent result becomes a collection:
 
