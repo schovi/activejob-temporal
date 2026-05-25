@@ -34,6 +34,10 @@ The canonical machine-readable schema for all configuration options is available
 | `default_retry_initial_interval` | `ActiveSupport::Duration` | `30.seconds` | Initial interval used by automatic retry logic before exponential backoff is applied. Must be positive. |
 | `default_retry_backoff` | Float | `2.0` | Exponential factor used when calculating retry delays. |
 | `default_retry_max_attempts` | Integer | `1` | Maximum retry attempts when a job does not specify its own `retry_on` rules. |
+| `dependency_wait_timeout` | `ActiveSupport::Duration` | `1.day` | Maximum time a workflow waits for dependencies before treating them as timed out. |
+| `dependency_wait_initial_interval` | `ActiveSupport::Duration` | `10.seconds` | Initial durable sleep interval between dependency status checks. |
+| `dependency_wait_max_interval` | `ActiveSupport::Duration` | `1.minute` | Maximum durable sleep interval after dependency wait backoff. |
+| `dependency_wait_backoff` | Float | `2.0` | Exponential factor used between dependency status checks. Must be at least `1.0`. |
 | `dead_letter_queue` | String or `nil` | `nil` | Optional Temporal task queue for parked dead letter workflows. |
 | `dead_letter_after_attempts` | Integer or `nil` | `nil` | Optional retry attempt limit before a job is routed to the dead letter queue. |
 | `dead_letter_auto_discard_after` | `ActiveSupport::Duration` or `nil` | `nil` | Optional retention window before pending dead letter workflows auto-discard. |
@@ -92,6 +96,10 @@ Configuration can also be set via environment variables for 12-factor app compli
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE` | `dead_letter_queue` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS` | `dead_letter_after_attempts` | Integer | `nil` |
 | `ACTIVEJOB_TEMPORAL_DEAD_LETTER_AUTO_DISCARD_AFTER_SECONDS` | `dead_letter_auto_discard_after` | Duration seconds | `nil` |
+| `ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_TIMEOUT_SECONDS` | `dependency_wait_timeout` | Duration seconds | `86400` |
+| `ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_INITIAL_INTERVAL_SECONDS` | `dependency_wait_initial_interval` | Duration seconds | `10` |
+| `ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_MAX_INTERVAL_SECONDS` | `dependency_wait_max_interval` | Duration seconds | `60` |
+| `ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_BACKOFF` | `dependency_wait_backoff` | Float | `2.0` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD` | `encrypt_payload` | Boolean | `false` |
 | `ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY` | `encryption_key` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_TLS_CERT_PATH` | `tls_cert_path` | String | `nil` |
@@ -123,6 +131,10 @@ ActiveJob::Temporal.configure do |config|
   config.default_retry_initial_interval = 10.seconds
   config.default_retry_backoff = 1.5
   config.default_retry_max_attempts = 5
+  config.dependency_wait_timeout = 12.hours
+  config.dependency_wait_initial_interval = 5.seconds
+  config.dependency_wait_max_interval = 1.minute
+  config.dependency_wait_backoff = 2.0
   config.dead_letter_queue = "failed_jobs"
   config.dead_letter_after_attempts = 3
   config.dead_letter_auto_discard_after = 30.days

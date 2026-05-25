@@ -42,6 +42,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
     allow(Temporalio::Workflow).to receive(:execute_local_activity).and_return(:activity_result)
     allow(Temporalio::Workflow).to receive(:sleep)
     allow(Temporalio::Workflow).to receive(:start_child_workflow)
+    allow(Temporalio::Workflow).to receive(:timeout) { |_duration, *_args, **_options, &block| block.call }
     allow(Temporalio::Workflow).to receive(:wait_condition)
     allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return({})
   end
@@ -839,6 +840,126 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         end
         expect(dependency_checks).to eq(2)
         expect(calls.last.first).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+      end
+
+      it "backs off dependency checks while dependencies keep running" do
+        payload = dependency_payload.merge(
+          "dependency_wait" => {
+            "initial_interval" => 5.0,
+            "max_interval" => 20.0,
+            "timeout" => 120.0
+          }
+        )
+        statuses = [
+          [{ "job_id" => "parent-123", "state" => "running" }],
+          [{ "job_id" => "parent-123", "state" => "running" }],
+          [{ "job_id" => "parent-123", "state" => "running" }],
+          [{ "job_id" => "parent-123", "state" => "completed" }]
+        ]
+        sleeps = []
+        allow(Temporalio::Workflow).to receive(:sleep) { |duration| sleeps << duration }
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *_args, **_options|
+          if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+            statuses.shift
+          else
+            :activity_result
+          end
+        end
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:timeout)
+          .with(120.0, Timeout::Error, /dependency wait timed out/, summary: "Dependency wait timeout")
+        expect(sleeps).to eq([5.0, 10.0, 20.0])
+      end
+
+      it "uses the remaining dependency wait timeout after continue-as-new" do
+        current_time = Time.utc(2024, 1, 1, 12, 0, 30)
+        payload = dependency_payload.merge(
+          "dependency_wait" => { "timeout" => 60.0 },
+          "workflow_state" => {
+            "dependency_wait" => {
+              "deadline_at" => Time.utc(2024, 1, 1, 12, 1, 0).iso8601
+            }
+          }
+        )
+        allow(Temporalio::Workflow).to receive(:now).and_return(current_time)
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *_args, **_options|
+          if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+            [{ "job_id" => "parent-123", "state" => "completed" }]
+          else
+            :activity_result
+          end
+        end
+
+        workflow.execute(payload)
+
+        expect(Temporalio::Workflow).to have_received(:timeout)
+          .with(30.0, Timeout::Error, /dependency wait timed out/, summary: "Dependency wait timeout")
+      end
+
+      it "carries dependency wait deadline when continuing as new while waiting" do
+        current_time = Time.utc(2024, 1, 1, 12, 0, 0)
+        continue_error = StandardError.new("continue as new")
+        payload = dependency_payload.merge(
+          "continue_as_new" => { "history_event_threshold" => 1 },
+          "dependency_wait" => {
+            "initial_interval" => 5.0,
+            "timeout" => 60.0
+          }
+        )
+
+        allow(Temporalio::Workflow).to receive(:now).and_return(current_time)
+        allow(Temporalio::Workflow).to receive(:current_history_length).and_return(0, 0, 1)
+        allow(Temporalio::Workflow::ContinueAsNewError).to receive(:new).and_return(continue_error)
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *_args, **_options|
+          if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+            [{ "job_id" => "parent-123", "state" => "running" }]
+          else
+            :activity_result
+          end
+        end
+
+        expect { workflow.execute(payload) }.to raise_error(continue_error)
+
+        expect(Temporalio::Workflow::ContinueAsNewError).to have_received(:new) do |rollover_payload, _options|
+          expect(rollover_payload.dig("workflow_state", "dependency_wait")).to include(
+            "deadline_at" => Time.utc(2024, 1, 1, 12, 1, 0).iso8601,
+            "current_interval" => 5.0,
+            "not_found_counts" => {}
+          )
+        end
+      end
+
+      it "fails when running dependencies exceed the dependency wait timeout" do
+        payload = dependency_payload.merge("dependency_wait" => { "timeout" => 30.0 })
+        allow(Temporalio::Workflow).to receive(:timeout)
+          .and_raise(Timeout::Error, "dependency wait timed out")
+
+        expect { workflow.execute(payload) }
+          .to raise_error(Temporalio::Error::ApplicationError, /timed_out/)
+
+        expect(Temporalio::Workflow).to have_received(:timeout)
+          .with(30.0, Timeout::Error, /dependency wait timed out/, summary: "Dependency wait timeout")
+      end
+
+      it "continues when a dependency has continued as new" do
+        calls = []
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+          calls << [activity_class, args, options]
+          if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
+            [{ "job_id" => "parent-123", "state" => "continued_as_new" }]
+          else
+            :activity_result
+          end
+        end
+
+        workflow.execute(dependency_payload)
+
+        expect(calls.map(&:first)).to eq([
+                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
+                                           ActiveJob::Temporal::Activities::AjRunnerActivity
+                                         ])
       end
 
       it "fails before executing the job activity when a dependency fails" do

@@ -101,6 +101,18 @@ en:
               not_a_duration: "must be a duration (e.g., 1.day or 6.hours), got: %{value}"
               duration_not_positive: "must be positive (got: %{seconds} seconds). Use values like 1.hour or 7.days"
 
+            dependency_wait_timeout:
+              not_a_duration: "must be a duration (e.g., 10.minutes or 1.day), got: %{value}"
+              duration_not_positive: "must be positive (got: %{seconds} seconds). Use values like 1.minute or 1.day"
+
+            dependency_wait_initial_interval:
+              not_a_duration: "must be a duration (e.g., 5.seconds or 1.minute), got: %{value}"
+              duration_not_positive: "must be positive (got: %{seconds} seconds). Use values like 5.seconds or 1.minute"
+
+            dependency_wait_max_interval:
+              not_a_duration: "must be a duration (e.g., 30.seconds or 5.minutes), got: %{value}"
+              duration_not_positive: "must be positive (got: %{seconds} seconds). Use values like 30.seconds or 5.minutes"
+
             tls_cert_path:
               requires_key_path: "requires tls_key_path so the client certificate and private key rotate together"
               invalid_path: "must be a non-empty file path, got: %{value}"

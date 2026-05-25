@@ -23,6 +23,7 @@ RSpec.describe "job payload schema" do
           "chain" => { "$ref" => "#/definitions/chain" },
           "dependencies" => { "$ref" => "#/definitions/dependencies" },
           "dependency_failure_policy" => { "type" => "string", "enum" => %w[fail ignore] },
+          "dependency_wait" => { "$ref" => "#/definitions/dependency_wait" },
           "activity_task_queue" => { "type" => "string", "minLength" => 1 },
           "schedule_id" => { "type" => "string", "minLength" => 1 },
           "schedule_workflow_id_prefix" => { "type" => "string", "minLength" => 1 },
@@ -183,7 +184,24 @@ RSpec.describe "job payload schema" do
       "properties" => include(
         "job_class" => { "type" => "string", "minLength" => 1 },
         "job_id" => { "type" => "string", "minLength" => 1 },
-        "workflow_id" => { "type" => "string", "minLength" => 1 }
+        "workflow_id" => { "type" => "string", "minLength" => 1 },
+        "run_id" => { "type" => "string", "minLength" => 1 }
+      )
+    )
+  end
+
+  it "defines dependency wait metadata" do
+    dependency_wait_schema = schema.fetch("definitions").fetch("dependency_wait")
+
+    expect(dependency_wait_schema).to include(
+      "type" => "object",
+      "additionalProperties" => false,
+      "required" => contain_exactly("timeout", "initial_interval", "max_interval", "backoff"),
+      "properties" => include(
+        "timeout" => { "type" => "number", "exclusiveMinimum" => 0 },
+        "initial_interval" => { "type" => "number", "exclusiveMinimum" => 0 },
+        "max_interval" => { "type" => "number", "exclusiveMinimum" => 0 },
+        "backoff" => { "type" => "number", "minimum" => 1.0 }
       )
     )
   end

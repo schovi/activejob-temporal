@@ -419,6 +419,47 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload[:dependency_failure_policy]).to eq("ignore")
   end
 
+  it "includes dependency wait options" do
+    config.dependency_wait_timeout = 30.minutes
+    config.dependency_wait_initial_interval = 5.seconds
+    config.dependency_wait_max_interval = 1.minute
+    config.dependency_wait_backoff = 3.0
+    job = build_job("DependencyWaitBuilderJob")
+    job.define_singleton_method(:temporal_dependencies) do
+      [{ job_id: "parent-123" }]
+    end
+    job.define_singleton_method(:temporal_dependency_failure_policy) { :fail }
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:dependency_wait]).to eq(
+      timeout: 1800.0,
+      initial_interval: 5.0,
+      max_interval: 60.0,
+      backoff: 3.0
+    )
+  end
+
+  it "lets job dependency wait options override configuration defaults" do
+    config.dependency_wait_timeout = 30.minutes
+    job = build_job("DependencyWaitOverrideBuilderJob")
+    job.define_singleton_method(:temporal_dependencies) do
+      [{ job_id: "parent-123" }]
+    end
+    job.define_singleton_method(:temporal_dependency_wait) do
+      { timeout: 60.0, initial_interval: 2.0 }
+    end
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:dependency_wait]).to include(
+      timeout: 60.0,
+      initial_interval: 2.0,
+      max_interval: 60.0,
+      backoff: 2.0
+    )
+  end
+
   it "includes per-job rate limits with a job-specific key" do
     config.rate_limiter = ->(_rate_limits) { 0 }
     job_class = Class.new(ActiveJob::Base) do

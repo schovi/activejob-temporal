@@ -16,6 +16,7 @@ module ActiveJob
         payload[:dependencies] = dependencies.map { |dependency| enrich_dependency(dependency) }
         policy = job.respond_to?(:temporal_dependency_failure_policy) ? job.temporal_dependency_failure_policy : :fail
         payload[:dependency_failure_policy] = policy.to_s
+        payload[:dependency_wait] = dependency_wait_options(job)
       end
 
       def enrich_dependency(dependency)
@@ -34,6 +35,28 @@ module ActiveJob
         workflow_id = "#{WorkflowIdBuilder::DEFAULT_PREFIX}:#{job_class}:#{job_id}"
         WorkflowIdBuilder.validate!(workflow_id)
         workflow_id
+      end
+
+      def dependency_wait_options(job)
+        default_dependency_wait_options.merge(job_dependency_wait_options(job))
+      end
+
+      def default_dependency_wait_options
+        {
+          timeout: @config.dependency_wait_timeout.to_f,
+          initial_interval: @config.dependency_wait_initial_interval.to_f,
+          max_interval: @config.dependency_wait_max_interval.to_f,
+          backoff: @config.dependency_wait_backoff.to_f
+        }
+      end
+
+      def job_dependency_wait_options(job)
+        return {} unless job.respond_to?(:temporal_dependency_wait)
+
+        dependency_wait = job.temporal_dependency_wait
+        return {} unless dependency_wait.is_a?(Hash)
+
+        dependency_wait
       end
     end
   end

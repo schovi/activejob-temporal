@@ -7,7 +7,7 @@
 
 metadata:
   schema_version: "1.0"
-  last_updated: "2026-05-21"
+  last_updated: "2026-05-25"
   contact: "ruby@temporal.io"
   repository: "https://github.com/schovi/activejob-temporal"
   documentation: "https://github.com/schovi/activejob-temporal/blob/main/docs/configuration_reference.md"
@@ -152,6 +152,48 @@ attributes:
       description: "Initial interval before the first retry attempt. This is the base delay before exponential backoff is applied."
       env_var_name: null
       example: "10.seconds"
+
+    - name: dependency_wait_timeout
+      type: Duration
+      default: "1.day"
+      validation_rules:
+        - "Must be a positive duration (Numeric or ActiveSupport::Duration)"
+        - "Must be > 0 seconds"
+        - "Can be set as numeric seconds (86400) or ActiveSupport::Duration (1.day)"
+      description: "Maximum time a workflow waits for dependencies before treating them as timed out."
+      env_var_name: ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_TIMEOUT_SECONDS
+      example: "30.minutes"
+
+    - name: dependency_wait_initial_interval
+      type: Duration
+      default: "10.seconds"
+      validation_rules:
+        - "Must be a positive duration (Numeric or ActiveSupport::Duration)"
+        - "Must be > 0 seconds"
+        - "Must be less than or equal to dependency_wait_max_interval"
+      description: "Initial durable sleep interval between dependency status checks."
+      env_var_name: ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_INITIAL_INTERVAL_SECONDS
+      example: "5.seconds"
+
+    - name: dependency_wait_max_interval
+      type: Duration
+      default: "1.minute"
+      validation_rules:
+        - "Must be a positive duration (Numeric or ActiveSupport::Duration)"
+        - "Must be > 0 seconds"
+        - "Must be greater than or equal to dependency_wait_initial_interval"
+      description: "Maximum durable sleep interval after dependency wait backoff."
+      env_var_name: ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_MAX_INTERVAL_SECONDS
+      example: "1.minute"
+
+    - name: dependency_wait_backoff
+      type: Float
+      default: 2.0
+      validation_rules:
+        - "Must be >= 1.0"
+      description: "Exponential backoff coefficient for dependency status check intervals."
+      env_var_name: ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_BACKOFF
+      example: 2.0
 
   # Retry settings control failure recovery behavior
   retry:
@@ -665,6 +707,10 @@ validation:
     - "namespace - Must be 1-1000 characters, start and end alphanumeric, and contain only alphanumeric characters, hyphens, and underscores"
     - "default_activity_timeout - Must be a positive duration"
     - "default_retry_initial_interval - Must be a positive duration"
+    - "dependency_wait_timeout - Must be a positive duration"
+    - "dependency_wait_initial_interval - Must be a positive duration and no larger than dependency_wait_max_interval"
+    - "dependency_wait_max_interval - Must be a positive duration and no smaller than dependency_wait_initial_interval"
+    - "dependency_wait_backoff - Must be >= 1.0"
     - "default_retry_backoff - Must be >= 1.0"
     - "default_retry_max_attempts - Must be >= 0"
     - "dead_letter_queue - Optional, but when set must not be blank"

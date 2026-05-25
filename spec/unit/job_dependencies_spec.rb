@@ -74,6 +74,25 @@ RSpec.describe "ActiveJob Temporal job dependencies" do
     expect(job.temporal_dependency_failure_policy).to eq(:ignore)
   end
 
+  it "captures dependency wait options" do
+    job = child_job_class.set(
+      depends_on: "parent-123",
+      dependency_wait: {
+        timeout: 5.minutes,
+        initial_interval: 5.seconds,
+        max_interval: 30.seconds,
+        backoff: 3.0
+      }
+    ).perform_later
+
+    expect(job.temporal_dependency_wait).to eq(
+      timeout: 300.0,
+      initial_interval: 5.0,
+      max_interval: 30.0,
+      backoff: 3.0
+    )
+  end
+
   it "captures explicit dependency hashes" do
     job = child_job_class.set(
       depends_on: [
@@ -100,6 +119,22 @@ RSpec.describe "ActiveJob Temporal job dependencies" do
                                               {
                                                 job_class: "DependencyParentJob",
                                                 job_id: "parent-123"
+                                              }
+                                            ])
+  end
+
+  it "captures exact dependency run IDs" do
+    job = child_job_class.set(
+      depends_on: {
+        workflow_id: "ajwf:DependencyParentJob:parent-123",
+        run_id: "run-123"
+      }
+    ).perform_later
+
+    expect(job.temporal_dependencies).to eq([
+                                              {
+                                                workflow_id: "ajwf:DependencyParentJob:parent-123",
+                                                run_id: "run-123"
                                               }
                                             ])
   end
@@ -131,8 +166,18 @@ RSpec.describe "ActiveJob Temporal job dependencies" do
       .to raise_error(ArgumentError, /must be :fail or :ignore/)
   end
 
+  it "rejects invalid dependency wait options" do
+    expect { child_job_class.new.set(depends_on: "parent-123", dependency_wait: { timeout: 0 }) }
+      .to raise_error(ArgumentError, /dependency_wait timeout must be positive/)
+  end
+
   it "rejects failure policy configuration without dependencies" do
     expect { child_job_class.new.set(on_dependency_failure: :ignore) }
       .to raise_error(ArgumentError, /requires depends_on/)
+  end
+
+  it "rejects dependency wait configuration without dependencies" do
+    expect { child_job_class.new.set(dependency_wait: { timeout: 1.minute }) }
+      .to raise_error(ArgumentError, /dependency_wait requires depends_on/)
   end
 end

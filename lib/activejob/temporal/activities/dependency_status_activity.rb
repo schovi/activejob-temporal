@@ -9,17 +9,18 @@ require_relative "../workflow_id_builder"
 module ActiveJob
   module Temporal
     module Activities
+      DEPENDENCY_WORKFLOW_STATES = {
+        Temporalio::Client::WorkflowExecutionStatus::RUNNING => "running",
+        Temporalio::Client::WorkflowExecutionStatus::COMPLETED => "completed",
+        Temporalio::Client::WorkflowExecutionStatus::FAILED => "failed",
+        Temporalio::Client::WorkflowExecutionStatus::CANCELED => "canceled",
+        Temporalio::Client::WorkflowExecutionStatus::TERMINATED => "terminated",
+        Temporalio::Client::WorkflowExecutionStatus::CONTINUED_AS_NEW => "continued_as_new",
+        Temporalio::Client::WorkflowExecutionStatus::TIMED_OUT => "timed_out"
+      }.freeze
+
       class DependencyStatusActivity < Temporalio::Activity::Definition
         SAFE_QUERY_VALUE_PATTERN = /\A[A-Za-z0-9_.:-]+\z/
-        WORKFLOW_STATES = {
-          Temporalio::Client::WorkflowExecutionStatus::RUNNING => "running",
-          Temporalio::Client::WorkflowExecutionStatus::COMPLETED => "completed",
-          Temporalio::Client::WorkflowExecutionStatus::FAILED => "failed",
-          Temporalio::Client::WorkflowExecutionStatus::CANCELED => "canceled",
-          Temporalio::Client::WorkflowExecutionStatus::TERMINATED => "terminated",
-          Temporalio::Client::WorkflowExecutionStatus::CONTINUED_AS_NEW => "continued_as_new",
-          Temporalio::Client::WorkflowExecutionStatus::TIMED_OUT => "timed_out"
-        }.freeze
 
         def execute(dependencies)
           Array(dependencies).map { |dependency| status_for(normalize_dependency(dependency)) }
@@ -31,7 +32,9 @@ module ActiveJob
           workflow_reference = find_workflow_reference(dependency)
           return status_payload(dependency, "not_found") unless workflow_reference
 
-          status_from_description(dependency, describe_workflow(workflow_reference))
+          description = describe_workflow(workflow_reference)
+          description = follow_continued_run(description, workflow_reference) if workflow_reference[:run_id]
+          status_from_description(dependency, description)
         rescue StandardError => e
           fallback_description = describe_search_attribute_workflow(dependency) if rpc_not_found?(e)
           return status_from_description(dependency, fallback_description) if fallback_description
@@ -43,21 +46,19 @@ module ActiveJob
         def status_from_description(dependency, description)
           status_payload(
             dependency,
-            WORKFLOW_STATES.fetch(description.status, "unknown"),
+            DEPENDENCY_WORKFLOW_STATES.fetch(description.status, "unknown"),
             workflow_id: description.id,
             run_id: description.run_id
           )
         end
 
         def normalize_dependency(dependency)
-          dependency.each_with_object({}) do |(key, value), normalized|
-            normalized[key.to_s] = value
-          end
+          dependency.to_h.transform_keys(&:to_s)
         end
 
         def find_workflow_reference(dependency)
           workflow_id = dependency["workflow_id"]
-          return { workflow_id: workflow_id, run_id: nil } if workflow_id
+          return { workflow_id: workflow_id, run_id: dependency["run_id"] } if workflow_id
 
           search_workflow_reference(dependency) || default_workflow_reference(dependency)
         end
@@ -66,7 +67,7 @@ module ActiveJob
           job_id = dependency["job_id"]
           return unless job_id
 
-          workflow = client.list_workflows(workflow_search_query(dependency)).first
+          workflow = search_ordered_workflow(dependency)
           return unless workflow
 
           {
@@ -77,6 +78,14 @@ module ActiveJob
           return nil if rpc_invalid_argument?(e)
 
           raise
+        end
+
+        def search_ordered_workflow(dependency)
+          client.list_workflows(workflow_search_query(dependency, ordered: true)).first
+        rescue StandardError => e
+          raise unless rpc_invalid_argument?(e)
+
+          client.list_workflows(workflow_search_query(dependency, ordered: false)).first
         end
 
         def default_workflow_reference(dependency)
@@ -92,11 +101,12 @@ module ActiveJob
           }
         end
 
-        def workflow_search_query(dependency)
+        def workflow_search_query(dependency, ordered:)
           filters = ["ajJobId='#{safe_query_value(dependency.fetch('job_id'))}'"]
           job_class = dependency["job_class"]
           filters.unshift("ajClass='#{safe_query_value(job_class)}'") if job_class
-          filters.join(" AND ")
+          query = filters.join(" AND ")
+          ordered ? "#{query} ORDER BY StartTime DESC" : query
         end
 
         def safe_query_value(value)
@@ -112,6 +122,13 @@ module ActiveJob
             workflow_reference.fetch(:workflow_id),
             run_id: workflow_reference[:run_id]
           ).describe
+        end
+
+        def follow_continued_run(description, workflow_reference)
+          state = DEPENDENCY_WORKFLOW_STATES.fetch(description.status, "unknown")
+          return description unless state == "continued_as_new"
+
+          describe_workflow(workflow_reference.merge(run_id: nil))
         end
 
         def describe_search_attribute_workflow(dependency)
@@ -134,7 +151,7 @@ module ActiveJob
             "job_id" => dependency["job_id"],
             "job_class" => dependency["job_class"],
             "workflow_id" => workflow_id || dependency["workflow_id"],
-            "run_id" => run_id,
+            "run_id" => run_id || dependency["run_id"],
             "state" => state
           }.compact
         end

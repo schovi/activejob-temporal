@@ -62,6 +62,13 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       expect(configuration.continue_as_new_history_event_threshold).to be_nil
     end
 
+    it "sets bounded dependency wait defaults" do
+      expect(configuration.dependency_wait_timeout).to eq(1.day)
+      expect(configuration.dependency_wait_initial_interval).to eq(10.seconds)
+      expect(configuration.dependency_wait_max_interval).to eq(1.minute)
+      expect(configuration.dependency_wait_backoff).to eq(2.0)
+    end
+
     it "disables local activity helpers by default" do
       expect(configuration.local_activity_helpers).to eq([])
     end
@@ -292,6 +299,20 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       config = described_class.new
       expect(config.continue_as_new_history_event_threshold).to eq(10_000)
+    end
+
+    it "reads dependency wait settings from environment variables" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_TIMEOUT_SECONDS").and_return("120")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_INITIAL_INTERVAL_SECONDS").and_return("2")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_MAX_INTERVAL_SECONDS").and_return("30")
+      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_BACKOFF").and_return("3.5")
+
+      config = described_class.new
+      expect(config.dependency_wait_timeout).to eq(120.0)
+      expect(config.dependency_wait_initial_interval).to eq(2.0)
+      expect(config.dependency_wait_max_interval).to eq(30.0)
+      expect(config.dependency_wait_backoff).to eq(3.5)
     end
 
     it "reads dead letter queue settings from environment variables" do
@@ -1015,6 +1036,36 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       configuration.default_retry_initial_interval = Object.new
 
       expect_configuration_error(/must be a duration/)
+    end
+  end
+
+  describe "dependency wait validation" do
+    it "accepts valid dependency wait settings" do
+      configuration.dependency_wait_timeout = 10.minutes
+      configuration.dependency_wait_initial_interval = 5.seconds
+      configuration.dependency_wait_max_interval = 30.seconds
+      configuration.dependency_wait_backoff = 2.5
+
+      expect { configuration.validate! }.not_to raise_error
+    end
+
+    it "rejects non-positive dependency wait durations" do
+      configuration.dependency_wait_timeout = 0.seconds
+
+      expect_configuration_error(/Dependency wait timeout must be positive/)
+    end
+
+    it "rejects dependency wait max interval below the initial interval" do
+      configuration.dependency_wait_initial_interval = 30.seconds
+      configuration.dependency_wait_max_interval = 5.seconds
+
+      expect_configuration_error(/Dependency wait max interval must be greater than or equal to initial interval/)
+    end
+
+    it "rejects dependency wait backoff below 1" do
+      configuration.dependency_wait_backoff = 0.9
+
+      expect_configuration_error(/Dependency wait backoff must be greater than or equal to 1/)
     end
   end
 

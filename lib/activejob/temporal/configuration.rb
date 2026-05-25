@@ -330,6 +330,34 @@ module ActiveJob
         description: "Optional workflow history event threshold for continuing ActiveJob workflows as new"
       },
 
+      dependency_wait_timeout: {
+        default: -> { 1.day },
+        env_var: "ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_TIMEOUT_SECONDS",
+        type: :duration,
+        description: "Maximum time a workflow waits for dependencies before timing out"
+      },
+
+      dependency_wait_initial_interval: {
+        default: -> { 10.seconds },
+        env_var: "ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_INITIAL_INTERVAL_SECONDS",
+        type: :duration,
+        description: "Initial durable sleep interval between dependency checks"
+      },
+
+      dependency_wait_max_interval: {
+        default: -> { 1.minute },
+        env_var: "ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_MAX_INTERVAL_SECONDS",
+        type: :duration,
+        description: "Maximum durable sleep interval between dependency checks"
+      },
+
+      dependency_wait_backoff: {
+        default: 2.0,
+        env_var: "ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_BACKOFF",
+        type: :float,
+        description: "Backoff coefficient for dependency polling intervals"
+      },
+
       local_activity_helpers: {
         default: -> { [] },
         type: :array,
@@ -365,6 +393,10 @@ module ActiveJob
     #   ACTIVEJOB_TEMPORAL_TARGET, ACTIVEJOB_TEMPORAL_NAMESPACE,
     #   ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX, ACTIVEJOB_TEMPORAL_TASK_QUEUE,
     #   ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB,
+    #   ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_TIMEOUT_SECONDS,
+    #   ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_INITIAL_INTERVAL_SECONDS,
+    #   ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_MAX_INTERVAL_SECONDS,
+    #   ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_BACKOFF,
     #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES,
     #   ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS,
     #   can provide defaults.
@@ -625,6 +657,7 @@ module ActiveJob
       validate :validate_payload_storage_settings
       validate :validate_tls_settings
       validate :validate_local_activity_helpers
+      validate :validate_dependency_wait_settings
 
       private
 
@@ -672,6 +705,30 @@ module ActiveJob
         validate_duration_attribute(:default_schedule_to_start_timeout, required: false)
         validate_duration_attribute(:default_schedule_to_close_timeout, required: false)
         validate_duration_attribute(:dead_letter_auto_discard_after, required: false)
+        validate_duration_attribute(:dependency_wait_timeout, required: true)
+        validate_duration_attribute(:dependency_wait_initial_interval, required: true)
+        validate_duration_attribute(:dependency_wait_max_interval, required: true)
+      end
+
+      def validate_dependency_wait_settings
+        validate_dependency_wait_backoff
+        validate_dependency_wait_interval_order
+      end
+
+      def validate_dependency_wait_backoff
+        value = dependency_wait_backoff
+        return if value.is_a?(Numeric) && value >= 1.0
+
+        errors.add(:dependency_wait_backoff, "must be greater than or equal to 1")
+      end
+
+      def validate_dependency_wait_interval_order
+        initial_interval = duration_seconds(dependency_wait_initial_interval)
+        max_interval = duration_seconds(dependency_wait_max_interval)
+        return unless initial_interval && max_interval
+        return if max_interval >= initial_interval
+
+        errors.add(:dependency_wait_max_interval, "must be greater than or equal to initial interval")
       end
 
       def validate_workflow_id_generator
@@ -1000,6 +1057,12 @@ module ActiveJob
         errors.add(attr_name, :duration_not_positive,
                    seconds: seconds,
                    attribute: attr_name.to_s.humanize.downcase)
+      end
+
+      def duration_seconds(value)
+        return value.to_f if value.is_a?(Numeric) || value.is_a?(ActiveSupport::Duration)
+
+        nil
       end
     end
     # rubocop:enable Metrics/ClassLength

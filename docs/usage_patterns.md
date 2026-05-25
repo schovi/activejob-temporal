@@ -277,7 +277,7 @@ If `set(chain:)` is also configured, the first chain step receives this collecti
 
 ## Job Dependencies
 
-Use `set(depends_on:)` when a separately enqueued job should finish before another job starts. The dependent workflow checks dependency status through a Temporal activity, sleeps durably between checks, then runs the job activity once every dependency has completed.
+Use `set(depends_on:)` when a separately enqueued job should finish before another job starts. The dependent workflow checks dependency status through a Temporal activity, sleeps durably between checks with exponential backoff, then runs the job activity once every dependency has completed.
 
 ```ruby
 export_job = ExportReportJob.perform_later(report.id)
@@ -297,6 +297,14 @@ EmailReportJob.set(depends_on: { workflow_id: "custom-export-workflow" }).perfor
 ```
 
 When only a job ID is provided, dependency lookup uses the `ajJobId` Temporal search attribute. This works with the default search attribute setup. If search attributes are disabled, pass an enqueued job instance or explicit `workflow_id`. With a custom `workflow_id_generator`, prefer the enqueued job instance or explicit `workflow_id` forms.
+
+If you need to pin dependency lookup to a specific Temporal execution, include `run_id` with `workflow_id`:
+
+```ruby
+EmailReportJob
+  .set(depends_on: { workflow_id: "custom-export-workflow", run_id: "run-id" })
+  .perform_later(report.id)
+```
 
 Multiple dependencies are supported:
 
@@ -318,6 +326,24 @@ CleanupReportJob
 ```
 
 Missing dependencies are treated as dependency failures after a bounded retry window. This prevents typoed IDs or expired workflow visibility records from leaving the dependent workflow waiting forever.
+
+Running dependencies are bounded by `config.dependency_wait_timeout` (default: `1.day`). The deadline is carried across workflow continue-as-new runs. You can override the wait policy per enqueue:
+
+```ruby
+EmailReportJob
+  .set(
+    depends_on: export_job,
+    dependency_wait: {
+      timeout: 30.minutes,
+      initial_interval: 5.seconds,
+      max_interval: 1.minute,
+      backoff: 2.0
+    }
+  )
+  .perform_later(report.id)
+```
+
+If a dependency run continued as new, exact `run_id` lookups follow the latest run for that workflow ID. A `continued_as_new` state returned without a follow-up run is treated as a completed continuation so the dependent workflow does not wait forever.
 
 ## Per-Job Timeouts
 
