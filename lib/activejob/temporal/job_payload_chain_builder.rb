@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "adapter"
+require_relative "external_operation"
 require "active_support/core_ext/string/inflections"
 
 module ActiveJob
@@ -22,6 +23,9 @@ module ActiveJob
       end
 
       def chain_payload_for(root_job, chain_step, position)
+        external_operation = ExternalOperation.normalize(chain_step)
+        return external_chain_payload(external_operation) if external_operation
+
         job_class = chain_step_job_class(chain_step)
         options = chain_step_options(chain_step)
         queue_name = chain_step_queue_name(job_class, options)
@@ -33,6 +37,14 @@ module ActiveJob
         apply_rate_limits_for_class(payload, job_class)
         apply_workflow_interactions(payload, job_class)
         payload
+      end
+
+      def external_chain_payload(external_operation)
+        {
+          temporal_operation: external_operation.fetch(:temporal_operation),
+          temporal_type: external_operation.fetch(:temporal_type),
+          options: external_operation.fetch(:options)
+        }
       end
 
       def base_chain_payload(job_class, job_id, queue_name, options)

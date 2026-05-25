@@ -107,11 +107,56 @@ BuildInvoicePayloadJob
   .perform_later(invoice.id)
 ```
 
-Failures stop the chain. Chain return values are stored in Temporal history before being passed to the next step, so prefer small primitives, IDs, and compact hashes. Chain steps use the chained job class's retry, timeout, rate-limit metadata, and queue routing. Run workers for every task queue used by the root job and chained steps.
+Failures stop the chain. Chain return values are stored in Temporal history before being passed to the next step, so prefer small primitives, IDs, and compact hashes. ActiveJob chain steps use the chained job class's retry, timeout, rate-limit metadata, and queue routing. Run workers for every task queue used by the root job and chained steps.
+
+## External Temporal Steps
+
+Use `ActiveJob::Temporal.activity` and `ActiveJob::Temporal.workflow` in `chain:` when a Rails workflow should call Temporal work owned by another service:
+
+```ruby
+CheckoutJob.set(
+  chain: [
+    BuildPaymentRequestJob,
+    ActiveJob::Temporal.activity(
+      "payments.AuthorizePayment",
+      task_queue: "payments-kotlin",
+      start_to_close_timeout: 30.seconds
+    ),
+    ActiveJob::Temporal.workflow(
+      "inventory.ReserveInventoryWorkflow",
+      task_queue: "inventory-kotlin",
+      run_timeout: 5.minutes
+    ),
+    CompleteCheckoutJob
+  ]
+).perform_later(order.id)
+```
+
+`task_queue:` is required for external steps. Activity and workflow type names are passed to Temporal as strings. Each external chain step receives the previous step result as its input and returns its Temporal result to the next step.
+
+External inputs and results must be JSON-compatible values, and they are still recorded in Temporal history. Keep them small: pass IDs, strings, numbers, arrays, and compact hashes instead of models, GlobalID objects, binary data, or large payloads.
+
+External steps use Temporal options directly. Configure timeouts and retries with Temporal options such as `start_to_close_timeout`, `run_timeout`, and `retry_policy`. Rails `retry_on`, `discard_on`, ActiveJob middleware, and ActiveJob argument serialization do not run for external steps.
+
+External workflow refs can also be used in `child_workflows:`:
+
+```ruby
+BuildOrderPlanJob.set(
+  child_workflows: [
+    SendReceiptJob,
+    ActiveJob::Temporal.workflow(
+      "fulfillment.PrepareShipmentWorkflow",
+      task_queue: "fulfillment-kotlin"
+    )
+  ]
+).perform_later(order.id)
+```
+
+External child workflows receive the parent job result as their input and contribute their Temporal result to the parent's `child_results` collection. Use `ActiveJob::Temporal.workflow` for external children; `ActiveJob::Temporal.activity` is only valid in `chain:`.
 
 ## Child Workflows
 
-Use `set(child_workflows:)` when a parent job should start separate ActiveJob-backed Temporal workflows and wait for their results. The parent job runs first. Each child receives the parent result as its single argument and returns its job result to the parent.
+Use `set(child_workflows:)` when a parent job should start separate ActiveJob-backed or external Temporal workflows and wait for their results. The parent job runs first. Each child receives the parent result as its single input and returns its result to the parent.
 
 ```ruby
 class BuildInvoiceBatchJob < ApplicationJob
@@ -154,7 +199,7 @@ When child workflows are present, the parent result becomes a collection:
 }
 ```
 
-If `set(chain:)` is also configured, the first chain step receives this collection as its single argument. Children preserve their job class retry policy, timeouts, rate limits, queue routing, and search metadata.
+If `set(chain:)` is also configured, the first chain step receives this collection as its single argument. ActiveJob children preserve their job class retry policy, timeouts, rate limits, queue routing, and search metadata. External workflow refs use the Temporal options supplied to `ActiveJob::Temporal.workflow`.
 
 ## Job Dependencies
 

@@ -4,6 +4,7 @@ require "active_support/core_ext/string/inflections"
 require "time"
 
 require_relative "adapter"
+require_relative "external_operation"
 require_relative "workflow_id_builder"
 
 module ActiveJob
@@ -26,6 +27,9 @@ module ActiveJob
       end
 
       def child_workflow_payload_for(root_job, child_workflow, position)
+        external_operation = ExternalOperation.normalize(child_workflow)
+        return external_child_workflow_payload(external_operation) if external_operation
+
         job_class = child_workflow_job_class(child_workflow)
         options = child_workflow_options(child_workflow)
         queue_name = child_workflow_queue_name(job_class, options)
@@ -38,6 +42,14 @@ module ActiveJob
         apply_workflow_interactions(payload, job_class)
         apply_child_workflow_search_attributes(payload, job_class, job_id, queue_name, options)
         payload
+      end
+
+      def external_child_workflow_payload(external_operation)
+        {
+          temporal_operation: external_operation.fetch(:temporal_operation),
+          temporal_type: external_operation.fetch(:temporal_type),
+          options: external_operation.fetch(:options)
+        }
       end
 
       def base_child_workflow_payload(job_class, job_id, queue_name, options)

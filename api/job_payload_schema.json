@@ -40,7 +40,14 @@
         }
       }
     },
-    "chain_step": {
+    "external_temporal_options": {
+      "type": "object",
+      "required": ["task_queue"],
+      "properties": {
+        "task_queue": { "type": "string", "minLength": 1 }
+      }
+    },
+    "active_job_chain_step": {
       "type": "object",
       "additionalProperties": false,
       "required": ["job_class", "job_id", "queue_name", "arguments"],
@@ -63,6 +70,22 @@
         "activity_task_queue": { "type": "string", "minLength": 1 }
       }
     },
+    "external_chain_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temporal_operation", "temporal_type", "options"],
+      "properties": {
+        "temporal_operation": { "type": "string", "enum": ["activity", "workflow"] },
+        "temporal_type": { "type": "string", "minLength": 1 },
+        "options": { "$ref": "#/definitions/external_temporal_options" }
+      }
+    },
+    "chain_step": {
+      "anyOf": [
+        { "$ref": "#/definitions/active_job_chain_step" },
+        { "$ref": "#/definitions/external_chain_step" }
+      ]
+    },
     "chain": {
       "type": "array",
       "minItems": 1,
@@ -84,7 +107,7 @@
         }
       }
     },
-    "child_workflow": {
+    "active_job_child_workflow": {
       "type": "object",
       "additionalProperties": false,
       "required": ["job_class", "job_id", "workflow_id", "queue_name", "arguments"],
@@ -109,6 +132,22 @@
         "workflow_task_queue": { "type": "string", "minLength": 1 },
         "search_attributes": { "$ref": "#/definitions/child_workflow_search_attributes" }
       }
+    },
+    "external_child_workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["temporal_operation", "temporal_type", "options"],
+      "properties": {
+        "temporal_operation": { "type": "string", "enum": ["workflow"] },
+        "temporal_type": { "type": "string", "minLength": 1 },
+        "options": { "$ref": "#/definitions/external_temporal_options" }
+      }
+    },
+    "child_workflow": {
+      "anyOf": [
+        { "$ref": "#/definitions/active_job_child_workflow" },
+        { "$ref": "#/definitions/external_child_workflow" }
+      ]
     },
     "child_workflows": {
       "type": "array",

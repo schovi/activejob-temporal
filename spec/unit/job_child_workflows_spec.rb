@@ -58,6 +58,31 @@ RSpec.describe "ActiveJob Temporal child workflows" do
     expect(test_adapter.enqueued_jobs.size).to eq(1)
   end
 
+  it "captures external Temporal workflow refs in child workflow order" do
+    shipment_workflow = ActiveJob::Temporal.workflow(
+      "fulfillment.PrepareShipmentWorkflow",
+      task_queue: "fulfillment-kotlin",
+      run_timeout: 5.minutes
+    )
+
+    job = job_class.set(child_workflows: [child_job_class, shipment_workflow]).perform_later("seed")
+
+    expect(job.temporal_child_workflows).to eq([
+                                                 {
+                                                   job_class: "ChildWorkflowChildJob",
+                                                   options: {}
+                                                 },
+                                                 {
+                                                   temporal_operation: "workflow",
+                                                   temporal_type: "fulfillment.PrepareShipmentWorkflow",
+                                                   options: {
+                                                     task_queue: "fulfillment-kotlin",
+                                                     run_timeout: 300.0
+                                                   }
+                                                 }
+                                               ])
+  end
+
   it "captures child workflows configured on a job instance" do
     job = job_class.new
 
@@ -90,5 +115,13 @@ RSpec.describe "ActiveJob Temporal child workflows" do
 
     expect { job.set(child_workflows: [child_job_class.set(wait: 5)]) }
       .to raise_error(ArgumentError, /only support queue, priority, and tags options/)
+  end
+
+  it "rejects external Temporal activity refs in child_workflows" do
+    job = job_class.new
+    activity = ActiveJob::Temporal.activity("payments.AuthorizePayment", task_queue: "payments-kotlin")
+
+    expect { job.set(child_workflows: [activity]) }
+      .to raise_error(ArgumentError, /external refs must be workflows/)
   end
 end

@@ -47,11 +47,23 @@ module ActiveJob
         end
 
         def start_child_job_workflow(child_payload, parent_result)
+          if external_operation_payload?(child_payload)
+            return start_external_child_workflow(child_payload, parent_result)
+          end
+
           workflow_payload = child_payload_with_parent_result(child_payload, parent_result)
           Temporalio::Workflow.start_child_workflow(
             ActiveJob::Temporal::Workflows::AjWorkflow,
             workflow_payload,
             **child_workflow_options(workflow_payload)
+          )
+        end
+
+        def start_external_child_workflow(child_payload, parent_result)
+          Temporalio::Workflow.start_child_workflow(
+            payload_value(child_payload, :temporal_type),
+            parent_result,
+            **external_child_workflow_options(child_payload)
           )
         end
 
@@ -69,18 +81,38 @@ module ActiveJob
           options
         end
 
+        def external_child_workflow_options(child_payload)
+          external_operation_options(child_payload).merge(
+            parent_close_policy: Temporalio::Workflow::ParentClosePolicy::REQUEST_CANCEL,
+            cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
+          )
+        end
+
         def child_payload_with_parent_result(child_payload, parent_result)
           key = child_payload.key?(:arguments) ? :arguments : "arguments"
           child_payload.merge(key => [parent_result])
         end
 
         def child_workflow_result(child_payload, result)
+          return external_child_workflow_result(child_payload, result) if external_operation_payload?(child_payload)
+
           {
             "job_class" => payload_value(child_payload, :job_class),
             "job_id" => payload_value(child_payload, :job_id),
             "workflow_id" => payload_value(child_payload, :workflow_id),
             "result" => result
           }
+        end
+
+        def external_child_workflow_result(child_payload, result)
+          options = payload_value(child_payload, :options) || {}
+          {
+            "temporal_operation" => "workflow",
+            "temporal_type" => payload_value(child_payload, :temporal_type),
+            "workflow_id" => payload_value(options, :id),
+            "task_queue" => payload_value(options, :task_queue),
+            "result" => result
+          }.compact
         end
 
         def child_search_attributes(metadata)

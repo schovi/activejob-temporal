@@ -139,7 +139,7 @@ RSpec.describe "job payload schema" do
   end
 
   it "defines child workflow metadata" do
-    child_workflow_schema = schema.fetch("definitions").fetch("child_workflow")
+    child_workflow_schema = schema.fetch("definitions").fetch("active_job_child_workflow")
 
     expect(child_workflow_schema).to include(
       "type" => "object",
@@ -151,6 +151,36 @@ RSpec.describe "job payload schema" do
         "workflow_id" => { "type" => "string", "minLength" => 1 },
         "workflow_task_queue" => { "type" => "string", "minLength" => 1 },
         "search_attributes" => { "$ref" => "#/definitions/child_workflow_search_attributes" }
+      )
+    )
+  end
+
+  it "defines external Temporal chain step metadata" do
+    external_chain_step_schema = schema.fetch("definitions").fetch("external_chain_step")
+
+    expect(external_chain_step_schema).to include(
+      "type" => "object",
+      "additionalProperties" => false,
+      "required" => contain_exactly("temporal_operation", "temporal_type", "options"),
+      "properties" => include(
+        "temporal_operation" => { "type" => "string", "enum" => %w[activity workflow] },
+        "temporal_type" => { "type" => "string", "minLength" => 1 },
+        "options" => { "$ref" => "#/definitions/external_temporal_options" }
+      )
+    )
+  end
+
+  it "defines external Temporal child workflow metadata" do
+    external_child_workflow_schema = schema.fetch("definitions").fetch("external_child_workflow")
+
+    expect(external_child_workflow_schema).to include(
+      "type" => "object",
+      "additionalProperties" => false,
+      "required" => contain_exactly("temporal_operation", "temporal_type", "options"),
+      "properties" => include(
+        "temporal_operation" => { "type" => "string", "enum" => ["workflow"] },
+        "temporal_type" => { "type" => "string", "minLength" => 1 },
+        "options" => { "$ref" => "#/definitions/external_temporal_options" }
       )
     )
   end

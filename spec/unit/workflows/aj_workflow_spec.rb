@@ -38,6 +38,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
     allow(Temporalio::Workflow).to receive(:all_handlers_finished?).and_return(true)
     allow(Temporalio::Workflow).to receive(:patched).and_return(true)
     allow(Temporalio::Workflow).to receive(:execute_activity).and_return(:activity_result)
+    allow(Temporalio::Workflow).to receive(:execute_child_workflow).and_return(:child_workflow_result)
     allow(Temporalio::Workflow).to receive(:execute_local_activity).and_return(:activity_result)
     allow(Temporalio::Workflow).to receive(:sleep)
     allow(Temporalio::Workflow).to receive(:start_child_workflow)
@@ -337,6 +338,77 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
         expect(calls[2][1][:task_queue]).to eq("priority_reports")
       end
 
+      it "dispatches external activity and workflow chain steps with the previous result as input" do
+        payload = base_payload.merge(
+          "chain" => [
+            {
+              "temporal_operation" => "activity",
+              "temporal_type" => "payments.AuthorizePayment",
+              "options" => {
+                "task_queue" => "payments-kotlin",
+                "start_to_close_timeout" => 30.0
+              }
+            },
+            {
+              "temporal_operation" => "workflow",
+              "temporal_type" => "inventory.ReserveInventoryWorkflow",
+              "options" => {
+                "task_queue" => "inventory-kotlin",
+                "run_timeout" => 300.0
+              }
+            },
+            {
+              "job_class" => "CompleteCheckoutJob",
+              "job_id" => "abc-123:chain:3",
+              "queue_name" => "default",
+              "arguments" => [],
+              "activity_task_queue" => "default",
+              "default_activity_options" => base_payload.fetch("default_activity_options"),
+              "retry_policy" => retry_policy_hash
+            }
+          ]
+        )
+        activity_calls = []
+        workflow_calls = []
+
+        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity, *args, **options|
+          activity_calls << [activity, args, options]
+          if activity == ActiveJob::Temporal::Activities::AjRunnerActivity &&
+             args.first.fetch("job_class") == "SampleJob"
+            "payment-request"
+          elsif activity == "payments.AuthorizePayment"
+            "authorization"
+          else
+            "complete"
+          end
+        end
+        allow(Temporalio::Workflow).to receive(:execute_child_workflow) do |workflow_type, *args, **options|
+          workflow_calls << [workflow_type, args, options]
+          "reservation"
+        end
+
+        expect(workflow.execute(payload)).to eq("complete")
+
+        expect(activity_calls[1][0]).to eq("payments.AuthorizePayment")
+        expect(activity_calls[1][1]).to eq(["payment-request"])
+        expect(activity_calls[1][2]).to include(
+          task_queue: "payments-kotlin",
+          start_to_close_timeout: 30.0
+        )
+        expect(workflow_calls.first[0]).to eq("inventory.ReserveInventoryWorkflow")
+        expect(workflow_calls.first[1]).to eq(["authorization"])
+        expect(workflow_calls.first[2]).to include(
+          task_queue: "inventory-kotlin",
+          run_timeout: 300.0
+        )
+        expect(activity_calls.last.first).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+        expect(activity_calls.last[1][0]).to include(
+          "job_class" => "CompleteCheckoutJob",
+          "arguments" => ["reservation"]
+        )
+        expect(activity_calls.last[1][1]).to eq(["reservation"])
+      end
+
       it "stops before later chain steps when a chained activity fails" do
         error = Temporalio::Error::ActivityError.new(
           "activity failed",
@@ -544,6 +616,70 @@ RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
           ),
           id: "ajwf:ChildWorkflowJob:abc-123:child:1",
           task_queue: "children",
+          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::REQUEST_CANCEL,
+          cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
+        )
+      end
+
+      it "starts external child workflows with the parent result as input" do
+        payload = base_payload.merge(
+          "child_workflows" => [
+            {
+              "job_class" => "ChildWorkflowJob",
+              "job_id" => "abc-123:child:1",
+              "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
+              "queue_name" => "children",
+              "arguments" => [],
+              "activity_task_queue" => "children",
+              "workflow_task_queue" => "children",
+              "default_activity_options" => base_payload.fetch("default_activity_options"),
+              "retry_policy" => retry_policy_hash
+            },
+            {
+              "temporal_operation" => "workflow",
+              "temporal_type" => "fulfillment.PrepareShipmentWorkflow",
+              "options" => {
+                "task_queue" => "fulfillment-kotlin",
+                "run_timeout" => 300.0,
+                "id" => "shipment-child-1"
+              }
+            }
+          ]
+        )
+        active_child_handle = instance_double(Temporalio::Workflow::ChildWorkflowHandle, result: "active-child")
+        external_child_handle = instance_double(Temporalio::Workflow::ChildWorkflowHandle, result: "external-child")
+        child_calls = []
+
+        allow(Temporalio::Workflow).to receive(:execute_activity).and_return("parent-result")
+        allow(Temporalio::Workflow).to receive(:start_child_workflow) do |workflow_type, *args, **options|
+          child_calls << [workflow_type, args, options]
+          workflow_type == described_class ? active_child_handle : external_child_handle
+        end
+
+        expect(workflow.execute(payload)).to eq(
+          "parent_result" => "parent-result",
+          "child_results" => [
+            {
+              "job_class" => "ChildWorkflowJob",
+              "job_id" => "abc-123:child:1",
+              "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
+              "result" => "active-child"
+            },
+            {
+              "temporal_operation" => "workflow",
+              "temporal_type" => "fulfillment.PrepareShipmentWorkflow",
+              "workflow_id" => "shipment-child-1",
+              "task_queue" => "fulfillment-kotlin",
+              "result" => "external-child"
+            }
+          ]
+        )
+        expect(child_calls.last[0]).to eq("fulfillment.PrepareShipmentWorkflow")
+        expect(child_calls.last[1]).to eq(["parent-result"])
+        expect(child_calls.last[2]).to include(
+          id: "shipment-child-1",
+          task_queue: "fulfillment-kotlin",
+          run_timeout: 300.0,
           parent_close_policy: Temporalio::Workflow::ParentClosePolicy::REQUEST_CANCEL,
           cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
         )

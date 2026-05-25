@@ -186,6 +186,45 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     )
   end
 
+  it "includes external Temporal refs in chain payloads without ActiveJob execution metadata" do
+    job = build_job("PayloadBuilderExternalChainRootJob")
+    job.define_singleton_method(:temporal_chain) do
+      [
+        ActiveJob::Temporal.activity(
+          "payments.AuthorizePayment",
+          task_queue: "payments-kotlin",
+          start_to_close_timeout: 30.seconds
+        ),
+        ActiveJob::Temporal.workflow(
+          "inventory.ReserveInventoryWorkflow",
+          task_queue: "inventory-kotlin",
+          run_timeout: 5.minutes
+        )
+      ]
+    end
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:chain]).to eq([
+                                    {
+                                      temporal_operation: "activity",
+                                      temporal_type: "payments.AuthorizePayment",
+                                      options: {
+                                        task_queue: "payments-kotlin",
+                                        start_to_close_timeout: 30.0
+                                      }
+                                    },
+                                    {
+                                      temporal_operation: "workflow",
+                                      temporal_type: "inventory.ReserveInventoryWorkflow",
+                                      options: {
+                                        task_queue: "inventory-kotlin",
+                                        run_timeout: 300.0
+                                      }
+                                    }
+                                  ])
+  end
+
   it "includes child workflow payloads with child workflow IDs and execution metadata" do
     config.rate_limiter = ->(_rate_limits) { 0 }
     config.priority_task_queues = { 7 => "priority_reports" }
@@ -267,6 +306,32 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
         )
       )
     )
+  end
+
+  it "includes external Temporal workflow refs in child workflow payloads" do
+    job = build_job("PayloadBuilderExternalChildRootJob")
+    job.define_singleton_method(:temporal_child_workflows) do
+      [
+        ActiveJob::Temporal.workflow(
+          "fulfillment.PrepareShipmentWorkflow",
+          task_queue: "fulfillment-kotlin",
+          run_timeout: 5.minutes
+        )
+      ]
+    end
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:child_workflows]).to eq([
+                                              {
+                                                temporal_operation: "workflow",
+                                                temporal_type: "fulfillment.PrepareShipmentWorkflow",
+                                                options: {
+                                                  task_queue: "fulfillment-kotlin",
+                                                  run_timeout: 300.0
+                                                }
+                                              }
+                                            ])
   end
 
   it "includes dependency metadata with default workflow references" do

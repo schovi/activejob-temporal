@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "active_job"
+require_relative "external_operation"
 
 module ActiveJob
   module Temporal
@@ -19,21 +20,28 @@ module ActiveJob
       end
 
       def self.normalize_job_class(job_class)
-        if job_class.is_a?(Class) && job_class < ActiveJob::Base && job_class.name
-          return { job_class: job_class.name, options: {} }
-        end
-
-        if defined?(ActiveJob::ConfiguredJob) && job_class.is_a?(ActiveJob::ConfiguredJob)
-          configured_job_class = job_class.instance_variable_get(:@job_class)
-          options = normalize_configured_options(job_class.instance_variable_get(:@options) || {})
-          if configured_job_class.is_a?(Class) && configured_job_class < ActiveJob::Base && configured_job_class.name
-            return { job_class: configured_job_class.name, options: options }
-          end
-        end
-
-        raise ArgumentError, "chain entries must be ActiveJob classes or configured jobs"
+        ExternalOperation.normalize(job_class) ||
+          active_job_class_payload(job_class) ||
+          configured_job_payload(job_class) ||
+          raise(ArgumentError, "chain entries must be ActiveJob classes or configured jobs")
       end
       private_class_method :normalize_job_class
+
+      def self.active_job_class_payload(job_class)
+        return unless job_class.is_a?(Class) && job_class < ActiveJob::Base && job_class.name
+
+        { job_class: job_class.name, options: {} }
+      end
+      private_class_method :active_job_class_payload
+
+      def self.configured_job_payload(job_class)
+        return unless defined?(ActiveJob::ConfiguredJob) && job_class.is_a?(ActiveJob::ConfiguredJob)
+
+        configured_job_class = job_class.instance_variable_get(:@job_class)
+        options = normalize_configured_options(job_class.instance_variable_get(:@options) || {})
+        active_job_class_payload(configured_job_class)&.merge(options: options)
+      end
+      private_class_method :configured_job_payload
 
       def self.normalize_configured_options(options)
         unsupported_options = options.keys.reject do |key|

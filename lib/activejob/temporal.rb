@@ -29,6 +29,7 @@ require_relative "temporal/payload_storage"
 require_relative "temporal/payload"
 require_relative "temporal/search_attributes"
 require_relative "temporal/retry_mapper"
+require_relative "temporal/external_operation"
 require_relative "temporal/signal_query_options"
 require_relative "temporal/child_workflow_options"
 require_relative "temporal/chain_options"
@@ -217,6 +218,14 @@ module ActiveJob
           config,
           config.logger
         ).enqueue_batch(items, concurrency: concurrency)
+      end
+
+      def activity(temporal_type, **)
+        ExternalOperation.activity(temporal_type, **)
+      end
+
+      def workflow(temporal_type, **)
+        ExternalOperation.workflow(temporal_type, **)
       end
 
       def status(job_class, job_id)

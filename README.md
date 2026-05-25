@@ -113,6 +113,7 @@ Open Temporal UI and look for workflows named `ajwf:SendInvoiceJob:<job_id>`.
 | Enqueue many prepared jobs | `ActiveJob::Temporal.enqueue_batch(jobs)` | [Usage Patterns](docs/usage_patterns.md#bulk-enqueueing) |
 | Run sequential jobs in one workflow | `set(chain: [NextJob])` | [Usage Patterns](docs/usage_patterns.md#job-chaining) |
 | Start child ActiveJob workflows | `set(child_workflows: [ChildJob])` | [Usage Patterns](docs/usage_patterns.md#child-workflows) |
+| Call external Temporal activities or workflows | `ActiveJob::Temporal.activity(...)`, `ActiveJob::Temporal.workflow(...)` | [Usage Patterns](docs/usage_patterns.md#external-temporal-steps) |
 | Wait for separately enqueued jobs | `set(depends_on: parent_job)` | [Usage Patterns](docs/usage_patterns.md#job-dependencies) |
 | Map ActiveJob retries to Temporal | `retry_on`, `discard_on` | [Retry Policy Guide](docs/retry_policies.md) |
 | Park exhausted failures | `config.dead_letter_queue = "failed_jobs"` | [Configuration Reference](docs/configuration_reference.md#dead-letter-queue) |
