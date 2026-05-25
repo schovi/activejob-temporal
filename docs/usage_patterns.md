@@ -48,9 +48,11 @@ Pass only developer-defined symbols, strings, or callables. Do not derive condit
 
 ## Transaction-Aware Enqueueing
 
-When a job class uses the Temporal adapter, `activejob-temporal` enables Rails' `enqueue_after_transaction_commit` setting for that class. In Rails apps with ActiveRecord loaded, `perform_later` inside a database transaction starts the Temporal workflow only after commit. If the transaction rolls back, no workflow is started.
+When a job class uses the Temporal adapter, `activejob-temporal` enables Rails' `enqueue_after_transaction_commit` setting for that class unless the job has explicitly configured the setting. In Rails apps with ActiveRecord loaded, `perform_later` inside a database transaction starts the Temporal workflow only after commit. If the transaction rolls back, no workflow is started.
 
-To opt out for a specific job, set `self.enqueue_after_transaction_commit = false` after selecting the Temporal adapter on that job class.
+The automatic setting is scoped to the job class that selects the Temporal adapter. If that class later switches to a different adapter, the previous transaction setting is restored.
+
+To opt out for a specific job, set `self.enqueue_after_transaction_commit = false` before or after selecting the Temporal adapter on that job class.
 
 ## Bulk Enqueueing
 

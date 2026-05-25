@@ -61,6 +61,122 @@ RSpec.describe "ActiveJob::Temporal transaction safety" do
     expect(job_class.enqueue_after_transaction_commit).to be true
   end
 
+  it "enables transaction safety when a Temporal adapter instance is assigned" do
+    expect(job_class.enqueue_after_transaction_commit).to be false
+
+    job_class.queue_adapter = ActiveJob::QueueAdapters::TemporalAdapter.new
+
+    expect(job_class.enqueue_after_transaction_commit).to be true
+  end
+
+  it "restores the previous transaction commit setting when switching away from Temporal" do
+    expect(job_class.enqueue_after_transaction_commit).to be false
+
+    job_class.queue_adapter = :temporal
+    job_class.queue_adapter = :test
+
+    expect(job_class.enqueue_after_transaction_commit).to be false
+  end
+
+  it "restores a previous explicit transaction commit setting when switching away from Temporal" do
+    job_class.enqueue_after_transaction_commit = true
+
+    job_class.queue_adapter = :temporal
+    job_class.queue_adapter = :test
+
+    expect(job_class.enqueue_after_transaction_commit).to be true
+  end
+
+  it "respects an explicit job-level opt-out before selecting the Temporal adapter" do
+    job_class.enqueue_after_transaction_commit = false
+
+    job_class.queue_adapter = :temporal
+
+    expect(job_class.enqueue_after_transaction_commit).to be false
+  end
+
+  it "respects an explicit job-level opt-out after selecting the Temporal adapter" do
+    job_class.queue_adapter = :temporal
+    job_class.enqueue_after_transaction_commit = false
+
+    job_class.queue_adapter = :temporal
+
+    expect(job_class.enqueue_after_transaction_commit).to be false
+  end
+
+  it "keeps per-job Temporal adapter transaction settings scoped to that job class" do
+    sibling_job_class = Class.new(ActiveJob::Base) do
+      include ActiveJob::EnqueueAfterTransactionCommit
+
+      def perform; end
+    end
+
+    job_class.queue_adapter = :temporal
+    sibling_job_class.queue_adapter = :test
+
+    expect(job_class.enqueue_after_transaction_commit).to be true
+    expect(sibling_job_class.enqueue_after_transaction_commit).to be false
+    expect(ActiveJob::Base.enqueue_after_transaction_commit).to be false
+  end
+
+  it "does not leak inherited Temporal transaction safety to child jobs using another adapter" do
+    parent_job_class = Class.new(ActiveJob::Base) do
+      include ActiveJob::EnqueueAfterTransactionCommit
+
+      def perform; end
+    end
+    child_job_class = Class.new(parent_job_class) do
+      include ActiveJob::EnqueueAfterTransactionCommit
+
+      def perform; end
+    end
+
+    parent_job_class.queue_adapter = :temporal
+    child_job_class.queue_adapter = :test
+
+    expect(parent_job_class.enqueue_after_transaction_commit).to be true
+    expect(child_job_class.enqueue_after_transaction_commit).to be false
+  end
+
+  it "restores inherited pre-Temporal transaction settings when a child switches away" do
+    parent_job_class = Class.new(ActiveJob::Base) do
+      include ActiveJob::EnqueueAfterTransactionCommit
+
+      def perform; end
+    end
+    child_job_class = Class.new(parent_job_class) do
+      include ActiveJob::EnqueueAfterTransactionCommit
+
+      def perform; end
+    end
+
+    parent_job_class.queue_adapter = :temporal
+    child_job_class.queue_adapter = :temporal
+    child_job_class.queue_adapter = :test
+
+    expect(parent_job_class.enqueue_after_transaction_commit).to be true
+    expect(child_job_class.enqueue_after_transaction_commit).to be false
+  end
+
+  it "respects inherited explicit opt-out settings when a child uses the Temporal adapter" do
+    parent_job_class = Class.new(ActiveJob::Base) do
+      include ActiveJob::EnqueueAfterTransactionCommit
+
+      self.enqueue_after_transaction_commit = false
+
+      def perform; end
+    end
+    child_job_class = Class.new(parent_job_class) do
+      include ActiveJob::EnqueueAfterTransactionCommit
+
+      def perform; end
+    end
+
+    child_job_class.queue_adapter = :temporal
+
+    expect(child_job_class.enqueue_after_transaction_commit).to be false
+  end
+
   it "does not start a Temporal workflow when the surrounding transaction rolls back" do
     job_class.queue_adapter = :temporal
 

@@ -103,9 +103,10 @@ module ActiveJob
     #
     # @note Transaction Safety
     #   Jobs using the Temporal adapter are opted into ActiveJob's
-    #   `enqueue_after_transaction_commit` setting. This defers workflow starts
-    #   until the current database transaction commits and prevents workflows from
-    #   starting for rolled-back jobs.
+    #   `enqueue_after_transaction_commit` setting unless the job class configured
+    #   it explicitly. This defers workflow starts until the current database
+    #   transaction commits and prevents workflows from starting for rolled-back
+    #   jobs.
     #
     # @example Basic usage
     #   class MyJob < ApplicationJob
