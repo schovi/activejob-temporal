@@ -3,6 +3,7 @@
 require "active_support/core_ext/string/inflections"
 require "temporalio/activity"
 
+require_relative "best_effort_side_effects"
 require_relative "../payload"
 require_relative "../retry_mapper"
 
@@ -54,6 +55,7 @@ module ActiveJob
       #
       # @see https://docs.temporal.io/activities Temporal Activities Guide
       # @see https://docs.temporal.io/retry-policies Temporal Retry Policies
+      # rubocop:disable Metrics/ClassLength
       class AjRunnerActivity < Temporalio::Activity::Definition
         IDEMPOTENCY_KEY = :aj_temporal_idempotency_key
         DESERIALIZATION_ERROR_CLASSES = [
@@ -108,21 +110,17 @@ module ActiveJob
           deserialized_payload = Payload.deserialize_payload(payload, encryption_context: activity_encryption_context)
           audit_context = audit_started(deserialized_payload)
 
-          result = instrument_perform(deserialized_payload) do
-            args = raw_arguments.nil? ? Payload.deserialize_payload_args(deserialized_payload) : Array(raw_arguments)
+          side_effects = BestEffortSideEffects.new(audit_context)
+          result = perform_with_best_effort_observability(deserialized_payload, side_effects) do
+            args = job_arguments(deserialized_payload, raw_arguments)
             job_class = constantize_job_class(deserialized_payload)
-            job = job_class.new
-
             set_idempotency_key
-            perform_job(job, args)
+            perform_job(job_class.new, args)
           end
-          audit_completed(audit_context)
-          Payload.delete_external_payload(payload)
+          record_success_side_effects(payload, audit_context, side_effects)
           result
         rescue StandardError => e
-          audit_failed(audit_context || empty_audit_context, e)
-          record_retry_observability(deserialized_payload || payload, e)
-          handle_exception(job_class, e)
+          handle_activity_error(e, job_class, audit_context, deserialized_payload || payload)
         ensure
           clear_idempotency_key
         end
@@ -142,6 +140,38 @@ module ActiveJob
           ActiveJob::Temporal.config.middleware_chain.call(job) do
             job.perform(*args)
           end
+        end
+
+        def job_arguments(payload, raw_arguments)
+          raw_arguments.nil? ? Payload.deserialize_payload_args(payload) : Array(raw_arguments)
+        end
+
+        def perform_with_best_effort_observability(payload, side_effects)
+          performed = false
+          result = nil
+
+          instrument_perform(payload) do
+            result = yield
+            performed = true
+            result
+          end
+
+          result
+        rescue StandardError => e
+          raise unless performed
+
+          side_effects.report_after_success("observability", e)
+          result
+        end
+
+        def handle_activity_error(error, job_class, audit_context, retry_payload)
+          failure_context = audit_context || empty_audit_context
+          side_effects = BestEffortSideEffects.new(failure_context)
+          side_effects.after_failure("audit") { audit_failed(failure_context, error) }
+          side_effects.after_failure("retry_observability") do
+            record_retry_observability(retry_payload, error)
+          end
+          handle_exception(job_class, error)
         end
 
         def instrument_perform(payload, &)
@@ -169,6 +199,13 @@ module ActiveJob
             "job.completed",
             audit_context[:attributes].merge(duration_ms: audit_duration(audit_context))
           )
+        end
+
+        def record_success_side_effects(payload, audit_context, side_effects)
+          side_effects.after_success("audit") { audit_completed(audit_context) }
+          side_effects.after_success("external_payload_cleanup") do
+            Payload.delete_external_payload(payload)
+          end
         end
 
         def audit_failed(audit_context, error)
@@ -240,6 +277,7 @@ module ActiveJob
           )
         end
       end
+      # rubocop:enable Metrics/ClassLength
     end
   end
 end

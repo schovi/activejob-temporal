@@ -164,6 +164,56 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       )
     end
 
+    it "returns the job result when observability fails after perform succeeds" do
+      job_instance = instance_double("PostPerformObservabilityJob")
+      class_double("PostPerformObservabilityJob", new: job_instance).as_stubbed_const
+      payload = { "job_class" => "PostPerformObservabilityJob", "queue_name" => "critical" }
+      allow(job_instance).to receive(:perform).and_return("performed")
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      allow(ActiveJob::Temporal::Observability).to receive(:instrument) do |_event_name, _attributes, &block|
+        block.call
+        raise StandardError, "metrics down"
+      end
+
+      expect(activity.execute(payload)).to eq("performed")
+
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "activity_post_perform_side_effect_failed",
+        hash_including(
+          side_effect: "observability",
+          job_class: "PostPerformObservabilityJob",
+          queue: "critical",
+          error_class: "StandardError"
+        )
+      )
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.completed",
+        hash_including(job_class: "PostPerformObservabilityJob")
+      )
+    end
+
+    it "returns the job result when completed audit fails after perform succeeds" do
+      job_instance = instance_double("PostPerformAuditJob")
+      class_double("PostPerformAuditJob", new: job_instance).as_stubbed_const
+      payload = { "job_class" => "PostPerformAuditJob", "queue_name" => "critical" }
+      allow(job_instance).to receive(:perform).and_return("performed")
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      allow(ActiveJob::Temporal::AuditLog).to receive(:record) do |event_name, *_arguments|
+        raise StandardError, "audit down" if event_name == "job.completed"
+      end
+
+      expect(activity.execute(payload)).to eq("performed")
+
+      expect(ActiveJob::Temporal::AuditLog).not_to have_received(:record).with(
+        "job.failed",
+        anything
+      )
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "activity_post_perform_side_effect_failed",
+        hash_including(side_effect: "audit", job_class: "PostPerformAuditJob", error_class: "StandardError")
+      )
+    end
+
     it "deletes external payloads after successful perform" do
       job_instance = instance_double("ExternalPayloadRunnerJob")
       class_double("ExternalPayloadRunnerJob", new: job_instance).as_stubbed_const
@@ -173,6 +223,26 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(ActiveJob::Temporal::Payload).to receive(:delete_external_payload).with(payload)
 
       expect(activity.execute(payload)).to eq("performed")
+    end
+
+    it "returns the job result when external payload cleanup fails after perform succeeds" do
+      job_instance = instance_double("ExternalPayloadCleanupJob")
+      class_double("ExternalPayloadCleanupJob", new: job_instance).as_stubbed_const
+      payload = { "job_class" => "ExternalPayloadCleanupJob", "arguments" => ["raw"] }
+      allow(job_instance).to receive(:perform).and_return("performed")
+      allow(ActiveJob::Temporal::Payload).to receive(:delete_external_payload).and_raise(StandardError, "delete down")
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+
+      expect(activity.execute(payload)).to eq("performed")
+
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "activity_post_perform_side_effect_failed",
+        hash_including(
+          side_effect: "external_payload_cleanup",
+          job_class: "ExternalPayloadCleanupJob",
+          error_class: "StandardError"
+        )
+      )
     end
 
     it "keeps external payloads when perform fails" do
@@ -333,6 +403,25 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       )
     end
 
+    it "propagates the original job error when failed audit recording fails" do
+      payload = { "job_class" => "RetryableJob", "job_id" => "job-1", "queue_name" => "critical" }
+      job_instance = instance_double(RetryableJob.name)
+      allow(RetryableJob).to receive(:new).and_return(job_instance)
+      error = SampleJobError.new("boom")
+      allow(job_instance).to receive(:perform).and_raise(error)
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      allow(ActiveJob::Temporal::AuditLog).to receive(:record) do |event_name, *_arguments|
+        raise StandardError, "audit down" if event_name == "job.failed"
+      end
+
+      expect { activity.execute(payload) }.to raise_error(error)
+
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "activity_failure_side_effect_failed",
+        hash_including(side_effect: "audit", job_class: "RetryableJob", error_class: "StandardError")
+      )
+    end
+
     it "records cancelled audit events for Temporal cancellation errors" do
       payload = { "job_class" => "RetryableJob", "job_id" => "job-1", "queue_name" => "critical" }
       job_instance = instance_double(RetryableJob.name)
@@ -392,6 +481,28 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
         :retry,
         hash_including(job_class: "RetryableJob", queue: "critical", error: "SampleJobError")
+      )
+    end
+
+    it "propagates the original job error when retry observability fails" do
+      activity_info = instance_double("Temporalio::Activity::Info", workflow_id: workflow_id, attempt: 2)
+      activity_context = instance_double("Temporalio::Activity::Context", info: activity_info)
+      allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
+      payload = { "job_class" => "RetryableJob", "queue_name" => "critical" }
+      job_instance = instance_double(RetryableJob.name)
+      allow(RetryableJob).to receive(:new).and_return(job_instance)
+      error = SampleJobError.new("boom")
+      allow(job_instance).to receive(:perform).and_raise(error)
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      allow(ActiveJob::Temporal::Observability).to receive(:emit) do |event_name, *_arguments|
+        raise StandardError, "metrics down" if event_name == :retry
+      end
+
+      expect { activity.execute(payload) }.to raise_error(error)
+
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "activity_failure_side_effect_failed",
+        hash_including(side_effect: "retry_observability", job_class: "RetryableJob", error_class: "StandardError")
       )
     end
 
