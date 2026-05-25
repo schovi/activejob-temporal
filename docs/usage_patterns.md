@@ -69,6 +69,20 @@ result.failures.map(&:to_h)
 
 Bulk enqueue starts one workflow per job. It is not a single Temporal multi-start RPC.
 
+## Duplicate Enqueueing
+
+Workflow IDs are deterministic by default: `ajwf:<JobClass>:<job_id>`. Temporal rejects a duplicate workflow ID while the previous execution remains retained, which prevents the same ActiveJob job ID from starting another workflow.
+
+For normal `perform_later` calls, duplicates are treated as not enqueued. ActiveJob catches `ActiveJob::Temporal::DuplicateEnqueueError`, returns `false`, and exposes the error on the yielded job:
+
+```ruby
+result = SendInvoiceJob.perform_later(invoice.id) do |job|
+  Rails.logger.info(job.enqueue_error.message) if job.enqueue_error
+end
+```
+
+Duplicate attempts are also marked with `duplicate: true` in structured logs, audit events, and enqueue observability. `ActiveJob::Temporal.enqueue_batch` keeps duplicates in-band through `duplicate_count` and per-item `status: :duplicate`.
+
 ## Choosing An Orchestration Pattern
 
 Use the smallest primitive that matches ownership and data flow:

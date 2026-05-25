@@ -18,7 +18,7 @@ module ActiveJob
       # helper used by integrations and tests. Creates a unique, reproducible
       # workflow ID from the job class and job ID.
       # This enables idempotent enqueuing: duplicate enqueue calls with the same job_id
-      # will be rejected by Temporal's FAIL conflict policy (returning nil, not raising).
+      # will be rejected by Temporal's FAIL conflict policy.
       #
       # @param job [ActiveJob::Base] ActiveJob instance being enqueued
       # @return [String] Workflow ID in format "ajwf:<ClassName>:<job_id>"
@@ -33,9 +33,9 @@ module ActiveJob
       #   job.job_id # => "abc-123"
       #   build_workflow_id(job) # => "ajwf:MyJob:abc-123"
       #
-      # @example Duplicate enqueue (returns nil, not error)
+      # @example Duplicate enqueue
       #   MyJob.set(job_id: "unique-id").perform_later("arg")  # First enqueue succeeds
-      #   MyJob.set(job_id: "unique-id").perform_later("arg")  # Second enqueue returns nil
+      #   MyJob.set(job_id: "unique-id").perform_later("arg")  # Second enqueue returns false
       #
       # @see TemporalAdapter#enqueue
       def build_workflow_id(job)
@@ -97,7 +97,8 @@ module ActiveJob
     #
     # @note Idempotent Enqueuing
     #   Jobs with the same job_id will not be enqueued twice. The adapter uses
-    #   FAIL conflict policy, so duplicate enqueue attempts return nil (not an error).
+    #   FAIL conflict policy, so duplicate enqueue attempts surface as
+    #   DuplicateEnqueueError through ActiveJob's enqueue status.
     #
     # @note Transaction Safety
     #   Jobs using the Temporal adapter are opted into ActiveJob's
@@ -138,15 +139,16 @@ module ActiveJob
       # creation and startup.
       #
       # @param job [ActiveJob::Base] the job instance provided by ActiveJob
-      # @return [Object, nil] workflow run handle (if provided by Temporal SDK), or nil if duplicate
+      # @return [Object] workflow run handle if provided by Temporal SDK
       #
       # @raise [ActiveJob::SerializationError] if payload serialization fails or exceeds max_payload_size_kb
       # @raise [ActiveJob::EnqueueError] if the Temporal client cannot start the workflow
       # @raise [ActiveJob::Temporal::ConfigurationError] if configuration is invalid
       #
       # @note FAIL Conflict Policy
-      #   Duplicate job_id values return nil rather than raising an error. This is
-      #   Temporal's FAIL conflict policy in action.
+      #   Duplicate job_id values raise DuplicateEnqueueError. ActiveJob catches
+      #   this as an enqueue failure, so `perform_later` returns false and the
+      #   yielded job exposes the error through `enqueue_error`.
       #
       # @example Basic usage
       #   adapter = TemporalAdapter.new
@@ -191,7 +193,7 @@ module ActiveJob
       #
       # @param job [ActiveJob::Base] the job instance provided by ActiveJob
       # @param timestamp [Integer, Float] UNIX timestamp when the job should be executed
-      # @return [Object, nil] workflow run handle (if provided by Temporal SDK), or nil if duplicate
+      # @return [Object] workflow run handle if provided by Temporal SDK
       #
       # @raise [ActiveJob::SerializationError] if payload serialization fails or exceeds max_payload_size_kb
       # @raise [ActiveJob::EnqueueError] if the Temporal client cannot start the workflow

@@ -513,12 +513,13 @@ end
 
 Use `start_to_close_timeout` for total activity execution time. Use `heartbeat_timeout` only when the job sends regular heartbeats.
 
-## Duplicate Enqueue Is Ignored
+## Duplicate Enqueue Returns False
 
 **Symptoms**
 
 - A second enqueue with the same ActiveJob `job_id` does not start a new workflow.
 - Logs show the workflow was already started.
+- `perform_later` returns `false`.
 
 **Cause**
 
@@ -527,6 +528,16 @@ Workflow IDs are deterministic by default: `ajwf:<JobClass>:<job_id>`. Temporal 
 **Fix**
 
 Use the normal `perform_later` flow so ActiveJob generates a new `job_id`. Only customize `workflow_id_generator` when you intentionally want idempotency across enqueue attempts.
+
+To inspect the duplicate error, pass a block to `perform_later`:
+
+```ruby
+result = ProcessInvoiceJob.perform_later(invoice.id) do |job|
+  Rails.logger.info(job.enqueue_error.message) if job.enqueue_error
+end
+```
+
+For batch enqueueing, check `duplicate_count` or per-item `status: :duplicate`.
 
 ## Performance Or Queue Backlog
 

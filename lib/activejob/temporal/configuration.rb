@@ -25,6 +25,9 @@ module ActiveJob
     # @see Configuration#validate!
     class ConfigurationError < Error; end
 
+    # Raised when Temporal rejects a workflow start because the job was already enqueued.
+    class DuplicateEnqueueError < ActiveJob::EnqueueError; end
+
     VALIDATION_LEVELS = %i[strict warn none].freeze
     PAYLOAD_SERIALIZERS = PayloadSerializers::SUPPORTED
     LOCAL_ACTIVITY_HELPERS = %i[rate_limit].freeze

@@ -327,14 +327,14 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       enqueuer.enqueue(job)
     end
 
-    it "returns nil for duplicate workflows" do
+    it "raises a duplicate enqueue error for duplicate workflows" do
       error = Class.new(StandardError)
       stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
       allow(client).to receive(:start_workflow).and_raise(error.new("already started"))
 
-      result = enqueuer.enqueue(job)
+      expect { enqueuer.enqueue(job) }
+        .to raise_error(ActiveJob::Temporal::DuplicateEnqueueError, /already enqueued/)
 
-      expect(result).to be_nil
       expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
         :enqueue,
         hash_including(
@@ -352,16 +352,16 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       )
     end
 
-    it "returns nil for duplicate workflows when enqueue logging fails" do
+    it "raises a duplicate enqueue error for duplicate workflows when enqueue logging fails" do
       error = Class.new(StandardError)
       stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
       allow(client).to receive(:start_workflow).and_raise(error.new("already started"))
       allow(ActiveJob::Temporal::Logger).to receive(:log_event).and_raise(StandardError, "logger down")
       allow(ActiveJob::Temporal::Logger).to receive(:warn)
 
-      result = enqueuer.enqueue(job)
+      expect { enqueuer.enqueue(job) }
+        .to raise_error(ActiveJob::Temporal::DuplicateEnqueueError, /already enqueued/)
 
-      expect(result).to be_nil
       expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
         "job.enqueued",
         hash_including(job_id: "test-job-id", duplicate: true)
@@ -372,7 +372,7 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       )
     end
 
-    it "returns nil for current SDK duplicate workflow errors" do
+    it "raises a duplicate enqueue error for current SDK duplicate workflow errors" do
       error = Temporalio::Error::WorkflowAlreadyStartedError.new(
         workflow_id: "ajwf:SimpleJob:test-job-id",
         workflow_type: "ActiveJob::Temporal::Workflows::AjWorkflow",
@@ -380,16 +380,16 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       )
       allow(client).to receive(:start_workflow).and_raise(error)
 
-      result = enqueuer.enqueue(job)
+      expect { enqueuer.enqueue(job) }
+        .to raise_error(ActiveJob::Temporal::DuplicateEnqueueError, /already enqueued/)
 
-      expect(result).to be_nil
       expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
         :enqueue,
         hash_including(job_class: "SimpleJob", job_id: "test-job-id", duplicate: true)
       )
     end
 
-    it "returns nil for already-exists RPC duplicate workflow errors" do
+    it "raises a duplicate enqueue error for already-exists RPC duplicate workflow errors" do
       error = Class.new(StandardError) do
         attr_reader :code
 
@@ -400,9 +400,9 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       end
       allow(client).to receive(:start_workflow).and_raise(error.new)
 
-      result = enqueuer.enqueue(job)
+      expect { enqueuer.enqueue(job) }
+        .to raise_error(ActiveJob::Temporal::DuplicateEnqueueError, /already enqueued/)
 
-      expect(result).to be_nil
       expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
         :enqueue,
         hash_including(job_class: "SimpleJob", job_id: "test-job-id", duplicate: true)
