@@ -18,8 +18,12 @@ RSpec.describe ActiveJob::Temporal::Schedulable do
     expect(ActiveJob::Base.included_modules).to include(described_class)
   end
 
+  it "does not add a generic schedule class method" do
+    expect(job_class).not_to respond_to(:schedule)
+  end
+
   it "stores a schedule declaration on the job class" do
-    schedule = job_class.schedule(cron: "0 2 * * *", timezone: "America/New_York")
+    schedule = job_class.temporal_schedule(cron: "0 2 * * *", timezone: "America/New_York")
 
     expect(schedule).to be_a(ActiveJob::Temporal::Schedule)
     expect(job_class.temporal_schedule).to be(schedule)
@@ -30,7 +34,7 @@ RSpec.describe ActiveJob::Temporal::Schedulable do
     allow(ActiveJob::Temporal::Schedule).to receive(:new).and_return(schedule)
     allow(schedule).to receive(:create).and_return("schedule-handle")
 
-    job_class.schedule(cron: "0 2 * * *")
+    job_class.temporal_schedule(cron: "0 2 * * *")
 
     expect(job_class.create_temporal_schedule).to eq("schedule-handle")
     expect(schedule).to have_received(:create)
@@ -62,7 +66,7 @@ RSpec.describe ActiveJob::Temporal::Schedulable do
     )
     allow(schedule).to receive(:create).and_return("schedule-handle")
 
-    job_class.schedule(cron: "0 2 * * *", timezone: "America/New_York", overlap_policy: :skip)
+    job_class.temporal_schedule(cron: "0 2 * * *", timezone: "America/New_York", overlap_policy: :skip)
 
     job_class.create_temporal_schedule(id: "daily-report:42", args: [42])
 
@@ -78,6 +82,11 @@ RSpec.describe ActiveJob::Temporal::Schedulable do
 
   it "raises when registering without a declaration or options" do
     expect { job_class.create_temporal_schedule }
-      .to raise_error(ArgumentError, /No schedule defined/)
+      .to raise_error(ArgumentError, /No temporal_schedule defined/)
+  end
+
+  it "raises when declaration options are not a hash" do
+    expect { job_class.temporal_schedule("daily") }
+      .to raise_error(ArgumentError, /temporal_schedule options must be a Hash/)
   end
 end

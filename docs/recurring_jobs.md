@@ -10,7 +10,7 @@ Declare the schedule on the job class:
 class DailyReportJob < ApplicationJob
   queue_as :reports
 
-  schedule cron: "0 2 * * *", timezone: "America/New_York", overlap_policy: :skip
+  temporal_schedule cron: "0 2 * * *", timezone: "America/New_York", overlap_policy: :skip
 
   def perform(account_id)
     DailyReport.generate_for(account_id)
@@ -18,7 +18,7 @@ class DailyReportJob < ApplicationJob
 end
 ```
 
-The `schedule` declaration is local metadata only. It does not call Temporal while Rails loads job classes.
+The `temporal_schedule` declaration is local metadata only. It does not call Temporal while Rails loads job classes.
 
 ## Register A Schedule
 

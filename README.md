@@ -110,7 +110,7 @@ Open Temporal UI and look for workflows named `ajwf:SendInvoiceJob:<job_id>`.
 | Need | API | Detailed guide |
 | --- | --- | --- |
 | Delay a single job | `MyJob.set(wait: 5.minutes).perform_later(...)` | [Usage Patterns](docs/usage_patterns.md#scheduled-jobs) |
-| Register recurring cron work | `schedule cron: "0 2 * * *"` and `create_temporal_schedule` | [Recurring Jobs](docs/recurring_jobs.md) |
+| Register recurring cron work | `temporal_schedule cron: "0 2 * * *"` and `create_temporal_schedule` | [Recurring Jobs](docs/recurring_jobs.md) |
 | Enqueue only when work exists | `perform_later_if(condition, *args)` | [Usage Patterns](docs/usage_patterns.md#conditional-enqueueing) |
 | Enqueue many prepared jobs | `ActiveJob::Temporal.enqueue_batch(jobs)` | [Usage Patterns](docs/usage_patterns.md#bulk-enqueueing) |
 | Run sequential jobs in one workflow | `set(chain: [NextJob])` | [Usage Patterns](docs/usage_patterns.md#job-chaining) |

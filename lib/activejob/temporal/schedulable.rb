@@ -10,13 +10,11 @@ module ActiveJob
       end
 
       module ClassMethods
-        def schedule(options = nil, **kwargs)
+        def temporal_schedule(options = nil, **kwargs)
+          return @temporal_schedule if options.nil? && kwargs.empty?
+
           schedule_options = normalize_schedule_options(options, kwargs)
           @temporal_schedule = ActiveJob::Temporal::Schedule.new(self, schedule_options)
-        end
-
-        def temporal_schedule
-          @temporal_schedule
         end
 
         def create_temporal_schedule(options = nil, **kwargs)
@@ -25,7 +23,7 @@ module ActiveJob
             return ActiveJob::Temporal::Schedule.new(self, schedule_options).create
           end
 
-          raise ArgumentError, "No schedule defined for #{name}" unless temporal_schedule
+          raise ArgumentError, "No temporal_schedule defined for #{name}" unless temporal_schedule
 
           temporal_schedule.create
         end
@@ -43,7 +41,7 @@ module ActiveJob
           when Hash
             options.merge(kwargs)
           else
-            raise ArgumentError, "schedule options must be a Hash"
+            raise ArgumentError, "temporal_schedule options must be a Hash"
           end
         end
 
