@@ -571,7 +571,7 @@ examples:
         config.tls_server_root_ca_cert_path = ENV["ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH"]
         config.tls_domain = ENV["ACTIVEJOB_TEMPORAL_TLS_DOMAIN"]
         config.tls_cert_watch = true
-        # Validation happens automatically at end of block!
+        # Validation happens before this candidate configuration is published.
       end
 
   # High-throughput scenario with custom tuning
@@ -641,12 +641,12 @@ examples:
 validation:
   description: "Configuration is automatically validated using ActiveModel::Validations with i18n support"
   usage: |
-    # Configuration is automatically validated at the end of the configure block
-    # If validation fails, ConfigurationError is raised immediately by default
+    # Configuration is automatically validated before the configure block result is published.
+    # If validation fails, ConfigurationError is raised and the previous configuration stays active.
     ActiveJob::Temporal.configure do |config|
       config.target = "temporal.example.com:7233"
       config.namespace = "production"
-      # Validation happens automatically here!
+      # Validation happens automatically before this candidate is published.
     end
 
     # During staged configuration changes, warn without raising:

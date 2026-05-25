@@ -357,8 +357,9 @@ module ActiveJob
     # Use {ActiveJob::Temporal.configure} to set values with automatic validation.
     #
     # @note Thread Safety
-    #   The global configuration object is synchronized by {Configurable} while
-    #   configure blocks mutate it. Complete configuration during application boot.
+    #   The global configuration object is synchronized by {Configurable}.
+    #   Configure blocks mutate a candidate copy that replaces the active
+    #   configuration only after validation succeeds.
     #
     # @note Environment Variable Defaults
     #   ACTIVEJOB_TEMPORAL_TARGET, ACTIVEJOB_TEMPORAL_NAMESPACE,
@@ -394,6 +395,14 @@ module ActiveJob
         end
       end
 
+      def initialize_copy(original)
+        super
+        @attributes = original.instance_variable_get(:@attributes).transform_values do |value|
+          duplicate_configuration_value(value)
+        end
+        @in_configure_block = false
+      end
+
       def [](key)
         @attributes[key]
       end
@@ -415,6 +424,11 @@ module ActiveJob
         handle_validation_errors(validator.errors)
       end
 
+      def finalize_configuration_copy!
+        observability.finalize_configuration_copy! if observability.respond_to?(:finalize_configuration_copy!)
+        self
+      end
+
       def self.format_validation_errors(errors)
         messages = errors.full_messages
         return messages.first if messages.size == 1
@@ -428,6 +442,19 @@ module ActiveJob
       end
 
       private
+
+      def duplicate_configuration_value(value)
+        case value
+        when Hash
+          value.transform_values { |entry| duplicate_configuration_value(entry) }
+        when Array
+          value.map { |entry| duplicate_configuration_value(entry) }
+        when String, Middleware::Chain, Observability::Configuration
+          value.dup
+        else
+          value
+        end
+      end
 
       def build_validator
         validator = ConfigValidator.new

@@ -79,6 +79,108 @@ RSpec.describe ActiveJob::Temporal do
       expect(described_class.config.in_configure_block).to be(false)
     end
 
+    it "keeps the previous configuration when the configure block raises" do
+      described_class.configure do |config|
+        config.target = "localhost:7233"
+        config.namespace = "stable"
+      end
+      previous_config = described_class.config
+
+      expect do
+        described_class.configure do |config|
+          config.target = "localhost:9000"
+          config.namespace = "mutated"
+          raise "configure failed"
+        end
+      end.to raise_error(RuntimeError, "configure failed")
+
+      expect(described_class.config).to be(previous_config)
+      expect(described_class.config.target).to eq("localhost:7233")
+      expect(described_class.config.namespace).to eq("stable")
+      expect(described_class.config.in_configure_block).to be(false)
+    end
+
+    it "keeps the previous configuration when validation fails" do
+      described_class.configure do |config|
+        config.target = "localhost:7233"
+        config.namespace = "stable"
+      end
+      previous_config = described_class.config
+
+      expect do
+        described_class.configure do |config|
+          config.target = "invalid"
+          config.namespace = "mutated"
+        end
+      end.to raise_error(ActiveJob::Temporal::ConfigurationError)
+
+      expect(described_class.config).to be(previous_config)
+      expect(described_class.config.target).to eq("localhost:7233")
+      expect(described_class.config.namespace).to eq("stable")
+      expect(described_class.config.in_configure_block).to be(false)
+    end
+
+    it "does not leak nested hash mutations when validation fails" do
+      described_class.configure do |config|
+        config.target = "localhost:7233"
+        config.priority_task_queues = { 10 => "critical" }
+      end
+
+      expect do
+        described_class.configure do |config|
+          config.priority_task_queues[20] = "bulk"
+          config.target = "invalid"
+        end
+      end.to raise_error(ActiveJob::Temporal::ConfigurationError)
+
+      expect(described_class.config.priority_task_queues).to eq(10 => "critical")
+    end
+
+    it "does not leak in-place string mutations when the configure block raises" do
+      described_class.configure do |config|
+        config.target = "localhost:7233"
+      end
+
+      expect do
+        described_class.configure do |config|
+          config.target << "-mutated"
+          raise "configure failed"
+        end
+      end.to raise_error(RuntimeError, "configure failed")
+
+      expect(described_class.config.target).to eq("localhost:7233")
+    end
+
+    it "does not leak middleware registrations when validation fails" do
+      middleware_class = Class.new do
+        def call(_job)
+          yield
+        end
+      end
+
+      expect do
+        described_class.configure do |config|
+          config.add_middleware middleware_class
+          config.target = "invalid"
+        end
+      end.to raise_error(ActiveJob::Temporal::ConfigurationError)
+
+      expect(described_class.config.middleware_chain.to_a).to be_empty
+    end
+
+    it "swaps in a new configuration after successful validation" do
+      previous_config = described_class.config
+
+      described_class.configure do |config|
+        config.target = "localhost:9000"
+        config.namespace = "production"
+      end
+
+      expect(described_class.config).not_to be(previous_config)
+      expect(described_class.config.target).to eq("localhost:9000")
+      expect(described_class.config.namespace).to eq("production")
+    end
+
     it "logs validation warnings instead of raising when validation_level is warn" do
       warning_logger = instance_spy(Logger)
 
@@ -307,13 +409,12 @@ RSpec.describe ActiveJob::Temporal do
     end
 
     it "validates before another configure block can mutate configuration" do
-      configuration = described_class.config
       access_log = []
       access_mutex = Mutex.new
       validation_started = Queue.new
       release_validation = Queue.new
 
-      allow(configuration).to receive(:validate!) do
+      allow_any_instance_of(ActiveJob::Temporal::Configuration).to receive(:validate!) do
         access_mutex.synchronize { access_log << :validate_start }
         validation_started << true
         release_validation.pop

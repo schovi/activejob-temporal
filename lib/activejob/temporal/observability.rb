@@ -164,6 +164,13 @@ module ActiveJob
 
         def initialize
           @adapters = []
+          @stop_replaced_adapters = true
+        end
+
+        def initialize_copy(original)
+          super
+          @adapters = original.adapters.dup
+          @stop_replaced_adapters = false
         end
 
         def use(name, **)
@@ -185,7 +192,7 @@ module ActiveJob
         end
 
         def reset!
-          adapters.each(&:stop!)
+          adapters.each(&:stop!) if @stop_replaced_adapters
           adapters.clear
         end
 
@@ -193,11 +200,16 @@ module ActiveJob
           adapters.each(&:validate!)
         end
 
+        def finalize_configuration_copy!
+          @stop_replaced_adapters = true
+          self
+        end
+
         private
 
         def replace_adapter(adapter)
           previous_adapter = self.adapter(adapter.name)
-          previous_adapter&.stop!
+          previous_adapter&.stop! if @stop_replaced_adapters
           adapters.delete(previous_adapter)
           adapters << adapter
         end

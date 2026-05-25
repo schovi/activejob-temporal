@@ -2,6 +2,8 @@
 
 `ActiveJob::Temporal` exposes a simple configuration DSL that you typically invoke from a Rails initializer. Call `ActiveJob::Temporal.configure` once at boot to customize how the gem interacts with Temporal.
 
+`configure` applies changes transactionally. The block mutates a candidate configuration, validation runs against that candidate, and the global configuration is replaced only after validation succeeds. If the block raises or validation fails, the previous configuration remains active.
+
 ## Schema Reference
 
 The canonical machine-readable schema for all configuration options is available in [`config_schema.yaml`](./config_schema.yaml). This document provides human-readable explanations and examples. The YAML schema includes comprehensive validation rules, type definitions, environment variable mappings, and practical configuration examples for different deployment scenarios.

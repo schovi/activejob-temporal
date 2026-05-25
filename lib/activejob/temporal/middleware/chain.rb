@@ -16,6 +16,13 @@ module ActiveJob
           entries.each { |entry| add(entry) }
         end
 
+        def initialize_copy(original)
+          super
+          @entries = original.instance_variable_get(:@entries).dup
+          @entry_indexes_by_key = original.instance_variable_get(:@entry_indexes_by_key).dup
+          @compiled_call_chain = compile_call_chain
+        end
+
         def add(middleware, *args, **kwargs, &block)
           key = entry_key(middleware, args, kwargs, block)
           callable = build_callable(middleware, args, kwargs, block)
