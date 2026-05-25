@@ -13,6 +13,8 @@ SendInvoiceJob.set(wait_until: Time.zone.now + 1.hour).perform_later(invoice.id)
 
 The adapter starts a Temporal workflow immediately. The workflow sleeps durably until the scheduled time, then runs the job activity. For cron-style recurring work, use [Recurring Jobs](recurring_jobs.md).
 
+If `wait_until` or a batch `scheduled_at` value is already due by the time it is enqueued, the adapter treats it as immediate and omits the workflow sleep.
+
 ## Conditional Enqueueing
 
 Use `perform_later_if` when a job should be enqueued only if a runtime condition passes. The condition receives the job arguments as an array. If it returns a falsey value, no workflow is started and the method returns `nil`.

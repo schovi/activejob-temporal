@@ -433,18 +433,32 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
         enqueuer.enqueue(job, scheduled_at: scheduled_time)
       end
 
+      it "treats scheduled_at equal to now as immediate" do
+        now = Time.utc(2026, 5, 25, 12, 0, 0)
+        allow(Time).to receive(:now).and_return(now)
+        allow(client).to receive(:start_workflow) do |_klass, payload, **_options|
+          expect(payload[:scheduled_at]).to be_nil
+          "handle"
+        end
+
+        expect(enqueuer.enqueue(job, scheduled_at: now)).to eq("handle")
+      end
+
+      it "treats slightly past scheduled_at values as immediate" do
+        now = Time.utc(2026, 5, 25, 12, 0, 0)
+        allow(Time).to receive(:now).and_return(now)
+        allow(client).to receive(:start_workflow) do |_klass, payload, **_options|
+          expect(payload[:scheduled_at]).to be_nil
+          "handle"
+        end
+
+        expect(enqueuer.enqueue(job, scheduled_at: now - 0.1)).to eq("handle")
+      end
+
       it "rejects malformed scheduled_at values before starting a workflow" do
         expect do
           enqueuer.enqueue(job, scheduled_at: "not-a-date")
         end.to raise_error(ArgumentError, /scheduled_at must be/)
-
-        expect(client).not_to have_received(:start_workflow)
-      end
-
-      it "rejects past scheduled_at values before starting a workflow" do
-        expect do
-          enqueuer.enqueue(job, scheduled_at: 1.minute.ago)
-        end.to raise_error(ArgumentError, /scheduled_at must be in the future/)
 
         expect(client).not_to have_received(:start_workflow)
       end
@@ -574,6 +588,24 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       expect(calls[0][:payload][:scheduled_at]).to be_nil
       expect(calls[1][:options][:task_queue]).to eq("reports")
       expect(calls[1][:payload][:scheduled_at]).to eq(scheduled_time.iso8601)
+    end
+
+    it "treats due batch scheduled times as immediate" do
+      now = Time.utc(2026, 5, 25, 12, 0, 0)
+      calls = []
+
+      allow(Time).to receive(:now).and_return(now)
+      allow(client).to receive(:start_workflow) do |_klass, payload, **_options|
+        calls << payload
+        "handle-#{calls.length}"
+      end
+
+      enqueuer.enqueue_batch([
+                               { job: first_job, scheduled_at: now },
+                               { job: second_job, scheduled_at: now - 1 }
+                             ])
+
+      expect(calls.map { |payload| payload[:scheduled_at] }).to eq([nil, nil])
     end
 
     it "reports duplicate jobs per item" do
