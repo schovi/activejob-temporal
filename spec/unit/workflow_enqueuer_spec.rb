@@ -61,6 +61,64 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
       )
     end
 
+    it "returns the workflow handle when enqueue logging fails after Temporal accepts the workflow" do
+      allow(ActiveJob::Temporal::Logger).to receive(:log_event).and_raise(StandardError, "logger down")
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+
+      result = enqueuer.enqueue(job)
+
+      expect(result).to eq("workflow-handle")
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.enqueued",
+        hash_including(job_id: "test-job-id", duplicate: false)
+      )
+      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        :enqueue,
+        hash_including(job_id: "test-job-id", duplicate: false)
+      )
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "workflow_enqueue_side_effect_failed",
+        hash_including(
+          side_effect: "log",
+          workflow_id: "ajwf:SimpleJob:test-job-id",
+          job_id: "test-job-id",
+          error_class: "StandardError"
+        )
+      )
+    end
+
+    it "returns the workflow handle when enqueue auditing fails after Temporal accepts the workflow" do
+      allow(ActiveJob::Temporal::AuditLog).to receive(:record).and_raise(StandardError, "audit down")
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+
+      result = enqueuer.enqueue(job)
+
+      expect(result).to eq("workflow-handle")
+      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        :enqueue,
+        hash_including(job_id: "test-job-id", duplicate: false)
+      )
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "workflow_enqueue_side_effect_failed",
+        hash_including(side_effect: "audit", job_id: "test-job-id", error_class: "StandardError")
+      )
+    end
+
+    it "returns the workflow handle when enqueue observability fails after Temporal accepts the workflow" do
+      allow(ActiveJob::Temporal::Observability).to receive(:emit) do |event_name, *_arguments|
+        raise StandardError, "metrics down" if event_name == :enqueue
+      end
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+
+      result = enqueuer.enqueue(job)
+
+      expect(result).to eq("workflow-handle")
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "workflow_enqueue_side_effect_failed",
+        hash_including(side_effect: "observability", job_id: "test-job-id", error_class: "StandardError")
+      )
+    end
+
     it "returns the workflow handle" do
       handle = "test-workflow-handle"
       allow(client).to receive(:start_workflow).and_return(handle)
@@ -291,6 +349,26 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
           job_id: "test-job-id",
           duplicate: true
         )
+      )
+    end
+
+    it "returns nil for duplicate workflows when enqueue logging fails" do
+      error = Class.new(StandardError)
+      stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
+      allow(client).to receive(:start_workflow).and_raise(error.new("already started"))
+      allow(ActiveJob::Temporal::Logger).to receive(:log_event).and_raise(StandardError, "logger down")
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+
+      result = enqueuer.enqueue(job)
+
+      expect(result).to be_nil
+      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        "job.enqueued",
+        hash_including(job_id: "test-job-id", duplicate: true)
+      )
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "workflow_enqueue_side_effect_failed",
+        hash_including(side_effect: "log", job_id: "test-job-id", duplicate: true)
       )
     end
 

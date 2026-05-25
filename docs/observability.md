@@ -24,6 +24,8 @@ Built-in events include:
 
 Payloads include stable correlation fields when available: `job_id`, `job_class`, `queue`, `workflow_id`, `run_id`, `attempt`, `worker_id`, `namespace`, and `task_queue`.
 
+Enqueue logging, audit, and vendor observability run after Temporal accepts the workflow. Those side effects are best-effort: failures do not change the `perform_later` result once the workflow is accepted, and `workflow_enqueue_side_effect_failed` is logged when warning logging is still available.
+
 ## Prometheus
 
 ```ruby

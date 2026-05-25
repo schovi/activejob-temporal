@@ -28,6 +28,9 @@ module ActiveJob
     class WorkflowEnqueuer
       include WorkflowEnqueuerBatch
 
+      DUPLICATE_WORKFLOW = Object.new.freeze
+      private_constant :DUPLICATE_WORKFLOW
+
       # @param client [Temporalio::Client] Temporal client connection
       # @param config [ActiveJob::Temporal::Configuration] Configuration object
       # @param logger [Logger] Optional logger instance
@@ -129,16 +132,18 @@ module ActiveJob
       # @api private
       def start_workflow(job, payload, options)
         workflow_class = Workflows::AjWorkflow
-        handle = client.start_workflow(workflow_class, payload, **options)
+        result = start_temporal_workflow(workflow_class, job, payload, options)
+        duplicate = result.equal?(DUPLICATE_WORKFLOW)
 
-        log_enqueued(job, options, payload, duplicate: false)
+        log_enqueued(job, options, payload, duplicate: duplicate)
 
-        handle
+        duplicate ? nil : result
+      end
+
+      def start_temporal_workflow(workflow_class, job, payload, options)
+        client.start_workflow(workflow_class, payload, **options)
       rescue StandardError => e
-        if workflow_already_started?(e)
-          log_enqueued(job, options, payload, duplicate: true)
-          return nil
-        end
+        return DUPLICATE_WORKFLOW if workflow_already_started?(e)
 
         raise ActiveJob::EnqueueError.new(build_enqueue_error_message(job, e)), cause: e
       end
@@ -159,6 +164,28 @@ module ActiveJob
       # Logs enqueue event with structured metadata.
       # @api private
       def log_enqueued(job, options, payload, duplicate:)
+        attributes = enqueue_attributes(job, options, payload, duplicate: duplicate)
+
+        emit_enqueue_side_effect("log", attributes) do
+          Logger.log_event("workflow_enqueued", **attributes)
+        end
+        emit_enqueue_side_effect("audit", attributes) do
+          AuditLog.record("job.enqueued", attributes)
+        end
+        emit_enqueue_side_effect("observability", attributes) do
+          Observability.emit(
+            :enqueue,
+            Observability.attributes_from_job(
+              job,
+              workflow_id: options[:id],
+              task_queue: options[:task_queue],
+              duplicate: duplicate
+            )
+          )
+        end
+      end
+
+      def enqueue_attributes(job, options, payload, duplicate:)
         attributes = {
           workflow_id: options[:id],
           job_class: job.class.name,
@@ -169,17 +196,22 @@ module ActiveJob
         }
         attributes[:scheduled_at] = payload[:scheduled_at] if payload[:scheduled_at]
 
-        Logger.log_event("workflow_enqueued", **attributes)
-        AuditLog.record("job.enqueued", attributes)
-        Observability.emit(
-          :enqueue,
-          Observability.attributes_from_job(
-            job,
-            workflow_id: options[:id],
-            task_queue: options[:task_queue],
-            duplicate: duplicate
-          )
+        attributes
+      end
+
+      def emit_enqueue_side_effect(side_effect, attributes)
+        yield
+      rescue StandardError => e
+        report_enqueue_side_effect_failure(side_effect, attributes, e)
+      end
+
+      def report_enqueue_side_effect_failure(side_effect, attributes, error)
+        Logger.warn(
+          "workflow_enqueue_side_effect_failed",
+          attributes.merge(side_effect: side_effect, error_class: error.class.name)
         )
+      rescue StandardError
+        nil
       end
 
       # Builds error message for enqueue failures.
