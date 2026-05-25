@@ -116,6 +116,37 @@ RSpec.describe ActiveJob::Temporal::Cancel do
         )
       end
 
+      it "wraps cancellation RPC failures in TemporalConnectionError" do
+        cancellation_error = Temporalio::Error::RPCError.new(
+          "permission denied",
+          code: Temporalio::Error::RPCError::Code::PERMISSION_DENIED,
+          raw_grpc_status: nil
+        )
+        allow(handle).to receive(:cancel).and_raise(cancellation_error)
+
+        expect { described_class.cancel(job_class, job_id) }
+          .to raise_error(ActiveJob::Temporal::TemporalConnectionError) { |error|
+            expect(error.message).to include("Failed to cancel Temporal workflow for job_id #{job_id}")
+            expect(error.message).to include("permission denied")
+            expect(error.cause).to be(cancellation_error)
+          }
+      end
+
+      it "keeps cancellation RPC not-found failures as WorkflowNotFoundError" do
+        not_found_error = Temporalio::Error::RPCError.new(
+          "not found",
+          code: Temporalio::Error::RPCError::Code::NOT_FOUND,
+          raw_grpc_status: nil
+        )
+        allow(handle).to receive(:cancel).and_raise(not_found_error)
+
+        expect { described_class.cancel(job_class, job_id) }
+          .to raise_error(ActiveJob::Temporal::WorkflowNotFoundError) { |error|
+            expect(error.message).to include("No workflow found for job_id #{job_id}")
+            expect(error.cause).to be(not_found_error)
+          }
+      end
+
       context "when the workflow uses a custom workflow ID" do
         let(:custom_workflow_id) { "tenant-42:ajwf:#{job_class.name}:#{job_id}" }
         let(:workflow_info) { double("WorkflowInfo", id: custom_workflow_id) }
@@ -257,6 +288,22 @@ RSpec.describe ActiveJob::Temporal::Cancel do
           expect { described_class.cancel(job_class, schedule_job_id) }.not_to raise_error
           expect(handle).to have_received(:cancel)
           expect(client).not_to have_received(:list_workflows)
+        end
+
+        it "wraps schedule execution cancellation RPC failures in TemporalConnectionError" do
+          cancellation_error = Temporalio::Error::RPCError.new(
+            "namespace not found",
+            code: Temporalio::Error::RPCError::Code::PERMISSION_DENIED,
+            raw_grpc_status: nil
+          )
+          allow(handle).to receive(:cancel).and_raise(cancellation_error)
+
+          expect { described_class.cancel(job_class, schedule_job_id) }
+            .to raise_error(ActiveJob::Temporal::TemporalConnectionError) { |error|
+              expect(error.message).to include("Failed to cancel Temporal workflow for job_id #{schedule_job_id}")
+              expect(error.message).to include("namespace not found")
+              expect(error.cause).to be(cancellation_error)
+            }
         end
       end
 

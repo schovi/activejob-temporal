@@ -29,6 +29,48 @@ module ActiveJob
     # @see https://docs.temporal.io/activities#heartbeat Temporal Activity Heartbeating
     # @see https://docs.temporal.io/workflows#cancellation Temporal Cancellation Guide
     module Cancel
+      class CancellationRequest
+        def initialize(client:, job_id:, workflow_id:, run_id: nil)
+          @client = client
+          @job_id = job_id
+          @workflow_id = workflow_id
+          @run_id = run_id
+        end
+
+        def call
+          cancellation_handle.cancel
+        rescue StandardError => e
+          raise workflow_not_found_error, cause: e if rpc_not_found?(e)
+
+          raise ActiveJob::Temporal::TemporalConnectionError.new(
+            "Failed to cancel Temporal workflow for job_id #{@job_id}: #{e.message}"
+          ), cause: e
+        end
+
+        private
+
+        attr_reader :client, :workflow_id, :run_id
+
+        def cancellation_handle
+          return client.workflow_handle(workflow_id) unless run_id
+
+          client.workflow_handle(workflow_id, run_id: run_id)
+        end
+
+        def workflow_not_found_error
+          ActiveJob::Temporal::WorkflowNotFoundError.new(
+            "No workflow found for job_id #{@job_id}. The job may have completed or never existed."
+          )
+        end
+
+        def rpc_not_found?(error)
+          defined?(Temporalio::Error::RPCError) &&
+            error.is_a?(Temporalio::Error::RPCError) &&
+            error.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+        end
+      end
+      private_constant :CancellationRequest
+
       class << self
         # Cancels a running Temporal workflow by sending a cancellation request.
         #
@@ -40,7 +82,7 @@ module ActiveJob
         # @return [Boolean, nil] Returns false if workflow already completed, nil if cancellation requested
         #
         # @raise [WorkflowNotFoundError] if no workflow exists for the given job_id
-        # @raise [TemporalConnectionError] if the Temporal cluster cannot be reached
+        # @raise [TemporalConnectionError] if Temporal lookup or cancellation RPCs fail
         #
         # @note Asynchronous Cancellation
         #   Cancellation requests are asynchronous. The method returns immediately after
@@ -82,7 +124,7 @@ module ActiveJob
             raise ActiveJob::Temporal::WorkflowNotFoundError,
                   "No workflow found for job_id #{job_id}. The job may have never existed."
           when :running
-            client.workflow_handle(workflow_id).cancel
+            request_cancellation(client, job_id, workflow_id)
             log_cancellation_requested(job_class, job_id, workflow_id)
             log_audit_cancellation_requested(job_class, job_id, workflow_id)
             nil
@@ -119,14 +161,16 @@ module ActiveJob
           return false unless schedule_reference
 
           workflow_id = schedule_reference.fetch(:workflow_id)
-          client.workflow_handle(workflow_id, run_id: schedule_reference.fetch(:run_id)).cancel
+          request_cancellation(client, job_id, workflow_id, run_id: schedule_reference.fetch(:run_id))
           log_cancellation_requested(job_class, job_id, workflow_id)
           log_audit_cancellation_requested(job_class, job_id, workflow_id)
           true
-        rescue StandardError => e
-          raise unless rpc_not_found?(e)
-
+        rescue ActiveJob::Temporal::WorkflowNotFoundError
           false
+        end
+
+        def request_cancellation(client, job_id, workflow_id, run_id: nil)
+          CancellationRequest.new(client: client, job_id: job_id, workflow_id: workflow_id, run_id: run_id).call
         end
 
         # Builds deterministic workflow ID from job class and job ID.
@@ -187,12 +231,6 @@ module ActiveJob
         def workflow_search_query(job_class, job_id, status_query)
           "ajClass=#{VisibilityQuery.quote(job_class.name)} AND ajJobId=#{VisibilityQuery.quote(job_id)} " \
             "AND #{status_query}"
-        end
-
-        def rpc_not_found?(error)
-          defined?(Temporalio::Error::RPCError) &&
-            error.is_a?(Temporalio::Error::RPCError) &&
-            error.code == Temporalio::Error::RPCError::Code::NOT_FOUND
         end
 
         # Logs cancellation request event.

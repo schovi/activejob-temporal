@@ -443,7 +443,7 @@ ActiveJob::Temporal.cancel_where(ajQueue: "low_priority")
 ActiveJob::Temporal.cancel_where(ajClass: "ReportJob", ajTenantId: 123)
 ```
 
-`cancel` accepts UUIDs, custom job IDs, and schedule-generated execution IDs when they are safe strings. It finds the workflow by `ajClass` and `ajJobId`, uses the discovered workflow ID, returns `false` when the workflow already completed, and raises `ActiveJob::Temporal::WorkflowNotFoundError` when no matching workflow exists. Batch cancellation lists running workflows with Temporal visibility pagination, calls `handle.terminate` for each match, and returns `{ terminated:, failed:, errors: }`.
+`cancel` accepts UUIDs, custom job IDs, and schedule-generated execution IDs when they are safe strings. It finds the workflow by `ajClass` and `ajJobId`, uses the discovered workflow ID, returns `false` when the workflow already completed, and raises `ActiveJob::Temporal::WorkflowNotFoundError` when no matching workflow exists. Temporal lookup and cancellation RPC failures raise `ActiveJob::Temporal::TemporalConnectionError` with the SDK error preserved as the cause. Batch cancellation lists running workflows with Temporal visibility pagination, calls `handle.terminate` for each match, and returns `{ terminated:, failed:, errors: }`.
 
 Long-running jobs should heartbeat so Temporal can deliver cancellation promptly:
 
