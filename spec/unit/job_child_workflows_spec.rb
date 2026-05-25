@@ -36,8 +36,13 @@ RSpec.describe "ActiveJob Temporal child workflows" do
     ActiveJob::Base.queue_adapter = original_adapter
   end
 
-  it "captures child workflows configured through ActiveJob.set" do
-    configured_final_child = final_job_class.set(queue: "reporting", priority: 7, tags: %i[fanout urgent])
+  it "captures child workflows configured through Temporal job descriptors" do
+    configured_final_child = ActiveJob::Temporal.job(
+      final_job_class,
+      queue: "reporting",
+      priority: 7,
+      tags: %i[fanout urgent]
+    )
 
     job = job_class.set(child_workflows: [child_job_class, configured_final_child]).perform_later("seed")
 
@@ -56,6 +61,28 @@ RSpec.describe "ActiveJob Temporal child workflows" do
                                                  }
                                                ])
     expect(test_adapter.enqueued_jobs.size).to eq(1)
+  end
+
+  it "supports ActiveJob configured jobs as a warned compatibility fallback" do
+    allow(ActiveJob::Temporal::Logger).to receive(:warn)
+    configured_final_child = final_job_class.set(queue: "reporting", priority: 7, tags: %i[fanout urgent])
+
+    job = job_class.set(child_workflows: [configured_final_child]).perform_later("seed")
+
+    expect(job.temporal_child_workflows).to eq([
+                                                 {
+                                                   job_class: "ChildWorkflowFinalJob",
+                                                   options: {
+                                                     queue: "reporting",
+                                                     priority: 7,
+                                                     tags: %w[fanout urgent]
+                                                   }
+                                                 }
+                                               ])
+    expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+      "active_job_configured_job_private_api",
+      hash_including(feature: "child_workflows")
+    )
   end
 
   it "captures external Temporal workflow refs in child workflow order" do
@@ -113,7 +140,7 @@ RSpec.describe "ActiveJob Temporal child workflows" do
   it "rejects configured child workflows with unsupported ActiveJob options" do
     job = job_class.new
 
-    expect { job.set(child_workflows: [child_job_class.set(wait: 5)]) }
+    expect { job.set(child_workflows: [ActiveJob::Temporal.job(child_job_class, wait: 5)]) }
       .to raise_error(ArgumentError, /only support queue, priority, and tags options/)
   end
 

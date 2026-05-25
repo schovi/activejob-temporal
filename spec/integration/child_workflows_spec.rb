@@ -48,8 +48,12 @@ RSpec.describe "ActiveJob Temporal child workflows", :integration do
     parent_job = ChildWorkflowParentIntegrationJob
                  .set(
                    queue: task_queue,
-                   child_workflows: [ChildWorkflowChildIntegrationJob.set(queue: task_queue)],
-                   chain: [ChildWorkflowChainIntegrationJob.set(queue: task_queue)]
+                   child_workflows: [
+                     ActiveJob::Temporal.job(ChildWorkflowChildIntegrationJob, queue: task_queue)
+                   ],
+                   chain: [
+                     ActiveJob::Temporal.job(ChildWorkflowChainIntegrationJob, queue: task_queue)
+                   ]
                  )
                  .perform_later("seed")
     @workflow_ids << ActiveJob::Temporal::Adapter.build_workflow_id(parent_job)
@@ -106,10 +110,12 @@ RSpec.describe "ActiveJob Temporal child workflows", :integration do
                  .set(
                    queue: task_queue,
                    child_workflows: [
-                     ChildWorkflowFirstChildIntegrationJob.set(queue: task_queue),
-                     ChildWorkflowSecondChildIntegrationJob.set(queue: task_queue)
+                     ActiveJob::Temporal.job(ChildWorkflowFirstChildIntegrationJob, queue: task_queue),
+                     ActiveJob::Temporal.job(ChildWorkflowSecondChildIntegrationJob, queue: task_queue)
                    ],
-                   chain: [ChildWorkflowFanoutReducerIntegrationJob.set(queue: task_queue)]
+                   chain: [
+                     ActiveJob::Temporal.job(ChildWorkflowFanoutReducerIntegrationJob, queue: task_queue)
+                   ]
                  )
                  .perform_later("seed")
     @workflow_ids << ActiveJob::Temporal::Adapter.build_workflow_id(parent_job)

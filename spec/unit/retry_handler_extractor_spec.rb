@@ -18,11 +18,11 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
     end
 
     it "memoizes retry handler extraction per job class" do
-      allow(ActiveJob::Temporal::ActiveJobHandlerSource).to receive(:match?).and_call_original
+      allow(ActiveJob::Temporal::ActiveJobHandlerSource).to receive(:match_status).and_call_original
 
       2.times { extractor.retry_handlers(RetryableJob) }
 
-      expect(ActiveJob::Temporal::ActiveJobHandlerSource).to have_received(:match?)
+      expect(ActiveJob::Temporal::ActiveJobHandlerSource).to have_received(:match_status)
         .with(anything, :retry_on)
         .once
     end
@@ -134,6 +134,33 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
       )
     end
 
+    it "logs an explicit warning when ActiveJob retry handler source is unsupported" do
+      allow(ActiveJob::Temporal::ActiveJobHandlerSource).to receive(:supported?)
+        .with(:retry_on)
+        .and_return(false)
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+
+      expect(extractor.retry_handlers(RetryableJob)).to be_empty
+
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "active_job_handler_source_unavailable",
+        hash_including(handler_type: "retry", job_class: "RetryableJob")
+      )
+    end
+
+    it "logs an explicit warning when retry handler source metadata is unusable" do
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      handler = handler_with(binding_double(wait: 1.second, attempts: 2), nil)
+      job_class = job_class_with_rescue_handlers([[SampleJobError, handler]])
+
+      expect(extractor.retry_handlers(job_class)).to be_empty
+
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "active_job_handler_source_unavailable",
+        hash_including(handler_type: "retry", job_class: "FallbackRetryJob")
+      )
+    end
+
     it "constantizes handler names when defined outside the job class" do
       handlers = extractor.retry_handlers(ExternalConstantRetryJob)
 
@@ -178,11 +205,11 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
     end
 
     it "memoizes discard handler extraction per job class" do
-      allow(ActiveJob::Temporal::ActiveJobHandlerSource).to receive(:match?).and_call_original
+      allow(ActiveJob::Temporal::ActiveJobHandlerSource).to receive(:match_status).and_call_original
 
       2.times { extractor.discard_handlers(DiscardableJob) }
 
-      expect(ActiveJob::Temporal::ActiveJobHandlerSource).to have_received(:match?)
+      expect(ActiveJob::Temporal::ActiveJobHandlerSource).to have_received(:match_status)
         .with(anything, :discard_on)
         .twice
     end
@@ -214,6 +241,33 @@ RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
       expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
         "active_job_handler_metadata_fallback",
         hash_including(handler_type: "discard", job_class: "FallbackRetryJob", exception: "FatalJobError")
+      )
+    end
+
+    it "logs an explicit warning when ActiveJob discard handler source is unsupported" do
+      allow(ActiveJob::Temporal::ActiveJobHandlerSource).to receive(:supported?)
+        .with(:discard_on)
+        .and_return(false)
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+
+      expect(extractor.discard_handlers(DiscardableJob)).to be_empty
+
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "active_job_handler_source_unavailable",
+        hash_including(handler_type: "discard", job_class: "DiscardableJob")
+      )
+    end
+
+    it "logs an explicit warning when discard handler source metadata is unusable" do
+      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      handler = handler_with(binding_double(report: true), nil)
+      job_class = job_class_with_rescue_handlers([[FatalJobError, handler]])
+
+      expect(extractor.discard_handlers(job_class)).to be_empty
+
+      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        "active_job_handler_source_unavailable",
+        hash_including(handler_type: "discard", job_class: "FallbackRetryJob")
       )
     end
 

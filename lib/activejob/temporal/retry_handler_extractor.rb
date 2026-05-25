@@ -174,7 +174,12 @@ module ActiveJob
       end
 
       def retry_handler_payload(job_class, class_or_name, handler)
-        return nil unless retry_handler_source?(handler)
+        unless ActiveJobHandlerSource.supported?(:retry_on)
+          log_handler_source_unavailable("retry", job_class)
+          return nil
+        end
+
+        return nil unless retry_handler_source?(job_class, handler)
 
         binding = handler_binding(handler)
         payload = retry_payload_from_binding(binding)
@@ -190,7 +195,12 @@ module ActiveJob
       end
 
       def discard_handler_payload(job_class, class_or_name, handler)
-        return nil unless ActiveJobHandlerSource.match?(handler, :discard_on)
+        unless ActiveJobHandlerSource.supported?(:discard_on)
+          log_handler_source_unavailable("discard", job_class)
+          return nil
+        end
+
+        return nil unless discard_handler_source?(job_class, handler)
 
         binding = handler_binding(handler)
         return { handler: handler } if discard_handler_binding?(binding)
@@ -229,8 +239,24 @@ module ActiveJob
         nil
       end
 
-      def retry_handler_source?(handler)
-        ActiveJobHandlerSource.match?(handler, :retry_on)
+      def retry_handler_source?(job_class, handler)
+        handler_source_match?("retry", job_class, handler, :retry_on)
+      end
+
+      def discard_handler_source?(job_class, handler)
+        handler_source_match?("discard", job_class, handler, :discard_on)
+      end
+
+      def handler_source_match?(handler_type, job_class, handler, method_name)
+        case ActiveJobHandlerSource.match_status(handler, method_name)
+        when :match
+          true
+        when :unsupported
+          log_handler_source_unavailable(handler_type, job_class)
+          false
+        else
+          false
+        end
       end
 
       def log_metadata_fallback(handler_type, job_class, class_or_name, reason)
@@ -245,6 +271,22 @@ module ActiveJob
           job_class: job_class.name,
           exception: class_or_name.to_s,
           reason: reason
+        )
+      rescue StandardError
+        nil
+      end
+
+      def log_handler_source_unavailable(handler_type, job_class)
+        warning_key = [handler_type, job_class.name, "handler_source_unavailable"]
+        @metadata_fallback_warnings ||= {}
+        return if @metadata_fallback_warnings[warning_key]
+
+        @metadata_fallback_warnings[warning_key] = true
+        ActiveJob::Temporal::Logger.warn(
+          "active_job_handler_source_unavailable",
+          handler_type: handler_type,
+          job_class: job_class.name,
+          reason: "active_job_handler_source_unavailable"
         )
       rescue StandardError
         nil

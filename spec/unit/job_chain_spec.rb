@@ -36,8 +36,8 @@ RSpec.describe "ActiveJob Temporal job chaining" do
     ActiveJob::Base.queue_adapter = original_adapter
   end
 
-  it "captures chain steps configured through ActiveJob.set" do
-    configured_final_step = final_job_class.set(queue: "reporting", priority: 7)
+  it "captures chain steps configured through Temporal job descriptors" do
+    configured_final_step = ActiveJob::Temporal.job(final_job_class, queue: "reporting", priority: 7)
 
     job = job_class.set(chain: [next_job_class, configured_final_step]).perform_later("seed")
 
@@ -55,6 +55,27 @@ RSpec.describe "ActiveJob Temporal job chaining" do
                                        }
                                      ])
     expect(test_adapter.enqueued_jobs.size).to eq(1)
+  end
+
+  it "supports ActiveJob configured jobs as a warned compatibility fallback" do
+    allow(ActiveJob::Temporal::Logger).to receive(:warn)
+    configured_final_step = final_job_class.set(queue: "reporting", priority: 7)
+
+    job = job_class.set(chain: [configured_final_step]).perform_later("seed")
+
+    expect(job.temporal_chain).to eq([
+                                       {
+                                         job_class: "ChainFinalJob",
+                                         options: {
+                                           queue: "reporting",
+                                           priority: 7
+                                         }
+                                       }
+                                     ])
+    expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+      "active_job_configured_job_private_api",
+      hash_including(feature: "chain")
+    )
   end
 
   it "captures external Temporal activity and workflow refs in chain order" do
@@ -125,7 +146,7 @@ RSpec.describe "ActiveJob Temporal job chaining" do
   it "rejects configured chain steps with unsupported ActiveJob options" do
     job = job_class.new
 
-    expect { job.set(chain: [next_job_class.set(wait: 5)]) }
+    expect { job.set(chain: [ActiveJob::Temporal.job(next_job_class, wait: 5)]) }
       .to raise_error(ArgumentError, /only support queue and priority options/)
   end
 

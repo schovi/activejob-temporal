@@ -7,24 +7,46 @@ module ActiveJob
         new(handler, method_name).match?
       end
 
+      def self.match_status(handler, method_name)
+        new(handler, method_name).match_status
+      end
+
+      def self.supported?(method_name)
+        new(nil, method_name).supported?
+      end
+
       def initialize(handler, method_name)
         @handler = handler
         @method_name = method_name
       end
 
-      def match?
-        return false unless handler.respond_to?(:source_location)
-
-        source_file, source_line = handler.source_location
-        return false unless source_file && source_line
-
+      def supported?
         method_file, = active_job_method_source_location
-        return false unless method_file
-        return false unless same_file?(source_file, method_file)
-
-        source_method_name(source_file, source_line) == method_name.to_s
+        method_file && File.file?(method_file)
       rescue StandardError
         false
+      end
+
+      def match?
+        match_status == :match
+      end
+
+      def match_status
+        return :unsupported unless handler.respond_to?(:source_location)
+
+        source_file, source_line = handler.source_location
+        return :unsupported unless source_file && source_line
+
+        method_file, = active_job_method_source_location
+        return :unsupported unless method_file
+        return :no_match unless same_file?(source_file, method_file)
+
+        source_name = source_method_name(source_file, source_line)
+        return :unsupported unless source_name
+
+        source_name == method_name.to_s ? :match : :no_match
+      rescue StandardError
+        :unsupported
       end
 
       private
