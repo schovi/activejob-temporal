@@ -44,7 +44,7 @@ Use `--metrics-bind 0.0.0.0 --allow-public-metrics-bind` only when Prometheus sc
 | `activejob_temporal_active_workers` | Gauge | none | `1` while this worker process is running, `0` after shutdown starts. |
 | `activejob_temporal_active_tasks` | Gauge | none | Active activity tasks executing in this worker process. |
 
-The metrics endpoint returns Prometheus text format at `GET /metrics`.
+The metrics endpoint returns Prometheus text format at `GET /metrics`. If the Prometheus provider raises while rendering, the request returns `500` with `internal_server_error`, logs `metrics_request_failed`, closes that connection, and keeps serving later metrics requests.
 
 Metrics are process-local. Worker scrapes expose worker lifecycle, active task, completed job, failed job, duration, and retry metrics. Enqueue and payload size metrics are recorded by the process that calls `perform_later`, usually a Rails web or job producer process. To scrape those series, expose the same provider from an internal Rails route or another process-local exporter:
 

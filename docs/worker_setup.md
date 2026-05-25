@@ -149,7 +149,7 @@ kill -HUP <worker-pid>
 
 When certificate watching is enabled, the worker watches the configured TLS certificate files and swaps in a fresh Temporal client after a successful reconnect. `SIGHUP` triggers the same reload path manually. Existing calls continue on the previous client.
 
-The health endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, execution slot settings, PID, start time, and uptime:
+The health endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. If health snapshot generation raises, the request returns `500` with `{"error":"internal_server_error"}`, logs `health_check_request_failed`, closes that connection, and keeps serving later health requests. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, execution slot settings, PID, start time, and uptime:
 
 ```json
 {

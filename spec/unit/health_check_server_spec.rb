@@ -164,9 +164,43 @@ RSpec.describe ActiveJob::Temporal::HealthCheckServer do
       expect(status).to eq("HTTP/1.1 200 OK")
       expect(body["status"]).to eq("ok")
     end
+
+    it "returns internal server error for state failures and keeps serving later requests" do
+      failing_state = flaky_health_state(described_class::CONNECTION_WORKERS)
+      allow(ActiveJob::Temporal::Logger).to receive(:error)
+      @server = described_class.new(port: 0, bind_address: "127.0.0.1", state: failing_state).start
+
+      described_class::CONNECTION_WORKERS.times do
+        status, body = parse_response(http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"))
+
+        expect(status).to eq("HTTP/1.1 500 Internal Server Error")
+        expect(body["error"]).to eq("internal_server_error")
+      end
+
+      status, body = parse_response(http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"))
+
+      expect(status).to eq("HTTP/1.1 200 OK")
+      expect(body["status"]).to eq("ok")
+      expect(ActiveJob::Temporal::Logger).to have_received(:error).with(
+        "health_check_request_failed",
+        hash_including(error_class: "RuntimeError", message: "health snapshot failed")
+      ).exactly(described_class::CONNECTION_WORKERS).times
+    end
   end
 
   private
+
+  def flaky_health_state(failures)
+    calls = 0
+    Object.new.tap do |state|
+      state.define_singleton_method(:snapshot) do
+        calls += 1
+        raise "health snapshot failed" if calls <= failures
+
+        { status: "ok", worker_running: true }
+      end
+    end
+  end
 
   def http_request(request)
     Timeout.timeout(2) do

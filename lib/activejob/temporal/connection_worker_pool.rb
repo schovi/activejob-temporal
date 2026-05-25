@@ -72,9 +72,26 @@ module ActiveJob
           connection = queue.pop
           break unless connection
 
-          @handler.call(connection)
+          begin
+            @handler.call(connection)
+          rescue StandardError => e
+            log_handler_failure(index, e)
+            close_connection(connection)
+          end
         end
       rescue ClosedQueueError
+        nil
+      end
+
+      def log_handler_failure(index, error)
+        ActiveJob::Temporal::Logger.error(
+          "connection_worker_handler_failed",
+          pool: @name,
+          worker_index: index,
+          error_class: error.class.name,
+          message: error.message.to_s
+        )
+      rescue StandardError
         nil
       end
 

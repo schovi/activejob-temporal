@@ -6,17 +6,21 @@ require "socket"
 
 require_relative "connection_worker_pool"
 require_relative "bind_policy"
+require_relative "http_request_failure_handling"
 require_relative "http_line_reader"
 
 module ActiveJob
   module Temporal
     class HealthCheckServer
       include HttpLineReader
+      include HttpRequestFailureHandling
 
       DEFAULT_BIND_ADDRESS = "127.0.0.1"
       READ_TIMEOUT_SECONDS = 1
       CONNECTION_WORKERS = 4
       CONNECTION_QUEUE_SIZE = 16
+      REQUEST_FAILURE_EVENT = "health_check_request_failed"
+      REQUEST_FAILURE_FORMAT = :json
 
       attr_reader :port, :bind_address
 
@@ -89,14 +93,6 @@ module ActiveJob
         @mutex.synchronize { @running = false if @server }
       end
 
-      def serve_client(client)
-        handle_client(client)
-      rescue IOError, SystemCallError
-        nil
-      ensure
-        client&.close
-      end
-
       def handle_client(client)
         request_line = read_line(client)
         return unless request_line
@@ -151,6 +147,7 @@ module ActiveJob
           400 => "Bad Request",
           404 => "Not Found",
           405 => "Method Not Allowed",
+          500 => "Internal Server Error",
           503 => "Service Unavailable"
         }.fetch(status)
       end
