@@ -26,6 +26,8 @@ Payloads include stable correlation fields when available: `job_id`, `job_class`
 
 After `perform` returns, completion telemetry, audit logging, and external payload cleanup are best-effort. Failures in those side effects log `activity_post_perform_side_effect_failed` when possible and do not turn the completed job into a failed Temporal activity. If the job itself raises, failure audit and retry telemetry are also best-effort so the original job exception remains the activity failure.
 
+Enqueue logging, audit, and vendor observability run after Temporal accepts the workflow. Those side effects are best-effort: failures do not change the `perform_later` result once the workflow is accepted, and `workflow_enqueue_side_effect_failed` is logged when warning logging is still available.
+
 ## Prometheus
 
 ```ruby
