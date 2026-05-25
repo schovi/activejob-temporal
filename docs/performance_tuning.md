@@ -11,9 +11,9 @@ ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=100
 ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=5
 ```
 
-These settings are passed to the Temporal Ruby worker as activity and workflow task poll limits. They control how aggressively a worker polls for work, not a guaranteed number of simultaneously running jobs. The current gem exposes these poll limits and worker process count as its worker capacity knobs, so verify the actual effect with Temporal UI, worker logs, and host metrics.
+These settings are passed to the Temporal Ruby worker as fixed activity and workflow execution slots. They cap how many activity and workflow tasks can execute at the same time in one worker process. Temporal SDK poller behavior remains separate and uses the SDK defaults.
 
-The default `100` activity poll setting is an I/O-bound starting point. On MRI Ruby, CPU-bound jobs still contend on the GVL, so compression, rendering, parsing, encryption, and similar compute-heavy jobs should usually start near `Etc.nprocessors` activity polls per worker process, or lower when several worker processes share the same host.
+The default `100` activity slot setting is an I/O-bound starting point. On MRI Ruby, CPU-bound jobs still contend on the GVL, so compression, rendering, parsing, encryption, and similar compute-heavy jobs should usually start near `Etc.nprocessors` activity slots per worker process, or lower when several worker processes share the same host.
 
 ## Tuning Loop
 
@@ -23,13 +23,13 @@ The default `100` activity poll setting is an I/O-bound starting point. On MRI R
 4. Run enough representative work to see queue and resource behavior.
 5. Keep the change only if latency improves without saturating another dependency.
 
-Do not raise poll capacity just because a queue is busy. A bigger worker can make the system slower when jobs are CPU-bound, memory-heavy, database-heavy, or rate-limited by an external API.
+Do not raise execution slots just because a queue is busy. A bigger worker can make the system slower when jobs are CPU-bound, memory-heavy, database-heavy, or rate-limited by an external API.
 
 ## Worker Capacity
 
 ### Starting Points
 
-| Scenario | Activity poll setting | Workflow task poll setting | Use when | Watch closely |
+| Scenario | Activity slot setting | Workflow task slot setting | Use when | Watch closely |
 | --- | ---: | ---: | --- | --- |
 | Local development or low-resource worker | `10` to `20` | `2` to `5` | Laptop, small VM, CI smoke test, or memory-constrained worker | Memory, CPU, local Temporal responsiveness |
 | Balanced production default | `100` | `5` | Mixed I/O-heavy job durations with normal database and API calls | Activity task backlog, DB pool waits, worker memory |
@@ -50,7 +50,7 @@ ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=5 \
 bundle exec temporal-worker
 ```
 
-### When To Increase Activity Poll Capacity
+### When To Increase Activity Slots
 
 Increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` when all of these are true:
 
@@ -61,7 +61,7 @@ Increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` when all of these are tr
 
 Reduce it when workers run out of memory, database pool waits increase, external APIs start rate-limiting, or CPU stays saturated.
 
-### When To Increase Workflow Task Poll Capacity
+### When To Increase Workflow Task Slots
 
 Increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` when workflow task latency grows or Temporal UI shows workflow task backlog while activity workers have headroom.
 
@@ -175,7 +175,7 @@ Estimate database demand per queue:
 worker_processes * simultaneous_db_using_jobs_per_process
 ```
 
-If every job touches the database and one worker process is configured with 100 activity poll capacity, do not assume the default Rails pool of 5 connections is enough. Measure checked-out connections and pool waits, then increase the worker database pool, lower `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`, split database-heavy jobs onto their own task queue, or add a pooler such as PgBouncer.
+If every job touches the database and one worker process is configured with 100 activity slots, do not assume the default Rails pool of 5 connections is enough. Measure checked-out connections and pool waits, then increase the worker database pool, lower `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`, split database-heavy jobs onto their own task queue, or add a pooler such as PgBouncer.
 
 Keep web and worker pool sizing separate. Web requests and workers usually run in different processes and need separate database capacity planning.
 
@@ -185,7 +185,7 @@ Watch these signals together:
 
 - Temporal UI activity task queue backlog and schedule-to-start latency.
 - Temporal UI workflow task queue backlog.
-- Worker `worker_started` logs for task queue and poll settings.
+- Worker `worker_started` logs for task queue and execution slot settings.
 - Prometheus metrics from `GET /metrics`, especially job duration, payload size, failed jobs, active workers, and active tasks.
 - Payload logs: `payload_size_large`, `payload_size_near_limit`, and `payload_size_exceeded`.
 - Job duration distribution by job class and queue.
@@ -193,13 +193,13 @@ Watch these signals together:
 - Database pool wait time, checked-out connections, and query latency.
 - Downstream API latency, error rate, and rate-limit responses.
 
-The strongest signal is usually schedule-to-start latency. If it grows while workers have spare resources, add worker capacity. If it grows while a dependency is saturated, reduce poll capacity or isolate the expensive jobs.
+The strongest signal is usually schedule-to-start latency. If it grows while workers have spare resources, add worker capacity. If it grows while a dependency is saturated, reduce activity slots or isolate the expensive jobs.
 
 See the [Metrics Guide](metrics.md) for the built-in Prometheus exporter and Grafana dashboard example.
 
 ## Queue Isolation
 
-Use separate ActiveJob queues when workloads need different worker poll settings:
+Use separate ActiveJob queues when workloads need different worker slot settings:
 
 ```ruby
 class FastWebhookJob < ApplicationJob
@@ -234,11 +234,11 @@ This keeps slow exports from consuming capacity needed by short webhook jobs.
 
 ## Troubleshooting Decisions
 
-- Activity backlog grows and workers are idle: increase activity poll capacity or add worker processes.
-- Workflow backlog grows but activities are healthy: increase workflow task poll capacity.
-- CPU is saturated: reduce activity poll capacity, split CPU-heavy jobs, or add hosts.
-- Memory grows with worker load: lower activity poll capacity or reduce per-job object loading.
-- Database pool waits grow: lower activity poll capacity or increase worker database pool capacity.
+- Activity backlog grows and workers are idle: increase activity slots or add worker processes.
+- Workflow backlog grows but activities are healthy: increase workflow task slots.
+- CPU is saturated: reduce activity slots, split CPU-heavy jobs, or add hosts.
+- Memory grows with worker load: lower activity slots or reduce per-job object loading.
+- Database pool waits grow: lower activity slots or increase worker database pool capacity.
 - Payload warnings appear: pass IDs or GlobalID records instead of large hashes, arrays, or file contents.
 - Long jobs ignore cancellation: add `heartbeat_timeout` and heartbeat inside loops.
 

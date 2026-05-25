@@ -15,8 +15,8 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_TARGET` | Yes | Host and port of the Temporal frontend service. | `localhost:7233` |
 | `ACTIVEJOB_TEMPORAL_NAMESPACE` | Yes | Temporal namespace to poll for workflows. | `default` |
 | `ACTIVEJOB_TEMPORAL_TASK_QUEUE` | Yes | Task queue the worker will poll for jobs. | `default` |
-| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity task poll capacity (defaults to `100`). | `50` |
-| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task poll capacity (defaults to `5`). | `20` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES` | No | Maximum activity execution slots (defaults to `100`). | `50` |
+| `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS` | No | Maximum workflow task execution slots (defaults to `5`). | `20` |
 | `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE` | No | Number of child worker processes for `temporal-worker` to supervise. Defaults to `1`. | `3` |
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT` | No | Expose `GET /health` on the given port. Off by default. | `8080` |
 | `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND` | No | Bind address for the health endpoint. Defaults to localhost. Non-loopback addresses require `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND=true`. | `0.0.0.0` |
@@ -49,8 +49,8 @@ The worker automatically detects your Rails environment and loads your job class
 ### Options
 
 - **`ACTIVEJOB_TEMPORAL_TASK_QUEUE`**: Task queue name. Defaults to `default`.
-- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`**: Maximum activity task poll capacity. Defaults to `100`, which is an I/O-oriented starting point. Lower this near CPU core count for CPU-bound MRI workers.
-- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum workflow task poll capacity. Defaults to `5`.
+- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`**: Maximum activity execution slots. Defaults to `100`, which is an I/O-oriented starting point. Lower this near CPU core count for CPU-bound MRI workers.
+- **`ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`**: Maximum workflow task execution slots. Defaults to `5`.
 - **`--pool-size SIZE`**: Start a parent process that supervises `SIZE` worker processes. Can also be set with `ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE`.
 - **`--health-check-port PORT`**: Optional HTTP health endpoint at `GET /health`. Can also be set with `ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT`.
 - **`--health-check-bind HOST`**: Health endpoint bind address. Defaults to `127.0.0.1`; non-loopback addresses require `--allow-public-health-check-bind`.
@@ -149,7 +149,7 @@ kill -HUP <worker-pid>
 
 When certificate watching is enabled, the worker watches the configured TLS certificate files and swaps in a fresh Temporal client after a successful reconnect. `SIGHUP` triggers the same reload path manually. Existing calls continue on the previous client.
 
-The health endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, poll capacity settings, PID, start time, and uptime:
+The health endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, execution slot settings, PID, start time, and uptime:
 
 ```json
 {
@@ -208,26 +208,26 @@ You should see:
 
 ## Worker Performance Tuning
 
-The worker process can be tuned for different deployment scenarios by adjusting poll settings via environment variables. Use this section for startup mechanics. Use the [Performance Tuning Guide](performance_tuning.md) for workload-specific recommendations, payload benchmarking, database pooling, and monitoring.
+The worker process can be tuned for different deployment scenarios by adjusting execution slot settings via environment variables. Use this section for startup mechanics. Use the [Performance Tuning Guide](performance_tuning.md) for workload-specific recommendations, payload benchmarking, database pooling, and monitoring.
 
 ### Concurrency Configuration
 
 #### Activity Task Concurrency
 
-Controls activity task polling capacity for the worker process:
+Controls activity execution slots for the worker process:
 
 ```bash
 ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES=200 bundle exec temporal-worker
 ```
 
 - **Default:** 100
-- **Higher values:** More activity poll capacity when jobs and dependencies have headroom
+- **Higher values:** More activity execution capacity when jobs and dependencies have headroom
 - **Lower values:** Less resource consumption, better for constrained environments
 - **Recommended:** 50-200 for typical I/O-heavy workloads, or near `Etc.nprocessors` for CPU-bound MRI jobs
 
 #### Workflow Task Concurrency
 
-Controls workflow task polling capacity for the worker process:
+Controls workflow task execution slots for the worker process:
 
 ```bash
 ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS=50 bundle exec temporal-worker
@@ -286,7 +286,7 @@ Use Temporal UI (http://localhost:8080 in development) to monitor:
 - **Worker Health**: Shows worker availability and last heartbeat
 
 **Tuning Process:**
-1. Deploy with default settings for I/O-bound queues (100 activity polls, 5 workflow task polls), or lower activity polls near CPU core count for CPU-bound MRI queues
+1. Deploy with default settings for I/O-bound queues (100 activity slots, 5 workflow task slots), or lower activity slots near CPU core count for CPU-bound MRI queues
 2. Monitor queue depths in Temporal UI
 3. If Workflow Task Queue is growing: increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS`
 4. If Activity Task Queue is growing: increase `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`
