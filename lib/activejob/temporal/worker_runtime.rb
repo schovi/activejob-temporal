@@ -1,0 +1,16 @@
+# frozen_string_literal: true
+
+require_relative "../temporal"
+require_relative "rails_environment_loader"
+require_relative "certificate_watcher"
+require_relative "reload_signal_queue"
+require_relative "worker_client_reloader"
+require_relative "worker_pool"
+require_relative "metrics_server"
+require_relative "worker_health"
+require_relative "health_check_server"
+require_relative "workflows/aj_workflow"
+require_relative "workflows/dead_letter_workflow"
+require_relative "activities/rate_limit_activity"
+require_relative "activities/dependency_status_activity"
+require_relative "activities/aj_runner_activity"

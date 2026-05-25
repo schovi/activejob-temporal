@@ -41,11 +41,10 @@ spec.add_dependency "activejob", ">= 7.2", "< 9"
 spec.add_dependency "activemodel", ">= 7.2", "< 9"
 spec.add_dependency "concurrent-ruby", "~> 1.1"
 spec.add_dependency "globalid", ">= 0.3"
-spec.add_dependency "listen", "~> 3.9"
 spec.add_dependency "temporalio", ">= 1.4.0", "< 1.5"
 ```
 
-Conservative constraints prevent unpredictable breaking changes.
+Conservative constraints prevent unpredictable breaking changes. TLS certificate file watching lazy-loads the optional `listen` gem only when `tls_cert_watch` is enabled; applications that use file watching should add `gem "listen", "~> 3.9"` to their own Gemfile.
 
 ## Code Security
 
@@ -102,7 +101,7 @@ end
 
 The client certificate and private key paths must be configured together. The worker reads the files when building a Temporal client and can reload without restart when either file changes. Replace certificate files atomically, for example write a new file and rename it into place, so the watcher never observes a partially written PEM.
 
-File watching is controlled by `config.tls_cert_watch` or `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true`. Workers also trap `SIGHUP` by default for manual reload:
+File watching is controlled by `config.tls_cert_watch` or `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true` and requires the optional `listen` gem in the application bundle. Workers also trap `SIGHUP` by default for manual reload, which does not require `listen`:
 
 ```bash
 kill -HUP <worker-pid>

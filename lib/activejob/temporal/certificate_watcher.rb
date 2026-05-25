@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "listen"
-
 module ActiveJob
   module Temporal
     # Watches TLS certificate files and runs a reload callback when they change.
@@ -16,7 +14,7 @@ module ActiveJob
         ].compact.reject { |path| path.to_s.strip.empty? }
       end
 
-      def initialize(paths:, reload_callback:, listener_factory: Listen, debounce_seconds: DEFAULT_DEBOUNCE_SECONDS)
+      def initialize(paths:, reload_callback:, listener_factory: nil, debounce_seconds: DEFAULT_DEBOUNCE_SECONDS)
         @paths = paths.map { |path| File.expand_path(path) }.uniq
         @reload_callback = reload_callback
         @listener_factory = listener_factory
@@ -29,7 +27,7 @@ module ActiveJob
       def start
         return self if @paths.empty? || @listener
 
-        @listener = @listener_factory.to(*directories) do |modified, added, removed|
+        @listener = listener_factory.to(*directories) do |modified, added, removed|
           handle_changes(modified + added + removed)
         end
         @listener.start
@@ -52,6 +50,15 @@ module ActiveJob
 
       def directories
         @directories ||= @paths.map { |path| File.dirname(path) }.uniq
+      end
+
+      def listener_factory
+        @listener_factory ||= begin
+          require "listen"
+          Listen
+        rescue LoadError => e
+          raise LoadError, "listen gem is required when tls_cert_watch is enabled: #{e.message}"
+        end
       end
 
       def relevant_change?(changed_paths)

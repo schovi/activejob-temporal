@@ -7,6 +7,7 @@ require_relative "job_payload_builder"
 require_relative "observability"
 require_relative "workflow_enqueuer_batch"
 require_relative "workflow_id_builder"
+require_relative "workflow_types"
 
 module ActiveJob
   module Temporal
@@ -128,7 +129,7 @@ module ActiveJob
       # Starts the Temporal workflow with the given options.
       # @api private
       def start_workflow(job, payload, options)
-        workflow_class = Workflows::AjWorkflow
+        workflow_class = WorkflowTypes::ACTIVE_JOB
         handle = start_temporal_workflow(workflow_class, job, payload, options)
 
         log_enqueued(job, options, payload, duplicate: false)

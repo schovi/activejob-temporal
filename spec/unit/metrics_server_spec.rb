@@ -3,6 +3,7 @@
 require "spec_helper"
 require "socket"
 require "timeout"
+require "activejob/temporal/worker_runtime"
 
 RSpec.describe ActiveJob::Temporal::MetricsServer do
   let(:provider) do

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "activejob/temporal/worker_runtime"
 
 RSpec.describe ActiveJob::Temporal::WorkerHealth do
   subject(:worker_health) do

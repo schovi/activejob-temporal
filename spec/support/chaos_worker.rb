@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "activejob/temporal"
+require "activejob/temporal/worker_runtime"
 require "temporalio/worker"
 require_relative "../fixtures/chaos_jobs"
 

@@ -4,6 +4,7 @@ require "spec_helper"
 require "json"
 require "socket"
 require "timeout"
+require "activejob/temporal/worker_runtime"
 
 RSpec.describe ActiveJob::Temporal::HealthCheckServer do
   let(:state) do

@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "timeout"
+require "activejob/temporal/connection_worker_pool"
 
 RSpec.describe ActiveJob::Temporal::ConnectionWorkerPool do
   let(:connection_class) do

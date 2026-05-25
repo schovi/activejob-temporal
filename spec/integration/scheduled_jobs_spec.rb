@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "activejob/temporal/worker_runtime"
 require "timeout"
 require "temporalio/worker"
 require "active_support/core_ext/numeric/time"

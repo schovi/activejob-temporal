@@ -3,6 +3,7 @@
 require "spec_helper"
 require "open3"
 require "rbconfig"
+require "activejob/temporal/worker_runtime"
 
 RSpec.describe ActiveJob::Temporal::ReloadSignalQueue do
   subject(:queue) { described_class.new }

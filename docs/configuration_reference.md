@@ -242,7 +242,7 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-The client certificate and private key paths must be configured together. Files are read when a Temporal client is built, so a worker reload uses the latest file contents. When `tls_cert_watch` is true, the worker watches the configured TLS files and swaps in a fresh Temporal client after a successful reconnect. Existing calls finish on the previous client.
+The client certificate and private key paths must be configured together. Files are read when a Temporal client is built, so a worker reload uses the latest file contents. When `tls_cert_watch` is true, the worker watches the configured TLS files and swaps in a fresh Temporal client after a successful reconnect. Existing calls finish on the previous client. File watching lazy-loads the optional `listen` gem; add `gem "listen", "~> 3.9"` to the application Gemfile when enabling `tls_cert_watch`.
 
 Workers also trap `SIGHUP` by default for manual reload:
 

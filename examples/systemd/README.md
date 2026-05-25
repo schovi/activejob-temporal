@@ -41,6 +41,8 @@ Update these values in the service file before enabling it:
 
 The service files load `temporal-worker.env` before setting task-queue-specific defaults. Keep shared connection settings in the env file, and set `ACTIVEJOB_TEMPORAL_TASK_QUEUE` in the service unit or template instance.
 
+Manual reload through `ExecReload` does not require file watching. If you set `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true`, add `gem "listen", "~> 3.9"` to the Rails application bundle so the worker can watch certificate files.
+
 Reload systemd and start the worker:
 
 ```bash

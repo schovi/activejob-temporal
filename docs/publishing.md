@@ -209,6 +209,7 @@ rvm 4.0.3 do gem list activejob-temporal
 
 # Test requiring the gem
 rvm 4.0.3 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
+rvm 4.0.3 do ruby -e "require 'activejob/temporal/worker_runtime'; puts ActiveJob::Temporal::VERSION"
 ```
 
 **Verification Checklist:**
@@ -353,6 +354,7 @@ rvm 4.0.3 do gem push pkg/activejob-temporal-0.1.0.gem # Publish (IRREVERSIBLE)
 rvm 4.0.3 do gem search activejob-temporal # Search RubyGems
 rvm 4.0.3 do gem install activejob-temporal # Install from RubyGems
 rvm 4.0.3 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
+rvm 4.0.3 do ruby -e "require 'activejob/temporal/worker_runtime'; puts ActiveJob::Temporal::VERSION"
 
 # Emergency commands (use with caution)
 rvm 4.0.3 do gem yank activejob-temporal -v 0.1.0 # Remove from new installs

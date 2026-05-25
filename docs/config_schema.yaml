@@ -105,6 +105,7 @@ attributes:
       validation_rules:
         - "Must be true or false"
         - "When true, at least one TLS file path must be configured"
+        - "When true, the application bundle must include the optional listen gem"
       description: "Watch configured TLS files and reload worker clients when certificate files change."
       env_var_name: ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH
       example: true

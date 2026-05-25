@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "tmpdir"
+require "activejob/temporal/certificate_watcher"
 
 module CertificateWatcherSpecSupport
   FakeListener = Struct.new(:directories, :callback, :started, :stopped) do

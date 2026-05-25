@@ -103,6 +103,8 @@ bundle exec temporal-worker
 
 Open Temporal UI and look for workflows named `ajwf:SendInvoiceJob:<job_id>`.
 
+`require "activejob/temporal"` loads the Rails adapter, enqueue path, schedules, lookup APIs, and shared configuration. Worker-only runtime code is loaded by `temporal-worker`; custom worker boot code should require `activejob/temporal/worker_runtime` before registering workflows or activities.
+
 ## Common Capabilities
 
 | Need | API | Detailed guide |

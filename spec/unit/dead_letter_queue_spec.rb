@@ -103,7 +103,7 @@ RSpec.describe ActiveJob::Temporal::DeadLetterQueue do
 
       expect(workflow_id).to eq("ajdlq-retry:ajdlq:RetryableJob:job-123")
       expect(client).to have_received(:start_workflow).with(
-        ActiveJob::Temporal::Workflows::AjWorkflow,
+        ActiveJob::Temporal::WorkflowTypes::ACTIVE_JOB,
         hash_excluding("scheduled_at"),
         id: workflow_id,
         task_queue: "critical-workers",

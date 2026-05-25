@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "activejob/temporal/worker_runtime"
 
 module WorkerPoolSpecSupport
   FakeFork = Struct.new(:pid, :environment, :command, keyword_init: true)

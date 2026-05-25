@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "activejob/temporal/worker_runtime"
 require "securerandom"
 require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"

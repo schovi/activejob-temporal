@@ -9,7 +9,7 @@ require_relative "job_payload_builder"
 require_relative "logger"
 require_relative "schedule_options"
 require_relative "search_attributes"
-require_relative "workflows/aj_workflow"
+require_relative "workflow_types"
 
 module ActiveJob
   module Temporal
@@ -96,7 +96,7 @@ module ActiveJob
         payload = annotate_scheduled_payload(payload, workflow_id)
 
         Temporalio::Client::Schedule::Action::StartWorkflow.new(
-          Workflows::AjWorkflow,
+          WorkflowTypes::ACTIVE_JOB,
           payload,
           id: workflow_id,
           task_queue: Adapter.resolve_task_queue(job, config: @config),

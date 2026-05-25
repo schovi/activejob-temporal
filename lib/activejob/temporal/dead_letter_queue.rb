@@ -3,11 +3,12 @@
 require "temporalio/client"
 
 require_relative "logger"
+require_relative "workflow_types"
 
 module ActiveJob
   module Temporal
     module DeadLetterQueue
-      WORKFLOW_TYPE = "ActiveJobTemporalDeadLetterWorkflow"
+      WORKFLOW_TYPE = WorkflowTypes::DEAD_LETTER
       DEFAULT_ENTRIES_LIMIT = 100
 
       module_function
@@ -77,7 +78,7 @@ module ActiveJob
 
       def start_retry_workflow(client, entry, workflow_id, queue)
         client.start_workflow(
-          ActiveJob::Temporal::Workflows::AjWorkflow,
+          WorkflowTypes::ACTIVE_JOB,
           retry_payload(entry),
           id: workflow_id,
           task_queue: retry_task_queue(entry, queue),

@@ -46,6 +46,8 @@ bundle exec temporal-worker
 
 The worker automatically detects your Rails environment and loads your job classes.
 
+`temporal-worker` loads `activejob/temporal/worker_runtime`, which explicitly registers the built-in workflows, activities, health server, metrics server, worker pool, and certificate reload helpers. Rails web processes that only enqueue jobs can require `activejob/temporal` without loading those worker-only classes.
+
 ### Options
 
 - **`ACTIVEJOB_TEMPORAL_TASK_QUEUE`**: Task queue name. Defaults to `default`.
@@ -128,6 +130,8 @@ The parent process starts three child workers and restarts a child if it exits u
 You can also create a pool directly from Ruby:
 
 ```ruby
+require "activejob/temporal/worker_runtime"
+
 pool = ActiveJob::Temporal::WorkerPool.new(
   size: 3,
   health_check_port: 8080,
@@ -148,6 +152,8 @@ kill -HUP <worker-pid>
 ```
 
 When certificate watching is enabled, the worker watches the configured TLS certificate files and swaps in a fresh Temporal client after a successful reconnect. `SIGHUP` triggers the same reload path manually. Existing calls continue on the previous client.
+
+File watching uses the optional `listen` gem. Add `gem "listen", "~> 3.9"` to the application Gemfile only when `tls_cert_watch` is enabled. Manual signal reloads do not require `listen`.
 
 The health endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. If health snapshot generation raises, the request returns `500` with `{"error":"internal_server_error"}`, logs `health_check_request_failed`, closes that connection, and keeps serving later health requests. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, execution slot settings, PID, start time, and uptime:
 
