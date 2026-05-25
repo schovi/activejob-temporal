@@ -212,7 +212,7 @@ module ActiveJob
         return if scheduled_at.nil?
 
         scheduled_time = coerce_scheduled_at!(scheduled_at)
-        raise ArgumentError, "scheduled_at must be in the future" unless scheduled_time > Time.now
+        return if scheduled_time <= Time.now
 
         scheduled_time
       end

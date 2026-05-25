@@ -320,14 +320,19 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
       expect(result).to be_nil
     end
 
-    it "rejects past timestamps before starting a workflow" do
-      past_timestamp = (Time.now - 60).to_i
+    it "treats past timestamps as immediate" do
+      now = Time.utc(2026, 5, 25, 12, 0, 0)
+      past_timestamp = now.to_i - 60
+      allow(Time).to receive(:now).and_return(now)
+      allow(Time).to receive(:at).with(past_timestamp).and_return(now - 60)
+      allow(client).to receive(:start_workflow) do |_klass, payload, **_options|
+        expect(payload[:scheduled_at]).to be_nil
+        "workflow-handle"
+      end
 
-      expect do
-        adapter.enqueue_at(job, past_timestamp)
-      end.to raise_error(ArgumentError, /scheduled_at must be in the future/)
+      result = adapter.enqueue_at(job, past_timestamp)
 
-      expect(client).not_to have_received(:start_workflow)
+      expect(result).to eq("workflow-handle")
     end
   end
 
