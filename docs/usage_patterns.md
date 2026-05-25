@@ -314,6 +314,12 @@ Available timeout options:
 
 Timeout values can be integers in seconds or `ActiveSupport::Duration` objects. At least one of `start_to_close_timeout` or `schedule_to_close_timeout` must be specified through job options or global configuration. Long-running cancellable jobs should use `heartbeat_timeout` and call `Temporalio::Activity::Context.current.heartbeat` regularly.
 
+## Rails Continuable Jobs
+
+Rails 8 continuable jobs call `queue_adapter.stopping?` at checkpoints. The Temporal adapter implements this queue adapter API, so continuable jobs can use Rails checkpoints without raising adapter method errors.
+
+`stopping?` defaults to `false`. If your worker process coordinates graceful shutdown through ActiveJob continuations, set `ActiveJob::Base.queue_adapter.stopping = true` before the shutdown window closes so checkpoints can interrupt and reschedule the job.
+
 ## Rate Limiting
 
 Use `rate_limit` on a job class for per-job throughput and `config.global_rate_limit` for a process-wide rule that applies to every job payload.

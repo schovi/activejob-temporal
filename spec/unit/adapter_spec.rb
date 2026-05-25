@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "active_job/continuation"
 require_relative "../fixtures/sample_jobs"
 
 RSpec.describe ActiveJob::Temporal::Adapter do
@@ -244,6 +245,40 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
   describe "#initialize" do
     it "creates a WorkflowEnqueuer instance" do
       expect(adapter.enqueuer).to be_a(ActiveJob::Temporal::WorkflowEnqueuer)
+    end
+
+    it "inherits the Rails queue adapter contract" do
+      expect(adapter).to be_a(ActiveJob::QueueAdapters::AbstractAdapter)
+    end
+  end
+
+  describe "#stopping?" do
+    it "defaults to false" do
+      expect(adapter.stopping?).to be false
+    end
+
+    it "returns true after the adapter is marked as stopping" do
+      adapter.stopping = true
+
+      expect(adapter.stopping?).to be true
+    end
+  end
+
+  describe "Rails 8 continuable checkpoint compatibility" do
+    it "interrupts continuable jobs when the adapter is stopping" do
+      continuable_job_class = Class.new(ActiveJob::Base) do
+        include ActiveJob::Continuable
+
+        def self.name = "ContinuableStoppingJob"
+
+        def perform; end
+      end
+      continuable_job = continuable_job_class.new
+
+      allow(continuable_job).to receive(:queue_adapter).and_return(adapter)
+      adapter.stopping = true
+
+      expect { continuable_job.checkpoint! }.to raise_error(ActiveJob::Continuation::Interrupt, /stopping/)
     end
   end
 

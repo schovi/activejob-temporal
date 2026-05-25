@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "active_job"
+require "active_job/queue_adapters/abstract_adapter"
 require_relative "workflow_id_builder"
 
 module ActiveJob
@@ -115,12 +116,14 @@ module ActiveJob
     #
     # @example Scheduled job
     #   MyJob.set(wait: 1.hour).perform_later("arg")
-    class TemporalAdapter
+    class TemporalAdapter < ActiveJob::QueueAdapters::AbstractAdapter
       # @return [WorkflowEnqueuer] the enqueuer service
       attr_reader :enqueuer
 
       # Initialize the adapter with a WorkflowEnqueuer service instance.
       def initialize
+        super
+
         config = ActiveJob::Temporal.config
         logger = config.logger
 
