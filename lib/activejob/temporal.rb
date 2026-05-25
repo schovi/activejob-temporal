@@ -29,6 +29,7 @@ require_relative "temporal/payload_storage"
 require_relative "temporal/payload"
 require_relative "temporal/search_attributes"
 require_relative "temporal/retry_mapper"
+require_relative "temporal/job_descriptor"
 require_relative "temporal/external_operation"
 require_relative "temporal/signal_query_options"
 require_relative "temporal/child_workflow_options"
@@ -228,6 +229,10 @@ module ActiveJob
 
       def workflow(temporal_type, **)
         ExternalOperation.workflow(temporal_type, **)
+      end
+
+      def job(job_class, **options)
+        JobDescriptor.new(job_class, options)
       end
 
       def status(job_class, job_id)

@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "active_job"
+require_relative "configured_job_compatibility"
 require_relative "external_operation"
+require_relative "job_descriptor"
 require_relative "job_tags"
 
 module ActiveJob
@@ -28,11 +30,22 @@ module ActiveJob
         external_operation = ExternalOperation.normalize(child_workflow)
         return normalize_external_operation(external_operation) if external_operation
 
+        job_descriptor = job_descriptor_payload(child_workflow)
+        return job_descriptor if job_descriptor
+
         active_job_class_payload(child_workflow) ||
-          configured_job_payload(child_workflow) ||
+          configured_job_payload(child_workflow, feature: "child_workflows") ||
           raise(ArgumentError, "child_workflows entries must be ActiveJob classes or configured jobs")
       end
       private_class_method :normalize_job_class
+
+      def self.job_descriptor_payload(child_workflow)
+        payload = JobDescriptor.normalize(child_workflow)
+        return unless payload
+
+        payload.merge(options: normalize_configured_options(payload.fetch(:options)))
+      end
+      private_class_method :job_descriptor_payload
 
       def self.normalize_external_operation(external_operation)
         return external_operation if external_operation[:temporal_operation] == ExternalOperation::WORKFLOW
@@ -49,12 +62,12 @@ module ActiveJob
       end
       private_class_method :active_job_class_payload
 
-      def self.configured_job_payload(child_workflow)
-        return unless defined?(ActiveJob::ConfiguredJob) && child_workflow.is_a?(ActiveJob::ConfiguredJob)
-
-        configured_job_class = child_workflow.instance_variable_get(:@job_class)
-        options = normalize_configured_options(child_workflow.instance_variable_get(:@options) || {})
-        active_job_class_payload(configured_job_class)&.merge(options: options)
+      def self.configured_job_payload(child_workflow, feature:)
+        ConfiguredJobCompatibility.payload(
+          child_workflow,
+          feature: feature,
+          normalize_options: method(:normalize_configured_options)
+        )
       end
       private_class_method :configured_job_payload
 
