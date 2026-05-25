@@ -5,6 +5,7 @@ require "active_job"
 require "time"
 require "temporalio/activity"
 
+require_relative "best_effort_side_effects"
 require_relative "../payload"
 require_relative "../retry_mapper"
 
@@ -122,19 +123,16 @@ module ActiveJob
           deserialized_payload = Payload.deserialize_payload(payload, encryption_context: activity_encryption_context)
           audit_context = audit_started(deserialized_payload)
 
-          result = instrument_perform(deserialized_payload) do
+          side_effects = BestEffortSideEffects.new(audit_context)
+          result = perform_with_best_effort_observability(deserialized_payload, side_effects) do
             perform_deserialized_job(deserialized_payload, raw_arguments) do |resolved_job_class|
               job_class = resolved_job_class
             end
           end
-          audit_completed(audit_context)
-          Payload.delete_external_payload(payload)
+          record_success_side_effects(payload, audit_context, side_effects)
           result
         rescue StandardError => e
-          observed_error = observed_error_for(e)
-          audit_failed(audit_context || empty_audit_context, observed_error)
-          record_retry_observability(deserialized_payload || payload, observed_error)
-          handle_exception(job_class, e)
+          handle_activity_error(e, job_class, audit_context, deserialized_payload || payload)
         ensure
           clear_idempotency_key
         end
@@ -214,6 +212,35 @@ module ActiveJob
           job_data["exception_executions"] = exception_executions
         end
 
+        def perform_with_best_effort_observability(payload, side_effects)
+          performed = false
+          result = nil
+
+          instrument_perform(payload) do
+            result = yield
+            performed = true
+            result
+          end
+
+          result
+        rescue StandardError => e
+          raise unless performed
+
+          side_effects.report_after_success("observability", e)
+          result
+        end
+
+        def handle_activity_error(error, job_class, audit_context, retry_payload)
+          failure_context = audit_context || empty_audit_context
+          side_effects = BestEffortSideEffects.new(failure_context)
+          observed_error = observed_error_for(error)
+          side_effects.after_failure("audit") { audit_failed(failure_context, observed_error) }
+          side_effects.after_failure("retry_observability") do
+            record_retry_observability(retry_payload, observed_error)
+          end
+          handle_exception(job_class, error)
+        end
+
         def instrument_perform(payload, &)
           Observability.instrument(:perform, Observability.attributes_from_payload(payload), &)
         end
@@ -239,6 +266,13 @@ module ActiveJob
             "job.completed",
             audit_context[:attributes].merge(duration_ms: audit_duration(audit_context))
           )
+        end
+
+        def record_success_side_effects(payload, audit_context, side_effects)
+          side_effects.after_success("audit") { audit_completed(audit_context) }
+          side_effects.after_success("external_payload_cleanup") do
+            Payload.delete_external_payload(payload)
+          end
         end
 
         def audit_failed(audit_context, error)

@@ -24,6 +24,8 @@ Built-in events include:
 
 Payloads include stable correlation fields when available: `job_id`, `job_class`, `queue`, `workflow_id`, `run_id`, `attempt`, `worker_id`, `namespace`, and `task_queue`.
 
+After `perform` returns, completion telemetry, audit logging, and external payload cleanup are best-effort. Failures in those side effects log `activity_post_perform_side_effect_failed` when possible and do not turn the completed job into a failed Temporal activity. If the job itself raises, failure audit and retry telemetry are also best-effort so the original job exception remains the activity failure.
+
 ## Prometheus
 
 ```ruby
