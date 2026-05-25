@@ -292,18 +292,10 @@ module ActiveJob
         PayloadSerializers.fetch(config.payload_serializer)
       end
 
-      def serializer_for_transport_payload(payload, config)
-        configured_serializer = PayloadSerializers.normalize_name(config.payload_serializer)
+      def serializer_for_transport_payload(payload, _config)
         payload_serializer = payload_serializer_name(payload)
-        unless payload_serializer == configured_serializer
-          message = "Payload serializer mismatch: " \
-                    "configured #{configured_serializer.inspect}, payload #{payload_serializer.inspect}"
-          raise ActiveJob::SerializationError,
-                message
-        end
-
         validate_payload_serializer_version!(payload) if payload_serializer_metadata?(payload)
-        PayloadSerializers.fetch(configured_serializer)
+        PayloadSerializers.fetch(payload_serializer)
       end
 
       def payload_serializer_name(payload)
