@@ -31,6 +31,8 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH` | No | Watch TLS files and reload worker clients on change. | `true` |
 | `ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL` | No | Manual reload signal name. Defaults to `HUP`. | `USR1` |
 
+Boolean environment values are case-insensitive. Configuration booleans accept `true`, `1`, `yes`, and `on` as true values, and `false`, `0`, `no`, and `off` as false values. The public-bind opt-in variables also accept `true`, `1`, `yes`, and `on`.
+
 ## Starting the Worker
 
 1. Ensure the Temporal server is running locally or reachable over the network.

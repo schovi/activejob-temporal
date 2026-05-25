@@ -21,9 +21,14 @@ RSpec.describe ActiveJob::Temporal::BindPolicy do
   describe ".allow_public_bind?" do
     it "recognizes explicit truthy opt-ins" do
       expect(described_class.allow_public_bind?("true")).to be(true)
+      expect(described_class.allow_public_bind?("TRUE")).to be(true)
       expect(described_class.allow_public_bind?("1")).to be(true)
       expect(described_class.allow_public_bind?("yes")).to be(true)
+      expect(described_class.allow_public_bind?("on")).to be(true)
       expect(described_class.allow_public_bind?("false")).to be(false)
+      expect(described_class.allow_public_bind?("0")).to be(false)
+      expect(described_class.allow_public_bind?("no")).to be(false)
+      expect(described_class.allow_public_bind?("off")).to be(false)
     end
   end
 

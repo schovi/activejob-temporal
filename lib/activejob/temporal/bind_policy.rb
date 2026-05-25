@@ -6,7 +6,7 @@ module ActiveJob
   module Temporal
     module BindPolicy
       LOOPBACK_HOSTNAMES = %w[localhost].freeze
-      TRUE_VALUES = %w[1 true yes].freeze
+      TRUE_VALUES = %w[1 true yes on].freeze
 
       module_function
 

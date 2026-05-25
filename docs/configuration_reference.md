@@ -79,6 +79,8 @@ end
 
 Configuration can also be set via environment variables for 12-factor app compliance. Environment variables take precedence over default values but are overridden by explicit configuration in initializers.
 
+Boolean configuration environment variables accept `true`, `1`, `yes`, and `on` as true values, and `false`, `0`, `no`, and `off` as false values. Boolean parsing is case-insensitive. Any other value raises a configuration error during boot.
+
 | Environment Variable | Configuration Attribute | Type | Default if Not Set |
 | --- | --- | --- | --- |
 | `ACTIVEJOB_TEMPORAL_TARGET` | `target` | String | `"127.0.0.1:7233"` |

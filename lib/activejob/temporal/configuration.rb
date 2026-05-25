@@ -38,6 +38,8 @@ module ActiveJob
     TARGET_HOST_LABEL_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\z/
     TARGET_PORT_PATTERN = /\A[1-9]\d{0,4}\z/
     NAMESPACE_PATTERN = /\A[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?\z/
+    ENV_BOOLEAN_TRUE_VALUES = %w[1 true yes on].freeze
+    ENV_BOOLEAN_FALSE_VALUES = %w[0 false no off].freeze
 
     # Central registry of all configuration attributes.
     #
@@ -507,23 +509,36 @@ module ActiveJob
       end
 
       def resolve_default_value(metadata)
-        if metadata[:env_var] && ENV[metadata[:env_var]]
-          value = ENV[metadata[:env_var]]
-          return convert_env_value(value, metadata[:type])
+        env_var = metadata[:env_var]
+        if env_var && ENV[env_var]
+          value = ENV[env_var]
+          return convert_env_value(value, metadata[:type], env_var)
         end
 
         default = metadata[:default]
         default.is_a?(Proc) ? default.call : default
       end
 
-      def convert_env_value(value, type)
+      def convert_env_value(value, type, env_var)
         case type
         when :integer then value.to_i
         when :float, :duration then value.to_f
-        when :boolean then value == "true"
+        when :boolean then convert_env_boolean(value, env_var)
         when :symbol then value.to_sym
         else value
         end
+      end
+
+      def convert_env_boolean(value, env_var)
+        normalized = value.to_s.strip.downcase
+
+        return true if ENV_BOOLEAN_TRUE_VALUES.include?(normalized)
+        return false if ENV_BOOLEAN_FALSE_VALUES.include?(normalized)
+
+        raise ConfigurationError,
+              "Invalid boolean value for #{env_var}: #{value.inspect}. " \
+              "Accepted true values: #{ENV_BOOLEAN_TRUE_VALUES.join(', ')}. " \
+              "Accepted false values: #{ENV_BOOLEAN_FALSE_VALUES.join(', ')}."
       end
     end
 

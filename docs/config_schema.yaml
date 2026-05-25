@@ -104,6 +104,7 @@ attributes:
       default: false
       validation_rules:
         - "Must be true or false"
+        - "Environment values accept true, 1, yes, on, false, 0, no, or off, case-insensitive"
         - "When true, at least one TLS file path must be configured"
         - "When true, the application bundle must include the optional listen gem"
       description: "Watch configured TLS files and reload worker clients when certificate files change."
@@ -329,6 +330,7 @@ attributes:
       default: false
       validation_rules:
         - "Must be true or false"
+        - "Environment values accept true, 1, yes, on, false, 0, no, or off, case-insensitive"
       description: "Enables structured audit events for job lifecycle changes. Emits job.enqueued, job.started, job.completed, job.failed, job.cancelled, and schedule.created."
       env_var_name: ACTIVEJOB_TEMPORAL_AUDIT_LOG
       example: true
@@ -429,6 +431,7 @@ attributes:
       default: false
       validation_rules:
         - "Must be true or false"
+        - "Environment values accept true, 1, yes, on, false, 0, no, or off, case-insensitive"
         - "When true, encryption_key must be present and valid"
       description: "Encrypt serialized job execution payloads before sending them to Temporal. Plaintext workflow-control metadata remains available for deterministic replay."
       env_var_name: ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD
@@ -799,12 +802,12 @@ environment_variables:
     - name: ACTIVEJOB_TEMPORAL_METRICS_ALLOW_PUBLIC_BIND
       maps_to: Prometheus adapter worker CLI override
       example: "true"
-      note: "Must be converted to boolean"
+      note: "True values: true, 1, yes, on"
 
     - name: ACTIVEJOB_TEMPORAL_AUDIT_LOG
       maps_to: audit_log
       example: "true"
-      note: "Must be converted to boolean"
+      note: "Boolean values: true, 1, yes, on, false, 0, no, off"
 
     - name: ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE
       maps_to: dead_letter_queue
@@ -823,9 +826,14 @@ environment_variables:
     - name: ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD
       maps_to: encrypt_payload
       example: "true"
-      note: "Must be converted to boolean"
+      note: "Boolean values: true, 1, yes, on, false, 0, no, off"
 
     - name: ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY
       maps_to: encryption_key
       example: "SecureRandom.base64(32)"
       note: "Must be a Base64-encoded 32-byte AES-256-GCM key when encryption is enabled"
+
+    - name: ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH
+      maps_to: tls_cert_watch
+      example: "true"
+      note: "Boolean values: true, 1, yes, on, false, 0, no, off"

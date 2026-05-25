@@ -12,6 +12,21 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       .to raise_error(ActiveJob::Temporal::ConfigurationError, message)
   end
 
+  def configuration_with_env(env_var, value)
+    allow(ENV).to receive(:[]).and_call_original
+    allow(ENV).to receive(:[]).with(env_var).and_return(value)
+
+    described_class.new
+  end
+
+  def boolean_env_attributes
+    {
+      "ACTIVEJOB_TEMPORAL_AUDIT_LOG" => :audit_log,
+      "ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD" => :encrypt_payload,
+      "ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH" => :tls_cert_watch
+    }
+  end
+
   describe "defaults" do
     it "sets the Temporal endpoint" do
       expect(configuration.target).to eq("127.0.0.1:7233")
@@ -334,6 +349,36 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       config = described_class.new
       expect(config.audit_log).to be(true)
+    end
+
+    it "accepts common truthy boolean environment values" do
+      boolean_env_attributes.each do |env_var, attribute|
+        %w[true TRUE 1 yes on].each do |value|
+          config = configuration_with_env(env_var, value)
+
+          expect(config.public_send(attribute)).to be(true)
+        end
+      end
+    end
+
+    it "accepts common falsey boolean environment values" do
+      boolean_env_attributes.each do |env_var, attribute|
+        %w[false FALSE 0 no off].each do |value|
+          config = configuration_with_env(env_var, value)
+
+          expect(config.public_send(attribute)).to be(false)
+        end
+      end
+    end
+
+    it "rejects invalid boolean environment values" do
+      boolean_env_attributes.each_key do |env_var|
+        expect { configuration_with_env(env_var, "definitely") }
+          .to raise_error(
+            ActiveJob::Temporal::ConfigurationError,
+            /Invalid boolean value for #{env_var}: "definitely"/
+          )
+      end
     end
 
     it "reads payload encryption from ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD" do
