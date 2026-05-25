@@ -6,6 +6,23 @@ require "activejob/temporal/observability/datadog"
 RSpec.describe ActiveJob::Temporal::Observability::Datadog do
   let(:statsd) { double("Statsd", increment: nil, histogram: nil, gauge: nil) }
   let(:span) { double("Span", set_tag: nil) }
+  let(:payload) do
+    {
+      job_class: "ExampleJob",
+      queue: "critical",
+      workflow_id: "workflow-1",
+      namespace: "default",
+      task_queue: "workers"
+    }
+  end
+  let(:metric_tags) do
+    contain_exactly(
+      "job_class:ExampleJob",
+      "queue:critical",
+      "namespace:default",
+      "task_queue:workers"
+    )
+  end
 
   before do
     stub_const("Datadog", Module.new)
@@ -22,38 +39,82 @@ RSpec.describe ActiveJob::Temporal::Observability::Datadog do
   it "creates APM spans and DogStatsD metrics for job execution" do
     adapter = described_class.new(statsd: statsd)
 
-    result = adapter.instrument(:perform, job_class: "ExampleJob", queue: "critical") { :ok }
+    result = adapter.instrument(:perform, payload) { :ok }
 
     expect(result).to be(:ok)
     expect(Datadog::Tracing).to have_received(:trace).with(
       "activejob_temporal.perform",
       hash_including(service: "activejob-temporal", resource: "ExampleJob")
     )
+    expect(span).to have_received(:set_tag).with("activejob_temporal.workflow_id", "workflow-1")
     expect(statsd).to have_received(:increment).with(
       "activejob_temporal.jobs.completed",
-      tags: include("job_class:ExampleJob", "queue:critical")
+      tags: metric_tags
     )
     expect(statsd).to have_received(:histogram).with(
       "activejob_temporal.job_duration.seconds",
       kind_of(Float),
-      tags: include("job_class:ExampleJob", "queue:critical")
+      tags: metric_tags
     )
   end
 
   it "records point metrics through DogStatsD" do
     adapter = described_class.new(statsd: statsd)
 
-    adapter.record(:enqueue, job_class: "ExampleJob", queue: "default")
+    adapter.record(:enqueue, payload)
     adapter.record(:active_tasks, task_queue: "default", count: 2)
 
     expect(statsd).to have_received(:increment).with(
       "activejob_temporal.jobs.enqueued",
-      tags: include("job_class:ExampleJob", "queue:default")
+      tags: metric_tags
     )
     expect(statsd).to have_received(:gauge).with(
       "activejob_temporal.active_tasks",
       2,
       tags: include("task_queue:default")
+    )
+  end
+
+  it "omits workflow_id from failure, retry, and payload size metric tags" do
+    stub_const("DatadogSpecExampleError", Class.new(StandardError))
+    adapter = described_class.new(statsd: statsd)
+
+    expect do
+      adapter.instrument(:perform, payload) { raise DatadogSpecExampleError }
+    end.to raise_error(DatadogSpecExampleError)
+
+    adapter.record(:retry, payload.merge(error: "DatadogSpecExampleError"))
+    adapter.record(:payload_serialize, payload.merge(bytes: 512))
+
+    expect(statsd).to have_received(:increment).with(
+      "activejob_temporal.jobs.failed",
+      tags: contain_exactly(
+        "job_class:ExampleJob",
+        "queue:critical",
+        "namespace:default",
+        "task_queue:workers",
+        "error:DatadogSpecExampleError"
+      )
+    )
+    expect(statsd).to have_received(:increment).with(
+      "activejob_temporal.retries",
+      tags: contain_exactly(
+        "job_class:ExampleJob",
+        "queue:critical",
+        "namespace:default",
+        "task_queue:workers",
+        "error:DatadogSpecExampleError"
+      )
+    )
+    expect(statsd).to have_received(:histogram).with(
+      "activejob_temporal.job_duration.seconds",
+      kind_of(Float),
+      tags: metric_tags
+    )
+    expect(statsd).to have_received(:histogram).with(
+      "activejob_temporal.payload_size.bytes",
+      512,
+      tags: metric_tags
     )
   end
 

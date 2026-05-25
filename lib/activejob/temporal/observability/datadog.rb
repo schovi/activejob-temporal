@@ -134,7 +134,6 @@ module ActiveJob
           [
             tag("job_class", payload[:job_class]),
             tag("queue", payload[:queue]),
-            tag("workflow_id", payload[:workflow_id]),
             tag("namespace", payload[:namespace]),
             tag("task_queue", payload[:task_queue]),
             tag("error", error)

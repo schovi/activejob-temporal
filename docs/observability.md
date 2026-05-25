@@ -66,3 +66,4 @@ end
 ```
 
 The adapter creates Datadog APM spans and sends DogStatsD custom metrics through the local Datadog Agent.
+DogStatsD metrics are not tagged with `workflow_id`; per-workflow correlation stays on APM spans through the `activejob_temporal.workflow_id` tag.
