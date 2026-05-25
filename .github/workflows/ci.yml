@@ -6,11 +6,15 @@ on:
   pull_request:
     branches: [ main, master ]
 
+env:
+  PRIMARY_RUBY: "4.0.5"
+
 jobs:
-  # Linting job - runs once for efficiency
   lint:
-    name: Lint (Rubocop)
+    name: Lint
     runs-on: ubuntu-latest
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/rails_8_1.gemfile
 
     steps:
       - name: Checkout code
@@ -19,16 +23,17 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: ${{ env.PRIMARY_RUBY }}
           bundler-cache: true
 
-      - name: Run Rubocop
+      - name: Run RuboCop
         run: bundle exec rake rubocop
 
-  # Security scanning - checks for known vulnerabilities in dependencies
   security:
     name: Security Audit
     runs-on: ubuntu-latest
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/rails_8_1.gemfile
 
     steps:
       - name: Checkout code
@@ -37,21 +42,17 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: ${{ env.PRIMARY_RUBY }}
           bundler-cache: true
 
-      - name: Install bundle-audit
-        run: gem install bundler-audit
-
-      - name: Update vulnerability database
-        run: bundle-audit update
-
-      - name: Check for vulnerabilities
-        run: bundle-audit check --update
+      - name: Check for vulnerable dependencies
+        run: bundle exec bundle-audit check --update
 
   mutation:
     name: Mutation Tests
     runs-on: ubuntu-latest
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/rails_8_1.gemfile
 
     steps:
       - name: Checkout code
@@ -60,15 +61,14 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: ${{ env.PRIMARY_RUBY }}
           bundler-cache: true
 
       - name: Run mutation tests
         run: bundle exec rake mutation
 
-  # Unit tests - runs on Ruby matrix
   test-unit:
-    name: Unit Tests (Ruby ${{ matrix.ruby }})
+    name: Unit Tests (Ruby ${{ matrix.ruby }}, Rails 8.1)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -76,7 +76,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ruby: ['4.0.3']
+        ruby: [ "4.0.0", "4.0.5" ]
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/rails_8_1.gemfile
 
     steps:
       - name: Checkout code
@@ -94,91 +96,44 @@ jobs:
           TEST_SUITE: unit
 
       - name: Upload unit coverage to Codecov
-        if: matrix.ruby == '4.0.3'
+        if: matrix.ruby == '4.0.5'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
           disable_search: true
           flags: unit
-          name: ruby-${{ matrix.ruby }}-unit
+          name: ruby-${{ matrix.ruby }}-rails-8.1-unit
           use_oidc: true
           fail_ci_if_error: false
 
       - name: Upload unit test coverage
-        if: matrix.ruby == '4.0.3'
+        if: matrix.ruby == '4.0.5'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-unit-ruby-${{ matrix.ruby }}
+          name: coverage-unit-ruby-${{ matrix.ruby }}-rails-8.1
           path: coverage/
 
-  # Integration tests - runs on Ruby matrix
   test-integration:
-    name: Integration Tests (Ruby ${{ matrix.ruby }})
+    name: Integration Tests (Rails 8.1)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        ruby: ['4.0.3']
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/rails_8_1.gemfile
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Ruby ${{ matrix.ruby }}
+      - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: ${{ matrix.ruby }}
+          ruby-version: ${{ env.PRIMARY_RUBY }}
           bundler-cache: true
 
-      - name: Start Temporal test server
-        run: |
-          docker compose up -d postgresql temporal
-          for i in {1..120}; do
-            if docker compose exec -T temporal temporal operator namespace list >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 1
-          done
-          docker compose logs temporal
-          exit 1
-
-      - name: Configure Temporal test namespace
-        run: |
-          docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1 ||
-            docker compose exec -T temporal temporal operator namespace create test
-          for i in {1..60}; do
-            if docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1; then
-              break
-            fi
-            sleep 1
-          done
-
-          required_search_attributes_present() {
-            attributes=$(docker compose exec -T temporal temporal operator search-attribute list -n test 2>/dev/null || true)
-            for attribute in ajClass ajQueue ajJobId ajEnqueuedAt ajTenantId ajTags; do
-              if ! grep -q "$attribute" <<<"$attributes"; then
-                return 1
-              fi
-            done
-          }
-
-          for i in {1..60}; do
-            if required_search_attributes_present; then
-              exit 0
-            fi
-            docker compose exec -T temporal temporal operator search-attribute create -n test \
-              --name ajClass --type Keyword \
-              --name ajQueue --type Keyword \
-              --name ajJobId --type Keyword \
-              --name ajEnqueuedAt --type Datetime \
-              --name ajTenantId --type Int \
-              --name ajTags --type KeywordList || true
-            sleep 1
-          done
-          required_search_attributes_present
+      - name: Start and configure Temporal test server
+        run: tools/ci/prepare_temporal.sh postgresql temporal
 
       - name: Run integration tests
         run: bundle exec rake spec:integration
@@ -186,21 +141,19 @@ jobs:
           TEST_SUITE: integration
 
       - name: Upload integration coverage to Codecov
-        if: matrix.ruby == '4.0.3'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
           disable_search: true
           flags: integration
-          name: ruby-${{ matrix.ruby }}-integration
+          name: ruby-${{ env.PRIMARY_RUBY }}-rails-8.1-integration
           use_oidc: true
           fail_ci_if_error: false
 
       - name: Upload integration test coverage
-        if: matrix.ruby == '4.0.3'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-integration-ruby-${{ matrix.ruby }}
+          name: coverage-integration-ruby-${{ env.PRIMARY_RUBY }}-rails-8.1
           path: coverage/
 
       - name: Stop Temporal test server
@@ -208,72 +161,26 @@ jobs:
         run: docker compose down -v
 
   test-chaos:
-    name: Chaos Tests (Ruby ${{ matrix.ruby }})
+    name: Chaos Tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
-    strategy:
-      fail-fast: false
-      matrix:
-        ruby: ['4.0.3']
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/rails_8_1.gemfile
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Ruby ${{ matrix.ruby }}
+      - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: ${{ matrix.ruby }}
+          ruby-version: ${{ env.PRIMARY_RUBY }}
           bundler-cache: true
 
-      - name: Start Temporal chaos test server
-        run: |
-          docker compose up -d postgresql temporal toxiproxy
-          for i in {1..120}; do
-            if docker compose exec -T temporal temporal operator namespace list >/dev/null 2>&1; then
-              exit 0
-            fi
-            sleep 1
-          done
-          docker compose logs temporal toxiproxy
-          exit 1
-
-      - name: Configure Temporal chaos namespace
-        run: |
-          docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1 ||
-            docker compose exec -T temporal temporal operator namespace create test
-          for i in {1..60}; do
-            if docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1; then
-              break
-            fi
-            sleep 1
-          done
-
-          required_search_attributes_present() {
-            attributes=$(docker compose exec -T temporal temporal operator search-attribute list -n test 2>/dev/null || true)
-            for attribute in ajClass ajQueue ajJobId ajEnqueuedAt ajTenantId ajTags; do
-              if ! grep -q "$attribute" <<<"$attributes"; then
-                return 1
-              fi
-            done
-          }
-
-          for i in {1..60}; do
-            if required_search_attributes_present; then
-              exit 0
-            fi
-            docker compose exec -T temporal temporal operator search-attribute create -n test \
-              --name ajClass --type Keyword \
-              --name ajQueue --type Keyword \
-              --name ajJobId --type Keyword \
-              --name ajEnqueuedAt --type Datetime \
-              --name ajTenantId --type Int \
-              --name ajTags --type KeywordList || true
-            sleep 1
-          done
-          required_search_attributes_present
+      - name: Start and configure Temporal chaos test server
+        run: tools/ci/prepare_temporal.sh postgresql temporal toxiproxy
 
       - name: Run chaos tests
         run: bundle exec rake spec:chaos
@@ -281,21 +188,19 @@ jobs:
           TEST_SUITE: chaos
 
       - name: Upload chaos coverage to Codecov
-        if: matrix.ruby == '4.0.3'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
           disable_search: true
           flags: chaos
-          name: ruby-${{ matrix.ruby }}-chaos
+          name: ruby-${{ env.PRIMARY_RUBY }}-rails-8.1-chaos
           use_oidc: true
           fail_ci_if_error: false
 
       - name: Upload chaos test coverage
-        if: matrix.ruby == '4.0.3'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-chaos-ruby-${{ matrix.ruby }}
+          name: coverage-chaos-ruby-${{ env.PRIMARY_RUBY }}-rails-8.1
           path: coverage/
 
       - name: Stop Temporal chaos test server
@@ -317,7 +222,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: "4.0.3"
           bundler-cache: true
           working-directory: examples/basic_rails_app
 
@@ -331,11 +236,18 @@ jobs:
         env:
           RAILS_ENV: test
 
-  # Build gem - runs once to verify gem can be built
+      - name: Run example app RuboCop
+        run: bundle exec bin/rubocop
+
+      - name: Run example app Brakeman
+        run: bundle exec bin/brakeman --no-pager --quiet
+
   build:
-    name: Build Gem
+    name: Build and Verify Gem
     runs-on: ubuntu-latest
     needs: [lint, security, mutation, test-unit, test-integration, test-chaos, example-basic-rails-app]
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/gemfiles/rails_8_1.gemfile
 
     steps:
       - name: Checkout code
@@ -344,14 +256,24 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: ${{ env.PRIMARY_RUBY }}
           bundler-cache: true
 
       - name: Build gem
-        run: gem build activejob-temporal.gemspec
+        run: bundle exec rake build
+
+      - name: Verify gem package contents
+        run: bundle exec ruby tools/ci/verify_gem_package.rb pkg/activejob-temporal-*.gem
+
+      - name: Install built gem in a clean GEM_HOME
+        run: |
+          gem_home="$(mktemp -d)"
+          gem install --install-dir "$gem_home" --bindir "$gem_home/bin" pkg/activejob-temporal-*.gem --no-document
+          GEM_HOME="$gem_home" GEM_PATH="$gem_home" "$gem_home/bin/temporal-worker" --help
+          GEM_HOME="$gem_home" GEM_PATH="$gem_home" ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
 
       - name: Upload gem artifact
         uses: actions/upload-artifact@v4
         with:
           name: gem-package
-          path: activejob-temporal-*.gem
+          path: pkg/activejob-temporal-*.gem

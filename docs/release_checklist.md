@@ -5,10 +5,20 @@ Use this checklist before publishing a gem release or opening a release PR. It r
 ## Validation Commands
 
 - [ ] `rvm 4.0.3 do bundle install`
-- [ ] `rvm 4.0.3 do bundle exec rake spec`
-- [ ] `rvm 4.0.3 do bundle exec rubocop`
-- [ ] `rvm 4.0.3 do bundle exec rake build`
-- [ ] `rvm 4.0.3 do bundle exec rake yard`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec rake spec:unit`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec rake spec:integration`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec rake spec:contract`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec rake spec:chaos`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec rake rubocop`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec bundle-audit check --update`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec rake mutation`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec rake build`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec ruby tools/ci/verify_gem_package.rb pkg/activejob-temporal-*.gem`
+- [ ] `BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec rake yard`
+- [ ] `cd examples/basic_rails_app && RAILS_ENV=test rvm 4.0.3 do bundle exec rails db:prepare`
+- [ ] `cd examples/basic_rails_app && RAILS_ENV=test rvm 4.0.3 do bundle exec rails test`
+- [ ] `cd examples/basic_rails_app && rvm 4.0.3 do bundle exec bin/rubocop`
+- [ ] `cd examples/basic_rails_app && rvm 4.0.3 do bundle exec bin/brakeman --no-pager --quiet`
 
 ## Documentation Review
 
@@ -37,6 +47,8 @@ Use this checklist before publishing a gem release or opening a release PR. It r
 ## Publishing Gates
 
 - [ ] Version, changelog, and gemspec metadata are correct.
+- [ ] `git describe --tags --exact-match HEAD` returns the tag being released.
+- [ ] The tag name equals `v#{ActiveJob::Temporal::VERSION}`.
 - [ ] RubyGems publishing credentials or trusted publishing are configured.
 - [ ] The target git tag and GitHub release plan are confirmed.
 - [ ] Release owner has reviewed the generated gem before publishing.

@@ -10,7 +10,7 @@ We use `bundle-audit` to automatically check for known vulnerabilities in gem de
 
 ```bash
 # Local scan
-rvm 4.0.3 do bundle-audit check --update
+rvm 4.0.3 do bundle exec bundle-audit check --update
 
 # CI automatically scans on each push/PR
 ```
@@ -37,8 +37,8 @@ rvm 4.0.3 do bundle update rails
 See `activejob-temporal.gemspec` for version constraints:
 
 ```ruby
-spec.add_dependency "activejob", ">= 7.2", "< 9"
-spec.add_dependency "activemodel", ">= 7.2", "< 9"
+spec.add_dependency "activejob", ">= 8.1", "< 9"
+spec.add_dependency "activemodel", ">= 8.1", "< 9"
 spec.add_dependency "concurrent-ruby", "~> 1.1"
 spec.add_dependency "globalid", ">= 0.3"
 spec.add_dependency "listen", "~> 3.9"
@@ -55,25 +55,27 @@ The gem takes the following security measures:
 
 #### Job Cancellation (Query Injection Prevention)
 
-The `Cancel` module builds Temporal search queries using the job class name and job_id. To prevent query injection attacks:
+Public lookup APIs build Temporal search queries using the job class name and job ID. To prevent query injection attacks:
 
-1. **UUID Validation**: All job_id values are validated to match RFC 4122 UUID format before use
-2. **Safe Character Set**: UUIDs contain only hexadecimal characters and hyphens `[0-9a-fA-F-]`, making the job_id safe for query interpolation
-3. **Early Rejection**: Invalid job_id values raise `ArgumentError` before any queries are executed
+1. **Safe String Validation**: Job IDs must be strings, non-blank, valid UTF-8, bounded to 255 characters, and free of control characters
+2. **Query Quoting**: String values are quoted before query construction, and embedded single quotes are escaped
+3. **Early Rejection**: Unsafe job ID values raise `ArgumentError` before any queries are executed
 
 ```ruby
-# ✅ Valid UUID - accepted
+# UUID, custom, and schedule-style job IDs are accepted when safe.
 ActiveJob::Temporal.cancel(MyJob, "550e8400-e29b-41d4-a716-446655440000")
+ActiveJob::Temporal.cancel(MyJob, "invoice-123")
+ActiveJob::Temporal.cancel(MyJob, "ajschwf:daily-report-2026-05-25T20:07:45Z:run-123")
 
-# ❌ Invalid format - rejected with ArgumentError
-ActiveJob::Temporal.cancel(MyJob, "test' OR '1'='1")  # Query injection attempt blocked
+# Unsafe input is rejected with ArgumentError before querying Temporal.
+ActiveJob::Temporal.cancel(MyJob, "job\n123")
 ```
 
-**Rationale**: While ActiveJob auto-generates UUIDs, the `cancel()` method is a public API that accepts arbitrary job_id values. Validation prevents search query injection in multi-tenant environments.
+**Rationale**: ActiveJob normally generates UUIDs, but this gem also supports custom workflow IDs and recurring schedule IDs. Validation rejects unsafe strings while query quoting protects non-UUID identifiers that contain punctuation such as quotes or colons.
 
 Batch cancellation accepts only its supported search attribute filters (`ajClass`, `ajQueue`, `ajJobId`, `ajEnqueuedAt`, `ajTenantId`). String values are quoted before query construction, and `ajTenantId` must be an integer.
 
-Status inspection uses the same UUID validation for job IDs before building Temporal visibility queries.
+Status inspection and signal/query/update helpers use the same safe job ID validation before building Temporal visibility queries.
 
 #### General Security Practices
 
@@ -233,7 +235,7 @@ This script:
 
 ### Dependency Update Strategy
 
-- **Security patches**: Apply immediately (e.g., Rails 7.2.1 → 7.2.2)
+- **Security patches**: Apply immediately (e.g., Rails 8.1.1 → 8.1.2)
 - **Minor updates**: Apply quarterly (e.g., Rspec 3.12 → 3.13)
 - **Major updates**: Plan carefully (e.g., Rails 7 → 8)
 

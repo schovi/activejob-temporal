@@ -1,6 +1,6 @@
 # Ruby Baseline
 
-This repository targets Ruby 4.0+ and uses Ruby 4.0.3 for local validation. Do not install Ruby 3 or use Ruby 3 as a fallback for repository tooling, dependency resolution, CI fixes, screenshots, or release checks.
+This repository targets Ruby 4.0+. Local validation currently uses Ruby 4.0.3, and CI validates the declared minimum Ruby plus the latest Ruby 4.0 patch. Do not install Ruby 3 or use Ruby 3 as a fallback for repository tooling, dependency resolution, CI fixes, screenshots, or release checks.
 
 ## Sources Of Truth
 
@@ -8,7 +8,7 @@ This repository targets Ruby 4.0+ and uses Ruby 4.0.3 for local validation. Do n
 - `examples/basic_rails_app/.ruby-version` pins the example Rails app to `ruby-4.0.3`.
 - `activejob-temporal.gemspec` requires Ruby `>= 4.0`.
 - Root and example `Gemfile` files require Ruby `>= 4.0`.
-- GitHub Actions workflows use `ruby/setup-ruby` with Ruby `4.0.3`.
+- GitHub Actions workflows use `ruby/setup-ruby` with Ruby `4.0.0` and the latest approved Ruby 4.0 patch.
 - Example Dockerfiles build from Ruby `4.0.3` images.
 
 ## Local Validation
@@ -37,14 +37,14 @@ The main CI workflow validates Ruby 4 with:
 
 - RuboCop
 - Security audit
-- Unit tests
-- Integration tests
+- Unit tests across Rails 8.1 on minimum and latest Ruby 4.0
+- Integration tests across Rails 8.1 on latest Ruby 4.0
 - Chaos tests
 - Mutation tests
-- Example Rails app tests
-- Gem build
+- Example Rails app tests, RuboCop, and Brakeman
+- Gem build, package content verification, and clean install smoke test
 
-The Temporal SDK compatibility workflow contract-tests Temporal Ruby SDK 1.4.0 and 1.4.1 under Ruby 4.0.3.
+The Temporal SDK compatibility workflow contract-tests Temporal Ruby SDK 1.4.0 and the latest allowed 1.4.x release under latest Ruby 4.0.
 
 ## External Tooling Notes
 
@@ -55,7 +55,7 @@ The Temporal SDK compatibility workflow contract-tests Temporal Ruby SDK 1.4.0 a
 
 When changing tooling or dependencies, check:
 
-- Ruby version files still point to Ruby 4.0.3 or newer.
+- Ruby version files still point to a supported Ruby 4.0 patch.
 - CI matrices do not add Ruby 3 jobs.
 - Docker images do not downgrade below Ruby 4.
 - Documentation does not ask users to install Ruby 3.

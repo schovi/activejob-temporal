@@ -19,13 +19,16 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = ">= 4.0"
 
   spec.metadata["homepage_uri"] = spec.homepage
-  spec.metadata["source_code_uri"] = spec.homepage
+  spec.metadata["source_code_uri"] = "#{spec.homepage}/tree/main"
+  spec.metadata["documentation_uri"] = "#{spec.homepage}/blob/main/docs/README.md"
   spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/main/CHANGELOG.md"
   spec.metadata["rubygems_mfa_required"] = "true"
 
   spec.files = Dir.chdir(__dir__) do
     `git ls-files -z`.split("\x0").reject do |f|
-      f.start_with?("spec/", "docs/", "examples/", "tmp/", "tools/", ".codemachine/", ".github/") ||
+      f.start_with?("spec/", "docs/", "examples/", "tmp/", "tools/", "gemfiles/", ".codemachine/", ".github/") ||
+        f == "CLAUDE.md" ||
+        f == "CONTRIBUTING.md" ||
         f.match?(%r{^(\.|docker-compose\.yml|coverage/|Gemfile|Rakefile)})
     end
   end
@@ -33,14 +36,15 @@ Gem::Specification.new do |spec|
   spec.executables = ["temporal-worker"]
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "activejob", ">= 7.2", "< 9"
-  spec.add_dependency "activemodel", ">= 7.2", "< 9"
+  spec.add_dependency "activejob", ">= 8.1", "< 9"
+  spec.add_dependency "activemodel", ">= 8.1", "< 9"
   spec.add_dependency "concurrent-ruby", "~> 1.1"
   spec.add_dependency "globalid", ">= 0.3"
   spec.add_dependency "listen", "~> 3.9"
   spec.add_dependency "temporalio", ">= 1.4.0", "< 1.5"
 
   spec.add_development_dependency "benchmark-ips", "~> 2.14"
+  spec.add_development_dependency "bundler-audit", "~> 0.9"
   spec.add_development_dependency "github_changelog_generator", "~> 1.18"
   spec.add_development_dependency "msgpack", "~> 1.8"
   spec.add_development_dependency "mutant-rspec", "~> 0.16"
@@ -50,5 +54,5 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "rubocop", "~> 1.50"
   spec.add_development_dependency "simplecov", "~> 0.22"
   spec.add_development_dependency "simplecov-lcov", "~> 0.9"
-  spec.add_development_dependency "yard", "~> 0.9"
+  spec.add_development_dependency "yard", "~> 0.9", ">= 0.9.42"
 end

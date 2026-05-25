@@ -103,6 +103,43 @@ RSpec.describe ActiveJob::Temporal::Inspect do
       expect(client).to have_received(:list_workflows).with(escaped_query)
     end
 
+    it "escapes custom job IDs when searching fallback workflows" do
+      custom_job_id = "tenant'42:invoice-123"
+      custom_query = "ajClass='#{job_class.name}' AND ajJobId='tenant''42:invoice-123'"
+      custom_workflow_id = "tenant-42:ajwf:#{job_class.name}:#{custom_job_id}"
+      custom_execution = double("WorkflowExecution", id: custom_workflow_id, run_id: run_id)
+      custom_handle = instance_double(workflow_handle_class)
+
+      allow(client).to receive(:workflow_handle)
+        .with("ajwf:#{job_class.name}:#{custom_job_id}", run_id: nil)
+        .and_return(handle)
+      allow(handle).to receive(:describe).and_raise(not_found_error)
+      allow(client).to receive(:list_workflows).with(custom_query).and_return([custom_execution])
+      allow(client).to receive(:workflow_handle).with(custom_workflow_id, run_id: run_id).and_return(custom_handle)
+      allow(custom_handle).to receive(:describe).and_return(description)
+
+      described_class.status(job_class, custom_job_id)
+
+      expect(client).to have_received(:list_workflows).with(custom_query)
+      expect(client).to have_received(:workflow_handle).with(custom_workflow_id, run_id: run_id)
+    end
+
+    it "inspects schedule-style job IDs" do
+      schedule_job_id = "ajschwf:daily-report-2026-05-25T20:07:45Z:019e60c0-2587-710d-8633-a0f90e9dd6f9"
+      schedule_workflow_id = "ajschwf:daily-report-2026-05-25T20:07:45Z"
+      schedule_run_id = "019e60c0-2587-710d-8633-a0f90e9dd6f9"
+
+      allow(client).to receive(:workflow_handle)
+        .with(schedule_workflow_id, run_id: schedule_run_id)
+        .and_return(handle)
+
+      result = described_class.status(job_class, schedule_job_id)
+
+      expect(result[:state]).to eq(:running)
+      expect(client).to have_received(:workflow_handle).with(schedule_workflow_id, run_id: schedule_run_id)
+      expect(client).not_to have_received(:list_workflows)
+    end
+
     it "uses the default workflow ID before querying search attributes" do
       result = described_class.status(job_class, job_id)
 
@@ -161,9 +198,16 @@ RSpec.describe ActiveJob::Temporal::Inspect do
       expect(result[:last_failure]).to eq("NetworkError: timeout")
     end
 
-    it "raises ArgumentError for invalid job IDs before querying Temporal" do
-      expect { described_class.status(job_class, "bad-id") }
-        .to raise_error(ArgumentError, /Invalid job_id format/)
+    it "raises ArgumentError for unsafe job IDs before querying Temporal" do
+      expect { described_class.status(job_class, "bad\nid") }
+        .to raise_error(ArgumentError, /control characters/)
+
+      expect(client).not_to have_received(:list_workflows)
+    end
+
+    it "raises ArgumentError for blank job IDs before querying Temporal" do
+      expect { described_class.status(job_class, " ") }
+        .to raise_error(ArgumentError, /job_id must not be blank/)
 
       expect(client).not_to have_received(:list_workflows)
     end

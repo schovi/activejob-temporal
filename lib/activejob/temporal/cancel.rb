@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "temporalio/error"
+require_relative "job_id_validation"
 require_relative "visibility_query"
 require_relative "workflow_id_builder"
 
@@ -67,6 +69,8 @@ module ActiveJob
         def cancel(job_class, job_id)
           validate_job_id!(job_id)
           client = ActiveJob::Temporal.client
+          return nil if cancel_schedule_execution(client, job_class, job_id)
+
           workflow_state = find_workflow(client, job_class, job_id)
           workflow_id = workflow_state[:workflow_id]
 
@@ -95,11 +99,6 @@ module ActiveJob
           BatchCanceller.new(ActiveJob::Temporal.client).cancel_where(filters)
         end
 
-        # UUID format regex (compliant with RFC 4122).
-        # Matches standard UUID format: 8-4-4-4-12 hexadecimal characters.
-        # @api private
-        UUID_REGEX = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
-
         private
 
         def validate_job_class!(job_class)
@@ -108,22 +107,26 @@ module ActiveJob
           raise ArgumentError, "job_class must be a named class"
         end
 
-        # Validates that job_id is a valid UUID format.
-        #
-        # ActiveJob generates job IDs using SecureRandom.uuid, which produces RFC 4122
-        # compliant UUIDs. This validation prevents search query injection attacks by
-        # ensuring job_id contains only hexadecimal characters and hyphens, making it
-        # safe for direct use in Temporal queries.
-        #
         # @param job_id [String] The job identifier to validate
-        # @raise [ArgumentError] if job_id is not a valid UUID format
+        # @raise [ArgumentError] if job_id is not a safe string identifier
         # @api private
         def validate_job_id!(job_id)
-          return if job_id.is_a?(String) && job_id.match?(UUID_REGEX)
+          JobIdValidation.validate!(job_id)
+        end
 
-          raise ArgumentError,
-                "Invalid job_id format: expected UUID (e.g., '550e8400-e29b-41d4-a716-446655440000'), " \
-                "got: #{job_id.inspect}"
+        def cancel_schedule_execution(client, job_class, job_id)
+          schedule_reference = JobIdValidation.schedule_execution_reference(job_id)
+          return false unless schedule_reference
+
+          workflow_id = schedule_reference.fetch(:workflow_id)
+          client.workflow_handle(workflow_id, run_id: schedule_reference.fetch(:run_id)).cancel
+          log_cancellation_requested(job_class, job_id, workflow_id)
+          log_audit_cancellation_requested(job_class, job_id, workflow_id)
+          true
+        rescue StandardError => e
+          raise unless rpc_not_found?(e)
+
+          false
         end
 
         # Builds deterministic workflow ID from job class and job ID.
@@ -167,21 +170,11 @@ module ActiveJob
           { status: status, workflow_id: workflow_id }
         end
 
-        # Builds Temporal query for running workflows by job class and job_id.
-        #
-        # Note: job_id is validated as a UUID before reaching this method, ensuring it
-        # contains only safe characters ([0-9a-fA-F-]) for direct query interpolation.
-        #
         # @api private
         def running_workflows_query(job_class, job_id)
           workflow_search_query(job_class, job_id, "ExecutionStatus='Running'")
         end
 
-        # Builds Temporal query for closed workflows by job class and job_id.
-        #
-        # Note: job_id is validated as a UUID before reaching this method, ensuring it
-        # contains only safe characters ([0-9a-fA-F-]) for direct query interpolation.
-        #
         # @api private
         def closed_workflows_query(job_class, job_id)
           workflow_search_query(
@@ -194,6 +187,12 @@ module ActiveJob
         def workflow_search_query(job_class, job_id, status_query)
           "ajClass=#{VisibilityQuery.quote(job_class.name)} AND ajJobId=#{VisibilityQuery.quote(job_id)} " \
             "AND #{status_query}"
+        end
+
+        def rpc_not_found?(error)
+          defined?(Temporalio::Error::RPCError) &&
+            error.is_a?(Temporalio::Error::RPCError) &&
+            error.code == Temporalio::Error::RPCError::Code::NOT_FOUND
         end
 
         # Logs cancellation request event.

@@ -4,9 +4,9 @@
 
 **Publication Status:** ⏸️ DEFERRED
 
-The gem is **technically ready** for publication (all quality gates passed), but publication has been deferred until the required infrastructure is in place.
+The gem should not be published from an arbitrary development commit. Before publication, cut a release commit that bumps `lib/activejob/temporal/version.rb`, finalizes `CHANGELOG.md`, and has a matching `vX.Y.Z` tag at `HEAD`.
 
-**Last Updated:** 2025-10-29
+**Last Updated:** 2026-05-25
 
 ---
 
@@ -51,7 +51,7 @@ Future release automation should follow this policy:
 1. Use a manual `workflow_dispatch` release workflow, or a protected `release` environment with required approval.
 2. Prefer RubyGems trusted publishing over a long-lived `GEM_HOST_API_KEY`.
 3. If `GEM_HOST_API_KEY` is used, store it only as a GitHub Actions environment secret scoped to the protected release environment.
-4. Run the Ruby 4.0.3 validation gates before publishing: lint, tests, gem build, and package metadata checks.
+4. Run the CI validation gates before publishing: lint, security audit, Rails compatibility checks, Temporal integration checks, mutation tests, example app checks, gem build, package metadata checks, and clean install smoke test.
 5. Generate or verify the changelog and version bump before the irreversible publish step.
 6. Create the GitHub release only after the RubyGems push succeeds.
 
@@ -61,22 +61,20 @@ A safe interim workflow may validate release readiness without publishing. It ma
 
 ---
 
-## Technical Readiness ✅
+## Technical Readiness Gates
 
-The gem itself is ready for publication:
+Current release candidates are validated by GitHub Actions:
 
 | Quality Gate | Status | Details |
 |-------------|--------|---------|
-| Tests | ✅ PASSED | 115 examples, 0 failures |
-| Coverage | ✅ PASSED | 99.32% line, 84.4% branch |
-| Linting | ✅ PASSED | 0 Rubocop offenses |
-| Documentation | ✅ COMPLETE | README, API docs, and repository guides |
-| Gemspec | ✅ VALID | All metadata configured |
-| Gem Build | ✅ SUCCESS | `pkg/activejob-temporal-0.1.0.gem` |
-| Git Tag | ✅ CREATED | `v0.1.0` exists locally |
-| Changelog | ✅ FINALIZED | v0.1.0 release notes complete |
+| Rails compatibility | CI enforced | Unit specs run against Rails 8.1 on minimum and latest Ruby 4.0. Integration specs run against Rails 8.1 on latest Ruby 4.0. |
+| Ruby compatibility | CI enforced | Unit specs run on Ruby 4.0.0 and the latest approved Ruby 4.0 patch. |
+| Temporal SDK compatibility | CI enforced | Contract specs run against Temporal Ruby SDK 1.4.0 and the latest allowed 1.4.x release. |
+| Security | CI enforced | `bundle-audit` runs from the bundled development dependencies. |
+| Package contents | CI enforced | `tools/ci/verify_gem_package.rb` checks package files, RubyGems metadata, and README link portability. |
+| Install smoke | CI enforced | The built gem is installed into a clean `GEM_HOME`, then `require "activejob/temporal"` and `temporal-worker --help` are executed. |
 
-**Release Checklist:** See `docs/release_checklist.md` for full quality audit (STATUS: APPROVED)
+**Release Checklist:** See `docs/release_checklist.md` for the manual release gate list.
 
 ---
 
@@ -306,17 +304,18 @@ Use this checklist when you're ready to publish:
 - [ ] Credentials file exists at the path shown by `rvm 4.0.3 do gem env`
 
 ### Quality Gates
-- [ ] All tests passing: `rvm 4.0.3 do bundle exec rspec` shows 0 failures
-- [ ] Code coverage adequate: >95% line coverage
+- [ ] GitHub Actions CI is green for lint, security, Rails compatibility tests, Temporal-backed tests, mutation, example app validation, and package smoke tests
 - [ ] No linting offenses: `rvm 4.0.3 do bundle exec rubocop` shows 0 offenses
 - [ ] Documentation complete: README, API docs, and repository guides
-- [ ] Changelog finalized: `CHANGELOG.md` has v0.1.0 entry
+- [ ] Changelog finalized: `CHANGELOG.md` has a release entry for the version being published
 
 ### Gem Readiness
 - [ ] Gemspec complete: All metadata fields filled
-- [ ] Version set: `0.1.0` in `lib/activejob/temporal/version.rb`
+- [ ] Version set in `lib/activejob/temporal/version.rb`
+- [ ] `git describe --tags --exact-match HEAD` returns `vX.Y.Z` for the same version
 - [ ] Gem builds successfully: `rvm 4.0.3 do bundle exec rake build`
-- [ ] Gem file exists: `pkg/activejob-temporal-0.1.0.gem`
+- [ ] Gem file exists at `pkg/activejob-temporal-X.Y.Z.gem`
+- [ ] Package verification passes: `rvm 4.0.3 do bundle exec ruby tools/ci/verify_gem_package.rb pkg/activejob-temporal-*.gem`
 
 ### Publication
 - [ ] Package metadata verified locally with `gem specification`

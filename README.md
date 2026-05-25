@@ -18,10 +18,11 @@ Use a traditional ActiveJob backend when the work is short, simple, and does not
 ## Requirements
 
 - Ruby >= 4.0
-- Rails >= 7.2 through ActiveJob 8.x
+- Rails 8.1 through ActiveJob 8.1
 - Temporal cluster, either self-hosted or [Temporal Cloud](https://temporal.io/cloud)
 
-Temporal Ruby SDK 1.4.x compatibility is contract-tested against 1.4.0 and 1.4.1.
+CI validates Ruby 4.0.0 and the latest Ruby 4.0 patch against Rails 8.1.
+Temporal Ruby SDK 1.4.x compatibility is contract-tested against 1.4.0 and the latest 1.4.x release.
 
 ## Install
 
@@ -107,30 +108,30 @@ Open Temporal UI and look for workflows named `ajwf:SendInvoiceJob:<job_id>`.
 
 | Need | API | Detailed guide |
 | --- | --- | --- |
-| Delay a single job | `MyJob.set(wait: 5.minutes).perform_later(...)` | [Usage Patterns](docs/usage_patterns.md#scheduled-jobs) |
-| Register recurring cron work | `schedule cron: "0 2 * * *"` and `create_temporal_schedule` | [Recurring Jobs](docs/recurring_jobs.md) |
-| Enqueue only when work exists | `perform_later_if(condition, *args)` | [Usage Patterns](docs/usage_patterns.md#conditional-enqueueing) |
-| Enqueue many prepared jobs | `ActiveJob::Temporal.enqueue_batch(jobs)` | [Usage Patterns](docs/usage_patterns.md#bulk-enqueueing) |
-| Run sequential jobs in one workflow | `set(chain: [NextJob])` | [Usage Patterns](docs/usage_patterns.md#job-chaining) |
-| Start child ActiveJob workflows | `set(child_workflows: [ChildJob])` | [Usage Patterns](docs/usage_patterns.md#child-workflows) |
-| Call external Temporal activities or workflows | `ActiveJob::Temporal.activity(...)`, `ActiveJob::Temporal.workflow(...)` | [Usage Patterns](docs/usage_patterns.md#external-temporal-steps) |
-| Wait for separately enqueued jobs | `set(depends_on: parent_job)` | [Usage Patterns](docs/usage_patterns.md#job-dependencies) |
-| Map ActiveJob retries to Temporal | `retry_on`, `discard_on` | [Retry Policy Guide](docs/retry_policies.md) |
-| Park exhausted failures | `config.dead_letter_queue = "failed_jobs"` | [Configuration Reference](docs/configuration_reference.md#dead-letter-queue) |
-| Tune activity timeouts | `temporal_options start_to_close_timeout: ...` | [Usage Patterns](docs/usage_patterns.md#per-job-timeouts) |
-| Add throughput limits | `rate_limit 100, per: :second` | [Configuration Reference](docs/configuration_reference.md#rate-limit-configuration) |
-| Cancel or inspect jobs | `cancel`, `cancel_all`, `status`, `running?` | [Usage Patterns](docs/usage_patterns.md#cancellation-and-status) |
-| Pause, resume, query, or update workflow state | `signal`, `query`, `update` | [Usage Patterns](docs/usage_patterns.md#signals-queries-and-updates) |
-| Add runtime middleware | `config.add_middleware MiddlewareClass` | [Middleware](docs/middleware.md) |
-| Expose Prometheus metrics | `config.observability.use :prometheus` | [Metrics Guide](docs/metrics.md) |
-| Encrypt job payloads | `encrypt_payload = true` | [Configuration Reference](docs/configuration_reference.md#payload-encryption) |
-| Store large payloads externally | `payload_storage_adapter = MyPayloadStorage.new` | [Configuration Reference](docs/configuration_reference.md#payload-size-limits) |
+| Delay a single job | `MyJob.set(wait: 5.minutes).perform_later(...)` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#scheduled-jobs) |
+| Register recurring cron work | `schedule cron: "0 2 * * *"` and `create_temporal_schedule` | [Recurring Jobs](https://github.com/schovi/activejob-temporal/blob/main/docs/recurring_jobs.md) |
+| Enqueue only when work exists | `perform_later_if(condition, *args)` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#conditional-enqueueing) |
+| Enqueue many prepared jobs | `ActiveJob::Temporal.enqueue_batch(jobs)` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#bulk-enqueueing) |
+| Run sequential jobs in one workflow | `set(chain: [NextJob])` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#job-chaining) |
+| Start child ActiveJob workflows | `set(child_workflows: [ChildJob])` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#child-workflows) |
+| Call external Temporal activities or workflows | `ActiveJob::Temporal.activity(...)`, `ActiveJob::Temporal.workflow(...)` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#external-temporal-steps) |
+| Wait for separately enqueued jobs | `set(depends_on: parent_job)` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#job-dependencies) |
+| Map ActiveJob retries to Temporal | `retry_on`, `discard_on` | [Retry Policy Guide](https://github.com/schovi/activejob-temporal/blob/main/docs/retry_policies.md) |
+| Park exhausted failures | `config.dead_letter_queue = "failed_jobs"` | [Configuration Reference](https://github.com/schovi/activejob-temporal/blob/main/docs/configuration_reference.md#dead-letter-queue) |
+| Tune activity timeouts | `temporal_options start_to_close_timeout: ...` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#per-job-timeouts) |
+| Add throughput limits | `rate_limit 100, per: :second` | [Configuration Reference](https://github.com/schovi/activejob-temporal/blob/main/docs/configuration_reference.md#rate-limit-configuration) |
+| Cancel or inspect jobs | `cancel`, `cancel_all`, `status`, `running?` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#cancellation-and-status) |
+| Pause, resume, query, or update workflow state | `signal`, `query`, `update` | [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md#signals-queries-and-updates) |
+| Add runtime middleware | `config.add_middleware MiddlewareClass` | [Middleware](https://github.com/schovi/activejob-temporal/blob/main/docs/middleware.md) |
+| Expose Prometheus metrics | `config.observability.use :prometheus` | [Metrics Guide](https://github.com/schovi/activejob-temporal/blob/main/docs/metrics.md) |
+| Encrypt job payloads | `encrypt_payload = true` | [Configuration Reference](https://github.com/schovi/activejob-temporal/blob/main/docs/configuration_reference.md#payload-encryption) |
+| Store large payloads externally | `payload_storage_adapter = MyPayloadStorage.new` | [Configuration Reference](https://github.com/schovi/activejob-temporal/blob/main/docs/configuration_reference.md#payload-size-limits) |
 
 Baseline behavior also includes transaction-aware enqueueing through ActiveJob, GlobalID-compatible argument serialization, structured JSON logs, searchable `set(tags:)` metadata, and JSON payloads with opt-in MessagePack or Marshal envelopes.
 
 ## Configuration
 
-The full configuration surface lives in [Configuration Reference](docs/configuration_reference.md). The machine-readable schema is [docs/config_schema.yaml](docs/config_schema.yaml).
+The full configuration surface lives in [Configuration Reference](https://github.com/schovi/activejob-temporal/blob/main/docs/configuration_reference.md). The machine-readable schema is [docs/config_schema.yaml](https://github.com/schovi/activejob-temporal/blob/main/docs/config_schema.yaml).
 
 The most common settings are:
 
@@ -147,23 +148,23 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-Workers can also read environment variables such as `ACTIVEJOB_TEMPORAL_TARGET`, `ACTIVEJOB_TEMPORAL_NAMESPACE`, `ACTIVEJOB_TEMPORAL_TASK_QUEUE`, `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`, `ACTIVEJOB_TEMPORAL_METRICS_PORT`, and TLS certificate settings. See [Worker Setup](docs/worker_setup.md) for the worker-focused list.
+Workers can also read environment variables such as `ACTIVEJOB_TEMPORAL_TARGET`, `ACTIVEJOB_TEMPORAL_NAMESPACE`, `ACTIVEJOB_TEMPORAL_TASK_QUEUE`, `ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES`, `ACTIVEJOB_TEMPORAL_METRICS_PORT`, and TLS certificate settings. See [Worker Setup](https://github.com/schovi/activejob-temporal/blob/main/docs/worker_setup.md) for the worker-focused list.
 
 ## Documentation
 
-Start with [docs/README.md](docs/README.md) for the complete documentation map.
+Start with [docs/README.md](https://github.com/schovi/activejob-temporal/blob/main/docs/README.md) for the complete documentation map.
 
 High-use guides:
 
-- [Usage Patterns](docs/usage_patterns.md)
-- [Configuration Reference](docs/configuration_reference.md)
-- [Worker Setup](docs/worker_setup.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Performance Tuning](docs/performance_tuning.md)
-- [Comparison Guide](docs/comparison.md)
-- [Security](docs/security.md)
+- [Usage Patterns](https://github.com/schovi/activejob-temporal/blob/main/docs/usage_patterns.md)
+- [Configuration Reference](https://github.com/schovi/activejob-temporal/blob/main/docs/configuration_reference.md)
+- [Worker Setup](https://github.com/schovi/activejob-temporal/blob/main/docs/worker_setup.md)
+- [Troubleshooting](https://github.com/schovi/activejob-temporal/blob/main/docs/troubleshooting.md)
+- [Performance Tuning](https://github.com/schovi/activejob-temporal/blob/main/docs/performance_tuning.md)
+- [Comparison Guide](https://github.com/schovi/activejob-temporal/blob/main/docs/comparison.md)
+- [Security](https://github.com/schovi/activejob-temporal/blob/main/docs/security.md)
 
-See [examples/basic_rails_app](examples/basic_rails_app/) for a Docker Compose Rails app with Temporal, Temporal UI, search attribute setup, workers, seeded GlobalID records, and tests.
+See [examples/basic_rails_app](https://github.com/schovi/activejob-temporal/tree/main/examples/basic_rails_app) for a Docker Compose Rails app with Temporal, Temporal UI, search attribute setup, workers, seeded GlobalID records, and tests.
 
 ## Contributing
 
@@ -194,4 +195,4 @@ MIT. See [LICENSE](LICENSE).
 
 This project follows [Semantic Versioning](https://semver.org/). See [CHANGELOG](CHANGELOG.md) for release history.
 
-Current version: 0.1.0
+Current development version: 0.1.0. Release commits must be tagged before publishing to RubyGems.

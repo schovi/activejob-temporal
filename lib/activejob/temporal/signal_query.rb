@@ -1,16 +1,17 @@
 # frozen_string_literal: true
 
 require "temporalio/error"
+require_relative "job_id_validation"
 require_relative "visibility_query"
 require_relative "workflow_id_builder"
 
 module ActiveJob
   module Temporal
     module SignalQuery
-      UUID_REGEX = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
       JOB_CLASS_NAME_PATTERN = /\A[A-Z]\w*(?:::[A-Z]\w*)*\z/
       HANDLER_NAME_PATTERN = /\A[a-zA-Z_]\w*\z/
       DEFAULT_REJECT_CONDITION = Object.new.freeze
+      WORKFLOW_NOT_FOUND = Object.new.freeze
 
       class << self
         def signal(job_class, job_id, signal_name, *)
@@ -57,33 +58,50 @@ module ActiveJob
           raise ActiveJob::Temporal::TemporalConnectionError,
                 "Failed to update Temporal workflow for job_id #{job_id}: #{e.message}"
         end
+      end
 
+      class << self
         private
 
         def with_running_workflow_handle(job_class, job_id)
           client = ActiveJob::Temporal.client
-          default_handle = client.workflow_handle(default_workflow_id(job_class, job_id), run_id: nil)
+          result = yield_schedule_execution_handle(client, job_id) { |handle| yield(handle) }
+          return result unless result.equal?(WORKFLOW_NOT_FOUND)
 
-          begin
-            return yield(default_handle)
-          rescue Temporalio::Error::RPCError => e
-            raise unless rpc_not_found?(e)
+          result = yield_handle(client.workflow_handle(default_workflow_id(job_class, job_id), run_id: nil)) do |handle|
+            yield(handle)
           end
+          return result unless result.equal?(WORKFLOW_NOT_FOUND)
 
           workflow_reference = find_running_workflow_reference(client, job_class, job_id)
           raise workflow_not_found(job_id) unless workflow_reference
 
-          fallback_handle = client.workflow_handle(
+          result = yield_handle(workflow_handle(client, workflow_reference)) { |handle| yield(handle) }
+          raise workflow_not_found(job_id) if result.equal?(WORKFLOW_NOT_FOUND)
+
+          result
+        end
+
+        def yield_schedule_execution_handle(client, job_id)
+          workflow_reference = JobIdValidation.schedule_execution_reference(job_id)
+          return WORKFLOW_NOT_FOUND unless workflow_reference
+
+          yield_handle(workflow_handle(client, workflow_reference)) { |handle| yield(handle) }
+        end
+
+        def yield_handle(handle)
+          yield(handle)
+        rescue Temporalio::Error::RPCError => e
+          raise unless rpc_not_found?(e)
+
+          WORKFLOW_NOT_FOUND
+        end
+
+        def workflow_handle(client, workflow_reference)
+          client.workflow_handle(
             workflow_reference.fetch(:workflow_id),
             run_id: workflow_reference[:run_id]
           )
-          begin
-            yield(fallback_handle)
-          rescue Temporalio::Error::RPCError => e
-            raise workflow_not_found(job_id) if rpc_not_found?(e)
-
-            raise
-          end
         end
 
         def query_workflow(handle, handler_name, args, reject_condition)
@@ -119,11 +137,7 @@ module ActiveJob
         end
 
         def validate_job_id!(job_id)
-          return if job_id.is_a?(String) && job_id.match?(UUID_REGEX)
-
-          raise ArgumentError,
-                "Invalid job_id format: expected UUID (e.g., '550e8400-e29b-41d4-a716-446655440000'), " \
-                "got: #{job_id.inspect}"
+          JobIdValidation.validate!(job_id)
         end
 
         def normalize_handler_name!(name, handler_type)

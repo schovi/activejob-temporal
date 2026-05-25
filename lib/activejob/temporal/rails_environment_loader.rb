@@ -129,7 +129,14 @@ module ActiveJob
         return unless Object.const_defined?(:Rails)
 
         rails = Object.const_get(:Rails)
-        rails.application.eager_load! if rails.env.development? || rails.env.test?
+        return unless rails.respond_to?(:application) && rails.respond_to?(:env)
+
+        environment = rails.env
+        return unless environment.respond_to?(:development?) && environment.respond_to?(:test?)
+        return unless environment.development? || environment.test?
+
+        application = rails.application
+        application.eager_load! if application.respond_to?(:eager_load!)
       end
     end
   end

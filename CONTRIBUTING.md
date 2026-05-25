@@ -2,7 +2,7 @@
 
 ## Ruby Baseline
 
-Use Ruby 4.0.3 for local development and validation. The repository targets Ruby 4+ and does not require installing Ruby 3.
+Use Ruby 4.0.3 for local development and validation. CI also validates the gem against the minimum and latest approved Ruby 4.0 patch. The repository targets Ruby 4+ and does not require installing Ruby 3.
 
 See [Ruby Baseline](docs/ruby_baseline.md) for the source-of-truth files, CI coverage, and external tooling notes.
 
@@ -10,10 +10,12 @@ Run validation commands through the Ruby 4 toolchain:
 
 ```sh
 rvm 4.0.3 do bundle install
-rvm 4.0.3 do bundle exec rake spec:unit
+BUNDLE_GEMFILE=gemfiles/rails_8_1.gemfile rvm 4.0.3 do bundle exec rake spec:unit
 rvm 4.0.3 do bundle exec rubocop
 rvm 4.0.3 do bundle exec rake build
 ```
+
+CI is the source of truth for the full compatibility matrix. It runs unit specs against Rails 8.1 on minimum and latest Ruby 4.0, plus Temporal-backed integration checks on the supported Rails line.
 
 ## Mutation Testing
 

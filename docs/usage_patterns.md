@@ -379,6 +379,7 @@ Cancel one running job by ActiveJob class and job ID:
 
 ```ruby
 ActiveJob::Temporal.cancel(SendInvoiceJob, "550e8400-e29b-41d4-a716-446655440000")
+ActiveJob::Temporal.cancel(SendInvoiceJob, "invoice-123")
 ```
 
 Terminate groups of running jobs by search attributes:
@@ -389,7 +390,7 @@ ActiveJob::Temporal.cancel_where(ajQueue: "low_priority")
 ActiveJob::Temporal.cancel_where(ajClass: "ReportJob", ajTenantId: 123)
 ```
 
-`cancel` finds the workflow by `ajClass` and `ajJobId`, uses the discovered workflow ID, returns `false` when the workflow already completed, and raises `ActiveJob::Temporal::WorkflowNotFoundError` when no matching workflow exists. Batch cancellation lists running workflows with Temporal visibility pagination, calls `handle.terminate` for each match, and returns `{ terminated:, failed:, errors: }`.
+`cancel` accepts UUIDs, custom job IDs, and schedule-generated execution IDs when they are safe strings. It finds the workflow by `ajClass` and `ajJobId`, uses the discovered workflow ID, returns `false` when the workflow already completed, and raises `ActiveJob::Temporal::WorkflowNotFoundError` when no matching workflow exists. Batch cancellation lists running workflows with Temporal visibility pagination, calls `handle.terminate` for each match, and returns `{ terminated:, failed:, errors: }`.
 
 Long-running jobs should heartbeat so Temporal can deliver cancellation promptly:
 
@@ -427,6 +428,8 @@ ActiveJob::Temporal.signal(ImportJob, job_id, :pause, "maintenance")
 ActiveJob::Temporal.query(ImportJob, job_id, :paused)
 ActiveJob::Temporal.signal(ImportJob, job_id, :resume)
 ```
+
+These helpers accept the same safe job ID strings as `status` and `cancel`, including custom non-UUID IDs and schedule-generated execution IDs.
 
 Built-in signals:
 

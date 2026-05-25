@@ -1,8 +1,14 @@
 # frozen_string_literal: true
 
 require "spec_helper"
-require "active_job/continuation"
 require_relative "../fixtures/sample_jobs"
+
+active_job_continuation_available = begin
+  require "active_job/continuation"
+  true
+rescue LoadError
+  false
+end
 
 RSpec.describe ActiveJob::Temporal::Adapter do
   describe ".build_workflow_id" do
@@ -266,6 +272,8 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
 
   describe "Rails 8 continuable checkpoint compatibility" do
     it "interrupts continuable jobs when the adapter is stopping" do
+      skip "ActiveJob continuations are unavailable in this Rails version" unless active_job_continuation_available
+
       continuable_job_class = Class.new(ActiveJob::Base) do
         include ActiveJob::Continuable
 
