@@ -73,6 +73,8 @@ result.failures.map(&:to_h)
 
 Bulk enqueue starts one workflow per job. It is not a single Temporal multi-start RPC.
 
+One `enqueue_batch` call accepts at most 10,000 jobs. Larger backfills should split work into smaller calls so result storage and concurrent worker queues stay bounded. Inputs with a `size` greater than the limit are rejected before iteration; unsized enumerables stop after the first item beyond the limit.
+
 ## Duplicate Enqueueing
 
 Workflow IDs are deterministic by default: `ajwf:<JobClass>:<job_id>`. Temporal rejects a duplicate workflow ID while the previous execution remains retained, which prevents the same ActiveJob job ID from starting another workflow.

@@ -5,6 +5,9 @@ require_relative "batch_enqueue_result"
 module ActiveJob
   module Temporal
     class BatchEnqueuer
+      MAX_BATCH_SIZE = 10_000
+      QUEUE_STOP = Object.new.freeze
+
       def initialize(enqueue:, validate_job:, validate_scheduled_at:)
         @enqueue_job = enqueue
         @validate_job = validate_job
@@ -12,8 +15,8 @@ module ActiveJob
       end
 
       def enqueue(items, concurrency: 1)
-        entries = validate_entries!(items)
         concurrency = validate_concurrency!(concurrency)
+        entries = validate_entries!(items)
         results = Array.new(entries.length)
 
         enqueue_entries(entries, results, concurrency)
@@ -28,9 +31,14 @@ module ActiveJob
       def validate_entries!(items)
         raise ArgumentError, "batch enqueue jobs must be an Enumerable" unless items.respond_to?(:each)
 
+        validate_batch_size_hint!(items)
+
         errors = []
-        entries = items.each_with_index.map do |item, index|
-          validate_entry(item, index, errors)
+        entries = []
+        items.each.with_index do |item, index|
+          raise_batch_size_error! if index >= MAX_BATCH_SIZE
+
+          entries << validate_entry(item, index, errors)
         end
 
         raise ArgumentError, "batch enqueue jobs cannot be empty" if entries.empty?
@@ -51,6 +59,20 @@ module ActiveJob
           error: "#{e.class}: #{e.message}"
         }
         nil
+      end
+
+      def validate_batch_size_hint!(items)
+        return unless items.respond_to?(:size)
+
+        size = items.size
+        return if size.nil? || size <= MAX_BATCH_SIZE
+
+        raise_batch_size_error!
+      end
+
+      def raise_batch_size_error!
+        raise ArgumentError,
+              "batch enqueue accepts at most #{MAX_BATCH_SIZE} jobs; split larger inputs into smaller batches"
       end
 
       def normalize_entry(item)
@@ -82,19 +104,23 @@ module ActiveJob
       def enqueue_entries(entries, results, concurrency)
         return enqueue_sequentially(entries, results) if concurrency == 1
 
-        entry_queue = Queue.new
-        entries.each { |entry| entry_queue << entry }
         worker_count = [concurrency, entries.length].min
+        entry_queue = SizedQueue.new(worker_count)
 
-        Array.new(worker_count) do
+        workers = Array.new(worker_count) do
           Thread.new do
             loop do
-              enqueue_entry(entry_queue.pop(true), results)
-            rescue ThreadError
-              break
+              entry = entry_queue.pop
+              break if entry.equal?(QUEUE_STOP)
+
+              enqueue_entry(entry, results)
             end
           end
-        end.each(&:value)
+        end
+
+        entries.each { |entry| entry_queue << entry }
+        worker_count.times { entry_queue << QUEUE_STOP }
+        workers.each(&:value)
       end
 
       def enqueue_sequentially(entries, results)
@@ -103,36 +129,19 @@ module ActiveJob
 
       def enqueue_entry(entry, results)
         handle = enqueue_job.call(entry[:job], scheduled_at: entry[:scheduled_at])
-        results[entry[:index]] = success_result(entry, handle)
+        results[entry[:index]] = item_result(entry, status: :success, handle: handle)
       rescue DuplicateEnqueueError => e
-        results[entry[:index]] = duplicate_result(entry, e)
+        results[entry[:index]] = item_result(entry, status: :duplicate, error: e)
       rescue StandardError => e
-        results[entry[:index]] = failed_result(entry, e)
+        results[entry[:index]] = item_result(entry, status: :failed, error: e)
       end
 
-      def success_result(entry, handle)
+      def item_result(entry, status:, handle: nil, error: nil)
         BatchEnqueueItemResult.new(
           index: entry[:index],
           job: entry[:job],
-          status: :success,
-          handle: handle
-        )
-      end
-
-      def duplicate_result(entry, error)
-        BatchEnqueueItemResult.new(
-          index: entry[:index],
-          job: entry[:job],
-          status: :duplicate,
-          error: error
-        )
-      end
-
-      def failed_result(entry, error)
-        BatchEnqueueItemResult.new(
-          index: entry[:index],
-          job: entry[:job],
-          status: :failed,
+          status: status,
+          handle: handle,
           error: error
         )
       end
