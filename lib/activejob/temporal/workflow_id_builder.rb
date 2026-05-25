@@ -15,7 +15,7 @@ module ActiveJob
 
       # @param strategy [#call, nil] Optional callable that receives the job and returns a workflow ID
       def initialize(strategy = nil)
-        @strategy = strategy || self.class.method(:default_for)
+        @strategy = strategy
       end
 
       # Builds a workflow ID from an ActiveJob instance.
@@ -23,7 +23,9 @@ module ActiveJob
       # @param job [ActiveJob::Base] ActiveJob instance being enqueued
       # @return [String] Workflow ID in format "ajwf:<ClassName>:<job_id>"
       def build(job)
-        workflow_id = call_strategy(job)
+        workflow_id = class_configured_workflow_id(job) ||
+                      configured_workflow_id(job) ||
+                      self.class.default_for(job)
         self.class.validate!(workflow_id)
         workflow_id
       end
@@ -34,7 +36,8 @@ module ActiveJob
       # @param job_id [String] ActiveJob job_id
       # @return [String] Workflow ID in format "ajwf:<ClassName>:<job_id>"
       def build_from_job_class(job_class, job_id)
-        workflow_id = self.class.default_from_job_class(job_class, job_id)
+        workflow_id = self.class.prefixed_from_job_class(job_class, job_id) ||
+                      self.class.default_from_job_class(job_class, job_id)
         self.class.validate!(workflow_id)
         workflow_id
       end
@@ -55,6 +58,19 @@ module ActiveJob
         # @return [String] Workflow ID in format "ajwf:<ClassName>:<job_id>"
         def default_from_job_class(job_class, job_id)
           "#{DEFAULT_PREFIX}:#{job_class.name}:#{job_id}"
+        end
+
+        def prefixed_from_job_class(job_class, job_id)
+          prefix = workflow_id_prefix_for(job_class)
+          return unless prefix
+
+          "#{prefix}:#{job_id}"
+        end
+
+        def workflow_id_prefix_for(job_class)
+          return unless job_class.respond_to?(:temporal_workflow_id_prefix)
+
+          job_class.temporal_workflow_id_prefix
         end
 
         # Validates generated workflow IDs before they reach Temporal.
@@ -98,6 +114,35 @@ module ActiveJob
       end
 
       private
+
+      def class_configured_workflow_id(job)
+        prefix = self.class.workflow_id_prefix_for(job.class)
+        return "#{prefix}:#{job.job_id}" if prefix
+
+        strategy = class_workflow_id_strategy(job.class)
+        return unless strategy
+
+        call_class_strategy(strategy, job)
+      end
+
+      def class_workflow_id_strategy(job_class)
+        return unless job_class.respond_to?(:temporal_workflow_id)
+
+        job_class.temporal_workflow_id
+      end
+
+      def call_class_strategy(strategy, job)
+        strategy.call(*Array(job.arguments))
+      rescue ArgumentError => e
+        raise ConfigurationError,
+              "temporal_workflow_id block must accept this job's perform arguments: #{e.message}"
+      end
+
+      def configured_workflow_id(job)
+        return unless @strategy
+
+        call_strategy(job)
+      end
 
       def call_strategy(job)
         @strategy.call(job)

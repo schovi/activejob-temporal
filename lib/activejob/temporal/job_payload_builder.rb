@@ -37,6 +37,7 @@ module ActiveJob
 
         apply_retry_policy(payload, job)
         apply_temporal_options(payload, job.class)
+        apply_workflow_identity(payload, job.class)
         apply_rate_limits(payload, job)
         apply_workflow_interactions(payload, job.class)
         apply_child_workflows(payload, job)
@@ -74,6 +75,16 @@ module ActiveJob
       def apply_temporal_options(payload, job_class)
         temporal_options = extract_temporal_options(job_class)
         payload[:temporal_options] = temporal_options if temporal_options.any?
+      end
+
+      def apply_workflow_identity(payload, job_class)
+        workflow_name = extract_temporal_workflow_name(job_class)
+        return unless workflow_name
+
+        identity = { workflow_name: workflow_name }
+        workflow_id_prefix = extract_temporal_workflow_id_prefix(job_class)
+        identity[:workflow_id_prefix] = workflow_id_prefix if workflow_id_prefix
+        payload[:workflow_identity] = identity
       end
 
       def metrics_payload_for(job)
@@ -129,6 +140,18 @@ module ActiveJob
         return {} unless job_class.respond_to?(:temporal_options)
 
         job_class.temporal_options
+      end
+
+      def extract_temporal_workflow_name(job_class)
+        return unless job_class.respond_to?(:temporal_workflow_name)
+
+        job_class.temporal_workflow_name
+      end
+
+      def extract_temporal_workflow_id_prefix(job_class)
+        return unless job_class.respond_to?(:temporal_workflow_id_prefix)
+
+        job_class.temporal_workflow_id_prefix
       end
 
       def dead_letter_enabled?

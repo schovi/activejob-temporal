@@ -38,6 +38,7 @@ module ActiveJob
 
         apply_child_workflow_retry_policy(payload, job_class, job_id, queue_name)
         apply_temporal_options(payload, job_class)
+        apply_workflow_identity(payload, job_class)
         apply_rate_limits_for_class(payload, job_class)
         apply_workflow_interactions(payload, job_class)
         apply_child_workflow_search_attributes(payload, job_class, job_id, queue_name, options)
@@ -92,9 +93,7 @@ module ActiveJob
       end
 
       def child_workflow_id(job_class, job_id)
-        workflow_id = WorkflowIdBuilder.default_from_job_class(job_class, job_id)
-        WorkflowIdBuilder.validate!(workflow_id)
-        workflow_id
+        WorkflowIdBuilder.new.build_from_job_class(job_class, job_id)
       end
 
       def apply_child_workflow_retry_policy(payload, job_class, job_id, queue_name)

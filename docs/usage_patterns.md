@@ -154,6 +154,46 @@ BuildOrderPlanJob.set(
 
 External child workflows receive the parent job result as their input and contribute their Temporal result to the parent's `child_results` collection. Use `ActiveJob::Temporal.workflow` for external children; `ActiveJob::Temporal.activity` is only valid in `chain:`.
 
+## Stable Temporal Identity
+
+Use class-level workflow identity when another service needs a stable contract for work owned by a Rails job. The public workflow name is a static operation name. The workflow ID is still a per-execution identifier.
+
+```ruby
+class ChargePaymentJob < ApplicationJob
+  temporal_workflow_name "payments.charge_payment"
+  temporal_workflow_id do |payment_id|
+    "payment:#{payment_id}"
+  end
+
+  def perform(payment_id)
+    ChargePayment.call(payment_id)
+  end
+end
+```
+
+`temporal_workflow_name` is metadata for shared contracts and payload inspection. It does not change the Ruby worker's registered Temporal workflow type, which remains the adapter workflow. `temporal_workflow_id` changes the per-execution workflow ID and receives the same arguments as `perform`.
+
+For jobs that only need class-name-free IDs based on the ActiveJob job ID, use a prefix:
+
+```ruby
+class SendInvoiceJob < ApplicationJob
+  temporal_workflow_name "billing.send_invoice"
+  temporal_workflow_id_prefix "invoice"
+end
+```
+
+That job starts workflows like `invoice:<job_id>` instead of `ajwf:SendInvoiceJob:<job_id>`. Jobs without these declarations keep the default `ajwf:<ClassName>:<job_id>` IDs.
+
+Cross-service references should document both values:
+
+```text
+workflow name: payments.charge_payment
+workflow ID:   payment:<payment_id>
+task queue:    payments
+```
+
+Use the workflow name as the stable operation contract and the workflow ID shape to signal, inspect, or depend on one execution. Do not use one static workflow ID for ordinary jobs, because Temporal workflow IDs identify executions. Static workflow IDs are only appropriate for singleton workflows.
+
 ## Child Workflows
 
 Use `set(child_workflows:)` when a parent job should start separate ActiveJob-backed or external Temporal workflows and wait for their results. The parent job runs first. Each child receives the parent result as its single input and returns its result to the parent.

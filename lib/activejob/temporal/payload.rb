@@ -55,6 +55,7 @@ module ActiveJob
         default_activity_options
         retry_policy
         temporal_options
+        workflow_identity
         dead_letter
         rate_limits
         workflow_interactions

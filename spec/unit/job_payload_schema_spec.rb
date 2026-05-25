@@ -16,6 +16,7 @@ RSpec.describe "job payload schema" do
           "retry_policy" => { "type" => "object" },
           "temporal_options" => { "type" => "object" },
           "dead_letter" => { "type" => "object" },
+          "workflow_identity" => { "$ref" => "#/definitions/workflow_identity" },
           "workflow_interactions" => { "$ref" => "#/definitions/workflow_interactions" },
           "rate_limits" => { "$ref" => "#/definitions/rate_limits" },
           "child_workflows" => { "$ref" => "#/definitions/child_workflows" },
@@ -40,6 +41,20 @@ RSpec.describe "job payload schema" do
         "signals" => include("type" => "array", "uniqueItems" => true),
         "queries" => include("type" => "array", "uniqueItems" => true),
         "updates" => include("type" => "array", "uniqueItems" => true)
+      )
+    )
+  end
+
+  it "defines workflow identity metadata" do
+    identity_schema = schema.fetch("definitions").fetch("workflow_identity")
+
+    expect(identity_schema).to include(
+      "type" => "object",
+      "additionalProperties" => false,
+      "required" => ["workflow_name"],
+      "properties" => include(
+        "workflow_name" => { "type" => "string", "minLength" => 1 },
+        "workflow_id_prefix" => { "type" => "string", "minLength" => 1 }
       )
     )
   end

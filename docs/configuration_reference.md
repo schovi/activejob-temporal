@@ -343,10 +343,11 @@ Encryption uses AES-256-GCM. New workflow payloads bind ciphertext to the Tempor
 - `default_activity_options`
 - `retry_policy`
 - `temporal_options`
+- `workflow_identity`
 - `dead_letter`
 - `rate_limits`
 
-Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, search attributes can expose job class, queue, job ID, tenant ID, and tags, and rate-limit keys stay visible in workflow-control metadata. For privacy-sensitive workloads, configure a `workflow_id_generator` that does not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags. Do not put secrets in workflow IDs, search attributes, queue names, tags, rate-limit keys, or tenant metadata.
+Payload encryption does not hide all Temporal metadata. Default workflow IDs include job class and job ID, search attributes can expose job class, queue, job ID, tenant ID, and tags, and workflow identity metadata and rate-limit keys stay visible in workflow-control metadata. For privacy-sensitive workloads, configure a `workflow_id_generator` or class-level workflow ID strategies that do not embed sensitive identifiers, and disable or carefully constrain search attributes and custom tags. Do not put secrets in workflow IDs, workflow identity names, search attributes, queue names, tags, rate-limit keys, or tenant metadata.
 
 Use `encryption_old_keys` for rotation. Workers use the primary `encryption_key` for new payloads and accept old keys for decryption:
 
@@ -392,7 +393,31 @@ Unsupported validation levels still raise in `:strict` and `:warn` modes.
 
 ## Workflow ID Generation
 
-By default, workflow IDs use `ajwf:<ClassName>:<job_id>`. Set `workflow_id_generator` when your application needs tenant-aware IDs or custom idempotency semantics:
+By default, workflow IDs use `ajwf:<ClassName>:<job_id>`. For a single job class that needs a stable public contract, prefer class-level identity:
+
+```ruby
+class ChargePaymentJob < ApplicationJob
+  temporal_workflow_name "payments.charge_payment"
+  temporal_workflow_id do |payment_id|
+    "payment:#{payment_id}"
+  end
+end
+```
+
+`temporal_workflow_name` is the static operation name for docs and payload metadata. `temporal_workflow_id` returns the per-execution Temporal workflow ID and receives the same arguments as `perform`. The declared job-level ID strategy wins over the global generator.
+
+Use a prefix when the ActiveJob job ID should remain the execution identifier:
+
+```ruby
+class SendInvoiceJob < ApplicationJob
+  temporal_workflow_name "billing.send_invoice"
+  temporal_workflow_id_prefix "invoice"
+end
+```
+
+This starts workflows like `invoice:<job_id>` and lets lookup helpers build the same ID from the job class and job ID.
+
+Set `workflow_id_generator` when your application needs app-wide tenant-aware IDs or custom idempotency semantics:
 
 ```ruby
 ActiveJob::Temporal.configure do |config|

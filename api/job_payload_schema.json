@@ -40,6 +40,15 @@
         }
       }
     },
+    "workflow_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workflow_name"],
+      "properties": {
+        "workflow_name": { "type": "string", "minLength": 1 },
+        "workflow_id_prefix": { "type": "string", "minLength": 1 }
+      }
+    },
     "external_temporal_options": {
       "type": "object",
       "required": ["task_queue"],
@@ -65,6 +74,7 @@
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
+        "workflow_identity": { "$ref": "#/definitions/workflow_identity" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" },
         "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
         "activity_task_queue": { "type": "string", "minLength": 1 }
@@ -126,6 +136,7 @@
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
+        "workflow_identity": { "$ref": "#/definitions/workflow_identity" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" },
         "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
         "activity_task_queue": { "type": "string", "minLength": 1 },
@@ -192,6 +203,7 @@
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
+        "workflow_identity": { "$ref": "#/definitions/workflow_identity" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" },
         "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
         "child_workflows": { "$ref": "#/definitions/child_workflows" },
@@ -214,6 +226,7 @@
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
+        "workflow_identity": { "$ref": "#/definitions/workflow_identity" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" },
         "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
         "child_workflows": { "$ref": "#/definitions/child_workflows" },
@@ -240,6 +253,7 @@
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
+        "workflow_identity": { "$ref": "#/definitions/workflow_identity" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" },
         "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
         "child_workflows": { "$ref": "#/definitions/child_workflows" },
@@ -265,6 +279,7 @@
         "retry_policy": { "type": "object" },
         "temporal_options": { "type": "object" },
         "dead_letter": { "type": "object" },
+        "workflow_identity": { "$ref": "#/definitions/workflow_identity" },
         "rate_limits": { "$ref": "#/definitions/rate_limits" },
         "workflow_interactions": { "$ref": "#/definitions/workflow_interactions" },
         "child_workflows": { "$ref": "#/definitions/child_workflows" },

@@ -122,6 +122,22 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     )
   end
 
+  it "includes declared workflow identity metadata" do
+    job_class = Class.new(ActiveJob::Base) do
+      def self.name = "WorkflowIdentityPayloadJob"
+
+      temporal_workflow_name "payments.charge_payment"
+      temporal_workflow_id_prefix "payment"
+    end
+
+    payload = described_class.new(config).build(job_class.new)
+
+    expect(payload[:workflow_identity]).to eq(
+      workflow_name: "payments.charge_payment",
+      workflow_id_prefix: "payment"
+    )
+  end
+
   it "includes chain activity payloads with each step's own execution metadata" do
     config.rate_limiter = ->(_rate_limits) { 0 }
     config.priority_task_queues = { 7 => "priority_reports" }
@@ -236,6 +252,8 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       queue_as :mailers
       retry_on StandardError, wait: 10.seconds, attempts: 4
       temporal_options start_to_close_timeout: 2.hours
+      temporal_workflow_name "invoices.send"
+      temporal_workflow_id_prefix "invoice-child"
       rate_limit 5, per: :minute
     end
     stub_const("PayloadBuilderChildJob", child_job_class)
@@ -267,7 +285,7 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
       hash_including(
         job_class: "PayloadBuilderChildJob",
         job_id: "#{job.job_id}:child:1",
-        workflow_id: "ajwf:PayloadBuilderChildJob:#{job.job_id}:child:1",
+        workflow_id: "invoice-child:#{job.job_id}:child:1",
         queue_name: "mailers",
         arguments: [],
         activity_task_queue: "prod-mailers",
