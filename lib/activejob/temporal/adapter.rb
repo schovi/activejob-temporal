@@ -100,9 +100,10 @@ module ActiveJob
     #   FAIL conflict policy, so duplicate enqueue attempts return nil (not an error).
     #
     # @note Transaction Safety
-    #   The adapter implements `enqueue_after_transaction_commit?`, which defers
-    #   workflow starts until the current database transaction commits. This prevents
-    #   workflows from starting for rolled-back jobs.
+    #   Jobs using the Temporal adapter are opted into ActiveJob's
+    #   `enqueue_after_transaction_commit` setting. This defers workflow starts
+    #   until the current database transaction commits and prevents workflows from
+    #   starting for rolled-back jobs.
     #
     # @example Basic usage
     #   class MyJob < ApplicationJob
@@ -223,11 +224,11 @@ module ActiveJob
         @enqueuer.enqueue(job, scheduled_at: scheduled_time)
       end
 
-      # Signals ActiveJob to defer enqueuing until after the current database transaction commits.
+      # Signals transaction-aware ActiveJob versions to defer enqueuing until after commit.
       #
-      # This prevents Temporal workflows from starting for jobs created within rolled-back
-      # database transactions. Rails will automatically defer `enqueue` and `enqueue_at` calls
-      # until the transaction commits.
+      # Rails 8 uses the job class `enqueue_after_transaction_commit` setting instead. The
+      # TransactionSafety hook enables that setting when a job selects the Temporal adapter.
+      # This method remains for adapter-contract compatibility with older ActiveJob behavior.
       #
       # @return [Boolean] always returns true
       # @example Transaction-safe enqueuing

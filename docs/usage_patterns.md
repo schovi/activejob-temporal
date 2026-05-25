@@ -44,6 +44,12 @@ ProcessAccountJob
 
 Pass only developer-defined symbols, strings, or callables. Do not derive condition names from request params or other user-controlled input, because symbol and string conditions call public methods on the job class.
 
+## Transaction-Aware Enqueueing
+
+When a job class uses the Temporal adapter, `activejob-temporal` enables Rails' `enqueue_after_transaction_commit` setting for that class. In Rails apps with ActiveRecord loaded, `perform_later` inside a database transaction starts the Temporal workflow only after commit. If the transaction rolls back, no workflow is started.
+
+To opt out for a specific job, set `self.enqueue_after_transaction_commit = false` after selecting the Temporal adapter on that job class.
+
 ## Bulk Enqueueing
 
 Use `ActiveJob::Temporal.enqueue_batch` to enqueue prepared jobs and inspect per-job results. Each item can be a job instance, or a hash with `:job` and optional `:scheduled_at`.
