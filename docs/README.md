@@ -22,6 +22,7 @@ Use the root [README](../README.md) for install, first job, and a compact capabi
 ## Feature Guides
 
 - [Recurring Jobs](recurring_jobs.md): cron schedules, registration, overlap policies, and schedule handles.
+- [ActiveJob Lifecycle Guide](active_job_lifecycle.md): full ActiveJob execution under Temporal, including callbacks, middleware, rescue handlers, preserved job state, and retry ownership.
 - [Retry Policy Guide](retry_policies.md): how ActiveJob `retry_on` and `discard_on` declarations map to Temporal retry policies.
 - [Middleware](middleware.md): wrapping job execution with tracing, metrics, logging, tenant context, or cleanup middleware.
 - [Nexus Integration](nexus.md): optional workflow-layer boundary for durable external service calls.

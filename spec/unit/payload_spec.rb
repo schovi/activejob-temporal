@@ -79,6 +79,35 @@ RSpec.describe ActiveJob::Temporal::Payload do
       expect(payload[:arguments]).to eq(ActiveJob::Arguments.serialize(job.arguments))
     end
 
+    it "stores full ActiveJob serialized data when the job supports it" do
+      job_class = stub_const("FullSerializedPayloadJob", Class.new(ActiveJob::Base) do
+        attr_accessor :tenant
+
+        def serialize
+          super.merge("tenant" => tenant)
+        end
+      end)
+      job = job_class.new("payload")
+      job.provider_job_id = "provider-job-id"
+      job.priority = 7
+      job.locale = "en"
+      job.timezone = "UTC"
+      job.tenant = "tenant-42"
+
+      payload = described_class.from_job(job)
+
+      expect(payload[:active_job]).to include(
+        "job_class" => "FullSerializedPayloadJob",
+        "job_id" => job.job_id,
+        "provider_job_id" => "provider-job-id",
+        "queue_name" => "default",
+        "priority" => 7,
+        "locale" => "en",
+        "timezone" => "UTC",
+        "tenant" => "tenant-42"
+      )
+    end
+
     it "emits serialized payload size observability" do
       payload = described_class.from_job(job)
 

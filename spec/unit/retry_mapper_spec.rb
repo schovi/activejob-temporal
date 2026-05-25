@@ -193,6 +193,15 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
     end
   end
 
+  describe ".exception_execution_keys" do
+    it "returns ActiveJob exception execution keys for retry handlers" do
+      expect(described_class.exception_execution_keys(MultiRetryJob)).to contain_exactly(
+        "[SecondarySampleError]",
+        "[StandardError]"
+      )
+    end
+  end
+
   def active_job_handler_source_location(method_name)
     ActiveJob::Exceptions::ClassMethods.instance_method(method_name).source_location
   end
