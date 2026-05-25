@@ -286,7 +286,7 @@ ActiveJob::Temporal.retry_dead_letter(MyJob, job_id)
 ActiveJob::Temporal.discard_dead_letter(MyJob, job_id, reason: "handled manually")
 ```
 
-Manual retry uses a deterministic retry workflow ID. Repeating the same retry request returns or marks the same retry workflow instead of starting another copy of the job.
+Manual retry uses a deterministic retry workflow ID. Repeating the same retry request returns or marks the same retry workflow instead of starting another copy of the job. Each retry request emits `dead_letter_retry_requested` with `duplicate: false` when it started a new retry workflow and `duplicate: true` when it reused an already-running or already-marked retry workflow.
 
 `dead_letter_after_attempts` is optional. When present, it overrides the job's activity retry `maximum_attempts` so the DLQ threshold is authoritative. When omitted, the job dead-letters after its normal `retry_on` or default retry policy is exhausted.
 

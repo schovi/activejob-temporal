@@ -89,6 +89,10 @@ RSpec.describe ActiveJob::Temporal::DeadLetterQueue do
   end
 
   describe ".retry" do
+    before do
+      allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+    end
+
     it "starts a new ActiveJob workflow and marks the entry retried" do
       allow(client).to receive(:workflow_handle).with("ajdlq:RetryableJob:job-123", run_id: nil).and_return(handle)
       allow(handle).to receive(:query).with(:entry).and_return(entry)
@@ -106,6 +110,17 @@ RSpec.describe ActiveJob::Temporal::DeadLetterQueue do
         id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL
       )
       expect(handle).to have_received(:signal).with(:mark_retried, workflow_id)
+      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
+        "dead_letter_retry_requested",
+        hash_including(
+          entry_id: "ajdlq:RetryableJob:job-123",
+          workflow_id: workflow_id,
+          job_class: "RetryableJob",
+          job_id: "job-123",
+          task_queue: "critical-workers",
+          duplicate: false
+        )
+      )
     end
 
     it "returns success when mark retried signal fails after applying" do
@@ -172,6 +187,33 @@ RSpec.describe ActiveJob::Temporal::DeadLetterQueue do
 
       expect(described_class.retry(RetryableJob, "job-123", client: client)).to eq(workflow_id)
       expect(handle).to have_received(:signal).with(:mark_retried, workflow_id)
+      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
+        "dead_letter_retry_requested",
+        hash_including(workflow_id: workflow_id, duplicate: true)
+      )
+    end
+
+    it "marks the entry retried when Temporal reports an already-exists RPC duplicate" do
+      workflow_id = "ajdlq-retry:ajdlq:RetryableJob:job-123"
+      already_exists = Class.new(StandardError) do
+        attr_reader :code
+
+        def initialize
+          super("Workflow execution already started")
+          @code = Temporalio::Error::RPCError::Code::ALREADY_EXISTS
+        end
+      end
+      allow(client).to receive(:workflow_handle).with("ajdlq:RetryableJob:job-123", run_id: nil).and_return(handle)
+      allow(handle).to receive(:query).with(:entry).and_return(entry)
+      allow(client).to receive(:start_workflow).and_raise(already_exists)
+      allow(handle).to receive(:signal)
+
+      expect(described_class.retry(RetryableJob, "job-123", client: client)).to eq(workflow_id)
+      expect(handle).to have_received(:signal).with(:mark_retried, workflow_id)
+      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
+        "dead_letter_retry_requested",
+        hash_including(workflow_id: workflow_id, duplicate: true)
+      )
     end
 
     it "returns the existing retry workflow ID for an already retried entry" do
@@ -181,6 +223,23 @@ RSpec.describe ActiveJob::Temporal::DeadLetterQueue do
 
       expect(client).not_to receive(:start_workflow)
       expect(described_class.retry(RetryableJob, "job-123", client: client)).to eq("retry-workflow-1")
+      expect(ActiveJob::Temporal::Logger).to have_received(:log_event).with(
+        "dead_letter_retry_requested",
+        hash_including(workflow_id: "retry-workflow-1", duplicate: true)
+      )
+    end
+
+    it "returns the same retry workflow ID when the entry is retried twice" do
+      workflow_id = "ajdlq-retry:ajdlq:RetryableJob:job-123"
+      retried_entry = entry.merge("state" => "retried", "retry_workflow_id" => workflow_id)
+      allow(client).to receive(:workflow_handle).with("ajdlq:RetryableJob:job-123", run_id: nil).and_return(handle)
+      allow(handle).to receive(:query).with(:entry).and_return(entry, retried_entry)
+      allow(client).to receive(:start_workflow).and_return(handle)
+      allow(handle).to receive(:signal)
+
+      expect(described_class.retry(RetryableJob, "job-123", client: client)).to eq(workflow_id)
+      expect(described_class.retry(RetryableJob, "job-123", client: client)).to eq(workflow_id)
+      expect(client).to have_received(:start_workflow).once
     end
 
     it "does not retry discarded entries" do

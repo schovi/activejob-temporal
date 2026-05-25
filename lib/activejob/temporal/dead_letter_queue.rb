@@ -2,6 +2,8 @@
 
 require "temporalio/client"
 
+require_relative "logger"
+
 module ActiveJob
   module Temporal
     module DeadLetterQueue
@@ -27,12 +29,17 @@ module ActiveJob
       def retry(job_class, job_id, queue: nil, client: ActiveJob::Temporal.client)
         handle = handle_for(job_class, job_id, client: client)
         entry = handle.query(:entry)
-        return entry.fetch("retry_workflow_id") if retried_entry?(entry)
+        if retried_entry?(entry)
+          workflow_id = entry.fetch("retry_workflow_id")
+          log_retry_requested(entry, workflow_id, queue, duplicate: true)
+          return workflow_id
+        end
 
         ensure_pending_entry!(entry)
 
         workflow_id = retry_workflow_id(entry)
-        start_retry_workflow(client, entry, workflow_id, queue)
+        duplicate = start_retry_workflow(client, entry, workflow_id, queue)
+        log_retry_requested(entry, workflow_id, queue, duplicate: duplicate)
         mark_retried_entry(handle, workflow_id)
         workflow_id
       end
@@ -76,10 +83,30 @@ module ActiveJob
           task_queue: retry_task_queue(entry, queue),
           id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL
         )
+        false
       rescue StandardError => e
         raise unless workflow_already_started?(e)
+
+        true
       end
       private_class_method :start_retry_workflow
+
+      def log_retry_requested(entry, workflow_id, queue, duplicate:)
+        Logger.log_event(
+          "dead_letter_retry_requested",
+          {
+            entry_id: entry.fetch("id"),
+            workflow_id: workflow_id,
+            job_class: entry.dig("payload", "job_class"),
+            job_id: entry.dig("payload", "job_id"),
+            task_queue: retry_task_queue(entry, queue),
+            duplicate: duplicate
+          }.compact
+        )
+      rescue StandardError
+        nil
+      end
+      private_class_method :log_retry_requested
 
       def mark_retried_entry(handle, workflow_id)
         handle.signal(:mark_retried, workflow_id)
@@ -155,7 +182,10 @@ module ActiveJob
         (defined?(Temporalio::Error::WorkflowAlreadyStartedError) &&
           error.is_a?(Temporalio::Error::WorkflowAlreadyStartedError)) ||
           (defined?(Temporalio::Client::WorkflowAlreadyStartedError) &&
-            error.is_a?(Temporalio::Client::WorkflowAlreadyStartedError))
+            error.is_a?(Temporalio::Client::WorkflowAlreadyStartedError)) ||
+          (defined?(Temporalio::Error::RPCError::Code::ALREADY_EXISTS) &&
+            error.respond_to?(:code) &&
+            error.code == Temporalio::Error::RPCError::Code::ALREADY_EXISTS)
       end
       private_class_method :workflow_already_started?
     end
