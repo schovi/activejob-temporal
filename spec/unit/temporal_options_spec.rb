@@ -23,6 +23,15 @@ RSpec.describe ActiveJob::Temporal::TemporalOptions do
         test_job_class.temporal_options(start_to_close_timeout: 300)
         expect(test_job_class.temporal_options).to eq({ start_to_close_timeout: 300 })
       end
+
+      it "inherits options from parent job classes" do
+        parent_class = Class.new(ActiveJob::Base) do
+          temporal_options start_to_close_timeout: 300
+        end
+        child_class = Class.new(parent_class)
+
+        expect(child_class.temporal_options).to eq(start_to_close_timeout: 300)
+      end
     end
 
     context "when setting timeout options" do
@@ -55,6 +64,56 @@ RSpec.describe ActiveJob::Temporal::TemporalOptions do
         expect(result[:heartbeat_timeout]).to eq(30.0)
         expect(result[:schedule_to_start_timeout]).to eq(300.0)
         expect(result[:schedule_to_close_timeout]).to eq(7200.0)
+      end
+
+      it "allows child job classes to replace inherited options" do
+        parent_class = Class.new(ActiveJob::Base) do
+          temporal_options start_to_close_timeout: 300
+        end
+        child_class = Class.new(parent_class) do
+          temporal_options heartbeat_timeout: 30
+        end
+
+        expect(child_class.temporal_options).to eq(heartbeat_timeout: 30)
+        expect(parent_class.temporal_options).to eq(start_to_close_timeout: 300)
+      end
+
+      it "allows child job classes to merge inherited options explicitly" do
+        parent_class = Class.new(ActiveJob::Base) do
+          temporal_options start_to_close_timeout: 300
+        end
+        child_class = Class.new(parent_class) do
+          temporal_options parent_class.temporal_options.merge(heartbeat_timeout: 30)
+        end
+
+        expect(child_class.temporal_options).to eq(
+          start_to_close_timeout: 300,
+          heartbeat_timeout: 30
+        )
+      end
+
+      it "keeps sibling job class options isolated" do
+        parent_class = Class.new(ActiveJob::Base) do
+          temporal_options start_to_close_timeout: 300
+        end
+        override_child_class = Class.new(parent_class) do
+          temporal_options heartbeat_timeout: 30
+        end
+        inherited_child_class = Class.new(parent_class)
+
+        expect(override_child_class.temporal_options).to eq(heartbeat_timeout: 30)
+        expect(inherited_child_class.temporal_options).to eq(start_to_close_timeout: 300)
+      end
+
+      it "allows child job classes to clear inherited options" do
+        parent_class = Class.new(ActiveJob::Base) do
+          temporal_options start_to_close_timeout: 300
+        end
+        child_class = Class.new(parent_class) do
+          temporal_options({})
+        end
+
+        expect(child_class.temporal_options).to eq({})
       end
     end
 

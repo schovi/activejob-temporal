@@ -11,6 +11,21 @@ module ActiveJob
     #     temporal_options start_to_close_timeout: 30.seconds
     #   end
     #
+    # @example ApplicationJob defaults inherited by subclasses
+    #   class ApplicationJob < ActiveJob::Base
+    #     temporal_options start_to_close_timeout: 2.minutes
+    #   end
+    #
+    #   class QuickJob < ApplicationJob
+    #   end
+    #
+    # @example Merge inherited defaults intentionally
+    #   class DataProcessingJob < ApplicationJob
+    #     temporal_options ApplicationJob.temporal_options.merge(
+    #       heartbeat_timeout: 30.seconds
+    #     )
+    #   end
+    #
     # @example Long-running job with heartbeat
     #   class DataProcessingJob < ApplicationJob
     #     temporal_options(
@@ -59,15 +74,25 @@ module ActiveJob
         #
         # @note Timeout values can be specified as either integers (seconds) or
         #   ActiveSupport::Duration objects (e.g., 2.hours, 30.seconds)
+        #
+        # @note Subclasses inherit parent options unless they declare their own.
+        #   A subclass declaration replaces the inherited hash. Use +merge+ to
+        #   keep inherited keys while overriding selected values.
         def temporal_options(options = nil)
           if options
             validate_timeout_keys!(options)
             @temporal_options = normalize_timeout_values(options)
           end
-          @temporal_options || {}
+          @temporal_options || inherited_temporal_options || {}
         end
 
         private
+
+        def inherited_temporal_options
+          return unless superclass.respond_to?(:temporal_options)
+
+          superclass.temporal_options
+        end
 
         # Validates that only recognized timeout keys are provided
         #

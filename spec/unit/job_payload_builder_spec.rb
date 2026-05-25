@@ -105,6 +105,20 @@ RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
     expect(payload[:temporal_options]).to eq(start_to_close_timeout: 7200.0)
   end
 
+  it "includes temporal options inherited from a parent job class" do
+    parent_class = Class.new(ActiveJob::Base) do
+      temporal_options start_to_close_timeout: 2.hours
+    end
+    job_class = Class.new(parent_class) do
+      def self.name = "InheritedTimeoutJob"
+    end
+    job = job_class.new
+
+    payload = described_class.new(config).build(job)
+
+    expect(payload[:temporal_options]).to eq(start_to_close_timeout: 7200.0)
+  end
+
   it "includes the configured continue-as-new threshold" do
     config.continue_as_new_history_event_threshold = 10_000
     job = build_job("ContinueAsNewPayloadJob")

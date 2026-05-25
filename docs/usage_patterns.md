@@ -335,6 +335,29 @@ class DataProcessingJob < ApplicationJob
 end
 ```
 
+`temporal_options` follow Rails job inheritance. Defaults declared on `ApplicationJob` apply to subclasses that do not declare their own options:
+
+```ruby
+class ApplicationJob < ActiveJob::Base
+  temporal_options start_to_close_timeout: 2.minutes
+end
+
+class InvoiceSyncJob < ApplicationJob
+end
+```
+
+A subclass declaration replaces the inherited options hash. Merge explicitly when the subclass should keep parent defaults and change or add one value:
+
+```ruby
+class DataProcessingJob < ApplicationJob
+  temporal_options ApplicationJob.temporal_options.merge(
+    heartbeat_timeout: 30.seconds
+  )
+end
+```
+
+Use `temporal_options({})` on a subclass to opt out of inherited job-level options and use global activity defaults.
+
 Available timeout options:
 
 - `start_to_close_timeout`: maximum execution time for one activity attempt.
