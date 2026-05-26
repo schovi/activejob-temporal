@@ -168,7 +168,7 @@ RSpec.describe ActiveJob::Temporal do
       expect(described_class.config.middleware_chain.to_a).to be_empty
     end
 
-    it "swaps in a new configuration after successful validation" do
+    it "updates the existing configuration after successful validation" do
       previous_config = described_class.config
 
       described_class.configure do |config|
@@ -176,7 +176,7 @@ RSpec.describe ActiveJob::Temporal do
         config.namespace = "production"
       end
 
-      expect(described_class.config).not_to be(previous_config)
+      expect(described_class.config).to be(previous_config)
       expect(described_class.config.target).to eq("localhost:9000")
       expect(described_class.config.namespace).to eq("production")
     end

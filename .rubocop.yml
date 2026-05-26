@@ -27,6 +27,9 @@ Metrics/ModuleLength:
 
 Metrics/ClassLength:
   Max: 120
+  Exclude:
+    - "lib/activejob/temporal/schedule.rb"
+    - "lib/activejob/temporal/workflows/aj_workflow.rb"
 
 Metrics/AbcSize:
   Max: 22

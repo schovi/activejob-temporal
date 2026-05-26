@@ -301,6 +301,36 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
     end
 
+    it "lets Temporal mark DLQ-enabled exhausted retry_on attempts as maximum attempts reached" do
+      stub_const("DeadLetterRuntimeRetryError", Class.new(StandardError))
+      job_class = stub_const("DeadLetterRuntimeRetryJob", Class.new(ActiveJob::Base) do
+        retry_on DeadLetterRuntimeRetryError, wait: 1.second, attempts: 2
+
+        def perform
+          raise DeadLetterRuntimeRetryError, "standard failure"
+        end
+      end)
+      job = job_class.new
+      payload = ActiveJob::Temporal::Payload.from_job(job)
+      payload[:dead_letter] = {
+        queue: "failed_jobs",
+        job_class: "DeadLetterRuntimeRetryJob",
+        job_id: job.job_id,
+        after_attempts: 2
+      }
+      retry_activity_info = instance_double(
+        "Temporalio::Activity::Info",
+        workflow_id: workflow_id,
+        workflow_namespace: workflow_namespace,
+        attempt: 2
+      )
+      allow(Temporalio::Activity::Context).to receive(:current)
+        .and_return(instance_double("Temporalio::Activity::Context", info: retry_activity_info))
+
+      expect { activity.execute(payload) }
+        .to raise_error(DeadLetterRuntimeRetryError, "standard failure")
+    end
+
     it "re-raises exceptions without ActiveJob retry handlers so Temporal can retry" do
       error = SampleJobError.new("boom")
       job_class = stub_const("PlainFailureRunnerJob", Class.new(ActiveJob::Base) do
@@ -782,7 +812,7 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       )
     end
 
-    it "lets ActiveJob discard handlers handle discard_on exceptions" do
+    it "runs ActiveJob discard handlers before surfacing discard_on as non-retryable" do
       job_class = stub_const("DiscardHandlerRunnerJob", Class.new(ActiveJob::Base) do
         discard_on FatalJobError
 
@@ -799,11 +829,17 @@ RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
+      allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?)
+        .with(job_class, instance_of(FatalJobError))
+        .and_return(true)
 
-      result = nil
-      expect { result = activity.execute(payload) }.not_to raise_error
+      expect { activity.execute(payload) }
+        .to raise_error(Temporalio::Error::ApplicationError) do |error|
+          expect(error.non_retryable).to be(true)
+          expect(error.type).to eq("FatalJobError")
+          expect(error.message).to include("fail fast")
+        end
 
-      expect(result).to be_a(FatalJobError)
       expect(job_class.discarded_error).to be_a(FatalJobError)
       expect(Thread.current[idempotency_key]).to be_nil
     end

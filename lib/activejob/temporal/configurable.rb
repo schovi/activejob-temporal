@@ -59,10 +59,19 @@ module ActiveJob
 
         candidate_configuration.validate!
         deactivate_replaced_observability_adapters(current_configuration, candidate_configuration)
-        candidate_configuration.finalize_configuration_copy!
+        publish_configuration_candidate(current_configuration, candidate_configuration)
       rescue StandardError
         discard_configuration_candidate(current_configuration, candidate_configuration)
         raise
+      end
+
+      def publish_configuration_candidate(current_configuration, candidate_configuration)
+        current_configuration.instance_variable_set(
+          :@attributes,
+          candidate_configuration.instance_variable_get(:@attributes)
+        )
+        current_configuration.in_configure_block = false
+        current_configuration.finalize_configuration_copy!
       end
 
       def deactivate_replaced_observability_adapters(previous_configuration, current_configuration)

@@ -46,16 +46,14 @@ RSpec.describe "ActiveJob Temporal network partition recovery", :chaos do
     workflow_id = record_workflow_id(job)
 
     with_temporal_target(ChaosHelpers::PROXIED_TEMPORAL_TARGET) do
-      ActiveJob::Base.queue_adapter.enqueue(job)
-
       with_network_partition do
         expect do
-          reset_temporal_queue_adapter!
-        end.to raise_error(ActiveJob::Temporal::Error)
+          ActiveJob::Base.queue_adapter.enqueue(job)
+        end.to raise_error(ActiveJob::EnqueueError)
       end
 
       reset_temporal_queue_adapter!
-      expect(ActiveJob::Base.queue_adapter.enqueue(job)).to be_nil
+      expect(ActiveJob::Base.queue_adapter.enqueue(job)).not_to be_nil
       description = wait_for_terminal_status(workflow_id)
 
       expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)

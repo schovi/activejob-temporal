@@ -76,6 +76,17 @@ module ActiveJob
           end
         end
 
+        class DiscardRequested < StandardError
+          attr_reader :job, :original_error
+
+          def initialize(job, original_error)
+            @job = job
+            @original_error = original_error
+            super(original_error.message)
+            set_backtrace(original_error.backtrace)
+          end
+        end
+
         # Executes the job inside the Temporal activity context.
         #
         # @param payload [Hash] Job payload with serialized ActiveJob data and metadata
@@ -169,6 +180,7 @@ module ActiveJob
           apply_activity_retry_state(job_data, job_class)
           job = deserialize_job(job_data)
           intercept_active_job_retry(job)
+          intercept_active_job_discard(job)
 
           set_idempotency_key(payload)
           perform_job(job)
@@ -221,6 +233,18 @@ module ActiveJob
           end
         end
 
+        def intercept_active_job_discard(job)
+          original_rescue_with_handler = job.method(:rescue_with_handler)
+          job.define_singleton_method(:rescue_with_handler) do |exception|
+            handled = original_rescue_with_handler.call(exception)
+            if handled && ActiveJob::Temporal::RetryMapper.discard_exception?(self.class, exception)
+              raise DiscardRequested.new(self, exception)
+            end
+
+            handled
+          end
+        end
+
         def apply_activity_retry_state(job_data, job_class)
           previous_attempts = activity_attempt - 1
           return if previous_attempts <= 0
@@ -259,7 +283,7 @@ module ActiveJob
           side_effects.after_failure("retry_observability") do
             record_retry_observability(retry_payload, observed_error)
           end
-          handle_exception(job_class, error)
+          handle_exception(job_class, error, retry_payload)
         end
 
         def instrument_perform(payload, &)
@@ -365,20 +389,30 @@ module ActiveJob
 
         # Handles exceptions by checking discard_on declarations.
         # @api private
-        def handle_exception(job_class, error)
+        def handle_exception(job_class, error, retry_payload)
           raise retryable_application_error(error) if error.is_a?(RetryRequested)
+          raise non_retryable_application_error(error.original_error) if error.is_a?(DiscardRequested)
 
           raise non_retryable_application_error(error) if job_class.nil? && deserialization_error?(error)
 
-          raise non_retryable_application_error(error) if job_class && retry_attempts_exhausted?(job_class, error)
+          if job_class && retry_attempts_exhausted?(job_class, error)
+            raise error if dead_letter_payload?(retry_payload)
+
+            raise non_retryable_application_error(error)
+          end
 
           raise non_retryable_application_error(error) if job_class && RetryMapper.discard_exception?(job_class, error)
 
           raise error
         end
 
+        def dead_letter_payload?(payload)
+          payload_value(payload, :dead_letter)
+        end
+
         def observed_error_for(error)
           return error.original_error || error if error.is_a?(RetryRequested)
+          return error.original_error || error if error.is_a?(DiscardRequested)
 
           error
         end

@@ -36,14 +36,15 @@ RSpec.describe "ActiveJob Temporal job dependencies", :integration do
         TestState.instance.test_result << "child_started"
       end
     end)
-    stub_const("ActiveJob::Temporal::Workflows::WorkflowDependencies::DEPENDENCY_WAIT_INTERVAL", 0.1)
 
     task_queue = "dependency-test-#{SecureRandom.hex(4)}"
     @worker_thread = start_worker(task_queue)
     sleep 0.5
 
     parent_job = DependencyParentIntegrationJob.set(queue: task_queue).perform_later
-    child_job = DependencyChildIntegrationJob.set(queue: task_queue, depends_on: parent_job).perform_later
+    child_job = DependencyChildIntegrationJob
+                .set(queue: task_queue, depends_on: parent_job, dependency_wait: fast_dependency_wait)
+                .perform_later
     @workflow_ids << ActiveJob::Temporal::Adapter.build_workflow_id(parent_job)
     @workflow_ids << ActiveJob::Temporal::Adapter.build_workflow_id(child_job)
 
@@ -76,7 +77,6 @@ RSpec.describe "ActiveJob Temporal job dependencies", :integration do
         TestState.instance.test_result << "dependent_started"
       end
     end)
-    stub_const("ActiveJob::Temporal::Workflows::WorkflowDependencies::DEPENDENCY_WAIT_INTERVAL", 0.1)
 
     task_queue = "dependency-fanin-test-#{SecureRandom.hex(4)}"
     @worker_thread = start_worker(task_queue)
@@ -85,7 +85,11 @@ RSpec.describe "ActiveJob Temporal job dependencies", :integration do
     first_parent_job = FirstDependencyParentIntegrationJob.set(queue: task_queue).perform_later
     second_parent_job = SecondDependencyParentIntegrationJob.set(queue: task_queue).perform_later
     child_job = FanInDependencyChildIntegrationJob
-                .set(queue: task_queue, depends_on: [first_parent_job, second_parent_job])
+                .set(
+                  queue: task_queue,
+                  depends_on: [first_parent_job, second_parent_job],
+                  dependency_wait: fast_dependency_wait
+                )
                 .perform_later
     @workflow_ids << ActiveJob::Temporal::Adapter.build_workflow_id(first_parent_job)
     @workflow_ids << ActiveJob::Temporal::Adapter.build_workflow_id(second_parent_job)
@@ -100,6 +104,14 @@ RSpec.describe "ActiveJob Temporal job dependencies", :integration do
   end
 
   private
+
+  def fast_dependency_wait
+    {
+      initial_interval: 0.1,
+      max_interval: 0.1,
+      backoff: 1.0
+    }
+  end
 
   def start_worker(task_queue)
     @worker = Temporalio::Worker.new(

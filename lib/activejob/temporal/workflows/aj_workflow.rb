@@ -8,6 +8,7 @@ require "temporalio/workflow"
 
 require_relative "../activities/rate_limit_activity"
 require_relative "dead_letter_support"
+require_relative "dead_letter_workflow"
 require_relative "workflow_continue_as_new"
 require_relative "workflow_child_workflows"
 require_relative "workflow_chaining"
