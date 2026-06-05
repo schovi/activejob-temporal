@@ -6,7 +6,7 @@ require "timeout"
 require "securerandom"
 require "temporalio/worker"
 
-RSpec.describe "ActiveJob Temporal job dependencies", :integration do
+describe "ActiveJob Temporal job dependencies", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -51,7 +51,7 @@ RSpec.describe "ActiveJob Temporal job dependencies", :integration do
     wait_for_sequence("child_started")
 
     sequence = TestState.instance.test_result
-    expect(sequence.index("parent_completed")).to be < sequence.index("child_started")
+    assert_operator sequence.index("parent_completed"), :<, sequence.index("child_started")
   end
 
   it "waits for every independently enqueued dependency before executing" do
@@ -99,8 +99,8 @@ RSpec.describe "ActiveJob Temporal job dependencies", :integration do
 
     sequence = TestState.instance.test_result
     dependent_index = sequence.index("dependent_started")
-    expect(sequence.index("first_parent_completed")).to be < dependent_index
-    expect(sequence.index("second_parent_completed")).to be < dependent_index
+    assert_operator sequence.index("first_parent_completed"), :<, dependent_index
+    assert_operator sequence.index("second_parent_completed"), :<, dependent_index
   end
 
   private
@@ -114,24 +114,17 @@ RSpec.describe "ActiveJob Temporal job dependencies", :integration do
   end
 
   def start_worker(task_queue)
-    @worker = Temporalio::Worker.new(
-      client: TemporalTestHelper.client,
-      task_queue: task_queue,
-      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
+    start_temporal_worker(
+      task_queue,
       activities: [
         ActiveJob::Temporal::Activities::DependencyStatusActivity,
         ActiveJob::Temporal::Activities::AjRunnerActivity
       ]
     )
-
-    Thread.new { @worker.run }
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def wait_for_sequence(value)

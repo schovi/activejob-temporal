@@ -2,8 +2,8 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal::Logger do
-  subject(:logger_helper) { described_class }
+describe ActiveJob::Temporal::Logger do
+  let(:logger_helper) { described_class }
 
   let(:log_io) { StringIO.new }
   let(:ruby_logger) do
@@ -16,7 +16,7 @@ RSpec.describe ActiveJob::Temporal::Logger do
   before do
     @previous_logger = ActiveJob::Temporal.config.logger
     ActiveJob::Temporal.config.logger = ruby_logger
-    allow(Time).to receive(:now).and_return(fixed_time)
+    call_recorded_method(Time, :now, returns: fixed_time)
   end
 
   after do
@@ -28,27 +28,30 @@ RSpec.describe ActiveJob::Temporal::Logger do
       logger_helper.log_event("workflow_enqueued", workflow_id: "abc123")
 
       payload = parsed_lines.first
-      expect(payload["event"]).to eq("workflow_enqueued")
-      expect(payload["timestamp"]).to eq("2025-10-25T12:00:00Z")
-      expect(payload["workflow_id"]).to eq("abc123")
+      assert_equal "workflow_enqueued", payload["event"]
+      assert_equal "2025-10-25T12:00:00Z", payload["timestamp"]
+      assert_equal "abc123", payload["workflow_id"]
     end
 
     it "includes custom attributes" do
       logger_helper.log_event("activity_completed", duration_ms: 1234, job_class: "ExampleJob")
 
       payload = parsed_lines.first
-      expect(payload["duration_ms"]).to eq(1234)
-      expect(payload["job_class"]).to eq("ExampleJob")
+      assert_equal 1234, payload["duration_ms"]
+      assert_equal "ExampleJob", payload["job_class"]
     end
 
     it "handles nil attributes by sending an empty payload" do
       logger_helper.log_event("workflow_enqueued", nil)
 
       payload = parsed_lines.first
-      expect(payload["event"]).to eq("workflow_enqueued")
-      expect(payload).to eq(
-        "event" => "workflow_enqueued",
-        "timestamp" => "2025-10-25T12:00:00Z"
+      assert_equal "workflow_enqueued", payload["event"]
+      assert_equal(
+        {
+          "event" => "workflow_enqueued",
+          "timestamp" => "2025-10-25T12:00:00Z"
+        },
+        payload
       )
     end
   end
@@ -58,30 +61,32 @@ RSpec.describe ActiveJob::Temporal::Logger do
       logger_helper.warn("activity_retry", attempt: 2)
 
       payload = parsed_lines.first
-      expect(payload["event"]).to eq("activity_retry")
-      expect(payload["attempt"]).to eq(2)
+      assert_equal "activity_retry", payload["event"]
+      assert_equal 2, payload["attempt"]
     end
 
     it "supports error level" do
       logger_helper.error("activity_failed", exception_class: "StandardError")
 
       payload = parsed_lines.first
-      expect(payload["event"]).to eq("activity_failed")
-      expect(payload["exception_class"]).to eq("StandardError")
+      assert_equal "activity_failed", payload["event"]
+      assert_equal "StandardError", payload["exception_class"]
     end
   end
 
   describe "validation" do
     it "raises when attributes are not a Hash" do
-      expect do
+      error = assert_raises(ArgumentError) do
         logger_helper.log_event("invalid_attributes", %w[a b])
-      end.to raise_error(ArgumentError, /attributes/)
+      end
+      assert_match(/attributes/, error.message)
     end
 
     it "raises when event_name is not a String or Symbol" do
-      expect do
+      error = assert_raises(ArgumentError) do
         logger_helper.log_event(123, {})
-      end.to raise_error(ArgumentError, /event_name/)
+      end
+      assert_match(/event_name/, error.message)
     end
   end
 
@@ -93,20 +98,19 @@ RSpec.describe ActiveJob::Temporal::Logger do
 
       logger_helper.log_to(custom_logger, :info, "audit.event", job_id: "job-1")
 
-      expect(log_io.string).to eq("")
-      expect(JSON.parse(custom_io.string)).to include(
-        "event" => "audit.event",
-        "job_id" => "job-1"
-      )
+      assert_equal "", log_io.string
+      payload = JSON.parse(custom_io.string)
+      assert_equal "audit.event", payload["event"]
+      assert_equal "job-1", payload["job_id"]
     end
 
     it "skips logging when the configured logger does not implement the level" do
-      null_logger = double("NullLogger")
+      null_logger = Object.new
       ActiveJob::Temporal.config.logger = null_logger
-      allow(null_logger).to receive(:respond_to?).with(:info).and_return(false)
 
-      expect { logger_helper.info("noop") }.not_to raise_error
-      expect(log_io.string).to eq("")
+      logger_helper.info("noop")
+
+      assert_equal "", log_io.string
     end
 
     it "emits structured payloads when the configured logger is SemanticLogger" do
@@ -114,8 +118,8 @@ RSpec.describe ActiveJob::Temporal::Logger do
 
       logger_helper.info(:structured_event, workflow_id: "abc123")
 
-      expect(semantic_logger.payload[:event]).to eq(:structured_event)
-      expect(semantic_logger.payload[:workflow_id]).to eq("abc123")
+      assert_equal :structured_event, semantic_logger.payload[:event]
+      assert_equal "abc123", semantic_logger.payload[:workflow_id]
     end
 
     it "JSON serializes for Ruby Logger when SemanticLogger is loaded" do
@@ -124,17 +128,17 @@ RSpec.describe ActiveJob::Temporal::Logger do
       logger_helper.info("ruby_logger_event", job_id: "job-1")
 
       payload = parsed_lines.first
-      expect(payload["event"]).to eq("ruby_logger_event")
-      expect(payload["job_id"]).to eq("job-1")
+      assert_equal "ruby_logger_event", payload["event"]
+      assert_equal "job-1", payload["job_id"]
     end
 
     it "falls back to JSON serialization when SemanticLogger is not available" do
       logger_helper.info("fallback_event", workflow_id: "xyz789")
 
       payload = parsed_lines.first
-      expect(payload["event"]).to eq("fallback_event")
-      expect(payload["workflow_id"]).to eq("xyz789")
-      expect(payload["timestamp"]).to eq("2025-10-25T12:00:00Z")
+      assert_equal "fallback_event", payload["event"]
+      assert_equal "xyz789", payload["workflow_id"]
+      assert_equal "2025-10-25T12:00:00Z", payload["timestamp"]
     end
 
     it "JSON serializes payload without SemanticLogger" do
@@ -142,8 +146,8 @@ RSpec.describe ActiveJob::Temporal::Logger do
 
       logged_output = log_io.string.strip
       parsed = JSON.parse(logged_output)
-      expect(parsed["event"]).to eq("json_test")
-      expect(parsed["key"]).to eq("value")
+      assert_equal "json_test", parsed["event"]
+      assert_equal "value", parsed["key"]
     end
 
     it "escapes control characters before writing JSON payloads" do
@@ -155,10 +159,10 @@ RSpec.describe ActiveJob::Temporal::Logger do
       )
 
       payload = parsed_lines.first
-      expect(payload["event"]).to eq("event\\u000Dname")
-      expect(payload["job_id"]).to eq("job-1\\u000Aforged")
-      expect(payload["nested"]).to eq("reason\\u000A" => "bad\\u0009value")
-      expect(payload["tags"]).to eq(["one", "two\\u000D"])
+      assert_equal "event\\u000Dname", payload["event"]
+      assert_equal "job-1\\u000Aforged", payload["job_id"]
+      assert_equal({ "reason\\u000A" => "bad\\u0009value" }, payload["nested"])
+      assert_equal ["one", "two\\u000D"], payload["tags"]
     end
   end
 
@@ -168,8 +172,8 @@ RSpec.describe ActiveJob::Temporal::Logger do
 
       logger_helper.info(:hash_event, data: "test")
 
-      expect(semantic_logger.payload).to be_a(Hash)
-      expect(semantic_logger.payload[:event]).to eq(:hash_event)
+      assert_kind_of Hash, semantic_logger.payload
+      assert_equal :hash_event, semantic_logger.payload[:event]
     end
 
     it "properly detects when SemanticLogger is not defined" do
@@ -177,7 +181,7 @@ RSpec.describe ActiveJob::Temporal::Logger do
 
       logged = log_io.string.strip
       parsed = JSON.parse(logged)
-      expect(parsed).to be_a(Hash)
+      assert_kind_of Hash, parsed
     end
 
     it "escapes control characters before sending structured SemanticLogger payloads" do
@@ -185,7 +189,7 @@ RSpec.describe ActiveJob::Temporal::Logger do
 
       logger_helper.info("semantic_event", workflow_id: "wf-1\nforged")
 
-      expect(semantic_logger.payload[:workflow_id]).to eq("wf-1\\u000Aforged")
+      assert_equal "wf-1\\u000Aforged", semantic_logger.payload[:workflow_id]
     end
   end
 

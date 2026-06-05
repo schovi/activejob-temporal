@@ -3,7 +3,7 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe ActiveJob::Temporal::WorkflowIdentity do
+describe ActiveJob::Temporal::WorkflowIdentity do
   let(:job_class) do
     Class.new(ActiveJob::Base) do
       def self.name = "WorkflowIdentityJob"
@@ -11,13 +11,13 @@ RSpec.describe ActiveJob::Temporal::WorkflowIdentity do
   end
 
   it "is included in ActiveJob::Base" do
-    expect(ActiveJob::Base.included_modules).to include(described_class)
+    assert_includes ActiveJob::Base.included_modules, described_class
   end
 
   it "stores a stable public workflow name" do
     job_class.temporal_workflow_name "payments.charge_payment"
 
-    expect(job_class.temporal_workflow_name).to eq("payments.charge_payment")
+    assert_equal "payments.charge_payment", job_class.temporal_workflow_name
   end
 
   it "stores a workflow ID block" do
@@ -25,13 +25,13 @@ RSpec.describe ActiveJob::Temporal::WorkflowIdentity do
 
     job_class.temporal_workflow_id(&block)
 
-    expect(job_class.temporal_workflow_id).to equal(block)
+    assert_same block, job_class.temporal_workflow_id
   end
 
   it "stores a workflow ID prefix" do
     job_class.temporal_workflow_id_prefix "payment"
 
-    expect(job_class.temporal_workflow_id_prefix).to eq("payment")
+    assert_equal "payment", job_class.temporal_workflow_id_prefix
   end
 
   it "does not inherit workflow identity from parent classes" do
@@ -41,17 +41,17 @@ RSpec.describe ActiveJob::Temporal::WorkflowIdentity do
     end
     child_class = Class.new(parent_class)
 
-    expect(child_class.temporal_workflow_name).to be_nil
-    expect(child_class.temporal_workflow_id_prefix).to be_nil
+    assert_nil child_class.temporal_workflow_name
+    assert_nil child_class.temporal_workflow_id_prefix
   end
 
   it "rejects blank workflow names" do
-    expect { job_class.temporal_workflow_name " " }
-      .to raise_error(ArgumentError, /temporal_workflow_name must be present/)
+    error = assert_raises(ArgumentError) { job_class.temporal_workflow_name " " }
+    assert_match(/temporal_workflow_name must be present/, error.message)
   end
 
   it "rejects workflow ID prefixes with control characters" do
-    expect { job_class.temporal_workflow_id_prefix "bad\nprefix" }
-      .to raise_error(ArgumentError, /control characters/)
+    error = assert_raises(ArgumentError) { job_class.temporal_workflow_id_prefix "bad\nprefix" }
+    assert_match(/control characters/, error.message)
   end
 end

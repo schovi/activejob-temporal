@@ -4,6 +4,16 @@ require "spec_helper"
 require "activejob/temporal/worker_runtime"
 
 module WorkerClientReloaderSpecSupport
+  class FakeWorker
+    attr_accessor :client
+  end
+
+  class FailingWorker
+    def client=(_client)
+      raise StandardError, "replace failed"
+    end
+  end
+
   class FakeLogger
     attr_reader :events
 
@@ -21,57 +31,62 @@ module WorkerClientReloaderSpecSupport
   end
 end
 
-RSpec.describe ActiveJob::Temporal::WorkerClientReloader do
+describe ActiveJob::Temporal::WorkerClientReloader do
   it "rebuilds the client and assigns it to the worker" do
-    worker = double("worker")
+    worker = WorkerClientReloaderSpecSupport::FakeWorker.new
     logger = WorkerClientReloaderSpecSupport::FakeLogger.new
-    fresh_client = instance_double("Temporalio::Client")
+    fresh_client = Object.new
     reload_client = lambda do |&block|
       block.call(fresh_client)
       fresh_client
     end
 
-    expect(worker).to receive(:client=).with(fresh_client)
-
     reloader = described_class.new(worker: worker, logger: logger, reload_client: reload_client)
 
-    expect(reloader.reload(source: "file_watch")).to be(fresh_client)
-    expect(logger.events).to include([:info, "certificate_reload_started", { source: "file_watch" }])
-    expect(logger.events).to include([:info, "certificate_reload_succeeded", { source: "file_watch" }])
+    assert_same fresh_client, reloader.reload(source: "file_watch")
+    assert_same fresh_client, worker.client
+    assert_includes logger.events, [:info, "certificate_reload_started", { source: "file_watch" }]
+    assert_includes logger.events, [:info, "certificate_reload_succeeded", { source: "file_watch" }]
   end
 
   it "logs and reraises client rebuild failures" do
-    worker = double("worker")
+    worker = WorkerClientReloaderSpecSupport::FakeWorker.new
     logger = WorkerClientReloaderSpecSupport::FakeLogger.new
     reload_client = -> { raise ActiveJob::Temporal::Error, "connect failed" }
     reloader = described_class.new(worker: worker, logger: logger, reload_client: reload_client)
 
-    expect(worker).not_to receive(:client=)
-
-    expect { reloader.reload(source: "signal:HUP") }
-      .to raise_error(ActiveJob::Temporal::Error, /connect failed/)
-    expect(logger.events).to include(
-      [:error, "certificate_reload_failed", hash_including(source: "signal:HUP", error_class: "ActiveJob::Temporal::Error")]
-    )
+    error = assert_raises(ActiveJob::Temporal::Error) { reloader.reload(source: "signal:HUP") }
+    assert_match(/connect failed/, error.message)
+    assert_nil worker.client
+    assert_reload_failed_event logger.events,
+                               source: "signal:HUP",
+                               error_class: "ActiveJob::Temporal::Error"
   end
 
   it "logs and reraises worker replacement failures" do
-    worker = double("worker")
+    worker = WorkerClientReloaderSpecSupport::FailingWorker.new
     logger = WorkerClientReloaderSpecSupport::FakeLogger.new
-    fresh_client = instance_double("Temporalio::Client")
+    fresh_client = Object.new
     reload_client = lambda do |&block|
       block.call(fresh_client)
       fresh_client
     end
 
-    allow(worker).to receive(:client=).with(fresh_client).and_raise(StandardError, "replace failed")
-
     reloader = described_class.new(worker: worker, logger: logger, reload_client: reload_client)
 
-    expect { reloader.reload(source: "file_watch") }
-      .to raise_error(StandardError, /replace failed/)
-    expect(logger.events).to include(
-      [:error, "certificate_reload_failed", hash_including(source: "file_watch", error_class: "StandardError")]
-    )
+    error = assert_raises(StandardError) { reloader.reload(source: "file_watch") }
+    assert_match(/replace failed/, error.message)
+    assert_reload_failed_event logger.events, source: "file_watch", error_class: "StandardError"
+  end
+
+  def assert_reload_failed_event(events, source:, error_class:)
+    event = events.find do |level, event_name, attributes|
+      level == :error &&
+        event_name == "certificate_reload_failed" &&
+        attributes[:source] == source &&
+        attributes[:error_class] == error_class
+    end
+
+    refute_nil event
   end
 end

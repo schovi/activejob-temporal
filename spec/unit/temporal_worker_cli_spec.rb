@@ -6,12 +6,12 @@ require "rbconfig"
 require "tmpdir"
 require "timeout"
 
-RSpec.describe "temporal-worker CLI" do
+describe "temporal-worker CLI" do
   it "rejects invalid worker pool sizes before connecting to Temporal" do
     _stdout, stderr, status = capture_worker("ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE" => "0")
 
-    expect(status.exitstatus).to eq(1)
-    expect(stderr).to include("--pool-size must be a positive integer")
+    assert_equal 1, status.exitstatus
+    assert_includes stderr, "--pool-size must be a positive integer"
   end
 
   it "rejects reserved TLS reload signals before connecting to Temporal" do
@@ -19,8 +19,8 @@ RSpec.describe "temporal-worker CLI" do
       "ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL" => "TERM"
     )
 
-    expect(status.exitstatus).to eq(1)
-    expect(stderr).to include("ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL must be a signal name safe to trap")
+    assert_equal 1, status.exitstatus
+    assert_includes stderr, "ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL must be a signal name safe to trap"
   end
 
   it "rejects public health binds without explicit opt-in before connecting to Temporal" do
@@ -29,9 +29,9 @@ RSpec.describe "temporal-worker CLI" do
       "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND" => "0.0.0.0"
     )
 
-    expect(status.exitstatus).to eq(1)
-    expect(stderr).to include("health check endpoint")
-    expect(stderr).to include("--allow-public-health-check-bind")
+    assert_equal 1, status.exitstatus
+    assert_includes stderr, "health check endpoint"
+    assert_includes stderr, "--allow-public-health-check-bind"
   end
 
   it "rejects metrics port without Prometheus adapter before connecting to Temporal" do
@@ -39,9 +39,9 @@ RSpec.describe "temporal-worker CLI" do
       "ACTIVEJOB_TEMPORAL_METRICS_PORT" => "9394"
     )
 
-    expect(status.exitstatus).to eq(1)
-    expect(stderr).to include("Prometheus metrics require the Prometheus observability adapter")
-    expect(stderr).to include("config.observability.use :prometheus")
+    assert_equal 1, status.exitstatus
+    assert_includes stderr, "Prometheus metrics require the Prometheus observability adapter"
+    assert_includes stderr, "config.observability.use :prometheus"
   end
 
   it "rejects an explicit missing RAILS_ROOT before connecting to Temporal" do
@@ -50,8 +50,8 @@ RSpec.describe "temporal-worker CLI" do
 
       _stdout, stderr, status = capture_worker("RAILS_ROOT" => missing_root)
 
-      expect(status.exitstatus).to eq(1)
-      expect(stderr).to include("Cannot find Rails application at: #{missing_root}")
+      assert_equal 1, status.exitstatus
+      assert_includes stderr, "Cannot find Rails application at: #{missing_root}"
     end
   end
 
@@ -62,9 +62,9 @@ RSpec.describe "temporal-worker CLI" do
         "ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE" => "0"
       )
 
-      expect(status.exitstatus).to eq(1)
-      expect(stderr).to include("#{directory} does not appear to be a Rails application")
-      expect(stderr).to include("--pool-size must be a positive integer")
+      assert_equal 1, status.exitstatus
+      assert_includes stderr, "#{directory} does not appear to be a Rails application"
+      assert_includes stderr, "--pool-size must be a positive integer"
     end
   end
 
@@ -76,8 +76,8 @@ RSpec.describe "temporal-worker CLI" do
 
       _stdout, stderr, status = capture_worker("RAILS_ROOT" => directory)
 
-      expect(status.exitstatus).to eq(1)
-      expect(stderr).to include("Cannot find Rails environment")
+      assert_equal 1, status.exitstatus
+      assert_includes stderr, "Cannot find Rails environment"
     end
   end
 

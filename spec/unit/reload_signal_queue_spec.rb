@@ -5,22 +5,22 @@ require "open3"
 require "rbconfig"
 require "activejob/temporal/worker_runtime"
 
-RSpec.describe ActiveJob::Temporal::ReloadSignalQueue do
-  subject(:queue) { described_class.new }
+describe ActiveJob::Temporal::ReloadSignalQueue do
+  let(:queue) { described_class.new }
 
   it "coalesces repeated reload signals while one is pending" do
-    expect(queue.push("HUP")).to eq("HUP")
-    expect(queue.push("HUP")).to be_nil
+    assert_equal "HUP", queue.push("HUP")
+    assert_nil queue.push("HUP")
 
-    expect(queue.pop).to eq("HUP")
+    assert_equal "HUP", queue.pop
   end
 
   it "allows one signal to wait while a reload is running" do
     queue.push("HUP")
-    expect(queue.pop).to eq("HUP")
+    assert_equal "HUP", queue.pop
 
-    expect(queue.push("HUP")).to eq("HUP")
-    expect(queue.push("HUP")).to be_nil
+    assert_equal "HUP", queue.push("HUP")
+    assert_nil queue.push("HUP")
   end
 
   it "wakes consumers when closed" do
@@ -28,20 +28,20 @@ RSpec.describe ActiveJob::Temporal::ReloadSignalQueue do
 
     queue.close
 
-    expect(consumer.value).to be_nil
+    assert_nil consumer.value
   end
 
   it "drops pending reload work when closed" do
     queue.push("HUP")
     queue.close
 
-    expect(queue.pop).to be_nil
+    assert_nil queue.pop
   end
 
   it "drops signals after close" do
     queue.close
 
-    expect(queue.push("HUP")).to be_nil
+    assert_nil queue.push("HUP")
   end
 
   it "can be pushed from a signal trap" do
@@ -61,7 +61,7 @@ RSpec.describe ActiveJob::Temporal::ReloadSignalQueue do
       RUBY
     )
 
-    expect(status).to be_success
-    expect(stdout).to eq("USR2\n")
+    assert status.success?
+    assert_equal "USR2\n", stdout
   end
 end

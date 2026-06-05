@@ -3,8 +3,8 @@
 require "spec_helper"
 require "activejob/temporal/workflows/dead_letter_workflow"
 
-RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
-  subject(:workflow) { described_class.new }
+describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
+  let(:workflow) { described_class.new }
 
   let(:entry) do
     {
@@ -17,14 +17,15 @@ RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
   end
 
   before do
-    allow(Temporalio::Workflow).to receive(:now).and_return(Time.utc(2026, 5, 21, 10, 0, 0))
-    allow(Temporalio::Workflow).to receive(:wait_condition) { |&condition| condition.call }
+    call_recorded_method(Temporalio::Workflow, :now, returns: Time.utc(2026, 5, 21, 10, 0, 0))
+    call_recorded_method(Temporalio::Workflow, :wait_condition) { |&condition| condition.call }
   end
 
   it "exposes the pending entry through a workflow query" do
     workflow.execute(entry)
 
-    expect(workflow.entry).to include("id" => "entry-1", "state" => "pending")
+    assert_equal "entry-1", workflow.entry.fetch("id")
+    assert_equal "pending", workflow.entry.fetch("state")
   end
 
   it "marks an entry retried and completes" do
@@ -32,12 +33,10 @@ RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
 
     result = workflow.execute(entry)
 
-    expect(result).to include(
-      "id" => "entry-1",
-      "state" => "retried",
-      "retry_workflow_id" => "retry-workflow-1",
-      "retried_at" => "2026-05-21T10:00:00Z"
-    )
+    assert_equal "entry-1", result.fetch("id")
+    assert_equal "retried", result.fetch("state")
+    assert_equal "retry-workflow-1", result.fetch("retry_workflow_id")
+    assert_equal "2026-05-21T10:00:00Z", result.fetch("retried_at")
   end
 
   it "marks an entry discarded and completes" do
@@ -45,12 +44,10 @@ RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
 
     result = workflow.execute(entry)
 
-    expect(result).to include(
-      "id" => "entry-1",
-      "state" => "discarded",
-      "discard_reason" => "handled elsewhere",
-      "discarded_at" => "2026-05-21T10:00:00Z"
-    )
+    assert_equal "entry-1", result.fetch("id")
+    assert_equal "discarded", result.fetch("state")
+    assert_equal "handled elsewhere", result.fetch("discard_reason")
+    assert_equal "2026-05-21T10:00:00Z", result.fetch("discarded_at")
   end
 
   it "keeps the first terminal state" do
@@ -58,12 +55,13 @@ RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
     workflow.execute(entry)
     workflow.discard("too late")
 
-    expect(workflow.entry).to include("state" => "retried", "retry_workflow_id" => "retry-workflow-1")
-    expect(workflow.entry).not_to have_key("discard_reason")
+    assert_equal "retried", workflow.entry.fetch("state")
+    assert_equal "retry-workflow-1", workflow.entry.fetch("retry_workflow_id")
+    refute workflow.entry.key?("discard_reason")
   end
 
   it "auto-discards pending entries when the configured retention expires" do
-    allow(Temporalio::Workflow).to receive(:timeout).and_raise(Timeout::Error)
+    timeout_calls = call_recorded_method(Temporalio::Workflow, :timeout, raises: Timeout::Error.new)
 
     result = workflow.execute(
       entry.merge(
@@ -71,12 +69,12 @@ RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
       )
     )
 
-    expect(result).to include(
-      "state" => "discarded",
-      "discard_reason" => "auto_discard_after_expired",
-      "discarded_at" => "2026-05-21T10:00:00Z"
-    )
-    expect(Temporalio::Workflow).to have_received(:timeout).with(
+    assert_equal "discarded", result.fetch("state")
+    assert_equal "auto_discard_after_expired", result.fetch("discard_reason")
+    assert_equal "2026-05-21T10:00:00Z", result.fetch("discarded_at")
+    assert_called_with(
+      timeout_calls,
+      :timeout,
       86_400.0,
       Timeout::Error,
       "dead letter auto-discard expired",
@@ -85,7 +83,7 @@ RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
   end
 
   it "does not auto-discard when the entry reaches a terminal state before retention expires" do
-    allow(Temporalio::Workflow).to receive(:timeout) do |*_args, **_kwargs, &block|
+    call_recorded_method(Temporalio::Workflow, :timeout) do |*_args, **_kwargs, &block|
       block.call
     end
     workflow.mark_retried("retry-workflow-1")
@@ -96,7 +94,8 @@ RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
       )
     )
 
-    expect(result).to include("state" => "retried", "retry_workflow_id" => "retry-workflow-1")
-    expect(result).not_to include("discard_reason")
+    assert_equal "retried", result.fetch("state")
+    assert_equal "retry-workflow-1", result.fetch("retry_workflow_id")
+    refute result.key?("discard_reason")
   end
 end

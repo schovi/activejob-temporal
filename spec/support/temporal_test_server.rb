@@ -48,10 +48,9 @@ module TemporalTestHelper
     end
 
     def integration_suite_requested?
-      return true unless defined?(RSpec)
+      return true if %w[integration contract chaos].include?(ENV.fetch("TEST_SUITE", nil))
 
-      files_to_run = RSpec.configuration.files_to_run
-      return true if files_to_run.empty?
+      files_to_run = ARGV + [$PROGRAM_NAME]
 
       files_to_run.any? do |path|
         TEMPORAL_SPEC_PATH_SEGMENTS.any? { |segment| path.include?(segment) }
@@ -119,12 +118,7 @@ module TemporalTestHelper
   end
 end
 
-RSpec.configure do |config|
-  config.before(:suite) do
-    TemporalTestHelper.ensure_setup! if TemporalTestHelper.integration_suite_requested?
-  end
-
-  config.after(:suite) do
-    TemporalTestHelper.teardown
-  end
+if defined?(Minitest) && TemporalTestHelper.integration_suite_requested?
+  TemporalTestHelper.ensure_setup!
+  Minitest.after_run { TemporalTestHelper.teardown }
 end

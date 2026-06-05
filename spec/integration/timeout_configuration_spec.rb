@@ -7,7 +7,7 @@ require "securerandom"
 require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "Per-job timeout configuration", :integration do
+describe "Per-job timeout configuration", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -42,11 +42,11 @@ RSpec.describe "Per-job timeout configuration", :integration do
     end
 
     # Verify job executed successfully
-    expect(TestState.instance.custom_timeout_executed).to be(true)
+    assert_equal true, TestState.instance.custom_timeout_executed
 
     # Verify workflow completed
     description = client.workflow_handle(workflow_id).describe
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
   ensure
     stop_worker(@worker_thread)
   end
@@ -66,12 +66,12 @@ RSpec.describe "Per-job timeout configuration", :integration do
     payload = enqueuer.send(:build_payload, job, workflow_id: workflow_id)
 
     # Verify temporal_options are included
-    expect(payload[:temporal_options]).to be_present
-    expect(payload[:temporal_options][:start_to_close_timeout]).to eq(120.0) # 2.minutes
-    expect(payload[:temporal_options][:heartbeat_timeout]).to eq(10.0) # 10.seconds
+    assert payload[:temporal_options].present?
+    assert_equal 120.0, payload[:temporal_options][:start_to_close_timeout] # 2.minutes
+    assert_equal 10.0, payload[:temporal_options][:heartbeat_timeout] # 10.seconds
   end
 
-  context "when global timeout defaults are configured" do
+  describe "when global timeout defaults are configured" do
     around do |example|
       # Save original config
       original_heartbeat = ActiveJob::Temporal.config.default_heartbeat_timeout
@@ -106,11 +106,11 @@ RSpec.describe "Per-job timeout configuration", :integration do
       end
 
       # Verify job executed successfully
-      expect(TestJob.last_argument).to eq(123)
+      assert_equal 123, TestJob.last_argument
 
       # Verify workflow completed
       description = client.workflow_handle(workflow_id).describe
-      expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+      assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
     ensure
       stop_worker(@worker_thread)
     end
@@ -119,21 +119,10 @@ RSpec.describe "Per-job timeout configuration", :integration do
   private
 
   def start_worker(task_queue)
-    Thread.new do
-      worker = Temporalio::Worker.new(
-        client: TemporalTestHelper.client,
-        task_queue: task_queue,
-        workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-      )
-      worker.run
-    end
+    start_temporal_worker(task_queue)
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 end

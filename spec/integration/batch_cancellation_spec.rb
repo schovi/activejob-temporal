@@ -5,7 +5,7 @@ require "timeout"
 require "securerandom"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "ActiveJob Temporal batch cancellation", :integration do
+describe "ActiveJob Temporal batch cancellation", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -31,7 +31,7 @@ RSpec.describe "ActiveJob Temporal batch cancellation", :integration do
 
     result = ActiveJob::Temporal.cancel_where(ajQueue: task_queue)
 
-    expect(result).to eq(terminated: 2, failed: 0, errors: [])
+    assert_equal({ terminated: 2, failed: 0, errors: [] }, result)
     @workflow_ids.each { |workflow_id| wait_for_workflow_terminated(workflow_id) }
   end
 

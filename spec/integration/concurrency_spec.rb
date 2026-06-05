@@ -7,7 +7,7 @@ require "securerandom"
 require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "Concurrent worker execution", :integration do
+describe "Concurrent worker execution", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -70,7 +70,7 @@ RSpec.describe "Concurrent worker execution", :integration do
     sleep 0.5
 
     # Verify job executed exactly once
-    expect(job_class.execution_count).to eq(1)
+    assert_equal 1, job_class.execution_count
 
     @worker_threads = [worker1, worker2]
   end
@@ -115,32 +115,23 @@ RSpec.describe "Concurrent worker execution", :integration do
     end
 
     # Verify all 5 jobs executed
-    expect(executed_jobs.sort).to eq([0, 1, 2, 3, 4])
+    assert_equal [0, 1, 2, 3, 4], executed_jobs.sort
   end
 
   private
 
   def start_worker(task_queue = "default")
-    Thread.new do
-      worker = Temporalio::Worker.new(
-        client: TemporalTestHelper.client,
-        task_queue: task_queue,
-        workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity],
-        deployment_options: Temporalio::Worker::DeploymentOptions.new(
-          version: Temporalio::WorkerDeploymentVersion.new(deployment_name: "", build_id: SecureRandom.hex(8))
-        )
+    start_temporal_worker(
+      task_queue,
+      deployment_options: Temporalio::Worker::DeploymentOptions.new(
+        version: Temporalio::WorkerDeploymentVersion.new(deployment_name: "", build_id: SecureRandom.hex(8))
       )
-      worker.run
-    end
+    )
   end
 
   def stop_all_workers
     [@worker_thread, @worker_threads].flatten.compact.each do |thread|
-      next unless thread&.alive?
-
-      thread.kill
-      thread.join(5)
+      stop_temporal_worker(thread)
     end
   end
 end

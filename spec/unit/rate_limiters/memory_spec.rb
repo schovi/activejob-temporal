@@ -3,54 +3,57 @@
 require "spec_helper"
 require "timeout"
 
-RSpec.describe ActiveJob::Temporal::RateLimiters::Memory do
-  let(:clock_value) { 1000.0 }
-  let(:clock) { -> { clock_value } }
+describe ActiveJob::Temporal::RateLimiters::Memory do
+  let(:clock) { -> { @clock_value } }
   let(:limiter) { described_class.new(clock: clock) }
   let(:rate_limit) { { limit: 2, interval: 10.0, key: "api" } }
 
+  before do
+    @clock_value = 1000.0
+  end
+
   it "allows requests until the limit is reached" do
-    expect(limiter.wait_time_for([rate_limit])).to eq(0.0)
-    expect(limiter.wait_time_for([rate_limit])).to eq(0.0)
+    assert_equal 0.0, limiter.wait_time_for([rate_limit])
+    assert_equal 0.0, limiter.wait_time_for([rate_limit])
   end
 
   it "returns the remaining wait time when the limit is reached" do
     2.times { limiter.wait_time_for([rate_limit]) }
 
-    expect(limiter.wait_time_for([rate_limit])).to eq(10.0)
+    assert_equal 10.0, limiter.wait_time_for([rate_limit])
   end
 
   it "does not reserve capacity while a limit requires waiting" do
     2.times { limiter.wait_time_for([rate_limit]) }
     limiter.wait_time_for([rate_limit])
-    allow(clock).to receive(:call).and_return(1009.0)
+    @clock_value = 1009.0
 
-    expect(limiter.wait_time_for([rate_limit])).to eq(1.0)
+    assert_equal 1.0, limiter.wait_time_for([rate_limit])
   end
 
   it "enforces multiple limits atomically" do
     global_limit = { limit: 1, interval: 60.0, key: "global" }
 
-    expect(limiter.wait_time_for([global_limit, rate_limit])).to eq(0.0)
-    expect(limiter.wait_time_for([global_limit, rate_limit])).to eq(60.0)
+    assert_equal 0.0, limiter.wait_time_for([global_limit, rate_limit])
+    assert_equal 60.0, limiter.wait_time_for([global_limit, rate_limit])
   end
 
   it "records one event for duplicate key and interval limits" do
-    expect(limiter.wait_time_for([rate_limit, rate_limit])).to eq(0.0)
-    expect(limiter.wait_time_for([rate_limit])).to eq(0.0)
-    expect(limiter.wait_time_for([rate_limit])).to eq(10.0)
+    assert_equal 0.0, limiter.wait_time_for([rate_limit, rate_limit])
+    assert_equal 0.0, limiter.wait_time_for([rate_limit])
+    assert_equal 10.0, limiter.wait_time_for([rate_limit])
   end
 
   it "tracks separate intervals for the same key" do
     short_limit = { limit: 2, interval: 10.0, key: "api" }
     long_limit = { limit: 3, interval: 60.0, key: "api" }
 
-    2.times { expect(limiter.wait_time_for([short_limit, long_limit])).to eq(0.0) }
+    2.times { assert_equal 0.0, limiter.wait_time_for([short_limit, long_limit]) }
 
-    allow(clock).to receive(:call).and_return(1011.0)
+    @clock_value = 1011.0
 
-    expect(limiter.wait_time_for([short_limit, long_limit])).to eq(0.0)
-    expect(limiter.wait_time_for([long_limit])).to eq(49.0)
+    assert_equal 0.0, limiter.wait_time_for([short_limit, long_limit])
+    assert_equal 49.0, limiter.wait_time_for([long_limit])
   end
 
   it "does not block unrelated keys while another key is active" do
@@ -76,7 +79,7 @@ RSpec.describe ActiveJob::Temporal::RateLimiters::Memory do
 
     fast_thread = Thread.new { limiter.wait_time_for([fast_limit]) }
 
-    expect(Timeout.timeout(1) { fast_thread.value }).to eq(0.0)
+    assert_equal 0.0, Timeout.timeout(1) { fast_thread.value }
   ensure
     release_slow << true if release_slow
     slow_thread&.join
@@ -88,31 +91,31 @@ RSpec.describe ActiveJob::Temporal::RateLimiters::Memory do
     idle_limit = { limit: 1, interval: 10.0, key: "tenant-1" }
     limiter.wait_time_for([blocking_limit])
     limiter.wait_time_for([idle_limit])
-    allow(clock).to receive(:call).and_return(1011.0)
+    @clock_value = 1011.0
 
-    expect(limiter.wait_time_for([blocking_limit, idle_limit])).to eq(49.0)
+    assert_equal 49.0, limiter.wait_time_for([blocking_limit, idle_limit])
 
     bucket_keys = bucket_keys_for(limiter)
-    expect(bucket_keys).to include(["global", 60.0])
-    expect(bucket_keys).not_to include(["tenant-1", 10.0])
+    assert_includes bucket_keys, ["global", 60.0]
+    refute_includes bucket_keys, ["tenant-1", 10.0]
   end
 
   it "evicts idle one-shot buckets when unrelated traffic continues" do
     idle_limit = { limit: 1, interval: 10.0, key: "tenant-1" }
     active_limit = { limit: 2, interval: 60.0, key: "global" }
     limiter.wait_time_for([idle_limit])
-    allow(clock).to receive(:call).and_return(1011.0)
+    @clock_value = 1011.0
 
-    expect(limiter.wait_time_for([active_limit])).to eq(0.0)
+    assert_equal 0.0, limiter.wait_time_for([active_limit])
 
     bucket_keys = bucket_keys_for(limiter)
-    expect(bucket_keys).to include(["global", 60.0])
-    expect(bucket_keys).not_to include(["tenant-1", 10.0])
+    assert_includes bucket_keys, ["global", 60.0]
+    refute_includes bucket_keys, ["tenant-1", 10.0]
   end
 
   it "requires rate limit keys" do
-    expect { limiter.wait_time_for([{ limit: 1, interval: 1.0 }]) }
-      .to raise_error(ArgumentError, /key must be present/)
+    error = assert_raises(ArgumentError) { limiter.wait_time_for([{ limit: 1, interval: 1.0 }]) }
+    assert_match(/key must be present/, error.message)
   end
 
   def bucket_keys_for(limiter)

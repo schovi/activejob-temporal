@@ -2,10 +2,11 @@
 
 require "spec_helper"
 require "temporalio/worker"
+require "activejob/temporal/rails_environment_loader"
 
-RSpec.describe "Worker configuration" do
-  let(:client) { double("Temporal client") }
-  let(:worker) { instance_double(Temporalio::Worker) }
+describe "Worker configuration" do
+  let(:client) { Object.new }
+  let(:worker) { Object.new }
   let(:config) { ActiveJob::Temporal::Configuration.new }
 
   around do |example|
@@ -30,33 +31,33 @@ RSpec.describe "Worker configuration" do
     config.max_concurrent_activities = 37
     config.max_concurrent_workflow_tasks = 8
 
-    allow(ActiveJob::Temporal::RailsEnvironmentLoader).to receive(:load!)
-    allow(ActiveJob::Temporal).to receive(:client).and_return(client)
-    allow(ActiveJob::Temporal).to receive(:config).and_return(config)
-    allow(ActiveJob::Temporal::Logger).to receive(:log_event)
-    allow(Signal).to receive(:trap)
-    allow(Temporalio::Worker).to receive(:run_all)
+    call_recorded_method(ActiveJob::Temporal::RailsEnvironmentLoader, :load!)
+    call_recorded_method(ActiveJob::Temporal, :client, returns: client)
+    call_recorded_method(ActiveJob::Temporal, :config, returns: config)
+    call_recorded_method(ActiveJob::Temporal::Logger, :log_event)
+    call_recorded_method(Signal, :trap)
+    call_recorded_method(Temporalio::Worker, :run_all)
   end
 
   it "uses configured concurrency values as Temporal execution slots" do
     worker_options = load_worker_options
 
     tuner = worker_options.fetch(:tuner)
-    expect(tuner.activity_slot_supplier.slots).to eq(37)
-    expect(tuner.local_activity_slot_supplier.slots).to eq(37)
-    expect(tuner.workflow_slot_supplier.slots).to eq(8)
+    assert_equal 37, tuner.activity_slot_supplier.slots
+    assert_equal 37, tuner.local_activity_slot_supplier.slots
+    assert_equal 8, tuner.workflow_slot_supplier.slots
   end
 
   it "leaves SDK poller counts on their own defaults" do
     worker_options = load_worker_options
 
-    expect(worker_options).not_to include(:max_concurrent_activity_task_polls)
-    expect(worker_options).not_to include(:max_concurrent_workflow_task_polls)
+    refute_includes worker_options, :max_concurrent_activity_task_polls
+    refute_includes worker_options, :max_concurrent_workflow_task_polls
   end
 
   def load_worker_options
     worker_options = nil
-    allow(Temporalio::Worker).to receive(:new) do |**options|
+    call_recorded_method(Temporalio::Worker, :new) do |**options|
       worker_options = options
       worker
     end

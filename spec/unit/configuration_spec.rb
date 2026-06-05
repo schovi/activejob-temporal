@@ -4,19 +4,63 @@ require "spec_helper"
 require "base64"
 require "tmpdir"
 
-RSpec.describe ActiveJob::Temporal::Configuration do
-  subject(:configuration) { described_class.new }
+describe ActiveJob::Temporal::Configuration do
+  let(:configuration) { described_class.new }
 
-  def expect_configuration_error(message)
-    expect { configuration.validate! }
-      .to raise_error(ActiveJob::Temporal::ConfigurationError, message)
+  def assert_configuration_error(expected_message)
+    error = assert_raises(ActiveJob::Temporal::ConfigurationError) do
+      configuration.validate!
+    end
+
+    assert_error_message expected_message, error
+  end
+
+  def assert_error_message(expected_message, error)
+    case expected_message
+    when Regexp
+      assert_match expected_message, error.message
+    else
+      assert_equal expected_message, error.message
+    end
   end
 
   def configuration_with_env(env_var, value)
-    allow(ENV).to receive(:[]).and_call_original
-    allow(ENV).to receive(:[]).with(env_var).and_return(value)
+    configuration_with_environment(env_var => value)
+  end
 
-    described_class.new
+  def configuration_with_environment(overrides)
+    with_environment(overrides) { described_class.new }
+  end
+
+  def with_environment(overrides)
+    missing_value = Object.new
+    original_values = overrides.to_h do |key, _value|
+      [key, ENV.key?(key) ? ENV.fetch(key) : missing_value]
+    end
+
+    overrides.each do |key, value|
+      value.nil? ? ENV.delete(key) : ENV[key] = value
+    end
+
+    yield
+  ensure
+    original_values&.each do |key, value|
+      value.equal?(missing_value) ? ENV.delete(key) : ENV[key] = value
+    end
+  end
+
+  def warning_logger_recorder
+    Class.new do
+      attr_reader :warnings
+
+      def initialize
+        @warnings = []
+      end
+
+      def warn(message)
+        warnings << message
+      end
+    end.new
   end
 
   def boolean_env_attributes
@@ -29,129 +73,129 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
   describe "defaults" do
     it "sets the Temporal endpoint" do
-      expect(configuration.target).to eq("127.0.0.1:7233")
+      assert_equal "127.0.0.1:7233", configuration.target
     end
 
     it "sets the namespace" do
-      expect(configuration.namespace).to eq("default")
+      assert_equal "default", configuration.namespace
     end
 
     it "sets task queue prefix to nil" do
-      expect(configuration.task_queue_prefix).to be_nil
+      assert_nil configuration.task_queue_prefix
     end
 
     it "configures activity timeout" do
-      expect(configuration.default_activity_timeout).to eq(15.minutes)
+      assert_equal 15.minutes, configuration.default_activity_timeout
     end
 
     it "configures retry initial interval" do
-      expect(configuration.default_retry_initial_interval).to eq(30.seconds)
+      assert_equal 30.seconds, configuration.default_retry_initial_interval
     end
 
     it "configures retry backoff" do
-      expect(configuration.default_retry_backoff).to eq(2.0)
+      assert_equal 2.0, configuration.default_retry_backoff
     end
 
     it "configures retry max attempts" do
-      expect(configuration.default_retry_max_attempts).to eq(1)
+      assert_equal 1, configuration.default_retry_max_attempts
     end
 
     it "initializes observability configuration" do
-      expect(configuration.observability).to be_a(ActiveJob::Temporal::Observability::Configuration)
-      expect(configuration.observability).not_to be_enabled
+      assert_kind_of ActiveJob::Temporal::Observability::Configuration, configuration.observability
+      refute configuration.observability.enabled?
     end
 
     it "sets identity to nil by default" do
-      expect(configuration.identity).to be_nil
+      assert_nil configuration.identity
     end
 
     it "sets max_concurrent_activities to 100" do
-      expect(configuration.max_concurrent_activities).to eq(100)
+      assert_equal 100, configuration.max_concurrent_activities
     end
 
     it "sets max_concurrent_workflow_tasks to 5" do
-      expect(configuration.max_concurrent_workflow_tasks).to eq(5)
+      assert_equal 5, configuration.max_concurrent_workflow_tasks
     end
 
     it "leaves continue-as-new threshold disabled by default" do
-      expect(configuration.continue_as_new_history_event_threshold).to be_nil
+      assert_nil configuration.continue_as_new_history_event_threshold
     end
 
     it "sets bounded dependency wait defaults" do
-      expect(configuration.dependency_wait_timeout).to eq(1.day)
-      expect(configuration.dependency_wait_initial_interval).to eq(10.seconds)
-      expect(configuration.dependency_wait_max_interval).to eq(1.minute)
-      expect(configuration.dependency_wait_backoff).to eq(2.0)
+      assert_equal 1.day, configuration.dependency_wait_timeout
+      assert_equal 10.seconds, configuration.dependency_wait_initial_interval
+      assert_equal 1.minute, configuration.dependency_wait_max_interval
+      assert_equal 2.0, configuration.dependency_wait_backoff
     end
 
     it "disables local activity helpers by default" do
-      expect(configuration.local_activity_helpers).to eq([])
+      assert_equal [], configuration.local_activity_helpers
     end
 
     it "sets task_queue to 'default'" do
-      expect(configuration.task_queue).to eq("default")
+      assert_equal "default", configuration.task_queue
     end
 
     it "sets TLS rotation defaults" do
-      expect(configuration.tls).to be_nil
-      expect(configuration.tls_cert_path).to be_nil
-      expect(configuration.tls_key_path).to be_nil
-      expect(configuration.tls_server_root_ca_cert_path).to be_nil
-      expect(configuration.tls_domain).to be_nil
-      expect(configuration.tls_cert_watch).to be(false)
-      expect(configuration.tls_reload_signal).to eq("HUP")
+      assert_nil configuration.tls
+      assert_nil configuration.tls_cert_path
+      assert_nil configuration.tls_key_path
+      assert_nil configuration.tls_server_root_ca_cert_path
+      assert_nil configuration.tls_domain
+      assert_equal false, configuration.tls_cert_watch
+      assert_equal "HUP", configuration.tls_reload_signal
     end
 
     it "sets priority task queue mappings to an empty hash" do
-      expect(configuration.priority_task_queues).to eq({})
+      assert_equal({}, configuration.priority_task_queues)
     end
 
     it "disables dead letter queue routing by default" do
-      expect(configuration.dead_letter_queue).to be_nil
-      expect(configuration.dead_letter_after_attempts).to be_nil
-      expect(configuration.dead_letter_auto_discard_after).to be_nil
+      assert_nil configuration.dead_letter_queue
+      assert_nil configuration.dead_letter_after_attempts
+      assert_nil configuration.dead_letter_auto_discard_after
     end
 
     it "disables observability adapters by default" do
-      expect(configuration.observability.adapters).to eq([])
+      assert_equal [], configuration.observability.adapters
     end
 
     it "disables audit logging by default" do
-      expect(configuration.audit_log).to be(false)
-      expect(configuration.audit_logger).to be_nil
+      assert_equal false, configuration.audit_log
+      assert_nil configuration.audit_logger
     end
 
     it "disables payload encryption by default" do
-      expect(configuration.encrypt_payload).to be(false)
-      expect(configuration.encryption_key).to be_nil
-      expect(configuration.encryption_old_keys).to eq([])
+      assert_equal false, configuration.encrypt_payload
+      assert_nil configuration.encryption_key
+      assert_equal [], configuration.encryption_old_keys
     end
 
     it "uses JSON payload serialization by default" do
-      expect(configuration.payload_serializer).to be(:json)
+      assert_same :json, configuration.payload_serializer
     end
 
     it "disables external payload storage by default" do
-      expect(configuration.payload_storage_adapter).to be_nil
-      expect(configuration.payload_storage_threshold_kb).to be_nil
+      assert_nil configuration.payload_storage_adapter
+      assert_nil configuration.payload_storage_threshold_kb
     end
 
     it "uses the default workflow ID generator when none is configured" do
-      expect(configuration.workflow_id_generator).to be_nil
+      assert_nil configuration.workflow_id_generator
     end
 
     it "disables rate limiting by default" do
-      expect(configuration.rate_limiter).to be_nil
-      expect(configuration.global_rate_limit).to be_nil
+      assert_nil configuration.rate_limiter
+      assert_nil configuration.global_rate_limit
     end
 
     it "sets an empty middleware chain" do
-      expect(configuration.middleware_chain).to be_a(ActiveJob::Temporal::Middleware::Chain)
-      expect(configuration.middleware_chain.to_a).to be_empty
+      assert_kind_of ActiveJob::Temporal::Middleware::Chain, configuration.middleware_chain
+      assert_empty configuration.middleware_chain.to_a
     end
 
     it "uses strict validation by default" do
-      expect(configuration.validation_level).to be(:strict)
+      assert_same :strict, configuration.validation_level
     end
   end
 
@@ -161,194 +205,155 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     end
 
     it "reads target from ACTIVEJOB_TEMPORAL_TARGET environment variable" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return("custom:9999")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_TARGET" => "custom:9999")
 
-      config = described_class.new
-      expect(config.target).to eq("custom:9999")
+      assert_equal "custom:9999", config.target
     end
 
     it "uses default target when ACTIVEJOB_TEMPORAL_TARGET is not set" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return(nil)
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_TARGET" => nil)
 
-      config = described_class.new
-      expect(config.target).to eq("127.0.0.1:7233")
+      assert_equal "127.0.0.1:7233", config.target
     end
 
     it "reads namespace from ACTIVEJOB_TEMPORAL_NAMESPACE environment variable" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_NAMESPACE").and_return("production")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_NAMESPACE" => "production")
 
-      config = described_class.new
-      expect(config.namespace).to eq("production")
+      assert_equal "production", config.namespace
     end
 
     it "uses default namespace when ACTIVEJOB_TEMPORAL_NAMESPACE is not set" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_NAMESPACE").and_return(nil)
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_NAMESPACE" => nil)
 
-      config = described_class.new
-      expect(config.namespace).to eq("default")
+      assert_equal "default", config.namespace
     end
 
     it "reads task_queue_prefix from ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX environment variable" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX").and_return("my-app-")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX" => "my-app-")
 
-      config = described_class.new
-      expect(config.task_queue_prefix).to eq("my-app-")
+      assert_equal "my-app-", config.task_queue_prefix
     end
 
     it "uses default task_queue_prefix (nil) when ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX is not set" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX").and_return(nil)
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX" => nil)
 
-      config = described_class.new
-      expect(config.task_queue_prefix).to be_nil
+      assert_nil config.task_queue_prefix
     end
 
     it "reads task_queue from ACTIVEJOB_TEMPORAL_TASK_QUEUE environment variable" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE").and_return("critical")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_TASK_QUEUE" => "critical")
 
-      config = described_class.new
-      expect(config.task_queue).to eq("critical")
+      assert_equal "critical", config.task_queue
     end
 
     it "uses default task_queue ('default') when ACTIVEJOB_TEMPORAL_TASK_QUEUE is not set" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE").and_return(nil)
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_TASK_QUEUE" => nil)
 
-      config = described_class.new
-      expect(config.task_queue).to eq("default")
+      assert_equal "default", config.task_queue
     end
 
     it "reads max_payload_size_kb from ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB and converts to integer" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return("512")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB" => "512")
 
-      config = described_class.new
-      expect(config.max_payload_size_kb).to eq(512)
+      assert_equal 512, config.max_payload_size_kb
     end
 
     it "reads payload serializer from ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER").and_return("message_pack")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_PAYLOAD_SERIALIZER" => "message_pack")
 
-      config = described_class.new
-      expect(config.payload_serializer).to be(:message_pack)
+      assert_same :message_pack, config.payload_serializer
     end
 
     it "uses default max_payload_size_kb when ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB is not set" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return(nil)
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB" => nil)
 
-      config = described_class.new
-      expect(config.max_payload_size_kb).to eq(250)
+      assert_equal 250, config.max_payload_size_kb
     end
 
     it "handles multiple environment variables set simultaneously" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return("temporal.prod:7233")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_NAMESPACE").and_return("production")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX").and_return("app-")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB").and_return("1024")
+      config = configuration_with_environment(
+        "ACTIVEJOB_TEMPORAL_TARGET" => "temporal.prod:7233",
+        "ACTIVEJOB_TEMPORAL_NAMESPACE" => "production",
+        "ACTIVEJOB_TEMPORAL_TASK_QUEUE_PREFIX" => "app-",
+        "ACTIVEJOB_TEMPORAL_MAX_PAYLOAD_SIZE_KB" => "1024"
+      )
 
-      config = described_class.new
-      expect(config.target).to eq("temporal.prod:7233")
-      expect(config.namespace).to eq("production")
-      expect(config.task_queue_prefix).to eq("app-")
-      expect(config.max_payload_size_kb).to eq(1024)
+      assert_equal "temporal.prod:7233", config.target
+      assert_equal "production", config.namespace
+      assert_equal "app-", config.task_queue_prefix
+      assert_equal 1024, config.max_payload_size_kb
     end
 
     it "allows explicit configuration to override environment variables" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return("env-target:7233")
-
-      config = described_class.new
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_TARGET" => "env-target:7233")
       config.target = "explicit-target:8888"
 
-      expect(config.target).to eq("explicit-target:8888")
+      assert_equal "explicit-target:8888", config.target
     end
 
     it "validates environment variable values when validate! is called" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TARGET").and_return("invalid-format")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_TARGET" => "invalid-format")
 
-      config = described_class.new
-      expect { config.validate! }.to raise_error(
-        ActiveJob::Temporal::ConfigurationError,
-        /[Tt]arget must.*host:port/
-      )
+      error = assert_raises(ActiveJob::Temporal::ConfigurationError) { config.validate! }
+      assert_match(/[Tt]arget must.*host:port/, error.message)
     end
 
     it "reads max_concurrent_activities from ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES and converts to integer" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES").and_return("200")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES" => "200")
 
-      config = described_class.new
-      expect(config.max_concurrent_activities).to eq(200)
+      assert_equal 200, config.max_concurrent_activities
     end
 
     it "uses default max_concurrent_activities when ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES is not set" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES").and_return(nil)
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES" => nil)
 
-      config = described_class.new
-      expect(config.max_concurrent_activities).to eq(100)
+      assert_equal 100, config.max_concurrent_activities
     end
 
     it "reads max_concurrent_workflow_tasks from ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS env var" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return("300")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS" => "300")
 
-      config = described_class.new
-      expect(config.max_concurrent_workflow_tasks).to eq(300)
+      assert_equal 300, config.max_concurrent_workflow_tasks
     end
 
     it "reads continue-as-new threshold from ACTIVEJOB_TEMPORAL_CONTINUE_AS_NEW_HISTORY_EVENT_THRESHOLD" do
       env_var = "ACTIVEJOB_TEMPORAL_CONTINUE_AS_NEW_HISTORY_EVENT_THRESHOLD"
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with(env_var).and_return("10000")
+      config = configuration_with_environment(env_var => "10000")
 
-      config = described_class.new
-      expect(config.continue_as_new_history_event_threshold).to eq(10_000)
+      assert_equal 10_000, config.continue_as_new_history_event_threshold
     end
 
     it "reads dependency wait settings from environment variables" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_TIMEOUT_SECONDS").and_return("120")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_INITIAL_INTERVAL_SECONDS").and_return("2")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_MAX_INTERVAL_SECONDS").and_return("30")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_BACKOFF").and_return("3.5")
+      config = configuration_with_environment(
+        "ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_TIMEOUT_SECONDS" => "120",
+        "ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_INITIAL_INTERVAL_SECONDS" => "2",
+        "ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_MAX_INTERVAL_SECONDS" => "30",
+        "ACTIVEJOB_TEMPORAL_DEPENDENCY_WAIT_BACKOFF" => "3.5"
+      )
 
-      config = described_class.new
-      expect(config.dependency_wait_timeout).to eq(120.0)
-      expect(config.dependency_wait_initial_interval).to eq(2.0)
-      expect(config.dependency_wait_max_interval).to eq(30.0)
-      expect(config.dependency_wait_backoff).to eq(3.5)
+      assert_equal 120.0, config.dependency_wait_timeout
+      assert_equal 2.0, config.dependency_wait_initial_interval
+      assert_equal 30.0, config.dependency_wait_max_interval
+      assert_equal 3.5, config.dependency_wait_backoff
     end
 
     it "reads dead letter queue settings from environment variables" do
       auto_discard_env = "ACTIVEJOB_TEMPORAL_DEAD_LETTER_AUTO_DISCARD_AFTER_SECONDS"
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE").and_return("failed_jobs")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS").and_return("3")
-      allow(ENV).to receive(:[]).with(auto_discard_env).and_return("86400")
+      config = configuration_with_environment(
+        "ACTIVEJOB_TEMPORAL_DEAD_LETTER_QUEUE" => "failed_jobs",
+        "ACTIVEJOB_TEMPORAL_DEAD_LETTER_AFTER_ATTEMPTS" => "3",
+        auto_discard_env => "86400"
+      )
 
-      config = described_class.new
-      expect(config.dead_letter_queue).to eq("failed_jobs")
-      expect(config.dead_letter_after_attempts).to eq(3)
-      expect(config.dead_letter_auto_discard_after).to eq(86_400.0)
+      assert_equal "failed_jobs", config.dead_letter_queue
+      assert_equal 3, config.dead_letter_after_attempts
+      assert_equal 86_400.0, config.dead_letter_auto_discard_after
     end
 
     it "reads audit logging from ACTIVEJOB_TEMPORAL_AUDIT_LOG" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_AUDIT_LOG").and_return("true")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_AUDIT_LOG" => "true")
 
-      config = described_class.new
-      expect(config.audit_log).to be(true)
+      assert_equal true, config.audit_log
     end
 
     it "accepts common truthy boolean environment values" do
@@ -356,7 +361,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         %w[true TRUE 1 yes on].each do |value|
           config = configuration_with_env(env_var, value)
 
-          expect(config.public_send(attribute)).to be(true)
+          assert_equal true, config.public_send(attribute)
         end
       end
     end
@@ -366,78 +371,71 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         %w[false FALSE 0 no off].each do |value|
           config = configuration_with_env(env_var, value)
 
-          expect(config.public_send(attribute)).to be(false)
+          assert_equal false, config.public_send(attribute)
         end
       end
     end
 
     it "rejects invalid boolean environment values" do
       boolean_env_attributes.each_key do |env_var|
-        expect { configuration_with_env(env_var, "definitely") }
-          .to raise_error(
-            ActiveJob::Temporal::ConfigurationError,
-            /Invalid boolean value for #{env_var}: "definitely"/
-          )
+        error = assert_raises(ActiveJob::Temporal::ConfigurationError) do
+          configuration_with_env(env_var, "definitely")
+        end
+        assert_match(/Invalid boolean value for #{env_var}: "definitely"/, error.message)
       end
     end
 
     it "reads payload encryption from ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD").and_return("true")
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD" => "true")
 
-      config = described_class.new
-      expect(config.encrypt_payload).to be(true)
+      assert_equal true, config.encrypt_payload
     end
 
     it "reads encryption key from ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY" do
       key = valid_encryption_key
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY").and_return(key)
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_ENCRYPTION_KEY" => key)
 
-      config = described_class.new
-      expect(config.encryption_key).to eq(key)
+      assert_equal key, config.encryption_key
     end
 
     it "reads TLS certificate paths from environment variables" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_CERT_PATH").and_return("/certs/client.pem")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_KEY_PATH").and_return("/certs/client-key.pem")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH").and_return("/certs/ca.pem")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_DOMAIN").and_return("temporal.example.dev")
+      config = configuration_with_environment(
+        "ACTIVEJOB_TEMPORAL_TLS_CERT_PATH" => "/certs/client.pem",
+        "ACTIVEJOB_TEMPORAL_TLS_KEY_PATH" => "/certs/client-key.pem",
+        "ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH" => "/certs/ca.pem",
+        "ACTIVEJOB_TEMPORAL_TLS_DOMAIN" => "temporal.example.dev"
+      )
 
-      config = described_class.new
-      expect(config.tls_cert_path).to eq("/certs/client.pem")
-      expect(config.tls_key_path).to eq("/certs/client-key.pem")
-      expect(config.tls_server_root_ca_cert_path).to eq("/certs/ca.pem")
-      expect(config.tls_domain).to eq("temporal.example.dev")
+      assert_equal "/certs/client.pem", config.tls_cert_path
+      assert_equal "/certs/client-key.pem", config.tls_key_path
+      assert_equal "/certs/ca.pem", config.tls_server_root_ca_cert_path
+      assert_equal "temporal.example.dev", config.tls_domain
     end
 
     it "reads TLS reload controls from environment variables" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH").and_return("true")
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL").and_return("USR1")
+      config = configuration_with_environment(
+        "ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH" => "true",
+        "ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL" => "USR1"
+      )
 
-      config = described_class.new
-      expect(config.tls_cert_watch).to be(true)
-      expect(config.tls_reload_signal).to eq("USR1")
+      assert_equal true, config.tls_cert_watch
+      assert_equal "USR1", config.tls_reload_signal
     end
 
     it "uses default (5) when ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS is not set" do
-      allow(ENV).to receive(:[]).and_call_original
-      allow(ENV).to receive(:[]).with("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS").and_return(nil)
+      config = configuration_with_environment("ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS" => nil)
 
-      config = described_class.new
-      expect(config.max_concurrent_workflow_tasks).to eq(5)
+      assert_equal 5, config.max_concurrent_workflow_tasks
     end
   end
 
   describe "#logger" do
     it "falls back to a standard logger when Rails is unavailable" do
-      expect(configuration.logger).to be_a(Logger)
+      assert_kind_of Logger, configuration.logger
     end
 
     it "uses Rails.logger when Rails responds to logger" do
-      rails_logger = instance_double(Logger)
+      rails_logger = Logger.new(StringIO.new)
       stub_const("Rails", Class.new do
         class << self
           attr_accessor :logger
@@ -445,14 +443,14 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       end)
       Rails.logger = rails_logger
 
-      expect(described_class.new.logger).to be(rails_logger)
+      assert_same rails_logger, described_class.new.logger
     end
   end
 
   describe "#task_queue_prefix=" do
     it "accepts nil values" do
       configuration.task_queue_prefix = nil
-      expect(configuration.task_queue_prefix).to be_nil
+      assert_nil configuration.task_queue_prefix
     end
   end
 
@@ -460,25 +458,25 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "accepts priority to task queue mappings" do
       configuration.priority_task_queues = { 10 => "high_priority", 90 => "low_priority" }
 
-      expect(configuration.priority_task_queues).to eq(10 => "high_priority", 90 => "low_priority")
+      assert_equal({ 10 => "high_priority", 90 => "low_priority" }, configuration.priority_task_queues)
     end
 
     it "rejects non-hash values" do
       configuration.priority_task_queues = "high_priority"
 
-      expect_configuration_error(/Priority task queues must be a hash/)
+      assert_configuration_error(/Priority task queues must be a hash/)
     end
 
     it "rejects non-integer priority keys" do
       configuration.priority_task_queues = { high: "high_priority" }
 
-      expect_configuration_error(/priority keys must be integers/)
+      assert_configuration_error(/priority keys must be integers/)
     end
 
     it "rejects blank task queue names" do
       configuration.priority_task_queues = { 10 => " " }
 
-      expect_configuration_error(/task queue names must be present/)
+      assert_configuration_error(/task queue names must be present/)
     end
   end
 
@@ -492,14 +490,14 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       configuration.payload_storage_adapter = adapter
       configuration.payload_storage_threshold_kb = 200
 
-      expect { configuration.validate! }.not_to raise_error
+      configuration.validate!
     end
 
     it "rejects adapters missing the required methods" do
       configuration.payload_storage_adapter = Object.new
       configuration.payload_storage_threshold_kb = 200
 
-      expect_configuration_error(/Payload storage adapter must respond to #dump and #load/)
+      assert_configuration_error(/Payload storage adapter must respond to #dump and #load/)
     end
 
     it "requires a threshold when an adapter is configured" do
@@ -510,13 +508,13 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.payload_storage_adapter = adapter
 
-      expect_configuration_error(/Payload storage threshold kb is required/)
+      assert_configuration_error(/Payload storage threshold kb is required/)
     end
 
     it "requires an adapter when a threshold is configured" do
       configuration.payload_storage_threshold_kb = 200
 
-      expect_configuration_error(/Payload storage threshold kb requires payload_storage_adapter/)
+      assert_configuration_error(/Payload storage threshold kb requires payload_storage_adapter/)
     end
 
     it "rejects non-positive thresholds" do
@@ -528,23 +526,23 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       configuration.payload_storage_adapter = adapter
       configuration.payload_storage_threshold_kb = 0
 
-      expect_configuration_error(/Payload storage threshold kb must be a positive integer/)
+      assert_configuration_error(/Payload storage threshold kb must be a positive integer/)
     end
   end
 
   describe "#dead_letter_queue=" do
     it "accepts nil and non-blank task queue names" do
       configuration.dead_letter_queue = "failed_jobs"
-      expect(configuration.dead_letter_queue).to eq("failed_jobs")
+      assert_equal "failed_jobs", configuration.dead_letter_queue
 
       configuration.dead_letter_queue = nil
-      expect(configuration.dead_letter_queue).to be_nil
+      assert_nil configuration.dead_letter_queue
     end
 
     it "rejects blank task queue names" do
       configuration.dead_letter_queue = " "
 
-      expect_configuration_error(/Dead letter queue must be present/)
+      assert_configuration_error(/Dead letter queue must be present/)
     end
   end
 
@@ -552,26 +550,26 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "accepts nil and positive integer thresholds" do
       configuration.dead_letter_queue = "failed_jobs"
       configuration.dead_letter_after_attempts = 3
-      expect(configuration.dead_letter_after_attempts).to eq(3)
+      assert_equal 3, configuration.dead_letter_after_attempts
 
       configuration.dead_letter_after_attempts = nil
-      expect(configuration.dead_letter_after_attempts).to be_nil
+      assert_nil configuration.dead_letter_after_attempts
     end
 
     it "rejects zero and negative thresholds" do
       configuration.dead_letter_queue = "failed_jobs"
 
       configuration.dead_letter_after_attempts = 0
-      expect_configuration_error(/Dead letter after attempts must be greater than 0/)
+      assert_configuration_error(/Dead letter after attempts must be greater than 0/)
 
       configuration.dead_letter_after_attempts = -1
-      expect_configuration_error(/Dead letter after attempts must be greater than 0/)
+      assert_configuration_error(/Dead letter after attempts must be greater than 0/)
     end
 
     it "requires a dead letter queue when a threshold is configured" do
       configuration.dead_letter_after_attempts = 3
 
-      expect_configuration_error(/requires dead_letter_queue/)
+      assert_configuration_error(/requires dead_letter_queue/)
     end
   end
 
@@ -579,26 +577,26 @@ RSpec.describe ActiveJob::Temporal::Configuration do
     it "accepts nil and positive durations" do
       configuration.dead_letter_queue = "failed_jobs"
       configuration.dead_letter_auto_discard_after = 7.days
-      expect(configuration.dead_letter_auto_discard_after).to eq(7.days)
+      assert_equal 7.days, configuration.dead_letter_auto_discard_after
 
       configuration.dead_letter_auto_discard_after = nil
-      expect(configuration.dead_letter_auto_discard_after).to be_nil
+      assert_nil configuration.dead_letter_auto_discard_after
     end
 
     it "rejects zero and negative durations" do
       configuration.dead_letter_queue = "failed_jobs"
 
       configuration.dead_letter_auto_discard_after = 0
-      expect_configuration_error(/Dead letter auto discard after must be positive/)
+      assert_configuration_error(/Dead letter auto discard after must be positive/)
 
       configuration.dead_letter_auto_discard_after = -1
-      expect_configuration_error(/Dead letter auto discard after must be positive/)
+      assert_configuration_error(/Dead letter auto discard after must be positive/)
     end
 
     it "requires a dead letter queue when configured" do
       configuration.dead_letter_auto_discard_after = 1.day
 
-      expect_configuration_error(/requires dead_letter_queue/)
+      assert_configuration_error(/requires dead_letter_queue/)
     end
   end
 
@@ -608,30 +606,30 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.observability = observability
 
-      expect(configuration.observability).to be(observability)
-      expect { configuration.validate! }.not_to raise_error
+      assert_same observability, configuration.observability
+      configuration.validate!
     end
 
     it "rejects invalid observability configuration objects" do
       configuration.observability = "bad"
 
-      expect_configuration_error(/Observability must be an observability configuration/)
+      assert_configuration_error(/Observability must be an observability configuration/)
     end
   end
 
   describe "#audit_log=" do
     it "accepts boolean values" do
       configuration.audit_log = true
-      expect(configuration.audit_log).to be(true)
+      assert_equal true, configuration.audit_log
 
       configuration.audit_log = false
-      expect(configuration.audit_log).to be(false)
+      assert_equal false, configuration.audit_log
     end
 
     it "rejects non-boolean values" do
       configuration.audit_log = "true"
 
-      expect_configuration_error(/Audit log must be true or false/)
+      assert_configuration_error(/Audit log must be true or false/)
     end
   end
 
@@ -640,16 +638,16 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       logger = Logger.new(StringIO.new)
 
       configuration.audit_logger = logger
-      expect(configuration.audit_logger).to be(logger)
+      assert_same logger, configuration.audit_logger
 
       configuration.audit_logger = nil
-      expect(configuration.audit_logger).to be_nil
+      assert_nil configuration.audit_logger
     end
 
-    it "rejects values that cannot receive info logs" do
+    it "rejects values without info logging support" do
       configuration.audit_logger = Object.new
 
-      expect_configuration_error(/Audit logger must respond to #info/)
+      assert_configuration_error(/Audit logger must respond to #info/)
     end
   end
 
@@ -658,32 +656,32 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       configuration.encryption_key = valid_encryption_key
 
       configuration.encrypt_payload = true
-      expect(configuration.encrypt_payload).to be(true)
+      assert_equal true, configuration.encrypt_payload
 
       configuration.encrypt_payload = false
-      expect(configuration.encrypt_payload).to be(false)
+      assert_equal false, configuration.encrypt_payload
     end
 
     it "rejects non-boolean values" do
       configuration.encrypt_payload = "true"
 
-      expect_configuration_error(/Encrypt payload must be true or false/)
+      assert_configuration_error(/Encrypt payload must be true or false/)
     end
 
     it "requires a primary encryption key when enabled" do
       configuration.encrypt_payload = true
 
-      expect_configuration_error(/Encryption key is required/)
+      assert_configuration_error(/Encryption key is required/)
     end
   end
 
   describe "#encryption_key=" do
     it "accepts nil and Base64-encoded 32-byte keys" do
       configuration.encryption_key = valid_encryption_key
-      expect(configuration.encryption_key).to eq(valid_encryption_key)
+      assert_equal valid_encryption_key, configuration.encryption_key
 
       configuration.encryption_key = nil
-      expect(configuration.encryption_key).to be_nil
+      assert_nil configuration.encryption_key
     end
 
     it "accepts key metadata with an explicit id" do
@@ -691,19 +689,19 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.encryption_key = key_metadata
 
-      expect(configuration.encryption_key).to eq(key_metadata)
+      assert_equal key_metadata, configuration.encryption_key
     end
 
     it "rejects keys that are not valid Base64" do
       configuration.encryption_key = "not base64"
 
-      expect_configuration_error(/Encryption key must be a Base64-encoded 32-byte/)
+      assert_configuration_error(/Encryption key must be a Base64-encoded 32-byte/)
     end
 
     it "rejects key metadata with unsafe ids" do
       configuration.encryption_key = { id: "bad key", key: valid_encryption_key }
 
-      expect_configuration_error(/Encryption key must be a Base64-encoded 32-byte/)
+      assert_configuration_error(/Encryption key must be a Base64-encoded 32-byte/)
     end
 
     it "rejects Base64 keys with the wrong decoded length" do
@@ -711,7 +709,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.encryption_key = short_key
 
-      expect_configuration_error(/Encryption key must be a Base64-encoded 32-byte/)
+      assert_configuration_error(/Encryption key must be a Base64-encoded 32-byte/)
     end
   end
 
@@ -721,7 +719,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.encryption_old_keys = old_keys
 
-      expect(configuration.encryption_old_keys).to eq(old_keys)
+      assert_equal old_keys, configuration.encryption_old_keys
     end
 
     it "accepts old key metadata with explicit ids" do
@@ -732,41 +730,41 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.encryption_old_keys = old_keys
 
-      expect(configuration.encryption_old_keys).to eq(old_keys)
+      assert_equal old_keys, configuration.encryption_old_keys
     end
 
     it "rejects non-array values" do
       configuration.encryption_old_keys = valid_encryption_key
 
-      expect_configuration_error(/Encryption old keys must be an array/)
+      assert_configuration_error(/Encryption old keys must be an array/)
     end
 
     it "rejects arrays containing invalid keys" do
       configuration.encryption_old_keys = [valid_encryption_key, "invalid"]
 
-      expect_configuration_error(/Encryption old keys must contain only/)
+      assert_configuration_error(/Encryption old keys must contain only/)
     end
   end
 
   describe "#payload_serializer=" do
     it "accepts built-in payload serializers" do
       configuration.payload_serializer = :message_pack
-      expect(configuration.payload_serializer).to be(:message_pack)
+      assert_same :message_pack, configuration.payload_serializer
 
       configuration.payload_serializer = :msgpack
-      expect(configuration.payload_serializer).to be(:msgpack)
+      assert_same :msgpack, configuration.payload_serializer
 
       configuration.payload_serializer = :marshal
-      expect(configuration.payload_serializer).to be(:marshal)
+      assert_same :marshal, configuration.payload_serializer
 
       configuration.payload_serializer = :json
-      expect(configuration.payload_serializer).to be(:json)
+      assert_same :json, configuration.payload_serializer
     end
 
     it "rejects unsupported payload serializers" do
       configuration.payload_serializer = :yaml
 
-      expect_configuration_error(/Payload serializer is not supported/)
+      assert_configuration_error(/Payload serializer is not supported/)
     end
   end
 
@@ -776,43 +774,47 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.workflow_id_generator = generator
 
-      expect(configuration.workflow_id_generator).to be(generator)
+      assert_same generator, configuration.workflow_id_generator
     end
 
     it "accepts nil values" do
       configuration.workflow_id_generator = nil
 
-      expect(configuration.workflow_id_generator).to be_nil
+      assert_nil configuration.workflow_id_generator
     end
 
     it "rejects non-callable values" do
       configuration.workflow_id_generator = "custom-id"
 
-      expect_configuration_error(/Workflow id generator must respond to #call/)
+      assert_configuration_error(/Workflow id generator must respond to #call/)
     end
 
     it "rejects callables that cannot accept a job argument" do
       configuration.workflow_id_generator = -> { "custom-id" }
 
-      expect_configuration_error(/must accept one positional ActiveJob argument/)
+      assert_configuration_error(/must accept one positional ActiveJob argument/)
     end
 
     it "rejects keyword-only callables" do
       configuration.workflow_id_generator = ->(job:) { "custom:#{job.job_id}" }
 
-      expect_configuration_error(/one positional ActiveJob argument/)
+      assert_configuration_error(/one positional ActiveJob argument/)
     end
   end
 
   describe "#rate_limiter=" do
     it "accepts nil and limiter backends" do
-      limiter = instance_double("RateLimiter", wait_time_for: 0)
+      limiter = Class.new do
+        def wait_time_for(_rate_limits)
+          0
+        end
+      end.new
 
       configuration.rate_limiter = limiter
-      expect(configuration.rate_limiter).to be(limiter)
+      assert_same limiter, configuration.rate_limiter
 
       configuration.rate_limiter = nil
-      expect(configuration.rate_limiter).to be_nil
+      assert_nil configuration.rate_limiter
     end
 
     it "accepts callable limiter backends" do
@@ -820,19 +822,19 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.rate_limiter = limiter
 
-      expect(configuration.rate_limiter).to be(limiter)
+      assert_same limiter, configuration.rate_limiter
     end
 
     it "rejects unsupported limiter backends" do
       configuration.rate_limiter = Object.new
 
-      expect_configuration_error(/Rate limiter must respond to #wait_time_for or #call/)
+      assert_configuration_error(/Rate limiter must respond to #wait_time_for or #call/)
     end
 
     it "rejects limiter backends that do not accept rate limits" do
       configuration.rate_limiter = -> { 0 }
 
-      expect_configuration_error(/Rate limiter must accept one rate_limits argument/)
+      assert_configuration_error(/Rate limiter must accept one rate_limits argument/)
     end
   end
 
@@ -842,13 +844,13 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.global_rate_limit = { limit: 100, per: :second }
 
-      expect(configuration.global_rate_limit).to eq(limit: 100, per: :second)
+      assert_equal({ limit: 100, per: :second }, configuration.global_rate_limit)
     end
 
     it "requires a limiter backend" do
       configuration.global_rate_limit = { limit: 100, per: :second }
 
-      expect_configuration_error(/Global rate limit requires rate_limiter/)
+      assert_configuration_error(/Global rate limit requires rate_limiter/)
     end
 
     it "rejects invalid global rate limit hashes" do
@@ -856,7 +858,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.global_rate_limit = { limit: 0, per: :second }
 
-      expect_configuration_error(/Global rate limit must be a hash/)
+      assert_configuration_error(/Global rate limit must be a hash/)
     end
   end
 
@@ -878,30 +880,30 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       registered = configuration.add_middleware(middleware_class, events)
 
-      expect(configuration.middleware_chain.to_a).to eq([registered])
-      expect(configuration.middleware_chain.call(:job) { events << :perform }).to eq(%i[before perform after])
+      assert_equal [registered], configuration.middleware_chain.to_a
+      assert_equal %i[before perform after], configuration.middleware_chain.call(:job) { events << :perform }
     end
 
     it "rejects invalid middleware chain replacements" do
       configuration.middleware_chain = Object.new
 
-      expect_configuration_error(/Middleware chain must respond to #add and #call/)
+      assert_configuration_error(/Middleware chain must respond to #add and #call/)
     end
   end
 
   describe "#validation_level=" do
     it "accepts supported validation levels" do
       configuration.validation_level = :warn
-      expect(configuration.validation_level).to be(:warn)
+      assert_same :warn, configuration.validation_level
 
       configuration.validation_level = :none
-      expect(configuration.validation_level).to be(:none)
+      assert_same :none, configuration.validation_level
     end
 
     it "rejects unsupported validation levels" do
       configuration.validation_level = :relaxed
 
-      expect_configuration_error(/Validation level must be one of/)
+      assert_configuration_error(/Validation level must be one of/)
     end
   end
 
@@ -928,7 +930,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.tls_cert_watch = true
         configuration.in_configure_block = false
 
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
     end
 
@@ -936,7 +938,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       with_tls_files do |cert_path, _key_path, _root_ca_path|
         configuration.tls_cert_path = cert_path
 
-        expect_configuration_error(/requires tls_key_path/)
+        assert_configuration_error(/requires tls_key_path/)
       end
     end
 
@@ -945,7 +947,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
 
       configuration.tls_server_root_ca_cert_path = missing_path
 
-      expect_configuration_error(/readable, non-symlink file/)
+      assert_configuration_error(/readable, non-symlink file/)
     end
 
     it "rejects symlink TLS paths" do
@@ -957,40 +959,39 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.tls_key_path = key_path
         configuration.in_configure_block = false
 
-        expect { configuration.validate! }
-          .to raise_error(ActiveJob::Temporal::ConfigurationError, /readable, non-symlink file/)
+        assert_configuration_error(/readable, non-symlink file/)
       end
     end
 
     it "rejects certificate watching when no TLS file paths are configured" do
       configuration.tls_cert_watch = true
 
-      expect_configuration_error(/requires at least one TLS certificate path/)
+      assert_configuration_error(/requires at least one TLS certificate path/)
     end
 
     it "rejects non-boolean certificate watching values" do
       configuration.tls_cert_watch = "true"
 
-      expect_configuration_error(/must be true or false/)
+      assert_configuration_error(/must be true or false/)
     end
 
     it "rejects blank TLS domain overrides" do
       configuration.tls_domain = " "
 
-      expect_configuration_error(/must be present/)
+      assert_configuration_error(/must be present/)
     end
 
     it "accepts trappable TLS reload signal names" do
       configuration.tls_reload_signal = "SIGHUP"
 
-      expect(configuration.tls_reload_signal).to eq("SIGHUP")
+      assert_equal "SIGHUP", configuration.tls_reload_signal
     end
 
     it "rejects invalid or reserved TLS reload signal names" do
       %w[HUP! HUP123 9 CHLD INT KILL PIPE QUIT STOP TERM].each do |signal_name|
         configuration.tls_reload_signal = signal_name
 
-        expect_configuration_error(/must be a signal name/)
+        assert_configuration_error(/must be a signal name/)
       end
     end
   end
@@ -1000,87 +1001,87 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       explicit_methods = described_class.instance_methods(false)
 
       ActiveJob::Temporal::CONFIGURATION_ATTRIBUTES.each_key do |attribute|
-        expect(explicit_methods).to include(attribute)
-        expect(explicit_methods).to include(:"#{attribute}=")
+        assert_includes explicit_methods, attribute
+        assert_includes explicit_methods, :"#{attribute}="
       end
     end
 
     it "does not define dynamic dispatch hooks for configuration attributes" do
       explicit_methods = described_class.instance_methods(false)
 
-      expect(explicit_methods).not_to include(:method_missing)
-      expect(explicit_methods).not_to include(:respond_to_missing?)
+      refute_includes explicit_methods, :method_missing
+      refute_includes explicit_methods, :respond_to_missing?
     end
 
     it "raises NoMethodError for unknown attribute getter" do
-      expect { configuration.unknown_attribute }
-        .to raise_error(NoMethodError, /undefined method.*unknown_attribute/)
+      error = assert_raises(NoMethodError) { configuration.unknown_attribute }
+      assert_match(/undefined method.*unknown_attribute/, error.message)
     end
 
     it "raises NoMethodError for unknown attribute setter" do
-      expect { configuration.unknown_attribute = "value" }
-        .to raise_error(NoMethodError, /undefined method.*unknown_attribute=/)
+      error = assert_raises(NoMethodError) { configuration.unknown_attribute = "value" }
+      assert_match(/undefined method.*unknown_attribute=/, error.message)
     end
 
     it "returns false for respond_to? with unknown attribute" do
-      expect(configuration.respond_to?(:unknown_attribute)).to be(false)
-      expect(configuration.respond_to?(:unknown_attribute=)).to be(false)
+      assert_equal false, configuration.respond_to?(:unknown_attribute)
+      assert_equal false, configuration.respond_to?(:unknown_attribute=)
     end
 
     it "returns true for respond_to? with known attributes" do
-      expect(configuration.respond_to?(:target)).to be(true)
-      expect(configuration.respond_to?(:target=)).to be(true)
-      expect(configuration.respond_to?(:namespace)).to be(true)
-      expect(configuration.respond_to?(:namespace=)).to be(true)
+      assert_equal true, configuration.respond_to?(:target)
+      assert_equal true, configuration.respond_to?(:target=)
+      assert_equal true, configuration.respond_to?(:namespace)
+      assert_equal true, configuration.respond_to?(:namespace=)
     end
 
     it "defers validation for known attribute setters" do
-      allow(configuration).to receive(:validate!)
+      validate_calls = call_recorded_method(configuration, :validate!)
 
       configuration.target = "invalid target"
 
-      expect(configuration).not_to have_received(:validate!)
-      expect(configuration.target).to eq("invalid target")
+      refute_called validate_calls, :validate!
+      assert_equal "invalid target", configuration.target
     end
   end
 
   describe "#default_activity_timeout=" do
     it "accepts positive durations" do
       configuration.default_activity_timeout = 10.seconds
-      expect(configuration.default_activity_timeout).to eq(10.seconds)
+      assert_equal 10.seconds, configuration.default_activity_timeout
     end
 
     it "raises when duration is zero or negative" do
       configuration.default_activity_timeout = 0
-      expect_configuration_error(/must be positive/)
+      assert_configuration_error(/must be positive/)
 
       configuration.default_activity_timeout = -5
-      expect_configuration_error(/must be positive/)
+      assert_configuration_error(/must be positive/)
     end
 
     it "raises when value cannot be coerced into a duration" do
       configuration.default_activity_timeout = Object.new
 
-      expect_configuration_error(/must be a duration/)
+      assert_configuration_error(/must be a duration/)
     end
   end
 
   describe "#default_retry_initial_interval=" do
     it "accepts positive durations" do
       configuration.default_retry_initial_interval = 5.seconds
-      expect(configuration.default_retry_initial_interval).to eq(5.seconds)
+      assert_equal 5.seconds, configuration.default_retry_initial_interval
     end
 
     it "raises when duration is zero or negative" do
       configuration.default_retry_initial_interval = 0.seconds
 
-      expect_configuration_error(/must be positive/)
+      assert_configuration_error(/must be positive/)
     end
 
     it "raises when value lacks numeric semantics" do
       configuration.default_retry_initial_interval = Object.new
 
-      expect_configuration_error(/must be a duration/)
+      assert_configuration_error(/must be a duration/)
     end
   end
 
@@ -1091,33 +1092,33 @@ RSpec.describe ActiveJob::Temporal::Configuration do
       configuration.dependency_wait_max_interval = 30.seconds
       configuration.dependency_wait_backoff = 2.5
 
-      expect { configuration.validate! }.not_to raise_error
+      configuration.validate!
     end
 
     it "rejects non-positive dependency wait durations" do
       configuration.dependency_wait_timeout = 0.seconds
 
-      expect_configuration_error(/Dependency wait timeout must be positive/)
+      assert_configuration_error(/Dependency wait timeout must be positive/)
     end
 
     it "rejects dependency wait max interval below the initial interval" do
       configuration.dependency_wait_initial_interval = 30.seconds
       configuration.dependency_wait_max_interval = 5.seconds
 
-      expect_configuration_error(/Dependency wait max interval must be greater than or equal to initial interval/)
+      assert_configuration_error(/Dependency wait max interval must be greater than or equal to initial interval/)
     end
 
     it "rejects dependency wait backoff below 1" do
       configuration.dependency_wait_backoff = 0.9
 
-      expect_configuration_error(/Dependency wait backoff must be greater than or equal to 1/)
+      assert_configuration_error(/Dependency wait backoff must be greater than or equal to 1/)
     end
   end
 
   describe "#validate!" do
-    context "with valid configuration" do
+    describe "with valid configuration" do
       it "does not raise any errors with default values" do
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
 
       it "does not raise errors with all valid custom values" do
@@ -1129,18 +1130,18 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.default_retry_max_attempts = 5
         configuration.max_payload_size_kb = 500
 
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
     end
 
-    context "when target is invalid" do
+    describe "when target is invalid" do
       it "accepts DNS names, localhost, and IPv4 host targets" do
         %w[localhost:7233 temporal.example.com:7233 127.0.0.1:7233].each do |target|
           configuration.in_configure_block = true
           configuration.target = target
           configuration.in_configure_block = false
 
-          expect { configuration.validate! }.not_to raise_error
+          configuration.validate!
         end
       end
 
@@ -1148,60 +1149,42 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.in_configure_block = true
         configuration.target = "localhost"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Tt]arget must.*host:port/
-        )
+        assert_configuration_error(/[Tt]arget must.*host:port/)
       end
 
       it "raises ConfigurationError for missing host" do
         configuration.in_configure_block = true
         configuration.target = ":7233"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Tt]arget must.*host:port/
-        )
+        assert_configuration_error(/[Tt]arget must.*host:port/)
       end
 
       it "raises ConfigurationError for invalid format" do
         configuration.in_configure_block = true
         configuration.target = "badformat"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Tt]arget must.*host:port/
-        )
+        assert_configuration_error(/[Tt]arget must.*host:port/)
       end
 
       it "raises ConfigurationError for port number too long" do
         configuration.in_configure_block = true
         configuration.target = "localhost:123456"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Tt]arget must.*host:port/
-        )
+        assert_configuration_error(/[Tt]arget must.*host:port/)
       end
 
       it "raises ConfigurationError for ports outside the TCP range" do
         configuration.in_configure_block = true
         configuration.target = "localhost:65536"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Tt]arget must.*host:port/
-        )
+        assert_configuration_error(/[Tt]arget must.*host:port/)
       end
 
       it "raises ConfigurationError for invalid characters" do
         configuration.in_configure_block = true
         configuration.target = "host with spaces:7233"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Tt]arget must.*host:port/
-        )
+        assert_configuration_error(/[Tt]arget must.*host:port/)
       end
 
       it "raises ConfigurationError for invalid host labels" do
@@ -1210,10 +1193,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
           configuration.target = target
           configuration.in_configure_block = false
 
-          expect { configuration.validate! }.to raise_error(
-            ActiveJob::Temporal::ConfigurationError,
-            /[Tt]arget must.*host:port/
-          )
+          assert_configuration_error(/[Tt]arget must.*host:port/)
         end
       end
 
@@ -1221,42 +1201,30 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.in_configure_block = true
         configuration.target = nil
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /Target host is required|Target must be in format/
-        )
+        assert_configuration_error(/Target host is required|Target must be in format/)
       end
     end
 
-    context "when namespace is invalid" do
+    describe "when namespace is invalid" do
       it "raises ConfigurationError for spaces in namespace" do
         configuration.in_configure_block = true
         configuration.namespace = "has spaces"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Nn]amespace must/
-        )
+        assert_configuration_error(/[Nn]amespace must/)
       end
 
       it "raises ConfigurationError for special characters" do
         configuration.in_configure_block = true
         configuration.namespace = "special!chars"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Nn]amespace must/
-        )
+        assert_configuration_error(/[Nn]amespace must/)
       end
 
       it "raises ConfigurationError for dots in namespace" do
         configuration.in_configure_block = true
         configuration.namespace = "namespace.with.dots"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Nn]amespace must/
-        )
+        assert_configuration_error(/[Nn]amespace must/)
       end
 
       it "raises ConfigurationError for namespaces that do not start and end alphanumeric" do
@@ -1265,10 +1233,7 @@ RSpec.describe ActiveJob::Temporal::Configuration do
           configuration.namespace = namespace
           configuration.in_configure_block = false
 
-          expect { configuration.validate! }.to raise_error(
-            ActiveJob::Temporal::ConfigurationError,
-            /[Nn]amespace must/
-          )
+          assert_configuration_error(/[Nn]amespace must/)
         end
       end
 
@@ -1276,247 +1241,190 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.in_configure_block = true
         configuration.namespace = "a" * 1001
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Nn]amespace must/
-        )
+        assert_configuration_error(/[Nn]amespace must/)
       end
 
       it "raises ConfigurationError when namespace is nil" do
         configuration.in_configure_block = true
         configuration.namespace = nil
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /Namespace is required|namespace must contain only alphanumeric/
-        )
+        assert_configuration_error(/Namespace is required|namespace must contain only alphanumeric/)
       end
 
       it "accepts valid namespace with hyphens and underscores" do
         configuration.in_configure_block = true
         configuration.namespace = "valid-namespace_123"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
     end
 
-    context "when timeouts are invalid" do
+    describe "when timeouts are invalid" do
       it "raises ConfigurationError when default_activity_timeout is zero" do
         configuration.in_configure_block = true
         configuration[:default_activity_timeout] = 0
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Dd]efault activity timeout.*must be positive/
-        )
+        assert_configuration_error(/[Dd]efault activity timeout.*must be positive/)
       end
 
       it "raises ConfigurationError when default_activity_timeout is negative" do
         configuration.in_configure_block = true
         configuration[:default_activity_timeout] = -5
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Dd]efault activity timeout.*must be positive/
-        )
+        assert_configuration_error(/[Dd]efault activity timeout.*must be positive/)
       end
 
       it "raises ConfigurationError when default_retry_initial_interval is zero" do
         configuration.in_configure_block = true
         configuration[:default_retry_initial_interval] = 0.seconds
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Dd]efault retry initial interval.*must be positive/
-        )
+        assert_configuration_error(/[Dd]efault retry initial interval.*must be positive/)
       end
 
       it "raises ConfigurationError when default_retry_initial_interval is negative" do
         configuration.in_configure_block = true
         configuration[:default_retry_initial_interval] = -10
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Dd]efault retry initial interval.*must be positive/
-        )
+        assert_configuration_error(/[Dd]efault retry initial interval.*must be positive/)
       end
 
       it "raises ConfigurationError when timeout is not a duration" do
         configuration.in_configure_block = true
         configuration[:default_activity_timeout] = "not a duration"
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Dd]efault activity timeout.*must be a duration/
-        )
+        assert_configuration_error(/[Dd]efault activity timeout.*must be a duration/)
       end
     end
 
-    context "when retry settings are invalid" do
+    describe "when retry settings are invalid" do
       it "raises ConfigurationError when backoff is less than 1.0" do
         configuration.in_configure_block = true
         configuration.default_retry_backoff = 0.5
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Dd]efault retry backoff.*>= 1\.0/
-        )
+        assert_configuration_error(/[Dd]efault retry backoff.*>= 1\.0/)
       end
 
       it "raises ConfigurationError when backoff is zero" do
         configuration.in_configure_block = true
         configuration.default_retry_backoff = 0.0
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Dd]efault retry backoff.*>= 1\.0/
-        )
+        assert_configuration_error(/[Dd]efault retry backoff.*>= 1\.0/)
       end
 
       it "raises ConfigurationError when backoff is negative" do
         configuration.in_configure_block = true
         configuration.default_retry_backoff = -1.0
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Dd]efault retry backoff.*>= 1\.0/
-        )
+        assert_configuration_error(/[Dd]efault retry backoff.*>= 1\.0/)
       end
 
       it "accepts backoff exactly equal to 1.0" do
         configuration.in_configure_block = true
         configuration.default_retry_backoff = 1.0
         configuration.in_configure_block = false
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
 
       it "raises ConfigurationError when max_attempts is negative" do
         configuration.in_configure_block = true
         configuration.default_retry_max_attempts = -1
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Dd]efault retry max attempts.*>= 0/
-        )
+        assert_configuration_error(/[Dd]efault retry max attempts.*>= 0/)
       end
 
       it "accepts max_attempts equal to zero" do
         configuration.in_configure_block = true
         configuration.default_retry_max_attempts = 0
         configuration.in_configure_block = false
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
     end
 
-    context "when payload size is invalid" do
+    describe "when payload size is invalid" do
       it "raises ConfigurationError when exceeding maximum limit" do
         configuration.in_configure_block = true
         configuration.max_payload_size_kb = 2_097_153
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Mm]ax payload size.*2,097,152/
-        )
+        assert_configuration_error(/[Mm]ax payload size.*2,097,152/)
       end
 
       it "raises ConfigurationError when far exceeding maximum limit" do
         configuration.in_configure_block = true
         configuration.max_payload_size_kb = 5_000_000
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Mm]ax payload size.*2,097,152/
-        )
+        assert_configuration_error(/[Mm]ax payload size.*2,097,152/)
       end
 
       it "accepts payload size at the maximum limit" do
         configuration.in_configure_block = true
         configuration.max_payload_size_kb = 2_097_152
         configuration.in_configure_block = false
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
 
       it "raises ConfigurationError when payload size is zero" do
         configuration.in_configure_block = true
         configuration.max_payload_size_kb = 0
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Mm]ax payload size.*(must be positive|between 1)/
-        )
+        assert_configuration_error(/[Mm]ax payload size.*(must be positive|between 1)/)
       end
 
       it "raises ConfigurationError when payload size is negative" do
         configuration.in_configure_block = true
         configuration.max_payload_size_kb = -100
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Mm]ax payload size.*(must be positive|between 1)/
-        )
+        assert_configuration_error(/[Mm]ax payload size.*(must be positive|between 1)/)
       end
 
       it "accepts a reasonable payload size" do
         configuration.in_configure_block = true
         configuration.max_payload_size_kb = 1024
         configuration.in_configure_block = false
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
     end
 
-    context "when worker concurrency settings are invalid" do
+    describe "when worker concurrency settings are invalid" do
       it "raises ConfigurationError when max_concurrent_activities is zero" do
         configuration.in_configure_block = true
         configuration.max_concurrent_activities = 0
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Mm]ax concurrent activities.*must be positive/
-        )
+        assert_configuration_error(/[Mm]ax concurrent activities.*must be positive/)
       end
 
       it "raises ConfigurationError when max_concurrent_activities is negative" do
         configuration.in_configure_block = true
         configuration.max_concurrent_activities = -1
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Mm]ax concurrent activities.*must be positive/
-        )
+        assert_configuration_error(/[Mm]ax concurrent activities.*must be positive/)
       end
 
       it "accepts positive max_concurrent_activities" do
         configuration.in_configure_block = true
         configuration.max_concurrent_activities = 200
         configuration.in_configure_block = false
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
 
       it "raises ConfigurationError when max_concurrent_workflow_tasks is zero" do
         configuration.in_configure_block = true
         configuration.max_concurrent_workflow_tasks = 0
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Mm]ax concurrent workflow.*must be positive/
-        )
+        assert_configuration_error(/[Mm]ax concurrent workflow.*must be positive/)
       end
 
       it "raises ConfigurationError when max_concurrent_workflow_tasks is negative" do
         configuration.in_configure_block = true
         configuration.max_concurrent_workflow_tasks = -5
         configuration.in_configure_block = false
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Mm]ax concurrent workflow.*must be positive/
-        )
+        assert_configuration_error(/[Mm]ax concurrent workflow.*must be positive/)
       end
 
       it "accepts positive max_concurrent_workflow_tasks" do
         configuration.in_configure_block = true
         configuration.max_concurrent_workflow_tasks = 300
         configuration.in_configure_block = false
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
 
       it "accepts high concurrency values for both settings" do
@@ -1524,11 +1432,11 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.max_concurrent_activities = 500
         configuration.max_concurrent_workflow_tasks = 500
         configuration.in_configure_block = false
-        expect { configuration.validate! }.not_to raise_error
+        configuration.validate!
       end
     end
 
-    context "with multiple validation failures" do
+    describe "with multiple validation failures" do
       it "collects and reports all validation errors" do
         configuration.in_configure_block = true
         configuration.target = "invalid"
@@ -1537,21 +1445,13 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.max_payload_size_kb = -1
         configuration.in_configure_block = false
 
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError
-        ) do |error|
-          # Should include header for multiple errors
-          expect(error.message).to include("Configuration validation failed")
-
-          # Should include all errors (with flexible matching for case and formatting)
-          expect(error.message).to match(/[Tt]arget.*format/)
-          expect(error.message).to match(/[Nn]amespace.*contain only/)
-          expect(error.message).to match(/[Dd]efault retry backoff.*>= 1\.0/)
-          expect(error.message).to match(/[Mm]ax payload size.*positive|between/)
-
-          # Should number the errors
-          expect(error.message).to match(/\d+\.\s/)
-        end
+        error = assert_raises(ActiveJob::Temporal::ConfigurationError) { configuration.validate! }
+        assert_includes error.message, "Configuration validation failed"
+        assert_match(/[Tt]arget.*format/, error.message)
+        assert_match(/[Nn]amespace.*contain only/, error.message)
+        assert_match(/[Dd]efault retry backoff.*>= 1\.0/, error.message)
+        assert_match(/[Mm]ax payload size.*positive|between/, error.message)
+        assert_match(/\d+\.\s/, error.message)
       end
 
       it "shows single error without numbering" do
@@ -1559,16 +1459,13 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.target = "invalid"
         configuration.in_configure_block = false
 
-        expect { configuration.validate! }.to raise_error(
-          ActiveJob::Temporal::ConfigurationError,
-          /[Tt]arget.*format/ # Should start with the error (not "Configuration validation failed")
-        )
+        assert_configuration_error(/[Tt]arget.*format/)
       end
     end
 
-    context "with validation levels" do
+    describe "with validation levels" do
       it "warns instead of raising when validation_level is warn" do
-        warning_logger = instance_spy(Logger)
+        warning_logger = warning_logger_recorder
 
         configuration.in_configure_block = true
         configuration.validation_level = :warn
@@ -1576,12 +1473,13 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.target = "invalid"
         configuration.in_configure_block = false
 
-        expect { configuration.validate! }.not_to raise_error
-        expect(warning_logger).to have_received(:warn).with(/[Tt]arget.*format/)
+        configuration.validate!
+        assert_equal 1, warning_logger.warnings.size
+        assert_match(/[Tt]arget.*format/, warning_logger.warnings.first)
       end
 
       it "skips validation when validation_level is none" do
-        warning_logger = instance_spy(Logger)
+        warning_logger = warning_logger_recorder
 
         configuration.in_configure_block = true
         configuration.validation_level = :none
@@ -1590,45 +1488,48 @@ RSpec.describe ActiveJob::Temporal::Configuration do
         configuration.default_retry_backoff = 0.5
         configuration.in_configure_block = false
 
-        expect { configuration.validate! }.not_to raise_error
-        expect(warning_logger).not_to have_received(:warn)
+        configuration.validate!
+        assert_empty warning_logger.warnings
       end
     end
   end
 
   describe "Exception classes" do
     it "ConfigurationError inherits from Error" do
-      expect(ActiveJob::Temporal::ConfigurationError).to be < ActiveJob::Temporal::Error
+      assert_operator ActiveJob::Temporal::ConfigurationError, :<, ActiveJob::Temporal::Error
     end
 
     it "WorkflowNotFoundError inherits from Error" do
-      expect(ActiveJob::Temporal::WorkflowNotFoundError).to be < ActiveJob::Temporal::Error
+      assert_operator ActiveJob::Temporal::WorkflowNotFoundError, :<, ActiveJob::Temporal::Error
     end
 
     it "TemporalConnectionError inherits from Error" do
-      expect(ActiveJob::Temporal::TemporalConnectionError).to be < ActiveJob::Temporal::Error
+      assert_operator ActiveJob::Temporal::TemporalConnectionError, :<, ActiveJob::Temporal::Error
     end
 
     it "Error inherits from StandardError" do
-      expect(ActiveJob::Temporal::Error).to be < StandardError
+      assert_operator ActiveJob::Temporal::Error, :<, StandardError
     end
 
     it "raises and catches ConfigurationError correctly" do
-      expect do
+      error = assert_raises(ActiveJob::Temporal::ConfigurationError) do
         raise ActiveJob::Temporal::ConfigurationError, "test error"
-      end.to raise_error(ActiveJob::Temporal::ConfigurationError, "test error")
+      end
+      assert_equal "test error", error.message
     end
 
     it "raises and catches WorkflowNotFoundError correctly" do
-      expect do
+      error = assert_raises(ActiveJob::Temporal::WorkflowNotFoundError) do
         raise ActiveJob::Temporal::WorkflowNotFoundError, "workflow not found"
-      end.to raise_error(ActiveJob::Temporal::WorkflowNotFoundError, "workflow not found")
+      end
+      assert_equal "workflow not found", error.message
     end
 
     it "raises and catches TemporalConnectionError correctly" do
-      expect do
+      error = assert_raises(ActiveJob::Temporal::TemporalConnectionError) do
         raise ActiveJob::Temporal::TemporalConnectionError, "connection failed"
-      end.to raise_error(ActiveJob::Temporal::TemporalConnectionError, "connection failed")
+      end
+      assert_equal "connection failed", error.message
     end
   end
 

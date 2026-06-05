@@ -7,7 +7,7 @@ require "temporalio/worker"
 require "active_support/core_ext/numeric/time"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "ActiveJob Temporal scheduled jobs", :integration do
+describe "ActiveJob Temporal scheduled jobs", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -33,7 +33,7 @@ RSpec.describe "ActiveJob Temporal scheduled jobs", :integration do
     # Wait for the job to complete
     wait_for_result(42)
 
-    expect(TestJob.last_argument).to eq(42)
+    assert_equal 42, TestJob.last_argument
 
     # Wait for workflow to reach completed state
     handle = client.workflow_handle(workflow_id)
@@ -48,13 +48,13 @@ RSpec.describe "ActiveJob Temporal scheduled jobs", :integration do
 
     # Verify workflow completed successfully
     description = handle.describe
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
 
     # The key test: verify that a Temporal timer was used for scheduling
     # This proves the workflow delayed execution rather than running immediately
     history = handle.fetch_history
     event_types = history.events.map(&:event_type)
-    expect(event_types).to include(:EVENT_TYPE_TIMER_STARTED)
+    assert_includes event_types, :EVENT_TYPE_TIMER_STARTED
   ensure
     stop_worker(@worker_thread)
   end
@@ -62,22 +62,11 @@ RSpec.describe "ActiveJob Temporal scheduled jobs", :integration do
   private
 
   def start_worker
-    Thread.new do
-      worker = Temporalio::Worker.new(
-        client: TemporalTestHelper.client,
-        task_queue: "default",
-        workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-      )
-      worker.run
-    end
+    start_temporal_worker("default")
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def wait_for_result(expected)

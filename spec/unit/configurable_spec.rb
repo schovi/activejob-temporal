@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal do
+describe ActiveJob::Temporal do
   before do
     described_class.instance_variable_set(:@config_mvar, nil)
   end
@@ -13,15 +13,15 @@ RSpec.describe ActiveJob::Temporal do
 
   describe ".config" do
     it "extends the configurable concern" do
-      expect(described_class.singleton_class.ancestors).to include(ActiveJob::Temporal::Configurable)
+      assert_includes described_class.singleton_class.ancestors, ActiveJob::Temporal::Configurable
     end
 
     it "memoizes the configuration object" do
-      expect(described_class.config).to be(described_class.config)
+      assert_same described_class.config, described_class.config
     end
 
     it "exposes the same instance via .configuration alias" do
-      expect(described_class.config).to be(described_class.configuration)
+      assert_same described_class.config, described_class.configuration
     end
   end
 
@@ -32,12 +32,12 @@ RSpec.describe ActiveJob::Temporal do
         config.task_queue_prefix = "rails-"
       end
 
-      expect(described_class.config.target).to eq("localhost:7233")
-      expect(described_class.config.task_queue_prefix).to eq("rails-")
+      assert_equal "localhost:7233", described_class.config.target
+      assert_equal "rails-", described_class.config.task_queue_prefix
     end
 
     it "allows every attribute to be updated via the block" do
-      custom_logger = double(:logger)
+      custom_logger = Object.new
 
       described_class.configure do |config|
         config.target = "localhost:9000"
@@ -53,30 +53,30 @@ RSpec.describe ActiveJob::Temporal do
       end
 
       configured = described_class.config
-      expect(configured.target).to eq("localhost:9000")
-      expect(configured.namespace).to eq("production")
-      expect(configured.task_queue_prefix).to eq("app-")
-      expect(configured.default_activity_timeout).to eq(10.minutes)
-      expect(configured.default_retry_initial_interval).to eq(5.seconds)
-      expect(configured.default_retry_backoff).to eq(3.0)
-      expect(configured.default_retry_max_attempts).to eq(4)
-      expect(configured.logger).to be(custom_logger)
-      expect(configured.observability).to be_a(ActiveJob::Temporal::Observability::Configuration)
-      expect(configured.validation_level).to be(:warn)
+      assert_equal "localhost:9000", configured.target
+      assert_equal "production", configured.namespace
+      assert_equal "app-", configured.task_queue_prefix
+      assert_equal 10.minutes, configured.default_activity_timeout
+      assert_equal 5.seconds, configured.default_retry_initial_interval
+      assert_equal 3.0, configured.default_retry_backoff
+      assert_equal 4, configured.default_retry_max_attempts
+      assert_same custom_logger, configured.logger
+      assert_instance_of ActiveJob::Temporal::Observability::Configuration, configured.observability
+      assert_same :warn, configured.validation_level
     end
 
     it "returns the configuration even when no block provided" do
-      expect(described_class.configure).to be_a(ActiveJob::Temporal::Configuration)
+      assert_instance_of ActiveJob::Temporal::Configuration, described_class.configure
     end
 
     it "clears block state when post-configuration validation fails" do
-      expect do
+      assert_raises(ActiveJob::Temporal::ConfigurationError) do
         described_class.configure do |config|
           config.target = "invalid"
         end
-      end.to raise_error(ActiveJob::Temporal::ConfigurationError)
+      end
 
-      expect(described_class.config.in_configure_block).to be(false)
+      assert_equal false, described_class.config.in_configure_block
     end
 
     it "keeps the previous configuration when the configure block raises" do
@@ -86,18 +86,19 @@ RSpec.describe ActiveJob::Temporal do
       end
       previous_config = described_class.config
 
-      expect do
+      error = assert_raises(RuntimeError) do
         described_class.configure do |config|
           config.target = "localhost:9000"
           config.namespace = "mutated"
           raise "configure failed"
         end
-      end.to raise_error(RuntimeError, "configure failed")
+      end
 
-      expect(described_class.config).to be(previous_config)
-      expect(described_class.config.target).to eq("localhost:7233")
-      expect(described_class.config.namespace).to eq("stable")
-      expect(described_class.config.in_configure_block).to be(false)
+      assert_equal "configure failed", error.message
+      assert_same previous_config, described_class.config
+      assert_equal "localhost:7233", described_class.config.target
+      assert_equal "stable", described_class.config.namespace
+      assert_equal false, described_class.config.in_configure_block
     end
 
     it "keeps the previous configuration when validation fails" do
@@ -107,17 +108,17 @@ RSpec.describe ActiveJob::Temporal do
       end
       previous_config = described_class.config
 
-      expect do
+      assert_raises(ActiveJob::Temporal::ConfigurationError) do
         described_class.configure do |config|
           config.target = "invalid"
           config.namespace = "mutated"
         end
-      end.to raise_error(ActiveJob::Temporal::ConfigurationError)
+      end
 
-      expect(described_class.config).to be(previous_config)
-      expect(described_class.config.target).to eq("localhost:7233")
-      expect(described_class.config.namespace).to eq("stable")
-      expect(described_class.config.in_configure_block).to be(false)
+      assert_same previous_config, described_class.config
+      assert_equal "localhost:7233", described_class.config.target
+      assert_equal "stable", described_class.config.namespace
+      assert_equal false, described_class.config.in_configure_block
     end
 
     it "does not leak nested hash mutations when validation fails" do
@@ -126,14 +127,14 @@ RSpec.describe ActiveJob::Temporal do
         config.priority_task_queues = { 10 => "critical" }
       end
 
-      expect do
+      assert_raises(ActiveJob::Temporal::ConfigurationError) do
         described_class.configure do |config|
           config.priority_task_queues[20] = "bulk"
           config.target = "invalid"
         end
-      end.to raise_error(ActiveJob::Temporal::ConfigurationError)
+      end
 
-      expect(described_class.config.priority_task_queues).to eq(10 => "critical")
+      assert_equal({ 10 => "critical" }, described_class.config.priority_task_queues)
     end
 
     it "does not leak in-place string mutations when the configure block raises" do
@@ -141,14 +142,15 @@ RSpec.describe ActiveJob::Temporal do
         config.target = "localhost:7233"
       end
 
-      expect do
+      error = assert_raises(RuntimeError) do
         described_class.configure do |config|
           config.target << "-mutated"
           raise "configure failed"
         end
-      end.to raise_error(RuntimeError, "configure failed")
+      end
 
-      expect(described_class.config.target).to eq("localhost:7233")
+      assert_equal "configure failed", error.message
+      assert_equal "localhost:7233", described_class.config.target
     end
 
     it "does not leak middleware registrations when validation fails" do
@@ -158,14 +160,14 @@ RSpec.describe ActiveJob::Temporal do
         end
       end
 
-      expect do
+      assert_raises(ActiveJob::Temporal::ConfigurationError) do
         described_class.configure do |config|
           config.add_middleware middleware_class
           config.target = "invalid"
         end
-      end.to raise_error(ActiveJob::Temporal::ConfigurationError)
+      end
 
-      expect(described_class.config.middleware_chain.to_a).to be_empty
+      assert_empty described_class.config.middleware_chain.to_a
     end
 
     it "updates the existing configuration after successful validation" do
@@ -176,23 +178,24 @@ RSpec.describe ActiveJob::Temporal do
         config.namespace = "production"
       end
 
-      expect(described_class.config).to be(previous_config)
-      expect(described_class.config.target).to eq("localhost:9000")
-      expect(described_class.config.namespace).to eq("production")
+      assert_same previous_config, described_class.config
+      assert_equal "localhost:9000", described_class.config.target
+      assert_equal "production", described_class.config.namespace
     end
 
     it "logs validation warnings instead of raising when validation_level is warn" do
-      warning_logger = instance_spy(Logger)
+      warning_logger = Object.new
+      warning_calls = call_recorded_method(warning_logger, :warn)
 
-      expect do
+      assert_nothing_raised do
         described_class.configure do |config|
           config.validation_level = :warn
           config.logger = warning_logger
           config.target = "invalid"
         end
-      end.not_to raise_error
+      end
 
-      expect(warning_logger).to have_received(:warn).with(/[Tt]arget.*format/)
+      assert_match(/[Tt]arget.*format/, warning_calls.calls_for(:warn).first.arguments.first)
     end
 
     it "does not duplicate middleware when configure is rerun" do
@@ -208,7 +211,7 @@ RSpec.describe ActiveJob::Temporal do
         end
       end
 
-      expect(described_class.config.middleware_chain.to_a.length).to eq(1)
+      assert_equal 1, described_class.config.middleware_chain.to_a.length
     end
   end
 
@@ -219,7 +222,7 @@ RSpec.describe ActiveJob::Temporal do
         config.namespace = "test"
       end
 
-      expect { described_class.validate! }.not_to raise_error
+      assert_nothing_raised { described_class.validate! }
     end
 
     it "raises ConfigurationError for invalid module configuration" do
@@ -232,14 +235,14 @@ RSpec.describe ActiveJob::Temporal do
       described_class.config.target = "invalid"
       described_class.config.in_configure_block = false
 
-      expect { described_class.validate! }.to raise_error(
-        ActiveJob::Temporal::ConfigurationError,
-        /[Tt]arget must.*host:port/
-      )
+      error = assert_raises(ActiveJob::Temporal::ConfigurationError) { described_class.validate! }
+
+      assert_match(/[Tt]arget must.*host:port/, error.message)
     end
 
     it "logs warnings for invalid module configuration when validation_level is warn" do
-      warning_logger = instance_spy(Logger)
+      warning_logger = Object.new
+      warning_calls = call_recorded_method(warning_logger, :warn)
 
       described_class.config.in_configure_block = true
       described_class.config.validation_level = :warn
@@ -247,8 +250,8 @@ RSpec.describe ActiveJob::Temporal do
       described_class.config.target = "invalid"
       described_class.config.in_configure_block = false
 
-      expect { described_class.validate! }.not_to raise_error
-      expect(warning_logger).to have_received(:warn).with(/[Tt]arget.*format/)
+      assert_nothing_raised { described_class.validate! }
+      assert_match(/[Tt]arget.*format/, warning_calls.calls_for(:warn).first.arguments.first)
     end
 
     it "skips validation when validation_level is none" do
@@ -257,7 +260,7 @@ RSpec.describe ActiveJob::Temporal do
       described_class.config.target = nil
       described_class.config.in_configure_block = false
 
-      expect { described_class.validate! }.not_to raise_error
+      assert_nothing_raised { described_class.validate! }
     end
   end
 
@@ -281,7 +284,7 @@ RSpec.describe ActiveJob::Temporal do
         RUBY
       ]
 
-      expect(system(*command)).to be(true)
+      assert_equal true, system(*command)
     end
 
     it "loads configurable independently after configuration" do
@@ -304,7 +307,7 @@ RSpec.describe ActiveJob::Temporal do
         RUBY
       ]
 
-      expect(system(*command)).to be(true)
+      assert_equal true, system(*command)
     end
   end
 
@@ -319,8 +322,8 @@ RSpec.describe ActiveJob::Temporal do
         Thread.new do
           100.times do
             config = described_class.config
-            expect(config.target).to eq("localhost:7233")
-            expect(config.namespace).to eq("test")
+            assert_equal "localhost:7233", config.target
+            assert_equal "test", config.namespace
           end
         end
       end
@@ -352,20 +355,20 @@ RSpec.describe ActiveJob::Temporal do
       threads.each(&:join)
 
       final_config = described_class.config
-      expect(final_config.target).to match(/localhost:7\d{3}/)
-      expect(final_config.namespace).to match(/test-\d/)
+      assert_match(/localhost:7\d{3}/, final_config.target)
+      assert_match(/test-\d/, final_config.namespace)
 
       case final_config.target
       when "localhost:7233"
-        expect(final_config.namespace).to eq("test-0")
+        assert_equal "test-0", final_config.namespace
       when "localhost:7234"
-        expect(final_config.namespace).to eq("test-1")
+        assert_equal "test-1", final_config.namespace
       when "localhost:7235"
-        expect(final_config.namespace).to eq("test-2")
+        assert_equal "test-2", final_config.namespace
       when "localhost:7236"
-        expect(final_config.namespace).to eq("test-3")
+        assert_equal "test-3", final_config.namespace
       when "localhost:7237"
-        expect(final_config.namespace).to eq("test-4")
+        assert_equal "test-4", final_config.namespace
       end
     end
 
@@ -402,10 +405,10 @@ RSpec.describe ActiveJob::Temporal do
       thread1.join
       thread2.join
 
-      expect(access_log).to satisfy do |log|
-        (log.index("thread1_end") < log.index("thread2_start")) ||
-          (log.index("thread2_end") < log.index("thread1_start"))
-      end
+      assert(
+        (access_log.index("thread1_end") < access_log.index("thread2_start")) ||
+          (access_log.index("thread2_end") < access_log.index("thread1_start"))
+      )
     end
 
     it "validates before another configure block can mutate configuration" do
@@ -414,7 +417,8 @@ RSpec.describe ActiveJob::Temporal do
       validation_started = Queue.new
       release_validation = Queue.new
 
-      allow_any_instance_of(ActiveJob::Temporal::Configuration).to receive(:validate!) do
+      original_validate = ActiveJob::Temporal::Configuration.instance_method(:validate!)
+      ActiveJob::Temporal::Configuration.define_method(:validate!) do
         access_mutex.synchronize { access_log << :validate_start }
         validation_started << true
         release_validation.pop
@@ -445,7 +449,9 @@ RSpec.describe ActiveJob::Temporal do
 
       [first_thread, second_thread].each(&:join)
 
-      expect(second_entered_before_first_validation_finished).to be(false)
+      assert_equal false, second_entered_before_first_validation_finished
+    ensure
+      ActiveJob::Temporal::Configuration.define_method(:validate!, original_validate) if original_validate
     end
   end
 end

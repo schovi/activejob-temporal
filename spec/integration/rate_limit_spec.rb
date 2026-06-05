@@ -36,7 +36,7 @@ class RecordingRateLimiter
   end
 end
 
-RSpec.describe "Rate limiting", :integration do
+describe "Rate limiting", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     original_rate_limiter = ActiveJob::Temporal.config.rate_limiter
@@ -76,16 +76,16 @@ RSpec.describe "Rate limiting", :integration do
       end
     end
 
-    expect(limiter.calls).to eq([
-                                  [
-                                    { "limit" => 10, "interval" => 60.0, "key" => "activejob-temporal:global" },
-                                    {
-                                      "limit" => 1,
-                                      "interval" => 1.0,
-                                      "key" => "activejob-temporal:job:RateLimitedIntegrationJob"
-                                    }
-                                  ]
-                                ])
+    assert_equal [
+      [
+        { "limit" => 10, "interval" => 60.0, "key" => "activejob-temporal:global" },
+        {
+          "limit" => 1,
+          "interval" => 1.0,
+          "key" => "activejob-temporal:job:RateLimitedIntegrationJob"
+        }
+      ]
+    ], limiter.calls
   ensure
     stop_worker(@worker_thread)
   end
@@ -93,24 +93,16 @@ RSpec.describe "Rate limiting", :integration do
   private
 
   def start_worker(task_queue)
-    Thread.new do
-      worker = Temporalio::Worker.new(
-        client: TemporalTestHelper.client,
-        task_queue: task_queue,
-        workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-        activities: [
-          ActiveJob::Temporal::Activities::RateLimitActivity,
-          ActiveJob::Temporal::Activities::AjRunnerActivity
-        ]
-      )
-      worker.run
-    end
+    start_temporal_worker(
+      task_queue,
+      activities: [
+        ActiveJob::Temporal::Activities::RateLimitActivity,
+        ActiveJob::Temporal::Activities::AjRunnerActivity
+      ]
+    )
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 end

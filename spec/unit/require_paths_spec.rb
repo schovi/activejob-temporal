@@ -4,7 +4,7 @@ require "spec_helper"
 require "open3"
 require "rbconfig"
 
-RSpec.describe "require paths" do
+describe "require paths" do
   def run_ruby(source)
     Open3.capture3(
       RbConfig.ruby,
@@ -26,8 +26,8 @@ RSpec.describe "require paths" do
       abort loaded.join("\\n") unless loaded.empty?
     RUBY
 
-    expect(status).to be_success, stderr
-    expect(stdout).to eq("")
+    assert status.success?, stderr
+    assert_equal "", stdout
   end
 
   it "keeps the legacy require path on the adapter surface" do
@@ -40,8 +40,8 @@ RSpec.describe "require paths" do
       abort loaded.join("\\n") unless loaded.empty?
     RUBY
 
-    expect(status).to be_success, stderr
-    expect(stdout).to eq("")
+    assert status.success?, stderr
+    assert_equal "", stdout
   end
 
   it "loads worker runtime files without loading listen" do
@@ -67,8 +67,8 @@ RSpec.describe "require paths" do
       abort "listen loaded" if listen_loaded
     RUBY
 
-    expect(status).to be_success, stderr
-    expect(stdout).to eq("")
+    assert status.success?, stderr
+    assert_equal "", stdout
   end
 
   it "loads listen when certificate watching starts with the default listener" do
@@ -94,8 +94,8 @@ RSpec.describe "require paths" do
       end
     RUBY
 
-    expect(status).to be_success, stderr
-    expect(stdout).to eq("")
+    assert status.success?, stderr
+    assert_equal "", stdout
   end
 
   it "does not load listen when only the certificate watcher file is required" do
@@ -106,8 +106,8 @@ RSpec.describe "require paths" do
       abort "listen loaded" if listen_loaded
     RUBY
 
-    expect(status).to be_success, stderr
-    expect(stdout).to eq("")
+    assert status.success?, stderr
+    assert_equal "", stdout
   end
 
   it "does not declare listen as a runtime dependency" do
@@ -115,6 +115,6 @@ RSpec.describe "require paths" do
 
     runtime_dependencies = specification.dependencies.select(&:runtime?).map(&:name)
 
-    expect(runtime_dependencies).not_to include("listen")
+    refute_includes runtime_dependencies, "listen"
   end
 end

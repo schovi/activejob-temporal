@@ -6,7 +6,7 @@ require "timeout"
 require "securerandom"
 require "temporalio/worker"
 
-RSpec.describe "ActiveJob Temporal child workflows", :integration do
+describe "ActiveJob Temporal child workflows", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -62,14 +62,18 @@ RSpec.describe "ActiveJob Temporal child workflows", :integration do
 
     result_collection = wait_for_result_collection
 
-    expect(TestState.instance.test_result).to include("child:parent:seed")
-    expect(result_collection["parent_result"]).to eq("parent:seed")
-    expect(result_collection["child_results"]).to contain_exactly(
-      hash_including(
+    assert_includes TestState.instance.test_result, "child:parent:seed"
+    assert_equal "parent:seed", result_collection["parent_result"]
+
+    child_results = result_collection["child_results"]
+    assert_equal 1, child_results.size
+    assert_hash_includes(
+      {
         "job_class" => "ChildWorkflowChildIntegrationJob",
         "job_id" => "#{parent_job.job_id}:child:1",
         "result" => "child-result"
-      )
+      },
+      child_results.first
     )
   end
 
@@ -127,44 +131,42 @@ RSpec.describe "ActiveJob Temporal child workflows", :integration do
 
     sequence = TestState.instance.test_result
     reducer_index = sequence.index("reducer:first-child-result,second-child-result")
-    expect(sequence.index("first_child:parent:seed")).to be < reducer_index
-    expect(sequence.index("second_child:parent:seed")).to be < reducer_index
+    assert_operator sequence.index("first_child:parent:seed"), :<, reducer_index
+    assert_operator sequence.index("second_child:parent:seed"), :<, reducer_index
 
     result_collection = wait_for_result_collection
-    expect(result_collection["child_results"]).to contain_exactly(
-      hash_including(
+    expected_child_results = [
+      {
         "job_class" => "ChildWorkflowFirstChildIntegrationJob",
         "job_id" => "#{parent_job.job_id}:child:1",
         "result" => "first-child-result"
-      ),
-      hash_including(
+      },
+      {
         "job_class" => "ChildWorkflowSecondChildIntegrationJob",
         "job_id" => "#{parent_job.job_id}:child:2",
         "result" => "second-child-result"
-      )
-    )
+      }
+    ]
+    child_results = result_collection["child_results"]
+
+    assert_equal 2, child_results.size
+    expected_child_results.each do |expected_child_result|
+      matching_child_result = child_results.any? do |child_result|
+        expected_child_result.all? { |key, value| child_result[key] == value }
+      end
+
+      assert matching_child_result
+    end
   end
 
   private
 
   def start_worker(task_queue)
-    @worker = Temporalio::Worker.new(
-      client: TemporalTestHelper.client,
-      task_queue: task_queue,
-      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-      activities: [
-        ActiveJob::Temporal::Activities::AjRunnerActivity
-      ]
-    )
-
-    Thread.new { @worker.run }
+    start_temporal_worker(task_queue)
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def wait_for_result_collection

@@ -24,7 +24,102 @@ unless defined?(Temporalio::Error::RPCError)
   end
 end
 
-RSpec.describe ActiveJob::Temporal::Cancel do
+module CancelSpecSupport
+  Page = Struct.new(:executions, :next_page_token)
+  WorkflowExecution = Struct.new(:id, :run_id)
+
+  class WorkflowInfo
+    attr_reader :id
+
+    def initialize(id = nil)
+      @id = id
+    end
+  end
+
+  class RecordingClient
+    attr_reader :calls
+
+    def initialize
+      @calls = MinitestHelpers::CallRecorder.new
+      @workflow_handles = {}
+      @workflow_lists = {}
+      @workflow_list_errors = {}
+      @workflow_pages = {}
+      @workflow_page_errors = {}
+    end
+
+    def register_workflow_handle(workflow_id, handle:, run_id: nil)
+      @workflow_handles[[workflow_id, run_id]] = handle
+    end
+
+    def register_workflows(query, workflows)
+      @workflow_lists[query] = workflows
+    end
+
+    def raise_on_list_workflows(query, error)
+      @workflow_list_errors[query] = error
+    end
+
+    def register_workflow_page(query, page_size:, next_page_token:, page:)
+      @workflow_pages[[query, page_size, next_page_token]] = page
+    end
+
+    def raise_on_list_workflow_page(query, page_size:, next_page_token:, error:)
+      @workflow_page_errors[[query, page_size, next_page_token]] = error
+    end
+
+    def workflow_handle(workflow_id, run_id: nil)
+      calls.record(:workflow_handle, workflow_id, run_id: run_id)
+      @workflow_handles.fetch([workflow_id, run_id])
+    end
+
+    def list_workflows(query)
+      calls.record(:list_workflows, query)
+      raise @workflow_list_errors.fetch(query) if @workflow_list_errors.key?(query)
+
+      @workflow_lists.fetch(query, [])
+    end
+
+    def list_workflow_page(query, page_size:, next_page_token:)
+      calls.record(:list_workflow_page, query, page_size: page_size, next_page_token: next_page_token)
+      key = [query, page_size, next_page_token]
+      raise @workflow_page_errors.fetch(key) if @workflow_page_errors.key?(key)
+
+      @workflow_pages.fetch(key)
+    end
+  end
+
+  class RecordingHandle
+    attr_reader :calls
+
+    def initialize
+      @calls = MinitestHelpers::CallRecorder.new
+      @errors = {}
+    end
+
+    def raise_on(method_name, error)
+      @errors[method_name] = error
+    end
+
+    def cancel
+      record_call(:cancel)
+    end
+
+    def terminate(reason = nil)
+      record_call(:terminate, reason)
+    end
+
+    private
+
+    def record_call(method_name, *)
+      calls.record(method_name, *)
+      error = @errors[method_name]
+      raise(error.respond_to?(:call) ? error.call : error) if error
+    end
+  end
+end
+
+describe ActiveJob::Temporal::Cancel do
   describe ".cancel" do
     let(:job_class) { SimpleJob }
     let(:job_id) { "550e8400-e29b-41d4-a716-446655440000" }
@@ -34,46 +129,32 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       "ajClass='#{job_class.name}' AND ajJobId='#{job_id}' AND " \
         "ExecutionStatus IN ('Completed', 'Failed', 'Cancelled', 'Terminated', 'TimedOut', 'ContinuedAsNew')"
     end
-    let(:temporal_client_class) do
-      Class.new do
-        def workflow_handle(_workflow_id, run_id: nil); end
-        def list_workflows(_query = nil); end
-      end
-    end
-    let(:workflow_handle_class) do
-      Class.new do
-        def cancel; end
-      end
-    end
-    let(:client) { instance_double(temporal_client_class) }
-    let(:handle) { instance_double(workflow_handle_class) }
+    let(:client) { CancelSpecSupport::RecordingClient.new }
+    let(:handle) { CancelSpecSupport::RecordingHandle.new }
 
     before do
-      allow(ActiveJob::Temporal).to receive(:client).and_return(client)
-      allow(client).to receive(:workflow_handle).with(workflow_id).and_return(handle)
-      allow(client).to receive(:list_workflows).and_return([])
-      allow(handle).to receive(:cancel)
-      allow(ActiveJob::Temporal::Logger).to receive(:log_event)
-      allow(ActiveJob::Temporal::Logger).to receive(:info)
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
-      allow(ActiveJob::Temporal::AuditLog).to receive(:record)
+      call_recorded_method(ActiveJob::Temporal, :client, returns: client)
+      client.register_workflow_handle(workflow_id, handle: handle)
+      client.register_workflows(running_query, [])
+      client.register_workflows(closed_query, [])
+      call_recorded_method(ActiveJob::Temporal::Logger, :log_event)
+      @logger_info_calls = call_recorded_method(ActiveJob::Temporal::Logger, :info)
+      @logger_warn_calls = call_recorded_method(ActiveJob::Temporal::Logger, :warn)
+      @audit_record_calls = call_recorded_method(ActiveJob::Temporal::AuditLog, :record)
     end
 
-    context "when the workflow is running" do
-      let(:workflow_info) { double("WorkflowInfo") }
+    describe "when the workflow is running" do
+      let(:workflow_info) { CancelSpecSupport::WorkflowInfo.new }
 
       before do
-        # Mock running workflow
-        allow(client).to receive(:list_workflows)
-          .with(running_query)
-          .and_return([workflow_info])
+        client.register_workflows(running_query, [workflow_info])
       end
 
       it "cancels the workflow via Temporal client" do
         described_class.cancel(job_class, job_id)
 
-        expect(client).to have_received(:workflow_handle).with(workflow_id)
-        expect(handle).to have_received(:cancel)
+        assert_called_with(client.calls, :workflow_handle, workflow_id, run_id: nil)
+        assert_called_with(handle.calls, :cancel)
       end
 
       it "escapes job class names when querying workflows" do
@@ -81,22 +162,24 @@ RSpec.describe ActiveJob::Temporal::Cancel do
         unsafe_name = "CancelJob' OR '1'='1"
         escaped_query = "ajClass='CancelJob'' OR ''1''=''1' AND ajJobId='#{job_id}' " \
                         "AND ExecutionStatus='Running'"
-        workflow_info = double("WorkflowInfo", id: "workflow-1")
+        workflow_info = CancelSpecSupport::WorkflowInfo.new("workflow-1")
 
-        allow(dynamic_job_class).to receive(:name).and_return(unsafe_name)
-        allow(client).to receive(:list_workflows).with(escaped_query).and_return([workflow_info])
-        allow(client).to receive(:workflow_handle).with("workflow-1").and_return(handle)
+        dynamic_job_class.define_singleton_method(:name) { unsafe_name }
+        client.register_workflows(escaped_query, [workflow_info])
+        client.register_workflow_handle("workflow-1", handle: handle)
 
         described_class.cancel(dynamic_job_class, job_id)
 
-        expect(client).to have_received(:list_workflows).with(escaped_query)
-        expect(handle).to have_received(:cancel)
+        assert_called_with(client.calls, :list_workflows, escaped_query)
+        assert_called_with(handle.calls, :cancel)
       end
 
       it "logs a cancellation request event" do
         described_class.cancel(job_class, job_id)
 
-        expect(ActiveJob::Temporal::Logger).to have_received(:info).with(
+        assert_called_with(
+          @logger_info_calls,
+          :info,
           "cancellation_requested",
           workflow_id: workflow_id,
           job_class: job_class.name,
@@ -107,7 +190,9 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       it "records a cancellation audit event" do
         described_class.cancel(job_class, job_id)
 
-        expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        assert_called_with(
+          @audit_record_calls,
+          :record,
           "job.cancelled",
           workflow_id: workflow_id,
           job_class: job_class.name,
@@ -122,14 +207,14 @@ RSpec.describe ActiveJob::Temporal::Cancel do
           code: Temporalio::Error::RPCError::Code::PERMISSION_DENIED,
           raw_grpc_status: nil
         )
-        allow(handle).to receive(:cancel).and_raise(cancellation_error)
+        handle.raise_on(:cancel, cancellation_error)
 
-        expect { described_class.cancel(job_class, job_id) }
-          .to raise_error(ActiveJob::Temporal::TemporalConnectionError) { |error|
-            expect(error.message).to include("Failed to cancel Temporal workflow for job_id #{job_id}")
-            expect(error.message).to include("permission denied")
-            expect(error.cause).to be(cancellation_error)
-          }
+        error = assert_raises(ActiveJob::Temporal::TemporalConnectionError) do
+          described_class.cancel(job_class, job_id)
+        end
+        assert_includes error.message, "Failed to cancel Temporal workflow for job_id #{job_id}"
+        assert_includes error.message, "permission denied"
+        assert_same cancellation_error, error.cause
       end
 
       it "keeps cancellation RPC not-found failures as WorkflowNotFoundError" do
@@ -138,57 +223,53 @@ RSpec.describe ActiveJob::Temporal::Cancel do
           code: Temporalio::Error::RPCError::Code::NOT_FOUND,
           raw_grpc_status: nil
         )
-        allow(handle).to receive(:cancel).and_raise(not_found_error)
+        handle.raise_on(:cancel, not_found_error)
 
-        expect { described_class.cancel(job_class, job_id) }
-          .to raise_error(ActiveJob::Temporal::WorkflowNotFoundError) { |error|
-            expect(error.message).to include("No workflow found for job_id #{job_id}")
-            expect(error.cause).to be(not_found_error)
-          }
+        error = assert_raises(ActiveJob::Temporal::WorkflowNotFoundError) do
+          described_class.cancel(job_class, job_id)
+        end
+        assert_includes error.message, "No workflow found for job_id #{job_id}"
+        assert_same not_found_error, error.cause
       end
 
-      context "when the workflow uses a custom workflow ID" do
+      describe "when the workflow uses a custom workflow ID" do
         let(:custom_workflow_id) { "tenant-42:ajwf:#{job_class.name}:#{job_id}" }
-        let(:workflow_info) { double("WorkflowInfo", id: custom_workflow_id) }
+        let(:workflow_info) { CancelSpecSupport::WorkflowInfo.new(custom_workflow_id) }
 
         before do
-          allow(client).to receive(:workflow_handle).with(custom_workflow_id).and_return(handle)
+          client.register_workflow_handle(custom_workflow_id, handle: handle)
         end
 
         it "cancels the workflow returned by Temporal search" do
           described_class.cancel(job_class, job_id)
 
-          expect(client).to have_received(:workflow_handle).with(custom_workflow_id)
-          expect(handle).to have_received(:cancel)
+          assert_called_with(client.calls, :workflow_handle, custom_workflow_id, run_id: nil)
+          assert_called_with(handle.calls, :cancel)
         end
       end
     end
 
-    context "when the workflow is already completed" do
-      let(:workflow_info) { double("WorkflowInfo") }
+    describe "when the workflow is already completed" do
+      let(:workflow_info) { CancelSpecSupport::WorkflowInfo.new }
 
       before do
-        # Not found in running workflows
-        allow(client).to receive(:list_workflows)
-          .with(running_query)
-          .and_return([])
-        # Found in closed workflows
-        allow(client).to receive(:list_workflows)
-          .with(closed_query)
-          .and_return([workflow_info])
+        client.register_workflows(running_query, [])
+        client.register_workflows(closed_query, [workflow_info])
       end
 
       it "returns false and does not attempt to cancel" do
         result = described_class.cancel(job_class, job_id)
 
-        expect(result).to eq(false)
-        expect(handle).not_to have_received(:cancel)
+        assert_equal false, result
+        refute_called(handle.calls, :cancel)
       end
 
       it "logs a warning that the workflow is already completed" do
         described_class.cancel(job_class, job_id)
 
-        expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        assert_called_with(
+          @logger_warn_calls,
+          :warn,
           "cancellation_workflow_already_completed",
           workflow_id: workflow_id,
           job_class: job_class.name,
@@ -198,80 +279,76 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       end
     end
 
-    context "when the workflow never existed" do
+    describe "when the workflow never existed" do
       before do
-        # Not found in running workflows
-        allow(client).to receive(:list_workflows)
-          .with(running_query)
-          .and_return([])
-        # Not found in closed workflows
-        allow(client).to receive(:list_workflows)
-          .with(closed_query)
-          .and_return([])
+        client.register_workflows(running_query, [])
+        client.register_workflows(closed_query, [])
       end
 
       it "raises WorkflowNotFoundError" do
-        expect { described_class.cancel(job_class, job_id) }
-          .to raise_error(ActiveJob::Temporal::WorkflowNotFoundError, /No workflow found for job_id #{job_id}/)
+        error = assert_raises(ActiveJob::Temporal::WorkflowNotFoundError) do
+          described_class.cancel(job_class, job_id)
+        end
+        assert_match(/No workflow found for job_id #{job_id}/, error.message)
       end
 
       it "does not cancel a workflow from another job class with the same job ID" do
         other_workflow_id = "ajwf:ScheduledJob:#{job_id}"
-        other_workflow_info = double("WorkflowInfo", id: other_workflow_id)
+        other_workflow_info = CancelSpecSupport::WorkflowInfo.new(other_workflow_id)
         broad_running_query = "ajJobId='#{job_id}' AND ExecutionStatus='Running'"
 
-        allow(client).to receive(:list_workflows)
-          .with(broad_running_query)
-          .and_return([other_workflow_info])
-        allow(client).to receive(:workflow_handle).with(other_workflow_id).and_return(handle)
+        client.register_workflows(broad_running_query, [other_workflow_info])
+        client.register_workflow_handle(other_workflow_id, handle: handle)
 
-        expect { described_class.cancel(job_class, job_id) }
-          .to raise_error(ActiveJob::Temporal::WorkflowNotFoundError)
-        expect(client).not_to have_received(:workflow_handle).with(other_workflow_id)
+        assert_raises(ActiveJob::Temporal::WorkflowNotFoundError) do
+          described_class.cancel(job_class, job_id)
+        end
+
+        other_workflow_calls = client.calls.calls_for(:workflow_handle).select do |call|
+          call.arguments == [other_workflow_id]
+        end
+        assert_empty other_workflow_calls
       end
     end
 
-    context "when Temporal connection fails" do
+    describe "when Temporal connection fails" do
       let(:connection_error) { StandardError.new("Connection refused") }
 
       before do
-        allow(client).to receive(:list_workflows)
-          .with(running_query)
-          .and_raise(connection_error)
+        client.raise_on_list_workflows(running_query, connection_error)
       end
 
       it "raises TemporalConnectionError" do
-        expect { described_class.cancel(job_class, job_id) }
-          .to raise_error(ActiveJob::Temporal::TemporalConnectionError,
-                          /Failed to query Temporal workflows for job_id #{job_id}/)
+        error = assert_raises(ActiveJob::Temporal::TemporalConnectionError) do
+          described_class.cancel(job_class, job_id)
+        end
+        assert_match(/Failed to query Temporal workflows for job_id #{job_id}/, error.message)
       end
     end
 
-    context "job_id validation" do
-      context "when job_id requires query escaping" do
+    describe "job_id validation" do
+      describe "when job_id requires query escaping" do
         let(:custom_job_id) { "test' OR '1'='1" }
         let(:escaped_running_query) do
           "ajClass='#{job_class.name}' AND ajJobId='test'' OR ''1''=''1' AND ExecutionStatus='Running'"
         end
         let(:escaped_workflow_id) { "ajwf:#{job_class.name}:#{custom_job_id}" }
-        let(:workflow_info) { double("WorkflowInfo") }
+        let(:workflow_info) { CancelSpecSupport::WorkflowInfo.new }
 
         before do
-          allow(client).to receive(:list_workflows)
-            .with(escaped_running_query)
-            .and_return([workflow_info])
-          allow(client).to receive(:workflow_handle).with(escaped_workflow_id).and_return(handle)
+          client.register_workflows(escaped_running_query, [workflow_info])
+          client.register_workflow_handle(escaped_workflow_id, handle: handle)
         end
 
         it "quotes the job ID before querying Temporal" do
           described_class.cancel(job_class, custom_job_id)
 
-          expect(client).to have_received(:list_workflows).with(escaped_running_query)
-          expect(handle).to have_received(:cancel)
+          assert_called_with(client.calls, :list_workflows, escaped_running_query)
+          assert_called_with(handle.calls, :cancel)
         end
       end
 
-      context "when job_id is a schedule-style execution ID" do
+      describe "when job_id is a schedule-style execution ID" do
         let(:schedule_job_id) do
           "ajschwf:daily-report-2026-05-25T20:07:45Z:019e60c0-2587-710d-8633-a0f90e9dd6f9"
         end
@@ -279,15 +356,13 @@ RSpec.describe ActiveJob::Temporal::Cancel do
         let(:schedule_run_id) { "019e60c0-2587-710d-8633-a0f90e9dd6f9" }
 
         before do
-          allow(client).to receive(:workflow_handle)
-            .with(schedule_workflow_id, run_id: schedule_run_id)
-            .and_return(handle)
+          client.register_workflow_handle(schedule_workflow_id, run_id: schedule_run_id, handle: handle)
         end
 
         it "accepts the schedule-style job ID" do
-          expect { described_class.cancel(job_class, schedule_job_id) }.not_to raise_error
-          expect(handle).to have_received(:cancel)
-          expect(client).not_to have_received(:list_workflows)
+          assert_nothing_raised { described_class.cancel(job_class, schedule_job_id) }
+          assert_called_with(handle.calls, :cancel)
+          refute_called(client.calls, :list_workflows)
         end
 
         it "wraps schedule execution cancellation RPC failures in TemporalConnectionError" do
@@ -296,114 +371,117 @@ RSpec.describe ActiveJob::Temporal::Cancel do
             code: Temporalio::Error::RPCError::Code::PERMISSION_DENIED,
             raw_grpc_status: nil
           )
-          allow(handle).to receive(:cancel).and_raise(cancellation_error)
+          handle.raise_on(:cancel, cancellation_error)
 
-          expect { described_class.cancel(job_class, schedule_job_id) }
-            .to raise_error(ActiveJob::Temporal::TemporalConnectionError) { |error|
-              expect(error.message).to include("Failed to cancel Temporal workflow for job_id #{schedule_job_id}")
-              expect(error.message).to include("namespace not found")
-              expect(error.cause).to be(cancellation_error)
-            }
+          error = assert_raises(ActiveJob::Temporal::TemporalConnectionError) do
+            described_class.cancel(job_class, schedule_job_id)
+          end
+          assert_includes error.message, "Failed to cancel Temporal workflow for job_id #{schedule_job_id}"
+          assert_includes error.message, "namespace not found"
+          assert_same cancellation_error, error.cause
         end
       end
 
-      context "when job_id is blank" do
+      describe "when job_id is blank" do
         let(:blank_job_id) { " " }
 
         it "raises ArgumentError with helpful message" do
-          expect { described_class.cancel(job_class, blank_job_id) }
-            .to raise_error(ArgumentError, /job_id must not be blank/)
+          error = assert_raises(ArgumentError) { described_class.cancel(job_class, blank_job_id) }
+          assert_match(/job_id must not be blank/, error.message)
 
-          expect(client).not_to have_received(:list_workflows)
+          refute_called(client.calls, :list_workflows)
         end
       end
 
-      context "when job_id is nil" do
+      describe "when job_id is nil" do
         let(:nil_job_id) { nil }
 
         it "raises ArgumentError" do
-          expect { described_class.cancel(job_class, nil_job_id) }
-            .to raise_error(ArgumentError, /job_id must be a String/)
+          error = assert_raises(ArgumentError) { described_class.cancel(job_class, nil_job_id) }
+          assert_match(/job_id must be a String/, error.message)
         end
       end
 
-      context "when job_id is an integer" do
+      describe "when job_id is an integer" do
         let(:integer_job_id) { 12_345 }
 
         it "raises ArgumentError" do
-          expect { described_class.cancel(job_class, integer_job_id) }
-            .to raise_error(ArgumentError, /job_id must be a String/)
+          error = assert_raises(ArgumentError) { described_class.cancel(job_class, integer_job_id) }
+          assert_match(/job_id must be a String/, error.message)
         end
       end
 
-      context "when job_id contains control characters" do
+      describe "when job_id contains control characters" do
         let(:control_job_id) { "job\n123" }
 
         it "raises ArgumentError before making any queries" do
-          expect { described_class.cancel(job_class, control_job_id) }
-            .to raise_error(ArgumentError, /control characters/)
+          error = assert_raises(ArgumentError) { described_class.cancel(job_class, control_job_id) }
+          assert_match(/control characters/, error.message)
 
-          expect(client).not_to have_received(:list_workflows)
+          refute_called(client.calls, :list_workflows)
         end
       end
 
-      context "when job_id is too long" do
+      describe "when job_id is too long" do
         let(:long_job_id) { "a" * (ActiveJob::Temporal::JobIdValidation::MAX_JOB_ID_LENGTH + 1) }
 
         it "raises ArgumentError before making any queries" do
-          expect { described_class.cancel(job_class, long_job_id) }
-            .to raise_error(ArgumentError, /maximum length/)
+          error = assert_raises(ArgumentError) { described_class.cancel(job_class, long_job_id) }
+          assert_match(/maximum length/, error.message)
 
-          expect(client).not_to have_received(:list_workflows)
+          refute_called(client.calls, :list_workflows)
         end
       end
 
-      context "when job_id is a valid UUID (lowercase)" do
+      describe "when job_id is a valid UUID (lowercase)" do
         let(:valid_uuid) { "550e8400-e29b-41d4-a716-446655440000" }
-        let(:workflow_info) { double("WorkflowInfo") }
+        let(:workflow_info) { CancelSpecSupport::WorkflowInfo.new }
 
         before do
-          allow(client).to receive(:list_workflows)
-            .with("ajClass='#{job_class.name}' AND ajJobId='#{valid_uuid}' AND ExecutionStatus='Running'")
-            .and_return([workflow_info])
+          client.register_workflows(
+            "ajClass='#{job_class.name}' AND ajJobId='#{valid_uuid}' AND ExecutionStatus='Running'",
+            [workflow_info]
+          )
         end
 
         it "accepts the UUID and proceeds with cancellation" do
-          expect { described_class.cancel(job_class, valid_uuid) }.not_to raise_error
+          assert_nothing_raised { described_class.cancel(job_class, valid_uuid) }
         end
       end
 
-      context "when job_id is a valid UUID (uppercase)" do
+      describe "when job_id is a valid UUID (uppercase)" do
         let(:valid_uuid_uppercase) { "550E8400-E29B-41D4-A716-446655440000" }
-        let(:workflow_info) { double("WorkflowInfo") }
+        let(:workflow_info) { CancelSpecSupport::WorkflowInfo.new }
         let(:workflow_id_uppercase) { "ajwf:#{job_class.name}:#{valid_uuid_uppercase}" }
 
         before do
-          allow(client).to receive(:list_workflows)
-            .with("ajClass='#{job_class.name}' AND ajJobId='#{valid_uuid_uppercase}' AND ExecutionStatus='Running'")
-            .and_return([workflow_info])
-          allow(client).to receive(:workflow_handle).with(workflow_id_uppercase).and_return(handle)
+          client.register_workflows(
+            "ajClass='#{job_class.name}' AND ajJobId='#{valid_uuid_uppercase}' AND ExecutionStatus='Running'",
+            [workflow_info]
+          )
+          client.register_workflow_handle(workflow_id_uppercase, handle: handle)
         end
 
         it "accepts the UUID and proceeds with cancellation" do
-          expect { described_class.cancel(job_class, valid_uuid_uppercase) }.not_to raise_error
+          assert_nothing_raised { described_class.cancel(job_class, valid_uuid_uppercase) }
         end
       end
 
-      context "when job_id is a valid UUID (mixed case)" do
+      describe "when job_id is a valid UUID (mixed case)" do
         let(:valid_uuid_mixed) { "550e8400-E29B-41d4-A716-446655440000" }
-        let(:workflow_info) { double("WorkflowInfo") }
+        let(:workflow_info) { CancelSpecSupport::WorkflowInfo.new }
         let(:workflow_id_mixed) { "ajwf:#{job_class.name}:#{valid_uuid_mixed}" }
 
         before do
-          allow(client).to receive(:list_workflows)
-            .with("ajClass='#{job_class.name}' AND ajJobId='#{valid_uuid_mixed}' AND ExecutionStatus='Running'")
-            .and_return([workflow_info])
-          allow(client).to receive(:workflow_handle).with(workflow_id_mixed).and_return(handle)
+          client.register_workflows(
+            "ajClass='#{job_class.name}' AND ajJobId='#{valid_uuid_mixed}' AND ExecutionStatus='Running'",
+            [workflow_info]
+          )
+          client.register_workflow_handle(workflow_id_mixed, handle: handle)
         end
 
         it "accepts the UUID and proceeds with cancellation" do
-          expect { described_class.cancel(job_class, valid_uuid_mixed) }.not_to raise_error
+          assert_nothing_raised { described_class.cancel(job_class, valid_uuid_mixed) }
         end
       end
     end
@@ -414,86 +492,72 @@ RSpec.describe ActiveJob::Temporal::Cancel do
 
     it "delegates to cancel_where with the job class search attribute" do
       summary = { terminated: 1, failed: 0, errors: [] }
-
-      allow(described_class).to receive(:cancel_where).and_return(summary)
+      cancel_where_calls = call_recorded_method(described_class, :cancel_where, returns: summary)
 
       result = described_class.cancel_all(job_class)
 
-      expect(result).to eq(summary)
-      expect(described_class).to have_received(:cancel_where).with(ajClass: job_class.name)
+      assert_equal summary, result
+      assert_called_with(cancel_where_calls, :cancel_where, ajClass: job_class.name)
     end
 
     it "terminates running workflows matching the job class" do
-      temporal_client_class = Class.new do
-        def workflow_handle(_workflow_id, run_id: nil); end
-        def list_workflow_page(_query = nil, page_size: nil, next_page_token: nil); end
-      end
-      workflow_handle_class = Class.new do
-        def terminate(_reason = nil); end
-      end
-      page_class = Struct.new(:executions, :next_page_token)
-      client = instance_double(temporal_client_class)
-      handle = instance_double(workflow_handle_class)
-      workflow_execution = double("WorkflowExecution", id: "workflow-1", run_id: "run-1")
+      client = CancelSpecSupport::RecordingClient.new
+      handle = CancelSpecSupport::RecordingHandle.new
+      workflow_execution = CancelSpecSupport::WorkflowExecution.new("workflow-1", "run-1")
       query = "ajClass='#{job_class.name}' AND ExecutionStatus='Running'"
 
-      allow(ActiveJob::Temporal).to receive(:client).and_return(client)
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
-        .and_return(page_class.new([workflow_execution], nil))
-      allow(client).to receive(:workflow_handle).with("workflow-1", run_id: "run-1").and_return(handle)
-      allow(handle).to receive(:terminate)
+      call_recorded_method(ActiveJob::Temporal, :client, returns: client)
+      call_recorded_method(ActiveJob::Temporal::AuditLog, :record)
+      client.register_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: nil,
+        page: CancelSpecSupport::Page.new([workflow_execution], nil)
+      )
+      client.register_workflow_handle("workflow-1", run_id: "run-1", handle: handle)
 
       result = described_class.cancel_all(job_class)
 
-      expect(result).to eq(terminated: 1, failed: 0, errors: [])
-      expect(handle).to have_received(:terminate).with("ActiveJob::Temporal.cancel_where")
+      assert_equal({ terminated: 1, failed: 0, errors: [] }, result)
+      assert_called_with(handle.calls, :terminate, "ActiveJob::Temporal.cancel_where")
     end
 
     it "rejects unnamed job classes" do
       unnamed_class = Class.new
 
-      expect { described_class.cancel_all(unnamed_class) }
-        .to raise_error(ArgumentError, /job_class must be a named class/)
+      error = assert_raises(ArgumentError) { described_class.cancel_all(unnamed_class) }
+      assert_match(/job_class must be a named class/, error.message)
     end
   end
 
   describe ".cancel_where" do
-    let(:temporal_client_class) do
-      Class.new do
-        def workflow_handle(_workflow_id, run_id: nil); end
-        def list_workflow_page(_query = nil, page_size: nil, next_page_token: nil); end
-      end
-    end
-    let(:workflow_handle_class) do
-      Class.new do
-        def terminate(_reason = nil); end
-      end
-    end
-    let(:page_class) { Struct.new(:executions, :next_page_token) }
-    let(:client) { instance_double(temporal_client_class) }
-    let(:handle) { instance_double(workflow_handle_class) }
+    let(:client) { CancelSpecSupport::RecordingClient.new }
+    let(:handle) { CancelSpecSupport::RecordingHandle.new }
 
     before do
-      allow(ActiveJob::Temporal).to receive(:client).and_return(client)
-      allow(handle).to receive(:terminate)
-      allow(ActiveJob::Temporal::AuditLog).to receive(:record)
+      call_recorded_method(ActiveJob::Temporal, :client, returns: client)
+      @audit_record_calls = call_recorded_method(ActiveJob::Temporal::AuditLog, :record)
     end
 
     it "terminates running workflows matching job class" do
-      workflow_execution = double("WorkflowExecution", id: "workflow-1", run_id: "run-1")
+      workflow_execution = CancelSpecSupport::WorkflowExecution.new("workflow-1", "run-1")
       query = "ajClass='#{SimpleJob.name}' AND ExecutionStatus='Running'"
 
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
-        .and_return(page_class.new([workflow_execution], nil))
-      allow(client).to receive(:workflow_handle).with("workflow-1", run_id: "run-1").and_return(handle)
+      client.register_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: nil,
+        page: CancelSpecSupport::Page.new([workflow_execution], nil)
+      )
+      client.register_workflow_handle("workflow-1", run_id: "run-1", handle: handle)
 
       result = described_class.cancel_where(ajClass: SimpleJob.name)
 
-      expect(result).to eq(terminated: 1, failed: 0, errors: [])
-      expect(handle).to have_received(:terminate).with("ActiveJob::Temporal.cancel_where")
-      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+      assert_equal({ terminated: 1, failed: 0, errors: [] }, result)
+      assert_called_with(handle.calls, :terminate, "ActiveJob::Temporal.cancel_where")
+      assert_called_with(
+        @audit_record_calls,
+        :record,
         "job.cancelled",
         workflow_id: "workflow-1",
         run_id: "run-1",
@@ -505,67 +569,79 @@ RSpec.describe ActiveJob::Temporal::Cancel do
     it "supports queue and tenant search attributes" do
       query = "ajQueue='low_priority' AND ajTenantId=123 AND ExecutionStatus='Running'"
 
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
-        .and_return(page_class.new([], nil))
+      client.register_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: nil,
+        page: CancelSpecSupport::Page.new([], nil)
+      )
 
       result = described_class.cancel_where(ajQueue: "low_priority", ajTenantId: 123)
 
-      expect(result).to eq(terminated: 0, failed: 0, errors: [])
+      assert_equal({ terminated: 0, failed: 0, errors: [] }, result)
     end
 
     it "handles paginated workflow results" do
-      first_workflow = double("WorkflowExecution", id: "workflow-1", run_id: "run-1")
-      second_workflow = double("WorkflowExecution", id: "workflow-2", run_id: "run-2")
+      first_workflow = CancelSpecSupport::WorkflowExecution.new("workflow-1", "run-1")
+      second_workflow = CancelSpecSupport::WorkflowExecution.new("workflow-2", "run-2")
       query = "ajQueue='bulk' AND ExecutionStatus='Running'"
-      first_handle = instance_double(workflow_handle_class)
-      second_handle = instance_double(workflow_handle_class)
+      first_handle = CancelSpecSupport::RecordingHandle.new
+      second_handle = CancelSpecSupport::RecordingHandle.new
 
-      allow(first_handle).to receive(:terminate)
-      allow(second_handle).to receive(:terminate)
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
-        .and_return(page_class.new([first_workflow], "next-page"))
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: "next-page")
-        .and_return(page_class.new([second_workflow], nil))
-      allow(client).to receive(:workflow_handle).with("workflow-1", run_id: "run-1").and_return(first_handle)
-      allow(client).to receive(:workflow_handle).with("workflow-2", run_id: "run-2").and_return(second_handle)
+      client.register_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: nil,
+        page: CancelSpecSupport::Page.new([first_workflow], "next-page")
+      )
+      client.register_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: "next-page",
+        page: CancelSpecSupport::Page.new([second_workflow], nil)
+      )
+      client.register_workflow_handle("workflow-1", run_id: "run-1", handle: first_handle)
+      client.register_workflow_handle("workflow-2", run_id: "run-2", handle: second_handle)
 
       result = described_class.cancel_where(ajQueue: "bulk")
 
-      expect(result).to eq(terminated: 2, failed: 0, errors: [])
-      expect(first_handle).to have_received(:terminate)
-      expect(second_handle).to have_received(:terminate)
+      assert_equal({ terminated: 2, failed: 0, errors: [] }, result)
+      assert_called_with(first_handle.calls, :terminate, "ActiveJob::Temporal.cancel_where")
+      assert_called_with(second_handle.calls, :terminate, "ActiveJob::Temporal.cancel_where")
     end
 
     it "records per-workflow termination failures" do
-      successful_workflow = double("WorkflowExecution", id: "workflow-1", run_id: "run-1")
-      failing_workflow = double("WorkflowExecution", id: "workflow-2", run_id: "run-2")
+      successful_workflow = CancelSpecSupport::WorkflowExecution.new("workflow-1", "run-1")
+      failing_workflow = CancelSpecSupport::WorkflowExecution.new("workflow-2", "run-2")
       query = "ajQueue='bulk' AND ExecutionStatus='Running'"
-      successful_handle = instance_double(workflow_handle_class)
-      failing_handle = instance_double(workflow_handle_class)
+      successful_handle = CancelSpecSupport::RecordingHandle.new
+      failing_handle = CancelSpecSupport::RecordingHandle.new
 
-      allow(successful_handle).to receive(:terminate)
-      allow(failing_handle).to receive(:terminate).and_raise(StandardError, "permission denied")
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
-        .and_return(page_class.new([successful_workflow, failing_workflow], nil))
-      allow(client).to receive(:workflow_handle).with("workflow-1", run_id: "run-1").and_return(successful_handle)
-      allow(client).to receive(:workflow_handle).with("workflow-2", run_id: "run-2").and_return(failing_handle)
+      failing_handle.raise_on(:terminate, -> { StandardError.new("permission denied") })
+      client.register_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: nil,
+        page: CancelSpecSupport::Page.new([successful_workflow, failing_workflow], nil)
+      )
+      client.register_workflow_handle("workflow-1", run_id: "run-1", handle: successful_handle)
+      client.register_workflow_handle("workflow-2", run_id: "run-2", handle: failing_handle)
 
       result = described_class.cancel_where(ajQueue: "bulk")
 
-      expect(result).to eq(
-        terminated: 1,
-        failed: 1,
-        errors: [
-          {
-            workflow_id: "workflow-2",
-            run_id: "run-2",
-            error: "StandardError: permission denied"
-          }
-        ]
+      assert_equal(
+        {
+          terminated: 1,
+          failed: 1,
+          errors: [
+            {
+              workflow_id: "workflow-2",
+              run_id: "run-2",
+              error: "StandardError: permission denied"
+            }
+          ]
+        },
+        result
       )
     end
 
@@ -575,7 +651,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       started_terminations = Queue.new
       release_terminations = Queue.new
       workflows = Array.new(workflow_count) do |index|
-        double("WorkflowExecution", id: "workflow-#{index}", run_id: "run-#{index}")
+        CancelSpecSupport::WorkflowExecution.new("workflow-#{index}", "run-#{index}")
       end
       handles = workflows.to_h do |workflow|
         [
@@ -589,28 +665,29 @@ RSpec.describe ActiveJob::Temporal::Cancel do
         ]
       end
 
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
-        .and_return(page_class.new(workflows, nil))
+      client.register_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: nil,
+        page: CancelSpecSupport::Page.new(workflows, nil)
+      )
       workflows.each do |workflow|
-        allow(client).to receive(:workflow_handle)
-          .with(workflow.id, run_id: workflow.run_id)
-          .and_return(handles.fetch(workflow.id))
+        client.register_workflow_handle(workflow.id, run_id: workflow.run_id, handle: handles.fetch(workflow.id))
       end
 
       cancellation_thread = Thread.new { described_class.cancel_where(ajQueue: "bulk") }
 
       begin
-        expect do
+        assert_nothing_raised do
           Timeout.timeout(1) do
             2.times { started_terminations.pop }
           end
-        end.not_to raise_error
+        end
       ensure
         workflow_count.times { release_terminations << true }
       end
 
-      expect(cancellation_thread.value).to eq(terminated: workflow_count, failed: 0, errors: [])
+      assert_equal({ terminated: workflow_count, failed: 0, errors: [] }, cancellation_thread.value)
     end
 
     it "caps recorded termination errors while counting every failure" do
@@ -618,74 +695,84 @@ RSpec.describe ActiveJob::Temporal::Cancel do
       workflow_count = error_limit + 5
       query = "ajQueue='bulk' AND ExecutionStatus='Running'"
       workflows = Array.new(workflow_count) do |index|
-        double("WorkflowExecution", id: "workflow-#{index}", run_id: "run-#{index}")
+        CancelSpecSupport::WorkflowExecution.new("workflow-#{index}", "run-#{index}")
       end
-      failing_handle = instance_double(workflow_handle_class)
+      failing_handle = CancelSpecSupport::RecordingHandle.new
 
-      allow(failing_handle).to receive(:terminate).and_raise(StandardError, "permission denied")
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
-        .and_return(page_class.new(workflows, nil))
+      failing_handle.raise_on(:terminate, -> { StandardError.new("permission denied") })
+      client.register_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: nil,
+        page: CancelSpecSupport::Page.new(workflows, nil)
+      )
       workflows.each do |workflow|
-        allow(client).to receive(:workflow_handle).with(workflow.id, run_id: workflow.run_id).and_return(failing_handle)
+        client.register_workflow_handle(workflow.id, run_id: workflow.run_id, handle: failing_handle)
       end
 
       result = described_class.cancel_where(ajQueue: "bulk")
 
-      expect(result[:terminated]).to eq(0)
-      expect(result[:failed]).to eq(workflow_count)
-      expect(result[:errors].size).to eq(error_limit)
-      expect(result[:errors]).to all(include(error: "StandardError: permission denied"))
+      assert_equal 0, result[:terminated]
+      assert_equal workflow_count, result[:failed]
+      assert_equal error_limit, result[:errors].size
+      result[:errors].each do |recorded_error|
+        assert_hash_includes({ error: "StandardError: permission denied" }, recorded_error)
+      end
     end
 
     it "escapes string search attribute values" do
       query = "ajQueue='vip''queue' AND ExecutionStatus='Running'"
 
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
-        .and_return(page_class.new([], nil))
+      client.register_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: nil,
+        page: CancelSpecSupport::Page.new([], nil)
+      )
 
       described_class.cancel_where(ajQueue: "vip'queue")
 
-      expect(client).to have_received(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
+      assert_called_with(client.calls, :list_workflow_page, query, page_size: 100, next_page_token: nil)
     end
 
     it "rejects unsupported search attributes before querying Temporal" do
-      allow(client).to receive(:list_workflow_page)
+      error = assert_raises(ArgumentError) { described_class.cancel_where(customAttribute: "value") }
+      assert_match(/Unsupported search attribute/, error.message)
 
-      expect { described_class.cancel_where(customAttribute: "value") }
-        .to raise_error(ArgumentError, /Unsupported search attribute/)
-
-      expect(client).not_to have_received(:list_workflow_page)
+      refute_called(client.calls, :list_workflow_page)
     end
 
     it "rejects empty filters" do
-      expect { described_class.cancel_where({}) }
-        .to raise_error(ArgumentError, /requires at least one search attribute/)
+      error = assert_raises(ArgumentError) { described_class.cancel_where({}) }
+      assert_match(/requires at least one search attribute/, error.message)
     end
 
     it "wraps list failures in TemporalConnectionError" do
       query = "ajQueue='bulk' AND ExecutionStatus='Running'"
 
-      allow(client).to receive(:list_workflow_page)
-        .with(query, page_size: 100, next_page_token: nil)
-        .and_raise(StandardError, "connection refused")
+      client.raise_on_list_workflow_page(
+        query,
+        page_size: 100,
+        next_page_token: nil,
+        error: StandardError.new("connection refused")
+      )
 
-      expect { described_class.cancel_where(ajQueue: "bulk") }
-        .to raise_error(ActiveJob::Temporal::TemporalConnectionError, /batch cancellation: connection refused/)
+      error = assert_raises(ActiveJob::Temporal::TemporalConnectionError) do
+        described_class.cancel_where(ajQueue: "bulk")
+      end
+      assert_match(/batch cancellation: connection refused/, error.message)
     end
   end
 end
 
-RSpec.describe ActiveJob::Temporal do
+describe ActiveJob::Temporal do
   describe ".cancel_all" do
     it "delegates to the cancellation module" do
       summary = { terminated: 1, failed: 0, errors: [] }
+      cancel_all_calls = call_recorded_method(ActiveJob::Temporal::Cancel, :cancel_all, returns: summary)
 
-      allow(ActiveJob::Temporal::Cancel).to receive(:cancel_all).with(SimpleJob).and_return(summary)
-
-      expect(described_class.cancel_all(SimpleJob)).to eq(summary)
+      assert_equal summary, described_class.cancel_all(SimpleJob)
+      assert_called_with(cancel_all_calls, :cancel_all, SimpleJob)
     end
   end
 
@@ -693,10 +780,10 @@ RSpec.describe ActiveJob::Temporal do
     it "delegates to the cancellation module" do
       filters = { ajQueue: "default" }
       summary = { terminated: 1, failed: 0, errors: [] }
+      cancel_where_calls = call_recorded_method(ActiveJob::Temporal::Cancel, :cancel_where, returns: summary)
 
-      allow(ActiveJob::Temporal::Cancel).to receive(:cancel_where).with(filters).and_return(summary)
-
-      expect(described_class.cancel_where(filters)).to eq(summary)
+      assert_equal summary, described_class.cancel_where(filters)
+      assert_called_with(cancel_where_calls, :cancel_where, filters)
     end
   end
 end

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require "bundler/gem_tasks"
-require "rspec/core/rake_task"
+require "rake/testtask"
 require "rubocop/rake_task"
 require "tempfile"
 require "yard"
@@ -85,33 +85,35 @@ def merged_changelog(generated_changelog, existing_changelog)
   ].reject(&:empty?).join("\n\n").concat("\n")
 end
 
-desc "Run the spec suite"
+def define_minitest_task(name, pattern, suite)
+  task name do
+    ENV["TEST_SUITE"] = suite
+  end
+
+  Rake::TestTask.new(name) do |t|
+    t.libs << "lib"
+    t.libs << "spec"
+    t.pattern = pattern
+    t.warning = false
+    t.verbose = false
+  end
+end
+
+desc "Run the test suite"
 task spec: %i[spec:unit spec:integration spec:contract]
 
 namespace :spec do
-  desc "Run unit specs"
-  RSpec::Core::RakeTask.new(:unit) do |t|
-    t.pattern = "spec/unit/**/*_spec.rb"
-    ENV["TEST_SUITE"] = "unit"
-  end
+  desc "Run unit tests"
+  define_minitest_task(:unit, "spec/unit/**/*_spec.rb", "unit")
 
-  desc "Run integration specs"
-  RSpec::Core::RakeTask.new(:integration) do |t|
-    t.pattern = "spec/integration/**/*_spec.rb"
-    ENV["TEST_SUITE"] = "integration"
-  end
+  desc "Run integration tests"
+  define_minitest_task(:integration, "spec/integration/**/*_spec.rb", "integration")
 
-  desc "Run Temporal SDK contract specs"
-  RSpec::Core::RakeTask.new(:contract) do |t|
-    t.pattern = "spec/contract/**/*_spec.rb"
-    ENV["TEST_SUITE"] = "contract"
-  end
+  desc "Run Temporal SDK contract tests"
+  define_minitest_task(:contract, "spec/contract/**/*_spec.rb", "contract")
 
-  desc "Run chaos specs"
-  RSpec::Core::RakeTask.new(:chaos) do |t|
-    t.pattern = "spec/chaos/**/*_spec.rb"
-    ENV["TEST_SUITE"] = "chaos"
-  end
+  desc "Run chaos tests"
+  define_minitest_task(:chaos, "spec/chaos/**/*_spec.rb", "chaos")
 end
 
 RuboCop::RakeTask.new(:rubocop)

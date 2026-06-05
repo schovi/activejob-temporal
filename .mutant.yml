@@ -1,13 +1,11 @@
 usage: opensource
 includes:
   - lib
+  - spec
 requires:
   - activejob/temporal
 integration:
-  name: rspec
-  arguments:
-    - --fail-fast
-    - spec/unit
+  name: minitest
 matcher:
   subjects:
     - ActiveJob::Temporal::WorkflowIdBuilder#build

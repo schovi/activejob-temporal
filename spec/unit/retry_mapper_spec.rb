@@ -4,7 +4,26 @@ require "spec_helper"
 require "active_support/core_ext/numeric/time"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe ActiveJob::Temporal::RetryMapper do
+module RetryMapperSpecSupport
+  class FakeBinding
+    def initialize(variables: {}, local_variable_defined_error: nil)
+      @variables = variables
+      @local_variable_defined_error = local_variable_defined_error
+    end
+
+    def local_variable_defined?(name)
+      raise @local_variable_defined_error if @local_variable_defined_error
+
+      @variables.key?(name)
+    end
+
+    def local_variable_get(name)
+      @variables.fetch(name)
+    end
+  end
+end
+
+describe ActiveJob::Temporal::RetryMapper do
   before do
     ActiveJob::Temporal.configure do |config|
       config.default_retry_initial_interval = 30.seconds
@@ -17,187 +36,182 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
     it "returns the default policy when the job has no retry_on or discard_on" do
       policy = described_class.for(SimpleJob)
 
-      expect(policy).to eq(
-        initial_interval: 30,
-        backoff_coefficient: 2.0,
-        maximum_attempts: 1,
-        non_retryable_error_types: []
+      assert_equal(
+        {
+          initial_interval: 30,
+          backoff_coefficient: 2.0,
+          maximum_attempts: 1,
+          non_retryable_error_types: []
+        },
+        policy
       )
     end
 
     it "maps retry_on wait and attempts to Temporal retry fields" do
       policy = described_class.for(RetryableJob)
 
-      expect(policy).to include(
-        initial_interval: 60,
-        backoff_coefficient: 2.0,
-        maximum_attempts: 5,
-        non_retryable_error_types: []
+      assert_hash_includes(
+        {
+          initial_interval: 60,
+          backoff_coefficient: 2.0,
+          maximum_attempts: 5,
+          non_retryable_error_types: []
+        },
+        policy
       )
     end
 
     it "prefers the most specific retry_on handler when no exception is provided" do
       policy = described_class.for(MultiRetryJob)
 
-      expect(policy).to include(
-        initial_interval: 10,
-        maximum_attempts: 6
-      )
+      assert_hash_includes({ initial_interval: 10, maximum_attempts: 6 }, policy)
     end
 
     it "selects the retry configuration for the provided exception class" do
       policy = described_class.for(MultiRetryJob, StandardError.new("boom"))
 
-      expect(policy).to include(
-        initial_interval: 40,
-        maximum_attempts: 2
-      )
+      assert_hash_includes({ initial_interval: 40, maximum_attempts: 2 }, policy)
     end
 
     it "collects discard_on declarations as non_retryable_error_types" do
       policy = described_class.for(DiscardableJob)
 
-      expect(policy[:non_retryable_error_types]).to eq(["FatalJobError"])
+      assert_equal ["FatalJobError"], policy[:non_retryable_error_types]
     end
 
     it "uses defaults for jobs that only declare discard_on" do
       policy = described_class.for(DiscardOnlyJob)
 
-      expect(policy).to include(
-        initial_interval: 30,
-        maximum_attempts: 1,
-        non_retryable_error_types: ["FatalJobError"]
+      assert_hash_includes(
+        { initial_interval: 30, maximum_attempts: 1, non_retryable_error_types: ["FatalJobError"] },
+        policy
       )
     end
 
     it "maps :unlimited attempts to zero maximum_attempts" do
       policy = described_class.for(UnlimitedRetryJob)
 
-      expect(policy[:maximum_attempts]).to eq(0)
+      assert_equal 0, policy[:maximum_attempts]
     end
 
     it "falls back to default interval for Proc wait values" do
       policy = described_class.for(ProcWaitRetryJob)
 
-      expect(policy[:initial_interval]).to eq(30)
+      assert_equal 30, policy[:initial_interval]
     end
 
     it "falls back to default interval for Symbol wait values" do
       policy = described_class.for(SymbolWaitRetryJob)
 
-      expect(policy[:initial_interval]).to eq(30)
+      assert_equal 30, policy[:initial_interval]
     end
 
     it "falls back to numeric Temporal settings for exponentially longer waits" do
       policy = described_class.for(ExponentiallyLongerRetryJob)
 
-      expect(policy).to include(
-        initial_interval: 30,
-        backoff_coefficient: 2.0,
-        maximum_attempts: 5
-      )
+      assert_hash_includes({ initial_interval: 30, backoff_coefficient: 2.0, maximum_attempts: 5 }, policy)
     end
 
     it "falls back to numeric Temporal settings for polynomially longer waits" do
       policy = described_class.for(PolynomiallyLongerRetryJob)
 
-      expect(policy).to include(
-        initial_interval: 30,
-        backoff_coefficient: 2.0,
-        maximum_attempts: 6
-      )
+      assert_hash_includes({ initial_interval: 30, backoff_coefficient: 2.0, maximum_attempts: 6 }, policy)
     end
 
     it "uses default attempts when the job declares a non-numeric value" do
-      expect(ActiveJob::Temporal::Logger).to receive(:warn).with(
-        "retry_attempts_fallback",
-        job_class: "InvalidAttemptsJob",
-        attempts: "\"five\"",
-        default_attempts: 1,
-        error_class: "ArgumentError"
-      )
+      warning_calls = call_recorded_method(ActiveJob::Temporal::Logger, :warn)
 
       policy = described_class.for(InvalidAttemptsJob)
 
-      expect(policy[:maximum_attempts]).to eq(1)
+      warning_call = warning_calls.calls_for(:warn).first
+      assert_equal ["retry_attempts_fallback"], warning_call.arguments
+      assert_equal(
+        {
+          job_class: "InvalidAttemptsJob",
+          attempts: "\"five\"",
+          default_attempts: 1,
+          error_class: "ArgumentError"
+        },
+        warning_call.keywords
+      )
+      assert_equal 1, policy[:maximum_attempts]
     end
 
     it "uses configured defaults when ActiveJob retry metadata falls back" do
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      call_recorded_method(ActiveJob::Temporal::Logger, :warn)
       handler = handler_with(failing_binding, active_job_handler_source_location(:retry_on))
       job_class = job_class_with_rescue_handlers([[SampleJobError, handler]])
 
       policy = described_class.for(job_class)
 
-      expect(policy).to include(
-        initial_interval: 30,
-        maximum_attempts: 1
-      )
+      assert_hash_includes({ initial_interval: 30, maximum_attempts: 1 }, policy)
     end
 
     it "collects discard handlers when ActiveJob discard metadata falls back" do
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
-      handler = handler_with(binding_double, active_job_handler_source_location(:discard_on))
+      call_recorded_method(ActiveJob::Temporal::Logger, :warn)
+      handler = handler_with(fake_binding, active_job_handler_source_location(:discard_on))
       job_class = job_class_with_rescue_handlers([[FatalJobError, handler]])
 
       policy = described_class.for(job_class)
 
-      expect(policy[:non_retryable_error_types]).to eq(["FatalJobError"])
+      assert_equal ["FatalJobError"], policy[:non_retryable_error_types]
     end
 
     it "constantizes handler names when defined outside the job class" do
       policy = described_class.for(ExternalConstantRetryJob, NetworkTimeoutError.new("boom"))
 
-      expect(policy[:initial_interval]).to eq(15)
-      expect(policy[:maximum_attempts]).to eq(2)
+      assert_equal 15, policy[:initial_interval]
+      assert_equal 2, policy[:maximum_attempts]
     end
 
     it "reuses extracted handler metadata across policy builds" do
       described_class.remove_instance_variable(:@extractor) if described_class.instance_variable_defined?(:@extractor)
       described_class.for(RetryableJob)
-      allow(File).to receive(:readlines).and_call_original
+      original_readlines = File.method(:readlines)
+      readlines_calls = call_recorded_method(File, :readlines) do |*arguments, **keywords|
+        original_readlines.call(*arguments, **keywords)
+      end
 
       described_class.for(RetryableJob)
 
-      expect(File).not_to have_received(:readlines)
+      assert_empty readlines_calls.calls_for(:readlines)
     end
   end
 
   describe ".discard_exception?" do
     it "returns true for discard_on exceptions" do
-      expect(described_class.discard_exception?(DiscardableJob, FatalJobError.new("fatal")))
-        .to be(true)
+      assert_equal true, described_class.discard_exception?(DiscardableJob, FatalJobError.new("fatal"))
     end
 
     it "returns true for subclasses of discard_on exceptions" do
-      expect(described_class.discard_exception?(DiscardableJob, DerivedFatalJobError.new("fatal")))
-        .to be(true)
+      assert_equal true, described_class.discard_exception?(DiscardableJob, DerivedFatalJobError.new("fatal"))
     end
 
     it "returns false when the job does not declare discard_on" do
-      expect(described_class.discard_exception?(RetryableJob, FatalJobError.new("fatal")))
-        .to be(false)
+      assert_equal false, described_class.discard_exception?(RetryableJob, FatalJobError.new("fatal"))
     end
 
     it "returns false for unrelated exceptions" do
-      expect(described_class.discard_exception?(DiscardableJob, StandardError.new("boom")))
-        .to be(false)
+      assert_equal false, described_class.discard_exception?(DiscardableJob, StandardError.new("boom"))
     end
 
     it "returns false when job_class is nil" do
-      expect(described_class.discard_exception?(nil, FatalJobError.new("fatal"))).to be(false)
+      assert_equal false, described_class.discard_exception?(nil, FatalJobError.new("fatal"))
     end
 
     it "returns false when exception is nil" do
-      expect(described_class.discard_exception?(DiscardableJob, nil)).to be(false)
+      assert_equal false, described_class.discard_exception?(DiscardableJob, nil)
     end
   end
 
   describe ".exception_execution_keys" do
     it "returns ActiveJob exception execution keys for retry handlers" do
-      expect(described_class.exception_execution_keys(MultiRetryJob)).to contain_exactly(
-        "[SecondarySampleError]",
-        "[StandardError]"
+      assert_unordered_equal(
+        [
+          "[SecondarySampleError]",
+          "[StandardError]"
+        ],
+        described_class.exception_execution_keys(MultiRetryJob)
       )
     end
   end
@@ -207,20 +221,11 @@ RSpec.describe ActiveJob::Temporal::RetryMapper do
   end
 
   def failing_binding
-    instance_double(Binding).tap do |handler_binding|
-      allow(handler_binding).to receive(:local_variable_defined?).and_raise(NameError, "attempts")
-    end
+    RetryMapperSpecSupport::FakeBinding.new(local_variable_defined_error: NameError.new("attempts"))
   end
 
-  def binding_double(variables = {})
-    instance_double(Binding).tap do |handler_binding|
-      allow(handler_binding).to receive(:local_variable_defined?) do |name|
-        variables.key?(name)
-      end
-      allow(handler_binding).to receive(:local_variable_get) do |name|
-        variables.fetch(name)
-      end
-    end
+  def fake_binding(variables = {})
+    RetryMapperSpecSupport::FakeBinding.new(variables: variables)
   end
 
   def handler_with(handler_binding, source_location)

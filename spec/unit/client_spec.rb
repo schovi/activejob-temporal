@@ -3,20 +3,27 @@
 require "spec_helper"
 require "tmpdir"
 
-RSpec.describe ActiveJob::Temporal, ".client" do
+module ClientSpecSupport
+  class FakeClient
+    attr_reader :close_count
+
+    def initialize
+      @close_count = 0
+    end
+
+    def close
+      @close_count += 1
+      nil
+    end
+  end
+end
+
+describe ActiveJob::Temporal, ".client" do
   let(:tls_env_keys) do
     %w[TEMPORAL_TLS_CERT TEMPORAL_TLS_KEY TEMPORAL_TLS_SERVER_NAME TEMPORAL_TLS_SERVER_ROOT_CA_CERT]
   end
 
-  def expect_tls_options(tls, client_cert: nil, client_private_key: nil, server_root_ca_cert: nil, domain: nil)
-    expect(tls.client_cert).to eq(client_cert)
-    expect(tls.client_private_key).to eq(client_private_key)
-    expect(tls.server_root_ca_cert).to eq(server_root_ca_cert)
-    expect(tls.domain).to eq(domain)
-  end
-
   around do |example|
-    # Save original configuration state before resetting
     original_client = described_class.instance_variable_get(:@client)
     original_config_mvar = described_class.instance_variable_get(:@config_mvar)
     original_target = described_class.config&.target
@@ -25,7 +32,6 @@ RSpec.describe ActiveJob::Temporal, ".client" do
 
     example.run
   ensure
-    # Restore original configuration state after test completes
     described_class.instance_variable_set(:@client, original_client)
     described_class.instance_variable_set(:@config_mvar, original_config_mvar)
     if original_config_mvar
@@ -38,10 +44,8 @@ RSpec.describe ActiveJob::Temporal, ".client" do
   end
 
   before do
-    # Reset instance variables and stub Temporal client for each test
     described_class.instance_variable_set(:@client, nil)
     described_class.instance_variable_set(:@config_mvar, nil)
-    stub_const("Temporalio::Client", class_double("Temporalio::Client"))
   end
 
   around do |example|
@@ -67,148 +71,131 @@ RSpec.describe ActiveJob::Temporal, ".client" do
       config.target = "localhost:7233"
       config.namespace = "custom"
     end
+    client_instance = fake_client
+    stub_connect(client_instance)
 
-    client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect).with(
-      "localhost:7233",
-      "custom"
-    ).and_return(client_instance)
-
-    expect(described_class.client).to be(client_instance)
+    assert_same client_instance, described_class.client
+    assert_equal ["localhost:7233", "custom"], connect_call.arguments
   end
 
   it "memoizes the client instance" do
-    configured_client = instance_double("Temporalio::Client")
-    allow(Temporalio::Client).to receive(:connect).and_return(configured_client)
+    configured_client = fake_client
+    stub_connect(configured_client)
 
     first_call = described_class.client
     second_call = described_class.client
 
-    expect(first_call).to be(second_call)
-    expect(Temporalio::Client).to have_received(:connect).once
+    assert_same first_call, second_call
+    assert_equal 1, connect_calls.size
   end
 
   it "reloads the memoized client with a fresh connection" do
-    first_client = instance_double("Temporalio::Client")
-    second_client = instance_double("Temporalio::Client")
-    allow(Temporalio::Client).to receive(:connect).and_return(first_client, second_client)
+    first_client = fake_client
+    second_client = fake_client
+    stub_connect(first_client, second_client)
 
-    expect(described_class.client).to be(first_client)
-    expect(described_class.reload_client!).to be(second_client)
-    expect(described_class.client).to be(second_client)
-    expect(Temporalio::Client).to have_received(:connect).twice
+    assert_same first_client, described_class.client
+    assert_same second_client, described_class.reload_client!
+    assert_same second_client, described_class.client
+    assert_equal 2, connect_calls.size
   end
 
   it "closes the previous client after a successful reload when supported" do
-    first_client = double("Temporalio::Client", close: true)
-    second_client = double("Temporalio::Client", close: true)
-    allow(Temporalio::Client).to receive(:connect).and_return(first_client, second_client)
+    first_client = fake_client
+    second_client = fake_client
+    stub_connect(first_client, second_client)
 
     described_class.client
     described_class.reload_client!
 
-    expect(first_client).to have_received(:close)
-    expect(second_client).not_to have_received(:close)
+    assert_equal 1, first_client.close_count
+    assert_equal 0, second_client.close_count
   end
 
   it "keeps the previous client when reload connection fails" do
-    configured_client = instance_double("Temporalio::Client")
-    allow(Temporalio::Client).to receive(:connect).and_return(configured_client)
+    configured_client = fake_client
+    connection_results = [configured_client]
+    stub_connect do
+      raise StandardError, "unreachable" if connection_results.empty?
+
+      connection_results.shift
+    end
     described_class.client
 
-    allow(Temporalio::Client).to receive(:connect).and_raise(StandardError, "unreachable")
-
-    expect { described_class.reload_client! }.to raise_error(ActiveJob::Temporal::Error)
-    expect(described_class.client).to be(configured_client)
+    assert_raises(ActiveJob::Temporal::Error) { described_class.reload_client! }
+    assert_same configured_client, described_class.client
   end
 
   it "keeps the previous client when the reload block fails" do
-    first_client = double("Temporalio::Client", close: true)
-    second_client = double("Temporalio::Client", close: true)
-    allow(Temporalio::Client).to receive(:connect).and_return(first_client, second_client)
+    first_client = fake_client
+    second_client = fake_client
+    stub_connect(first_client, second_client)
     described_class.client
 
-    expect do
+    error = assert_raises(RuntimeError) do
       described_class.reload_client! { raise "worker replacement failed" }
-    end.to raise_error(RuntimeError, /worker replacement failed/)
-    expect(described_class.client).to be(first_client)
-    expect(first_client).not_to have_received(:close)
-    expect(second_client).to have_received(:close)
+    end
+
+    assert_match(/worker replacement failed/, error.message)
+    assert_same first_client, described_class.client
+    assert_equal 0, first_client.close_count
+    assert_equal 1, second_client.close_count
   end
 
   it "passes optional TLS options when provided via environment variables" do
     ENV["TEMPORAL_TLS_CERT"] = "cert-data"
     ENV["TEMPORAL_TLS_KEY"] = "key-data"
     ENV["TEMPORAL_TLS_SERVER_NAME"] = "temporal.example.dev"
+    client_instance = fake_client
+    stub_connect(client_instance)
 
-    client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
-      expect(target).to eq("127.0.0.1:7233")
-      expect(namespace).to eq("default")
-      expect_tls_options(
-        kwargs[:tls],
-        client_cert: "cert-data",
-        client_private_key: "key-data",
-        domain: "temporal.example.dev"
-      )
-      client_instance
-    end
-
-    expect(described_class.client).to be(client_instance)
+    assert_same client_instance, described_class.client
+    assert_equal ["127.0.0.1:7233", "default"], connect_call.arguments
+    assert_tls_options(
+      connect_call.keywords[:tls],
+      client_cert: "cert-data",
+      client_private_key: "key-data",
+      domain: "temporal.example.dev"
+    )
   end
 
   it "compacts TLS options when only some environment variables are set" do
     ENV["TEMPORAL_TLS_CERT"] = "cert-data"
+    client_instance = fake_client
+    stub_connect(client_instance)
 
-    client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
-      expect(target).to eq("127.0.0.1:7233")
-      expect(namespace).to eq("default")
-      expect_tls_options(kwargs[:tls], client_cert: "cert-data")
-      client_instance
-    end
-
-    expect(described_class.client).to be(client_instance)
+    assert_same client_instance, described_class.client
+    assert_equal ["127.0.0.1:7233", "default"], connect_call.arguments
+    assert_tls_options(connect_call.keywords[:tls], client_cert: "cert-data")
   end
 
   it "handles only TLS key being set" do
     ENV["TEMPORAL_TLS_KEY"] = "key-only"
+    client_instance = fake_client
+    stub_connect(client_instance)
 
-    client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
-      expect(target).to eq("127.0.0.1:7233")
-      expect(namespace).to eq("default")
-      expect_tls_options(kwargs[:tls], client_private_key: "key-only")
-      client_instance
-    end
-
-    expect(described_class.client).to be(client_instance)
+    assert_same client_instance, described_class.client
+    assert_equal ["127.0.0.1:7233", "default"], connect_call.arguments
+    assert_tls_options(connect_call.keywords[:tls], client_private_key: "key-only")
   end
 
   it "handles only TLS server_name being set" do
     ENV["TEMPORAL_TLS_SERVER_NAME"] = "temporal.example.com"
+    client_instance = fake_client
+    stub_connect(client_instance)
 
-    client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
-      expect(target).to eq("127.0.0.1:7233")
-      expect(namespace).to eq("default")
-      expect_tls_options(kwargs[:tls], domain: "temporal.example.com")
-      client_instance
-    end
-
-    expect(described_class.client).to be(client_instance)
+    assert_same client_instance, described_class.client
+    assert_equal ["127.0.0.1:7233", "default"], connect_call.arguments
+    assert_tls_options(connect_call.keywords[:tls], domain: "temporal.example.com")
   end
 
   it "passes optional TLS root CA when provided via environment variables" do
     ENV["TEMPORAL_TLS_SERVER_ROOT_CA_CERT"] = "root-ca-data"
+    client_instance = fake_client
+    stub_connect(client_instance)
 
-    client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |_target, _namespace, **kwargs|
-      expect_tls_options(kwargs[:tls], server_root_ca_cert: "root-ca-data")
-      client_instance
-    end
-
-    expect(described_class.client).to be(client_instance)
+    assert_same client_instance, described_class.client
+    assert_tls_options(connect_call.keywords[:tls], server_root_ca_cert: "root-ca-data")
   end
 
   it "prefers TLS configuration defined on the config object" do
@@ -220,52 +207,40 @@ RSpec.describe ActiveJob::Temporal, ".client" do
         private_key: "config-key"
       }
     end
+    client_instance = fake_client
+    stub_connect(client_instance)
 
-    client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |target, namespace, **kwargs|
-      expect(target).to eq("localhost:7233")
-      expect(namespace).to eq("custom")
-      expect_tls_options(
-        kwargs[:tls],
-        client_cert: "config-cert",
-        client_private_key: "config-key"
-      )
-      client_instance
-    end
-
-    expect(described_class.client).to be(client_instance)
+    assert_same client_instance, described_class.client
+    assert_equal ["localhost:7233", "custom"], connect_call.arguments
+    assert_tls_options(
+      connect_call.keywords[:tls],
+      client_cert: "config-cert",
+      client_private_key: "config-key"
+    )
   end
 
   it "allows TLS to be explicitly disabled on the config object" do
     ENV["TEMPORAL_TLS_CERT"] = "cert-data"
-
     described_class.configure do |config|
       config.tls = false
     end
+    client_instance = fake_client
+    stub_connect(client_instance)
 
-    client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |_target, _namespace, **kwargs|
-      expect(kwargs).to eq(tls: false)
-      client_instance
-    end
-
-    expect(described_class.client).to be(client_instance)
+    assert_same client_instance, described_class.client
+    assert_equal({ tls: false }, connect_call.keywords)
   end
 
   it "passes SDK-native TLS options through unchanged" do
     tls_options = ActiveJob::Temporal::Client::TLS_OPTIONS_CLASS.new(client_cert: "sdk-cert")
-
     described_class.configure do |config|
       config.tls = tls_options
     end
+    client_instance = fake_client
+    stub_connect(client_instance)
 
-    client_instance = instance_double("Temporalio::Client")
-    expect(Temporalio::Client).to receive(:connect) do |_target, _namespace, **kwargs|
-      expect(kwargs[:tls]).to be(tls_options)
-      client_instance
-    end
-
-    expect(described_class.client).to be(client_instance)
+    assert_same client_instance, described_class.client
+    assert_same tls_options, connect_call.keywords[:tls]
   end
 
   it "reads TLS certificate files when path configuration is present" do
@@ -283,20 +258,17 @@ RSpec.describe ActiveJob::Temporal, ".client" do
         config.tls_server_root_ca_cert_path = root_ca_path
         config.tls_domain = "temporal.example.dev"
       end
+      client_instance = fake_client
+      stub_connect(client_instance)
 
-      client_instance = instance_double("Temporalio::Client")
-      expect(Temporalio::Client).to receive(:connect) do |_target, _namespace, **kwargs|
-        expect_tls_options(
-          kwargs[:tls],
-          client_cert: "cert-from-file",
-          client_private_key: "key-from-file",
-          server_root_ca_cert: "root-ca-from-file",
-          domain: "temporal.example.dev"
-        )
-        client_instance
-      end
-
-      expect(described_class.client).to be(client_instance)
+      assert_same client_instance, described_class.client
+      assert_tls_options(
+        connect_call.keywords[:tls],
+        client_cert: "cert-from-file",
+        client_private_key: "key-from-file",
+        server_root_ca_cert: "root-ca-from-file",
+        domain: "temporal.example.dev"
+      )
     end
   end
 
@@ -313,10 +285,11 @@ RSpec.describe ActiveJob::Temporal, ".client" do
       end
       File.delete(cert_path)
       File.symlink(key_path, cert_path)
+      stub_connect(fake_client)
 
-      expect(Temporalio::Client).not_to receive(:connect)
-      expect { described_class.client }
-        .to raise_error(ActiveJob::Temporal::Error, /TLS file path must not be a symlink/)
+      error = assert_raises(ActiveJob::Temporal::Error) { described_class.client }
+      assert_match(/TLS file path must not be a symlink/, error.message)
+      assert_empty connect_calls
     end
   end
 
@@ -325,15 +298,13 @@ RSpec.describe ActiveJob::Temporal, ".client" do
       config.target = "1.2.3.4:7233"
       config.namespace = "production"
     end
+    stub_connect(error: StandardError.new("unreachable"))
 
-    allow(Temporalio::Client).to receive(:connect).and_raise(StandardError, "unreachable")
-
-    expect do
-      described_class.client
-    end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal at 1\.2\.3\.4:7233/)
+    error = assert_raises(ActiveJob::Temporal::Error) { described_class.client }
+    assert_match(/Unable to connect to Temporal at 1\.2\.3\.4:7233/, error.message)
   end
 
-  context "TLS certificate error handling" do
+  describe "TLS certificate error handling" do
     it "wraps OpenSSL certificate errors with descriptive message" do
       require "openssl"
 
@@ -341,13 +312,10 @@ RSpec.describe ActiveJob::Temporal, ".client" do
         config.target = "temporal.example.com:7233"
         config.namespace = "default"
       end
+      stub_connect(error: OpenSSL::X509::CertificateError.new("invalid certificate format"))
 
-      allow(Temporalio::Client).to receive(:connect)
-        .and_raise(OpenSSL::X509::CertificateError, "invalid certificate format")
-
-      expect do
-        described_class.client
-      end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal/)
+      error = assert_raises(ActiveJob::Temporal::Error) { described_class.client }
+      assert_match(/Unable to connect to Temporal/, error.message)
     end
 
     it "wraps socket errors when target is unreachable" do
@@ -355,13 +323,10 @@ RSpec.describe ActiveJob::Temporal, ".client" do
         config.target = "invalid.temporal.example.com:7233"
         config.namespace = "default"
       end
+      stub_connect(error: SocketError.new("getaddrinfo: nodename nor servname provided"))
 
-      allow(Temporalio::Client).to receive(:connect)
-        .and_raise(SocketError, "getaddrinfo: nodename nor servname provided")
-
-      expect do
-        described_class.client
-      end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal/)
+      error = assert_raises(ActiveJob::Temporal::Error) { described_class.client }
+      assert_match(/Unable to connect to Temporal/, error.message)
     end
 
     it "wraps connection refused errors with descriptive message" do
@@ -369,13 +334,10 @@ RSpec.describe ActiveJob::Temporal, ".client" do
         config.target = "localhost:7233"
         config.namespace = "default"
       end
+      stub_connect(error: Errno::ECONNREFUSED.new("Connection refused"))
 
-      allow(Temporalio::Client).to receive(:connect)
-        .and_raise(Errno::ECONNREFUSED, "Connection refused")
-
-      expect do
-        described_class.client
-      end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal at localhost:7233/)
+      error = assert_raises(ActiveJob::Temporal::Error) { described_class.client }
+      assert_match(/Unable to connect to Temporal at localhost:7233/, error.message)
     end
 
     it "wraps timeout errors when connection takes too long" do
@@ -383,13 +345,50 @@ RSpec.describe ActiveJob::Temporal, ".client" do
         config.target = "slow.temporal.example.com:7233"
         config.namespace = "default"
       end
+      stub_connect(error: Errno::ETIMEDOUT.new("Connection timed out"))
 
-      allow(Temporalio::Client).to receive(:connect)
-        .and_raise(Errno::ETIMEDOUT, "Connection timed out")
-
-      expect do
-        described_class.client
-      end.to raise_error(ActiveJob::Temporal::Error, /Unable to connect to Temporal/)
+      error = assert_raises(ActiveJob::Temporal::Error) { described_class.client }
+      assert_match(/Unable to connect to Temporal/, error.message)
     end
+  end
+
+  private
+
+  def assert_tls_options(tls, client_cert: nil, client_private_key: nil, server_root_ca_cert: nil, domain: nil)
+    assert_tls_value client_cert, tls.client_cert
+    assert_tls_value client_private_key, tls.client_private_key
+    assert_tls_value server_root_ca_cert, tls.server_root_ca_cert
+    assert_tls_value domain, tls.domain
+  end
+
+  def assert_tls_value(expected, actual)
+    return assert_nil actual if expected.nil?
+
+    assert_equal expected, actual
+  end
+
+  def fake_client
+    ClientSpecSupport::FakeClient.new
+  end
+
+  def stub_connect(*results, error: nil, &implementation)
+    result_queue = results.dup
+    @connect_recorder = call_recorded_method(Temporalio::Client, :connect) do |target, namespace, **keywords|
+      raise error if error
+
+      if implementation
+        implementation.call(target, namespace, **keywords)
+      else
+        result_queue.shift
+      end
+    end
+  end
+
+  def connect_calls
+    @connect_recorder.calls_for(:connect)
+  end
+
+  def connect_call(index = 0)
+    connect_calls.fetch(index)
   end
 end

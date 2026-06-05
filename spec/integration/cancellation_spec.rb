@@ -7,7 +7,7 @@ require "securerandom"
 require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "ActiveJob Temporal cancellation", :integration do
+describe "ActiveJob Temporal cancellation", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -48,37 +48,24 @@ RSpec.describe "ActiveJob Temporal cancellation", :integration do
     # Verify workflow status is CANCELED
     handle = client.workflow_handle(workflow_id)
     description = handle.describe
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::CANCELED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::CANCELED, description.status
 
     # Verify job did not complete (heartbeat loop was interrupted)
-    expect(TestState.instance.long_running_completed).to eq(false)
+    assert_equal false, TestState.instance.long_running_completed
     # Verify job was interrupted mid-execution (not all 10 iterations)
-    expect(TestState.instance.long_running_iterations).to be < 10
+    assert_operator TestState.instance.long_running_iterations, :<, 10
     # Verify job started executing (at least 1 iteration)
-    expect(TestState.instance.long_running_iterations).to be > 0
+    assert_operator TestState.instance.long_running_iterations, :>, 0
   end
 
   private
 
   def start_worker(task_queue)
-    @worker = Temporalio::Worker.new(
-      client: TemporalTestHelper.client,
-      task_queue: task_queue,
-      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-      activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-    )
-
-    Thread.new do
-      @worker.run
-    end
+    start_temporal_worker(task_queue)
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    # Kill the worker thread
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def wait_for_workflow_running(workflow_id)
