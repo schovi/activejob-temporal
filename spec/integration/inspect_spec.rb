@@ -7,7 +7,7 @@ require "securerandom"
 require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "ActiveJob Temporal inspection", :integration do
+describe "ActiveJob Temporal inspection", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     original_workflow_id_generator = ActiveJob::Temporal.config.workflow_id_generator
@@ -115,21 +115,11 @@ RSpec.describe "ActiveJob Temporal inspection", :integration do
   private
 
   def start_worker(task_queue)
-    @worker = Temporalio::Worker.new(
-      client: TemporalTestHelper.client,
-      task_queue: task_queue,
-      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-      activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-    )
-
-    Thread.new { @worker.run }
+    start_temporal_worker(task_queue)
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def wait_for_workflow_status(workflow_id, expected_status)

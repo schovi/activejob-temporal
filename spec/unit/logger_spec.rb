@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal::Logger do
+describe ActiveJob::Temporal::Logger do
   subject(:logger_helper) { described_class }
 
   let(:log_io) { StringIO.new }

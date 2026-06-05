@@ -5,7 +5,7 @@ require "socket"
 require "timeout"
 require "activejob/temporal/worker_runtime"
 
-RSpec.describe ActiveJob::Temporal::MetricsServer do
+describe ActiveJob::Temporal::MetricsServer do
   let(:provider) do
     double(
       "PrometheusProvider",

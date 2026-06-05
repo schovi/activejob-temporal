@@ -5,7 +5,7 @@ require_relative "../fixtures/sample_jobs"
 
 TenantContext = Struct.new(:tenant_id) unless defined?(TenantContext)
 
-RSpec.describe ActiveJob::Temporal::SearchAttributes do
+describe ActiveJob::Temporal::SearchAttributes do
   describe ".for" do
     subject(:attributes) { described_class.for(job) }
 

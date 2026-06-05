@@ -4,7 +4,7 @@ require "spec_helper"
 require "active_support/core_ext/numeric/time"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe ActiveJob::Temporal::RetryHandlerExtractor do
+describe ActiveJob::Temporal::RetryHandlerExtractor do
   let(:extractor) { described_class.new }
 
   describe "#retry_handlers" do

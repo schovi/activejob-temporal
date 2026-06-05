@@ -3,7 +3,7 @@
 require "spec_helper"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
+describe ActiveJob::Temporal::WorkflowEnqueuer do
   let(:client) { instance_double(Temporalio::Client) }
   let(:config) { build_configuration }
   let(:logger) { instance_double(Logger) }
@@ -713,7 +713,7 @@ RSpec.describe ActiveJob::Temporal::WorkflowEnqueuer do
   end
 end
 
-RSpec.describe ActiveJob::Temporal do
+describe ActiveJob::Temporal do
   describe ".enqueue_batch" do
     it "delegates to a workflow enqueuer with the current client and configuration" do
       configuration = ActiveJob::Temporal::Configuration.new

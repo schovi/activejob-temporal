@@ -7,7 +7,7 @@ require "temporalio/worker"
 require "active_support/core_ext/numeric/time"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "ActiveJob Temporal scheduled jobs", :integration do
+describe "ActiveJob Temporal scheduled jobs", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -62,22 +62,11 @@ RSpec.describe "ActiveJob Temporal scheduled jobs", :integration do
   private
 
   def start_worker
-    Thread.new do
-      worker = Temporalio::Worker.new(
-        client: TemporalTestHelper.client,
-        task_queue: "default",
-        workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-      )
-      worker.run
-    end
+    start_temporal_worker("default")
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def wait_for_result(expected)

@@ -25,7 +25,7 @@ module CertificateWatcherSpecSupport
   end
 end
 
-RSpec.describe ActiveJob::Temporal::CertificateWatcher do
+describe ActiveJob::Temporal::CertificateWatcher do
   it "extracts configured TLS paths" do
     config = instance_double(
       ActiveJob::Temporal::Configuration,

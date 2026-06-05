@@ -7,7 +7,7 @@ require "securerandom"
 require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "ActiveJob Temporal retry behavior", :integration do
+describe "ActiveJob Temporal retry behavior", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -100,24 +100,11 @@ RSpec.describe "ActiveJob Temporal retry behavior", :integration do
   private
 
   def start_worker(task_queue)
-    @worker = Temporalio::Worker.new(
-      client: TemporalTestHelper.client,
-      task_queue: task_queue,
-      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-      activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-    )
-
-    Thread.new do
-      @worker.run
-    end
+    start_temporal_worker(task_queue)
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    # Kill the worker thread
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def wait_for_result(expected)

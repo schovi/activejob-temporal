@@ -3,7 +3,7 @@
 require "spec_helper"
 require "activejob/temporal/signal_query_options"
 
-RSpec.describe ActiveJob::Temporal::SignalQueryOptions do
+describe ActiveJob::Temporal::SignalQueryOptions do
   it "allows ActiveJob classes to declare temporal signals, queries, and updates" do
     job_class = Class.new(ActiveJob::Base) do
       def self.name = "SignalQueryOptionsJob"

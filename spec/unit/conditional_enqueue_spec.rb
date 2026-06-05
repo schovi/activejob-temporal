@@ -3,8 +3,8 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe ActiveJob::Temporal::ConditionalEnqueue do
-  let(:test_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
+describe ActiveJob::Temporal::ConditionalEnqueue do
+  let(:queue_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
   let(:job_class) do
     Class.new(ActiveJob::Base) do
       def self.name
@@ -21,7 +21,7 @@ RSpec.describe ActiveJob::Temporal::ConditionalEnqueue do
 
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
-    ActiveJob::Base.queue_adapter = test_adapter
+    ActiveJob::Base.queue_adapter = queue_adapter
 
     example.run
   ensure
@@ -43,33 +43,33 @@ RSpec.describe ActiveJob::Temporal::ConditionalEnqueue do
 
     expect(job).to be_a(job_class)
     expect(seen_arguments).to eq([:allowed, "payload"])
-    expect(test_adapter.enqueued_jobs.size).to eq(1)
+    expect(queue_adapter.enqueued_jobs.size).to eq(1)
   end
 
   it "returns nil without enqueueing when a callable condition returns false" do
     condition = ->(_arguments) { false }
 
     expect(job_class.perform_later_if(condition, :blocked)).to be_nil
-    expect(test_adapter.enqueued_jobs).to be_empty
+    expect(queue_adapter.enqueued_jobs).to be_empty
   end
 
   it "enqueues when a symbol condition returns true" do
     job = job_class.perform_later_if(:should_enqueue?, :allowed)
 
     expect(job).to be_a(job_class)
-    expect(test_adapter.enqueued_jobs.size).to eq(1)
+    expect(queue_adapter.enqueued_jobs.size).to eq(1)
   end
 
   it "returns nil without enqueueing when a symbol condition returns false" do
     expect(job_class.perform_later_if(:should_enqueue?, :blocked)).to be_nil
-    expect(test_adapter.enqueued_jobs).to be_empty
+    expect(queue_adapter.enqueued_jobs).to be_empty
   end
 
   it "enqueues when a string condition returns true" do
     job = job_class.perform_later_if("should_enqueue?", :allowed)
 
     expect(job).to be_a(job_class)
-    expect(test_adapter.enqueued_jobs.size).to eq(1)
+    expect(queue_adapter.enqueued_jobs.size).to eq(1)
   end
 
   it "supports configured jobs from set" do
@@ -78,8 +78,8 @@ RSpec.describe ActiveJob::Temporal::ConditionalEnqueue do
     job = job_class.set(queue: "critical").perform_later_if(:should_enqueue?, :allowed)
 
     expect(job).to be_a(job_class)
-    expect(test_adapter.enqueued_jobs.size).to eq(1)
-    expect(test_adapter.enqueued_jobs.first[:queue]).to eq("critical")
+    expect(queue_adapter.enqueued_jobs.size).to eq(1)
+    expect(queue_adapter.enqueued_jobs.first[:queue]).to eq("critical")
     expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
       "active_job_configured_job_private_api",
       hash_including(feature: "conditional_enqueue")
@@ -90,7 +90,7 @@ RSpec.describe ActiveJob::Temporal::ConditionalEnqueue do
     allow(ActiveJob::Temporal::Logger).to receive(:warn)
 
     expect(job_class.set(queue: "critical").perform_later_if(:should_enqueue?, :blocked)).to be_nil
-    expect(test_adapter.enqueued_jobs).to be_empty
+    expect(queue_adapter.enqueued_jobs).to be_empty
   end
 
   it "fails clearly when configured job internals are unsupported" do
@@ -125,6 +125,6 @@ RSpec.describe ActiveJob::Temporal::ConditionalEnqueue do
     condition = ->(_arguments) { raise error }
 
     expect { job_class.perform_later_if(condition, :allowed) }.to raise_error(error)
-    expect(test_adapter.enqueued_jobs).to be_empty
+    expect(queue_adapter.enqueued_jobs).to be_empty
   end
 end

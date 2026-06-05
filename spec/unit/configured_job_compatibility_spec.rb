@@ -3,7 +3,7 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe ActiveJob::Temporal::ConfiguredJobCompatibility do
+describe ActiveJob::Temporal::ConfiguredJobCompatibility do
   let(:job_class) do
     Class.new(ActiveJob::Base) do
       def self.name = "ConfiguredCompatibilityJob"

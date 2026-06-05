@@ -5,7 +5,7 @@ require "fileutils"
 require "stringio"
 require "tmpdir"
 
-RSpec.describe ActiveJob::Temporal::RailsEnvironmentLoader do
+describe ActiveJob::Temporal::RailsEnvironmentLoader do
   around do |example|
     current_directory = Dir.pwd
     example.run

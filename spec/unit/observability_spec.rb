@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal::Observability do
+describe ActiveJob::Temporal::Observability do
   after do
     described_class.reset!
   end

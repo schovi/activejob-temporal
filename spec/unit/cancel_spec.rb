@@ -24,7 +24,7 @@ unless defined?(Temporalio::Error::RPCError)
   end
 end
 
-RSpec.describe ActiveJob::Temporal::Cancel do
+describe ActiveJob::Temporal::Cancel do
   describe ".cancel" do
     let(:job_class) { SimpleJob }
     let(:job_id) { "550e8400-e29b-41d4-a716-446655440000" }
@@ -678,7 +678,7 @@ RSpec.describe ActiveJob::Temporal::Cancel do
   end
 end
 
-RSpec.describe ActiveJob::Temporal do
+describe ActiveJob::Temporal do
   describe ".cancel_all" do
     it "delegates to the cancellation module" do
       summary = { terminated: 1, failed: 0, errors: [] }

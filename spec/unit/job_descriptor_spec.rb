@@ -3,7 +3,7 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe ActiveJob::Temporal::JobDescriptor do
+describe ActiveJob::Temporal::JobDescriptor do
   let(:job_class) do
     Class.new(ActiveJob::Base) do
       def self.name = "DescriptorJob"

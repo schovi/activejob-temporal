@@ -3,7 +3,7 @@
 require "spec_helper"
 require "tmpdir"
 
-RSpec.describe ActiveJob::Temporal, ".client" do
+describe ActiveJob::Temporal, ".client" do
   let(:tls_env_keys) do
     %w[TEMPORAL_TLS_CERT TEMPORAL_TLS_KEY TEMPORAL_TLS_SERVER_NAME TEMPORAL_TLS_SERVER_ROOT_CA_CERT]
   end

@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal::BindPolicy do
+describe ActiveJob::Temporal::BindPolicy do
   describe ".public_bind?" do
     it "treats loopback binds as private" do
       expect(described_class.public_bind?("127.0.0.1")).to be(false)

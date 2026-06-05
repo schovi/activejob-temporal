@@ -3,8 +3,8 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe ActiveJob::Temporal::JobTags do
-  let(:test_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
+describe ActiveJob::Temporal::JobTags do
+  let(:queue_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
   let(:job_class) do
     Class.new(ActiveJob::Base) do
       def self.name
@@ -17,7 +17,7 @@ RSpec.describe ActiveJob::Temporal::JobTags do
 
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
-    ActiveJob::Base.queue_adapter = test_adapter
+    ActiveJob::Base.queue_adapter = queue_adapter
 
     example.run
   ensure
@@ -48,7 +48,7 @@ RSpec.describe ActiveJob::Temporal::JobTags do
     job = job_class.set(tags: %w[urgent]).perform_later("payload")
 
     expect(job.temporal_tags).to eq(["urgent"])
-    expect(test_adapter.enqueued_jobs.size).to eq(1)
+    expect(queue_adapter.enqueued_jobs.size).to eq(1)
   end
 
   it "forwards standard ActiveJob set options" do
@@ -58,9 +58,9 @@ RSpec.describe ActiveJob::Temporal::JobTags do
                    .perform_later("payload")
 
     expect(job.temporal_tags).to eq(["urgent"])
-    expect(test_adapter.enqueued_jobs.first[:queue]).to eq("critical")
-    expect(test_adapter.enqueued_jobs.first[:at]).to be_within(0.001).of(scheduled_at.to_f)
-    expect(test_adapter.enqueued_jobs.first[:priority]).to eq(7)
+    expect(queue_adapter.enqueued_jobs.first[:queue]).to eq("critical")
+    expect(queue_adapter.enqueued_jobs.first[:at]).to be_within(0.001).of(scheduled_at.to_f)
+    expect(queue_adapter.enqueued_jobs.first[:priority]).to eq(7)
   end
 
   it "deduplicates tags after normalization" do

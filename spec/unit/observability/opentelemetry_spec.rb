@@ -3,7 +3,7 @@
 require "spec_helper"
 require "activejob/temporal/observability/opentelemetry"
 
-RSpec.describe ActiveJob::Temporal::Observability::OpenTelemetry do
+describe ActiveJob::Temporal::Observability::OpenTelemetry do
   it "creates spans with job correlation attributes" do
     spans = []
     tracer = Class.new do

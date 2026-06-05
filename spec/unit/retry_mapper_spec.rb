@@ -4,7 +4,7 @@ require "spec_helper"
 require "active_support/core_ext/numeric/time"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe ActiveJob::Temporal::RetryMapper do
+describe ActiveJob::Temporal::RetryMapper do
   before do
     ActiveJob::Temporal.configure do |config|
       config.default_retry_initial_interval = 30.seconds

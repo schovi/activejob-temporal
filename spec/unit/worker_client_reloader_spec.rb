@@ -21,7 +21,7 @@ module WorkerClientReloaderSpecSupport
   end
 end
 
-RSpec.describe ActiveJob::Temporal::WorkerClientReloader do
+describe ActiveJob::Temporal::WorkerClientReloader do
   it "rebuilds the client and assigns it to the worker" do
     worker = double("worker")
     logger = WorkerClientReloaderSpecSupport::FakeLogger.new

@@ -3,8 +3,8 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe "ActiveJob Temporal job chaining" do
-  let(:test_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
+describe "ActiveJob Temporal job chaining" do
+  let(:queue_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
   let(:job_class) do
     Class.new(ActiveJob::Base) do
       def self.name = "ChainRootJob"
@@ -29,7 +29,7 @@ RSpec.describe "ActiveJob Temporal job chaining" do
 
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
-    ActiveJob::Base.queue_adapter = test_adapter
+    ActiveJob::Base.queue_adapter = queue_adapter
 
     example.run
   ensure
@@ -54,7 +54,7 @@ RSpec.describe "ActiveJob Temporal job chaining" do
                                          }
                                        }
                                      ])
-    expect(test_adapter.enqueued_jobs.size).to eq(1)
+    expect(queue_adapter.enqueued_jobs.size).to eq(1)
   end
 
   it "supports ActiveJob configured jobs as a warned compatibility fallback" do

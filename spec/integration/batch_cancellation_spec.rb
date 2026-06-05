@@ -5,7 +5,7 @@ require "timeout"
 require "securerandom"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "ActiveJob Temporal batch cancellation", :integration do
+describe "ActiveJob Temporal batch cancellation", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal

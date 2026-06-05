@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal::AuditLog do
+describe ActiveJob::Temporal::AuditLog do
   let(:log_io) { StringIO.new }
   let(:ruby_logger) do
     Logger.new(log_io).tap do |logger|

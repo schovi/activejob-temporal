@@ -3,7 +3,7 @@
 require "spec_helper"
 require "activejob/temporal/worker_runtime"
 
-RSpec.describe ActiveJob::Temporal::WorkerHealth do
+describe ActiveJob::Temporal::WorkerHealth do
   subject(:worker_health) do
     described_class.new(
       task_queue: "critical",

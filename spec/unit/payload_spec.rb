@@ -45,7 +45,7 @@ class MemoryPayloadStorageAdapter
   end
 end
 
-RSpec.describe ActiveJob::Temporal::Payload do
+describe ActiveJob::Temporal::Payload do
   before do
     ActiveJob::Temporal.configure do |config|
       config.max_payload_size_kb = 250

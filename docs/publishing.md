@@ -159,7 +159,7 @@ cd /Users/schovi/work/activejob-temporal
 ls -lh pkg/activejob-temporal-0.1.0.gem
 
 # Run final quality checks
-rvm 4.0.3 do bundle exec rspec
+rvm 4.0.3 do bundle exec rake spec
 rvm 4.0.3 do bundle exec rubocop
 
 # Verify git tag is pushed
@@ -307,7 +307,7 @@ Use this checklist when you're ready to publish:
 - [ ] Credentials file exists at the path shown by `rvm 4.0.3 do gem env`
 
 ### Quality Gates
-- [ ] All tests passing: `rvm 4.0.3 do bundle exec rspec` shows 0 failures
+- [ ] All tests passing: `rvm 4.0.3 do bundle exec rake spec` shows 0 failures
 - [ ] Code coverage adequate: >95% line coverage
 - [ ] No linting offenses: `rvm 4.0.3 do bundle exec rubocop` shows 0 offenses
 - [ ] Documentation complete: README, API docs, and repository guides

@@ -6,7 +6,7 @@ require "securerandom"
 require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "Recurring schedules", :integration do
+describe "Recurring schedules", :integration do
   before do
     stub_const("RecurringIdentityJob", Class.new(ActiveJob::Base) do
       class << self
@@ -93,22 +93,11 @@ RSpec.describe "Recurring schedules", :integration do
   private
 
   def start_worker(task_queue)
-    Thread.new do
-      worker = Temporalio::Worker.new(
-        client: TemporalTestHelper.client,
-        task_queue: task_queue,
-        workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
-        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-      )
-      worker.run
-    end
+    start_temporal_worker(task_queue)
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join
+    stop_temporal_worker(thread)
   end
 
   def wait_for(timeout: 10)

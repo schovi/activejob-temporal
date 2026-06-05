@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal::PayloadSerializers do
+describe ActiveJob::Temporal::PayloadSerializers do
   let(:payload) do
     {
       job_class: "SerializerSpecJob",

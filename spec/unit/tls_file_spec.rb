@@ -3,7 +3,7 @@
 require "spec_helper"
 require "tmpdir"
 
-RSpec.describe ActiveJob::Temporal::TLSFile do
+describe ActiveJob::Temporal::TLSFile do
   it "reads regular files" do
     Dir.mktmpdir do |directory|
       path = File.join(directory, "client.pem")

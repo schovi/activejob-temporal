@@ -3,7 +3,7 @@
 require "spec_helper"
 require "activejob/temporal/dead_letter_queue"
 
-RSpec.describe ActiveJob::Temporal::DeadLetterQueue do
+describe ActiveJob::Temporal::DeadLetterQueue do
   let(:client_class) do
     Class.new do
       def start_workflow(_workflow_class, _entry, **_options); end

@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe "Temporal connection", :integration do
+describe "Temporal connection", :integration do
   it "connects to the Temporal test namespace and can list workflows" do
     client = TemporalTestHelper.client
 

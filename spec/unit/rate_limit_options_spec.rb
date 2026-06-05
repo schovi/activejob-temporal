@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal::RateLimitOptions do
+describe ActiveJob::Temporal::RateLimitOptions do
   describe ".normalize" do
     it "normalizes symbolic periods to seconds" do
       expect(described_class.normalize(100, per: :second)).to eq(limit: 100, interval: 1.0)

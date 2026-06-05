@@ -22,7 +22,7 @@ SimpleCov.start do
   add_filter "/spec/"
   enable_coverage :branch
 
-  command_name "RSpec:#{ENV.fetch('TEST_SUITE', 'all')}"
+  command_name "Minitest:#{ENV.fetch('TEST_SUITE', 'all')}"
   merge_timeout 3600
 
   add_group "Core", "lib/activejob/temporal.rb"

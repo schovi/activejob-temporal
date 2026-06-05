@@ -3,8 +3,8 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe "ActiveJob Temporal job dependencies" do
-  let(:test_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
+describe "ActiveJob Temporal job dependencies" do
+  let(:queue_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
   let(:parent_job_class) do
     Class.new(ActiveJob::Base) do
       def self.name = "DependencyParentJob"
@@ -23,7 +23,7 @@ RSpec.describe "ActiveJob Temporal job dependencies" do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     original_workflow_id_generator = ActiveJob::Temporal.config.workflow_id_generator
-    ActiveJob::Base.queue_adapter = test_adapter
+    ActiveJob::Base.queue_adapter = queue_adapter
 
     example.run
   ensure
@@ -45,7 +45,7 @@ RSpec.describe "ActiveJob Temporal job dependencies" do
                                               }
                                             ])
     expect(job.temporal_dependency_failure_policy).to eq(:fail)
-    expect(test_adapter.enqueued_jobs.size).to eq(1)
+    expect(queue_adapter.enqueued_jobs.size).to eq(1)
   end
 
   it "captures configured workflow IDs for enqueued job instance dependencies" do

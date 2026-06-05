@@ -4,7 +4,7 @@ require "spec_helper"
 require "active_support/core_ext/numeric/time"
 require_relative "../support/chaos_helpers"
 
-RSpec.describe "ActiveJob Temporal network partition recovery", :chaos do
+describe "ActiveJob Temporal network partition recovery", :chaos do
   include ChaosHelpers
 
   around do |example|

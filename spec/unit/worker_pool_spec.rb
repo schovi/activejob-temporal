@@ -49,7 +49,7 @@ module WorkerPoolSpecSupport
   end
 end
 
-RSpec.describe ActiveJob::Temporal::WorkerPool do
+describe ActiveJob::Temporal::WorkerPool do
   let(:process_adapter) { WorkerPoolSpecSupport::FakeProcessAdapter.new }
   let(:worker_command) { ["temporal-worker"] }
 

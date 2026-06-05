@@ -6,7 +6,7 @@ require "timeout"
 require "securerandom"
 require "temporalio/worker"
 
-RSpec.describe "ActiveJob Temporal dead letter queue", :integration do
+describe "ActiveJob Temporal dead letter queue", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     original_dead_letter_queue = ActiveJob::Temporal.config.dead_letter_queue
@@ -86,25 +86,17 @@ RSpec.describe "ActiveJob Temporal dead letter queue", :integration do
   private
 
   def start_worker(task_queue)
-    Thread.new do
-      worker = Temporalio::Worker.new(
-        client: TemporalTestHelper.client,
-        task_queue: task_queue,
-        workflows: [
-          ActiveJob::Temporal::Workflows::AjWorkflow,
-          ActiveJob::Temporal::Workflows::DeadLetterWorkflow
-        ],
-        activities: [ActiveJob::Temporal::Activities::AjRunnerActivity]
-      )
-      worker.run
-    end
+    start_temporal_worker(
+      task_queue,
+      workflows: [
+        ActiveJob::Temporal::Workflows::AjWorkflow,
+        ActiveJob::Temporal::Workflows::DeadLetterWorkflow
+      ]
+    )
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def wait_for_dead_letter_entry(job_class_name)

@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal do
+describe ActiveJob::Temporal do
   before do
     described_class.instance_variable_set(:@config_mvar, nil)
   end

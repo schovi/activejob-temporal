@@ -4,7 +4,7 @@ require "spec_helper"
 require "base64"
 require "tmpdir"
 
-RSpec.describe ActiveJob::Temporal::Configuration do
+describe ActiveJob::Temporal::Configuration do
   subject(:configuration) { described_class.new }
 
   def expect_configuration_error(message)

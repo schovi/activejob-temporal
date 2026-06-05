@@ -3,7 +3,7 @@
 require "spec_helper"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe ActiveJob::Temporal::WorkflowIdBuilder do
+describe ActiveJob::Temporal::WorkflowIdBuilder do
   subject(:builder) { described_class.new }
 
   describe "#build" do

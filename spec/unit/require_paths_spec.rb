@@ -4,7 +4,7 @@ require "spec_helper"
 require "open3"
 require "rbconfig"
 
-RSpec.describe "require paths" do
+describe "require paths" do
   def run_ruby(source)
     Open3.capture3(
       RbConfig.ruby,

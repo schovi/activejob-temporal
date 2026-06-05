@@ -7,7 +7,7 @@ require "securerandom"
 require "temporalio/worker"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe "Temporal Ruby SDK contract", :contract do
+describe "Temporal Ruby SDK contract", :contract do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -87,25 +87,19 @@ RSpec.describe "Temporal Ruby SDK contract", :contract do
   private
 
   def start_worker(task_queue)
-    @worker = Temporalio::Worker.new(
+    start_temporal_worker(
+      task_queue,
       client: client,
-      task_queue: task_queue,
-      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
       activities: [
         ActiveJob::Temporal::Activities::DependencyStatusActivity,
         ActiveJob::Temporal::Activities::RateLimitActivity,
         ActiveJob::Temporal::Activities::AjRunnerActivity
       ]
     )
-
-    Thread.new { @worker.run }
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def record_workflow_id(job)

@@ -3,9 +3,9 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe ActiveJob::Temporal::TemporalOptions do
+describe ActiveJob::Temporal::TemporalOptions do
   # Create a test job class for testing
-  let(:test_job_class) do
+  let(:job_class_under_test) do
     Class.new(ActiveJob::Base) do
       def self.name
         "TestTimeoutJob"
@@ -16,12 +16,12 @@ RSpec.describe ActiveJob::Temporal::TemporalOptions do
   describe ".temporal_options" do
     context "when called without arguments" do
       it "returns an empty hash by default" do
-        expect(test_job_class.temporal_options).to eq({})
+        expect(job_class_under_test.temporal_options).to eq({})
       end
 
       it "returns stored options after setting them" do
-        test_job_class.temporal_options(start_to_close_timeout: 300)
-        expect(test_job_class.temporal_options).to eq({ start_to_close_timeout: 300 })
+        job_class_under_test.temporal_options(start_to_close_timeout: 300)
+        expect(job_class_under_test.temporal_options).to eq({ start_to_close_timeout: 300 })
       end
 
       it "inherits options from parent job classes" do
@@ -36,18 +36,18 @@ RSpec.describe ActiveJob::Temporal::TemporalOptions do
 
     context "when setting timeout options" do
       it "accepts integer timeout values" do
-        test_job_class.temporal_options(start_to_close_timeout: 300)
-        expect(test_job_class.temporal_options[:start_to_close_timeout]).to eq(300)
+        job_class_under_test.temporal_options(start_to_close_timeout: 300)
+        expect(job_class_under_test.temporal_options[:start_to_close_timeout]).to eq(300)
       end
 
       it "accepts float timeout values" do
-        test_job_class.temporal_options(heartbeat_timeout: 30.5)
-        expect(test_job_class.temporal_options[:heartbeat_timeout]).to eq(30.5)
+        job_class_under_test.temporal_options(heartbeat_timeout: 30.5)
+        expect(job_class_under_test.temporal_options[:heartbeat_timeout]).to eq(30.5)
       end
 
       it "accepts ActiveSupport::Duration and converts to float" do
-        test_job_class.temporal_options(start_to_close_timeout: 2.hours)
-        expect(test_job_class.temporal_options[:start_to_close_timeout]).to eq(7200.0)
+        job_class_under_test.temporal_options(start_to_close_timeout: 2.hours)
+        expect(job_class_under_test.temporal_options[:start_to_close_timeout]).to eq(7200.0)
       end
 
       it "accepts multiple timeout options" do
@@ -57,9 +57,9 @@ RSpec.describe ActiveJob::Temporal::TemporalOptions do
           schedule_to_start_timeout: 5.minutes,
           schedule_to_close_timeout: 2.hours
         }
-        test_job_class.temporal_options(options)
+        job_class_under_test.temporal_options(options)
 
-        result = test_job_class.temporal_options
+        result = job_class_under_test.temporal_options
         expect(result[:start_to_close_timeout]).to eq(3600.0)
         expect(result[:heartbeat_timeout]).to eq(30.0)
         expect(result[:schedule_to_start_timeout]).to eq(300.0)
@@ -120,13 +120,13 @@ RSpec.describe ActiveJob::Temporal::TemporalOptions do
     context "when invalid keys are provided" do
       it "raises ArgumentError for unknown keys" do
         expect do
-          test_job_class.temporal_options(invalid_timeout: 100)
+          job_class_under_test.temporal_options(invalid_timeout: 100)
         end.to raise_error(ArgumentError, /Invalid temporal_options keys: invalid_timeout/)
       end
 
       it "raises ArgumentError for multiple unknown keys" do
         expect do
-          test_job_class.temporal_options(
+          job_class_under_test.temporal_options(
             start_to_close_timeout: 300,
             bad_key: 100,
             another_bad_key: 200
@@ -138,19 +138,19 @@ RSpec.describe ActiveJob::Temporal::TemporalOptions do
     context "when invalid value types are provided" do
       it "raises ArgumentError for string values" do
         expect do
-          test_job_class.temporal_options(start_to_close_timeout: "300")
+          job_class_under_test.temporal_options(start_to_close_timeout: "300")
         end.to raise_error(ArgumentError, /Timeout values must be numeric or ActiveSupport::Duration/)
       end
 
       it "raises ArgumentError for nil values" do
         expect do
-          test_job_class.temporal_options(heartbeat_timeout: nil)
+          job_class_under_test.temporal_options(heartbeat_timeout: nil)
         end.to raise_error(ArgumentError, /Timeout values must be numeric or ActiveSupport::Duration/)
       end
 
       it "raises ArgumentError for array values" do
         expect do
-          test_job_class.temporal_options(start_to_close_timeout: [300])
+          job_class_under_test.temporal_options(start_to_close_timeout: [300])
         end.to raise_error(ArgumentError, /Timeout values must be numeric or ActiveSupport::Duration/)
       end
     end
@@ -158,25 +158,25 @@ RSpec.describe ActiveJob::Temporal::TemporalOptions do
     context "valid timeout keys" do
       it "accepts start_to_close_timeout" do
         expect do
-          test_job_class.temporal_options(start_to_close_timeout: 300)
+          job_class_under_test.temporal_options(start_to_close_timeout: 300)
         end.not_to raise_error
       end
 
       it "accepts schedule_to_close_timeout" do
         expect do
-          test_job_class.temporal_options(schedule_to_close_timeout: 600)
+          job_class_under_test.temporal_options(schedule_to_close_timeout: 600)
         end.not_to raise_error
       end
 
       it "accepts schedule_to_start_timeout" do
         expect do
-          test_job_class.temporal_options(schedule_to_start_timeout: 120)
+          job_class_under_test.temporal_options(schedule_to_start_timeout: 120)
         end.not_to raise_error
       end
 
       it "accepts heartbeat_timeout" do
         expect do
-          test_job_class.temporal_options(heartbeat_timeout: 30)
+          job_class_under_test.temporal_options(heartbeat_timeout: 30)
         end.not_to raise_error
       end
     end

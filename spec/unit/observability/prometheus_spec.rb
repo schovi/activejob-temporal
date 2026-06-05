@@ -3,7 +3,7 @@
 require "spec_helper"
 require "activejob/temporal/observability/prometheus"
 
-RSpec.describe ActiveJob::Temporal::Observability::Prometheus do
+describe ActiveJob::Temporal::Observability::Prometheus do
   def rendered_metrics
     metrics.render
   end

@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal::Middleware::Chain do
+describe ActiveJob::Temporal::Middleware::Chain do
   subject(:chain) { described_class.new }
 
   let(:job) { instance_double("Job") }

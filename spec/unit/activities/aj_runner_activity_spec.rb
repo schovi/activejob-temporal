@@ -6,7 +6,7 @@ require_relative "../../fixtures/sample_jobs"
 require "activejob/temporal/activities/aj_runner_activity"
 require "activejob/temporal/observability/prometheus"
 
-RSpec.describe ActiveJob::Temporal::Activities::AjRunnerActivity do
+describe ActiveJob::Temporal::Activities::AjRunnerActivity do
   subject(:activity) { described_class.new }
 
   let(:workflow_id) { "wf-123" }

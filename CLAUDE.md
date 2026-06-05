@@ -41,10 +41,10 @@ bundle exec rake spec:unit
 bundle exec rake spec:integration
 
 # Run a specific test file
-bundle exec rspec spec/unit/adapter_spec.rb
+bundle exec ruby -Ilib -Ispec spec/unit/adapter_spec.rb
 
 # Run a specific test example
-bundle exec rspec spec/unit/adapter_spec.rb:42
+bundle exec ruby -Ilib -Ispec spec/unit/adapter_spec.rb --name /example name/
 ```
 
 Tests are organized by type in `spec/unit/` and `spec/integration/`. Integration tests use real Temporal workers to validate end-to-end behavior. See `spec/support/temporal_test_server.rb` for test Temporal setup.

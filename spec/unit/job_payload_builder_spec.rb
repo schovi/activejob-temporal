@@ -5,7 +5,7 @@ require "active_job"
 require "activejob/temporal/signal_query_options"
 require "base64"
 
-RSpec.describe ActiveJob::Temporal::JobPayloadBuilder do
+describe ActiveJob::Temporal::JobPayloadBuilder do
   let(:config) { ActiveJob::Temporal::Configuration.new }
 
   before do

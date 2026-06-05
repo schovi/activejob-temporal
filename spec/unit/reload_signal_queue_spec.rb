@@ -5,7 +5,7 @@ require "open3"
 require "rbconfig"
 require "activejob/temporal/worker_runtime"
 
-RSpec.describe ActiveJob::Temporal::ReloadSignalQueue do
+describe ActiveJob::Temporal::ReloadSignalQueue do
   subject(:queue) { described_class.new }
 
   it "coalesces repeated reload signals while one is pending" do

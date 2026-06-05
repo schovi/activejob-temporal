@@ -3,7 +3,7 @@
 require "spec_helper"
 require "activejob/temporal/activities/rate_limit_activity"
 
-RSpec.describe ActiveJob::Temporal::Activities::RateLimitActivity do
+describe ActiveJob::Temporal::Activities::RateLimitActivity do
   subject(:activity) { described_class.new }
 
   let(:payload) do

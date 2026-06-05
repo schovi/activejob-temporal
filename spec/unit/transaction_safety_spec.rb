@@ -3,7 +3,7 @@
 require "spec_helper"
 require "active_job/enqueue_after_transaction_commit"
 
-RSpec.describe "ActiveJob::Temporal transaction safety" do
+describe "ActiveJob::Temporal transaction safety" do
   let(:client) { instance_double(Temporalio::Client) }
   let(:config) { build_configuration }
   let(:fake_active_record) do

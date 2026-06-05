@@ -3,7 +3,7 @@
 require "json"
 require "spec_helper"
 
-RSpec.describe "job payload schema" do
+describe "job payload schema" do
   let(:schema) { JSON.parse(File.read("api/job_payload_schema.json")) }
 
   it "allows workflow-control metadata for all payload formats" do

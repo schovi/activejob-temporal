@@ -4,7 +4,7 @@ require "spec_helper"
 require "active_job/continuation"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe ActiveJob::Temporal::Adapter do
+describe ActiveJob::Temporal::Adapter do
   describe ".build_workflow_id" do
     let(:configuration) { ActiveJob::Temporal::Configuration.new }
 
@@ -222,7 +222,7 @@ RSpec.describe ActiveJob::Temporal::Adapter do
   end
 end
 
-RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
+describe ActiveJob::QueueAdapters::TemporalAdapter do
   let(:job) do
     job = SimpleJob.new
     job.job_id = "job-123"
@@ -374,7 +374,7 @@ RSpec.describe ActiveJob::QueueAdapters::TemporalAdapter do
   end
 end
 
-RSpec.describe "Temporal duplicate enqueue handling through ActiveJob" do
+describe "Temporal duplicate enqueue handling through ActiveJob" do
   let(:client) { instance_double(Temporalio::Client) }
   let(:config) { build_configuration }
   let(:duplicate_error) { Class.new(StandardError) }
@@ -404,7 +404,7 @@ RSpec.describe "Temporal duplicate enqueue handling through ActiveJob" do
   end
 end
 
-RSpec.describe "ActiveJob adapter registration" do
+describe "ActiveJob adapter registration" do
   describe ".lookup" do
     it "returns the Temporal adapter when requested by symbol" do
       adapter_class = ActiveJob::QueueAdapters.lookup(:temporal)

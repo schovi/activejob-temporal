@@ -6,7 +6,7 @@ require "socket"
 require "timeout"
 require "activejob/temporal/worker_runtime"
 
-RSpec.describe ActiveJob::Temporal::HealthCheckServer do
+describe ActiveJob::Temporal::HealthCheckServer do
   let(:state) do
     ActiveJob::Temporal::WorkerHealth.new(
       task_queue: "critical",

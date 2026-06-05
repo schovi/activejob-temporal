@@ -3,8 +3,8 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe "ActiveJob::ConfiguredJob compatibility contract" do
-  let(:test_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
+describe "ActiveJob::ConfiguredJob compatibility contract" do
+  let(:queue_adapter) { ActiveJob::QueueAdapters::TestAdapter.new }
   let(:root_job_class) do
     Class.new(ActiveJob::Base) do
       def self.name = "ConfiguredContractRootJob"
@@ -26,7 +26,7 @@ RSpec.describe "ActiveJob::ConfiguredJob compatibility contract" do
 
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
-    ActiveJob::Base.queue_adapter = test_adapter
+    ActiveJob::Base.queue_adapter = queue_adapter
 
     example.run
   ensure
@@ -74,6 +74,6 @@ RSpec.describe "ActiveJob::ConfiguredJob compatibility contract" do
     job = root_job_class.set(queue: "critical").perform_later_if(:should_enqueue?, :allowed)
 
     expect(job).to be_a(root_job_class)
-    expect(test_adapter.enqueued_jobs.first[:queue]).to eq("critical")
+    expect(queue_adapter.enqueued_jobs.first[:queue]).to eq("critical")
   end
 end

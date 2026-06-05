@@ -3,7 +3,7 @@
 require "spec_helper"
 require "activejob/temporal/workflows/dead_letter_workflow"
 
-RSpec.describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
+describe ActiveJob::Temporal::Workflows::DeadLetterWorkflow do
   subject(:workflow) { described_class.new }
 
   let(:entry) do

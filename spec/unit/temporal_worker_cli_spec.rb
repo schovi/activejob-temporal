@@ -6,7 +6,7 @@ require "rbconfig"
 require "tmpdir"
 require "timeout"
 
-RSpec.describe "temporal-worker CLI" do
+describe "temporal-worker CLI" do
   it "rejects invalid worker pool sizes before connecting to Temporal" do
     _stdout, stderr, status = capture_worker("ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE" => "0")
 

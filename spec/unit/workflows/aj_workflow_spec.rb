@@ -4,7 +4,7 @@ require "spec_helper"
 require "time"
 require "activejob/temporal/workflows/aj_workflow"
 
-RSpec.describe ActiveJob::Temporal::Workflows::AjWorkflow do
+describe ActiveJob::Temporal::Workflows::AjWorkflow do
   subject(:workflow) { described_class.new }
 
   let(:activity_timeout) { 900.0 }

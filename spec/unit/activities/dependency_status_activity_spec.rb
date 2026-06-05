@@ -3,7 +3,7 @@
 require "spec_helper"
 require "activejob/temporal/activities/dependency_status_activity"
 
-RSpec.describe ActiveJob::Temporal::Activities::DependencyStatusActivity do
+describe ActiveJob::Temporal::Activities::DependencyStatusActivity do
   subject(:activity) { described_class.new }
 
   let(:client_class) do

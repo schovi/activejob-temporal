@@ -3,7 +3,7 @@
 require "spec_helper"
 require "timeout"
 
-RSpec.describe ActiveJob::Temporal::RateLimiters::Memory do
+describe ActiveJob::Temporal::RateLimiters::Memory do
   let(:clock_value) { 1000.0 }
   let(:clock) { -> { clock_value } }
   let(:limiter) { described_class.new(clock: clock) }

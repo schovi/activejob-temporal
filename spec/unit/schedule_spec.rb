@@ -3,7 +3,7 @@
 require "spec_helper"
 require "active_job"
 
-RSpec.describe ActiveJob::Temporal::Schedule do
+describe ActiveJob::Temporal::Schedule do
   let(:client) { instance_double(Temporalio::Client) }
   let(:config) { build_configuration }
   let(:job_class) do

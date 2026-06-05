@@ -3,7 +3,7 @@
 require "spec_helper"
 require_relative "../fixtures/sample_jobs"
 
-RSpec.describe ActiveJob::Temporal::Inspect do
+describe ActiveJob::Temporal::Inspect do
   let(:job_class) { SimpleJob }
   let(:job_id) { "550e8400-e29b-41d4-a716-446655440000" }
   let(:workflow_id) { "ajwf:#{job_class.name}:#{job_id}" }
@@ -265,7 +265,7 @@ RSpec.describe ActiveJob::Temporal::Inspect do
   end
 end
 
-RSpec.describe ActiveJob::Temporal do
+describe ActiveJob::Temporal do
   let(:job_id) { "550e8400-e29b-41d4-a716-446655440000" }
 
   describe ".status" do

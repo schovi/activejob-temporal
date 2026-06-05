@@ -2,7 +2,7 @@
 
 require "spec_helper"
 
-RSpec.describe ActiveJob::Temporal::BatchEnqueuer do
+describe ActiveJob::Temporal::BatchEnqueuer do
   let(:enqueued_jobs) { [] }
   let(:enqueuer) do
     described_class.new(

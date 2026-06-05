@@ -3,7 +3,7 @@
 require "spec_helper"
 require "activejob/temporal/observability/datadog"
 
-RSpec.describe ActiveJob::Temporal::Observability::Datadog do
+describe ActiveJob::Temporal::Observability::Datadog do
   let(:statsd) { double("Statsd", increment: nil, histogram: nil, gauge: nil) }
   let(:span) { double("Span", set_tag: nil) }
   let(:payload) do

@@ -6,7 +6,7 @@ require "timeout"
 require "securerandom"
 require "temporalio/worker"
 
-RSpec.describe "ActiveJob Temporal job dependencies", :integration do
+describe "ActiveJob Temporal job dependencies", :integration do
   around do |example|
     original_adapter = ActiveJob::Base.queue_adapter
     ActiveJob::Base.queue_adapter = :temporal
@@ -114,24 +114,17 @@ RSpec.describe "ActiveJob Temporal job dependencies", :integration do
   end
 
   def start_worker(task_queue)
-    @worker = Temporalio::Worker.new(
-      client: TemporalTestHelper.client,
-      task_queue: task_queue,
-      workflows: [ActiveJob::Temporal::Workflows::AjWorkflow],
+    start_temporal_worker(
+      task_queue,
       activities: [
         ActiveJob::Temporal::Activities::DependencyStatusActivity,
         ActiveJob::Temporal::Activities::AjRunnerActivity
       ]
     )
-
-    Thread.new { @worker.run }
   end
 
   def stop_worker(thread)
-    return unless thread&.alive?
-
-    thread.kill
-    thread.join(5)
+    stop_temporal_worker(thread)
   end
 
   def wait_for_sequence(value)

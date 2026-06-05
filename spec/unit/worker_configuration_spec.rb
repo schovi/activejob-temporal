@@ -3,7 +3,7 @@
 require "spec_helper"
 require "temporalio/worker"
 
-RSpec.describe "Worker configuration" do
+describe "Worker configuration" do
   let(:client) { double("Temporal client") }
   let(:worker) { instance_double(Temporalio::Worker) }
   let(:config) { ActiveJob::Temporal::Configuration.new }
