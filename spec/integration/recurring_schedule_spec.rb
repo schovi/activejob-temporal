@@ -53,9 +53,9 @@ describe "Recurring schedules", :integration do
     wait_for { TestJob.last_argument == 42 }
 
     description = @schedule_handle.describe
-    expect(description.schedule.spec.time_zone_name).to eq("UTC")
-    expect(description.info.num_actions).to be >= 1
-    expect(description.info.next_action_times).not_to be_empty
+    assert_equal "UTC", description.schedule.spec.time_zone_name
+    assert_operator description.info.num_actions, :>=, 1
+    refute_empty description.info.next_action_times
   end
 
   it "uses a distinct execution identity for each schedule fire" do
@@ -84,10 +84,12 @@ describe "Recurring schedules", :integration do
     job_ids = executions.map { |execution| execution.fetch(:job_id) }
     idempotency_keys = executions.map { |execution| execution.fetch(:idempotency_key) }
 
-    expect(job_ids.uniq.size).to eq(2)
-    expect(idempotency_keys.uniq.size).to eq(2)
-    expect(job_ids).to all(start_with("ajschwf:#{schedule_id}"))
-    expect(executions.map { |execution| execution.fetch(:provider_job_id) }).to eq(job_ids)
+    assert_equal 2, job_ids.uniq.size
+    assert_equal 2, idempotency_keys.uniq.size
+    provider_job_ids = executions.map { |execution| execution.fetch(:provider_job_id) }
+
+    assert(job_ids.all? { |job_id| job_id.start_with?("ajschwf:#{schedule_id}") })
+    assert_equal job_ids, provider_job_ids
   end
 
   private

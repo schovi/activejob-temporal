@@ -57,10 +57,12 @@ describe ActiveJob::Temporal::Payload do
       config.payload_storage_threshold_kb = nil
     end
 
-    allow(ActiveJob::Temporal::Logger).to receive(:info)
-    allow(ActiveJob::Temporal::Logger).to receive(:warn)
-    allow(ActiveJob::Temporal::Logger).to receive(:error)
-    allow(ActiveJob::Temporal::Observability).to receive(:emit)
+    @logger_recorders = {
+      info: call_recorded_method(ActiveJob::Temporal::Logger, :info),
+      warn: call_recorded_method(ActiveJob::Temporal::Logger, :warn),
+      error: call_recorded_method(ActiveJob::Temporal::Logger, :error)
+    }
+    @observability_emit_recorder = call_recorded_method(ActiveJob::Temporal::Observability, :emit)
   end
 
   describe ".from_job" do
@@ -69,14 +71,17 @@ describe ActiveJob::Temporal::Payload do
     it "serializes ActiveJob attributes into a payload hash" do
       payload = described_class.from_job(job)
 
-      expect(payload).to include(
-        job_class: job.class.name,
-        job_id: job.job_id,
-        queue_name: job.queue_name,
-        executions: job.executions,
-        exception_executions: job.exception_executions
+      assert_hash_includes(
+        {
+          job_class: job.class.name,
+          job_id: job.job_id,
+          queue_name: job.queue_name,
+          executions: job.executions,
+          exception_executions: job.exception_executions
+        },
+        payload
       )
-      expect(payload[:arguments]).to eq(ActiveJob::Arguments.serialize(job.arguments))
+      assert_equal ActiveJob::Arguments.serialize(job.arguments), payload[:arguments]
     end
 
     it "stores full ActiveJob serialized data when the job supports it" do
@@ -96,15 +101,18 @@ describe ActiveJob::Temporal::Payload do
 
       payload = described_class.from_job(job)
 
-      expect(payload[:active_job]).to include(
-        "job_class" => "FullSerializedPayloadJob",
-        "job_id" => job.job_id,
-        "provider_job_id" => "provider-job-id",
-        "queue_name" => "default",
-        "priority" => 7,
-        "locale" => "en",
-        "timezone" => "UTC",
-        "tenant" => "tenant-42"
+      assert_hash_includes(
+        {
+          "job_class" => "FullSerializedPayloadJob",
+          "job_id" => job.job_id,
+          "provider_job_id" => "provider-job-id",
+          "queue_name" => "default",
+          "priority" => 7,
+          "locale" => "en",
+          "timezone" => "UTC",
+          "tenant" => "tenant-42"
+        },
+        payload[:active_job]
       )
     end
 
@@ -116,9 +124,9 @@ describe ActiveJob::Temporal::Payload do
 
       payload = described_class.from_job(active_job)
 
-      expect(payload).not_to have_key(:arguments)
-      expect(payload[:active_job]["arguments"]).to eq(ActiveJob::Arguments.serialize(active_job.arguments))
-      expect(described_class.deserialize_args(payload)).to eq(active_job.arguments)
+      refute payload.key?(:arguments)
+      assert_equal ActiveJob::Arguments.serialize(active_job.arguments), payload[:active_job]["arguments"]
+      assert_equal active_job.arguments, described_class.deserialize_args(payload)
     end
 
     it "does not duplicate large serialized arguments in new payloads" do
@@ -131,22 +139,20 @@ describe ActiveJob::Temporal::Payload do
       payload = described_class.from_job(large_job)
       legacy_payload = payload.merge(arguments: serialized_arguments)
 
-      expect(payload).not_to have_key(:arguments)
-      expect(JSON.generate(payload).bytesize).to be < (JSON.generate(legacy_payload).bytesize * 0.65)
+      refute payload.key?(:arguments)
+      assert_operator JSON.generate(payload).bytesize, :<, JSON.generate(legacy_payload).bytesize * 0.65
     end
 
     it "emits serialized payload size observability" do
       payload = described_class.from_job(job)
 
-      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+      attributes = assert_observability_emit(
         :payload_serialize,
-        hash_including(
-          job_class: payload[:job_class],
-          job_id: payload[:job_id],
-          queue: payload[:queue_name],
-          bytes: kind_of(Integer)
-        )
+        job_class: payload[:job_class],
+        job_id: payload[:job_id],
+        queue: payload[:queue_name]
       )
+      assert_kind_of Integer, attributes[:bytes]
     end
 
     it "includes scheduled_at in ISO8601 when provided" do
@@ -154,14 +160,14 @@ describe ActiveJob::Temporal::Payload do
 
       payload = described_class.from_job(job, scheduled_at: scheduled_time)
 
-      expect(payload[:scheduled_at]).to eq(scheduled_time.iso8601)
+      assert_equal scheduled_time.iso8601, payload[:scheduled_at]
     end
 
     it "accepts preformatted ISO8601 scheduled_at strings" do
       iso_string = "2024-10-20T12:00:00Z"
       payload = described_class.from_job(job, scheduled_at: iso_string)
 
-      expect(payload[:scheduled_at]).to eq(iso_string)
+      assert_equal iso_string, payload[:scheduled_at]
     end
 
     it "coerces scheduled_at values that respond to to_time" do
@@ -178,7 +184,7 @@ describe ActiveJob::Temporal::Payload do
 
       payload = described_class.from_job(job, scheduled_at: to_time_only.new(base_time))
 
-      expect(payload[:scheduled_at]).to eq(base_time.iso8601)
+      assert_equal base_time.iso8601, payload[:scheduled_at]
     end
 
     it "coerces scheduled_at strings accepted by ActiveSupport" do
@@ -186,14 +192,15 @@ describe ActiveJob::Temporal::Payload do
 
       payload = described_class.from_job(job, scheduled_at: scheduled_time)
 
-      expect(payload[:scheduled_at]).to eq("2024-10-20T12:00:00+00:00")
+      assert_equal "2024-10-20T12:00:00+00:00", payload[:scheduled_at]
     end
 
     it "raises when scheduled_at string cannot be parsed" do
       invalid_timestamp = "not-a-date"
 
-      expect { described_class.from_job(job, scheduled_at: invalid_timestamp) }
-        .to raise_error(ArgumentError, /convertible to Time/)
+      error = assert_raises(ArgumentError) { described_class.from_job(job, scheduled_at: invalid_timestamp) }
+
+      assert_match(/convertible to Time/, error.message)
     end
 
     it "accepts payload under size limit" do
@@ -203,7 +210,7 @@ describe ActiveJob::Temporal::Payload do
         config.max_payload_size_kb = 250
       end
 
-      expect { described_class.from_job(small_job) }.not_to raise_error
+      assert_nothing_raised { described_class.from_job(small_job) }
     end
 
     it "accepts payload at exactly the size limit" do
@@ -217,7 +224,7 @@ describe ActiveJob::Temporal::Payload do
       end
 
       # This should not raise since we're at or just under the limit
-      expect { described_class.from_job(big_job) }.not_to raise_error
+      assert_nothing_raised { described_class.from_job(big_job) }
     end
 
     it "raises when serialized payload exceeds configured size limit" do
@@ -228,8 +235,9 @@ describe ActiveJob::Temporal::Payload do
         config.max_payload_size_kb = 1
       end
 
-      expect { described_class.from_job(big_job) }
-        .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+      error = assert_raises(ActiveJob::SerializationError) { described_class.from_job(big_job) }
+
+      assert_match(/exceeds maximum allowed size/, error.message)
     end
 
     it "raises with descriptive error message including KB sizes and guidance" do
@@ -240,40 +248,44 @@ describe ActiveJob::Temporal::Payload do
         config.max_payload_size_kb = 1
       end
 
-      expect { described_class.from_job(big_job) }
-        .to raise_error(ActiveJob::SerializationError) do |error|
-          expect(error.message).to match(/Job payload size \(\d+\.\d+ KB\) exceeds maximum allowed size \(1 KB\)/)
-          expect(error.message).to include("Consider reducing argument size or using references (e.g., database IDs)")
-        end
+      error = assert_raises(ActiveJob::SerializationError) { described_class.from_job(big_job) }
+
+      assert_match(/Job payload size \(\d+\.\d+ KB\) exceeds maximum allowed size \(1 KB\)/, error.message)
+      assert_includes error.message, "Consider reducing argument size or using references (e.g., database IDs)"
     end
 
     it "raises when arguments contain non-serializable objects" do
       bad_job = SimpleJob.new([proc {}])
 
-      expect { described_class.from_job(bad_job) }
-        .to raise_error(ActiveJob::SerializationError)
+      assert_raises(ActiveJob::SerializationError) { described_class.from_job(bad_job) }
     end
 
-    context "with non-JSON payload serializers" do
+    describe "with non-JSON payload serializers" do
       it "wraps MessagePack execution data and round-trips arguments" do
         ActiveJob::Temporal.config.payload_serializer = :message_pack
 
         payload = described_class.from_job(job)
 
-        expect(payload).to include(
-          serialized_payload: true,
-          payload_serializer: "message_pack",
-          payload_serializer_version: 1,
-          serialized_data: a_kind_of(String)
+        assert_hash_includes(
+          {
+            serialized_payload: true,
+            payload_serializer: "message_pack",
+            payload_serializer_version: 1
+          },
+          payload
         )
-        expect(payload).not_to have_key(:job_class)
-        expect(payload).not_to have_key(:arguments)
-        expect(described_class.deserialize_payload(payload)).to include(
-          job_class: job.class.name,
-          job_id: job.job_id,
-          queue_name: job.queue_name
+        assert_kind_of String, payload[:serialized_data]
+        refute payload.key?(:job_class)
+        refute payload.key?(:arguments)
+        assert_hash_includes(
+          {
+            job_class: job.class.name,
+            job_id: job.job_id,
+            queue_name: job.queue_name
+          },
+          described_class.deserialize_payload(payload)
         )
-        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+        assert_equal job.arguments, described_class.deserialize_args(payload)
       end
 
       it "wraps Marshal execution data and round-trips arguments" do
@@ -281,15 +293,18 @@ describe ActiveJob::Temporal::Payload do
 
         payload = described_class.from_job(job)
 
-        expect(payload).to include(
-          serialized_payload: true,
-          payload_serializer: "marshal",
-          payload_serializer_version: 1,
-          serialized_data: a_kind_of(String)
+        assert_hash_includes(
+          {
+            serialized_payload: true,
+            payload_serializer: "marshal",
+            payload_serializer_version: 1
+          },
+          payload
         )
-        expect(payload).not_to have_key(:job_class)
-        expect(payload).not_to have_key(:arguments)
-        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+        assert_kind_of String, payload[:serialized_data]
+        refute payload.key?(:job_class)
+        refute payload.key?(:arguments)
+        assert_equal job.arguments, described_class.deserialize_args(payload)
       end
 
       it "preserves chain metadata outside serialized execution data" do
@@ -306,14 +321,17 @@ describe ActiveJob::Temporal::Payload do
 
         payload = described_class.from_job(job).merge(chain: chain)
 
-        expect(payload).to include(
-          serialized_payload: true,
-          payload_serializer: "message_pack",
-          payload_serializer_version: 1,
-          serialized_data: a_kind_of(String),
-          chain: chain
+        assert_hash_includes(
+          {
+            serialized_payload: true,
+            payload_serializer: "message_pack",
+            payload_serializer_version: 1,
+            chain: chain
+          },
+          payload
         )
-        expect(described_class.deserialize_payload(payload)).to include(chain: chain)
+        assert_kind_of String, payload[:serialized_data]
+        assert_hash_includes({ chain: chain }, described_class.deserialize_payload(payload))
       end
 
       it "reads legacy JSON payloads after the configured serializer changes" do
@@ -321,7 +339,7 @@ describe ActiveJob::Temporal::Payload do
         payload = described_class.from_job(job)
         ActiveJob::Temporal.config.payload_serializer = :message_pack
 
-        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+        assert_equal job.arguments, described_class.deserialize_args(payload)
       end
 
       it "reads MessagePack payloads after the configured serializer changes" do
@@ -329,7 +347,7 @@ describe ActiveJob::Temporal::Payload do
         payload = described_class.from_job(job)
         ActiveJob::Temporal.config.payload_serializer = :json
 
-        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+        assert_equal job.arguments, described_class.deserialize_args(payload)
       end
 
       it "reads Marshal payloads after the configured serializer changes" do
@@ -337,11 +355,11 @@ describe ActiveJob::Temporal::Payload do
         payload = described_class.from_job(job)
         ActiveJob::Temporal.config.payload_serializer = :json
 
-        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+        assert_equal job.arguments, described_class.deserialize_args(payload)
       end
     end
 
-    context "boundary conditions for payload size" do
+    describe "boundary conditions for payload size" do
       it "accepts payload that is 1 byte under the limit" do
         # Create a payload that's just under 50KB limit
         # Estimate: SimpleJob class name + job_id + args = ~100 bytes baseline
@@ -356,7 +374,7 @@ describe ActiveJob::Temporal::Payload do
         end
 
         # Should not raise when under limit
-        expect { described_class.from_job(job_with_arg) }.not_to raise_error
+        assert_nothing_raised { described_class.from_job(job_with_arg) }
       end
 
       it "accepts payload at exact size boundary" do
@@ -371,7 +389,7 @@ describe ActiveJob::Temporal::Payload do
         end
 
         # Should not raise when exactly at limit
-        expect { described_class.from_job(job_at_limit) }.not_to raise_error
+        assert_nothing_raised { described_class.from_job(job_at_limit) }
       end
 
       it "rejects payload that is over the limit" do
@@ -384,8 +402,9 @@ describe ActiveJob::Temporal::Payload do
           config.max_payload_size_kb = target_size_kb
         end
 
-        expect { described_class.from_job(job_over) }
-          .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+        error = assert_raises(ActiveJob::SerializationError) { described_class.from_job(job_over) }
+
+        assert_match(/exceeds maximum allowed size/, error.message)
       end
 
       it "accepts empty payload (0 bytes argument)" do
@@ -396,7 +415,7 @@ describe ActiveJob::Temporal::Payload do
         end
 
         # Empty job should always pass
-        expect { described_class.from_job(job_empty) }.not_to raise_error
+        assert_nothing_raised { described_class.from_job(job_empty) }
       end
 
       it "accepts job with nil arguments" do
@@ -409,11 +428,11 @@ describe ActiveJob::Temporal::Payload do
           config.max_payload_size_kb = 1
         end
 
-        expect { described_class.from_job(job_instance) }.not_to raise_error
+        assert_nothing_raised { described_class.from_job(job_instance) }
       end
     end
 
-    context "payload size monitoring" do
+    describe "payload size monitoring" do
       it "does not log when payload size is below warning thresholds" do
         monitored_job = job_for_payload_usage(0.75, max_size_kb: 2)
 
@@ -423,9 +442,9 @@ describe ActiveJob::Temporal::Payload do
 
         described_class.from_job(monitored_job)
 
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+        refute_logged :info
+        refute_logged :warn
+        refute_logged :error
       end
 
       it "logs info when payload size reaches 80 percent of the limit" do
@@ -437,17 +456,13 @@ describe ActiveJob::Temporal::Payload do
 
         described_class.from_job(monitored_job)
 
-        expect(ActiveJob::Temporal::Logger).to have_received(:info).with(
-          "payload_size_large",
-          hash_including(
-            job_class: monitored_job.class.name,
-            limit_kb: 2,
-            size_kb: be_between(1.6, 1.8),
-            percentage: be_between(80.0, 90.0)
-          )
-        )
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+        attributes = assert_logged(:info, "payload_size_large", job_class: monitored_job.class.name, limit_kb: 2)
+        assert_operator attributes[:size_kb], :>=, 1.6
+        assert_operator attributes[:size_kb], :<=, 1.8
+        assert_operator attributes[:percentage], :>=, 80.0
+        assert_operator attributes[:percentage], :<=, 90.0
+        refute_logged :warn
+        refute_logged :error
       end
 
       it "logs warn when payload size reaches 90 percent of the limit" do
@@ -459,17 +474,13 @@ describe ActiveJob::Temporal::Payload do
 
         described_class.from_job(monitored_job)
 
-        expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
-          "payload_size_near_limit",
-          hash_including(
-            job_class: monitored_job.class.name,
-            limit_kb: 2,
-            size_kb: be_between(1.8, 2.0),
-            percentage: be_between(90.0, 100.0)
-          )
-        )
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+        attributes = assert_logged(:warn, "payload_size_near_limit", job_class: monitored_job.class.name, limit_kb: 2)
+        assert_operator attributes[:size_kb], :>=, 1.8
+        assert_operator attributes[:size_kb], :<=, 2.0
+        assert_operator attributes[:percentage], :>=, 90.0
+        assert_operator attributes[:percentage], :<=, 100.0
+        refute_logged :info
+        refute_logged :error
       end
 
       it "logs error with payload context when payload size exceeds the limit" do
@@ -479,20 +490,14 @@ describe ActiveJob::Temporal::Payload do
           config.max_payload_size_kb = 2
         end
 
-        expect { described_class.from_job(monitored_job) }
-          .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+        error = assert_raises(ActiveJob::SerializationError) { described_class.from_job(monitored_job) }
 
-        expect(ActiveJob::Temporal::Logger).to have_received(:error).with(
-          "payload_size_exceeded",
-          hash_including(
-            job_class: monitored_job.class.name,
-            limit_kb: 2,
-            size_kb: be > 2.0,
-            percentage: be > 100.0
-          )
-        )
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+        assert_match(/exceeds maximum allowed size/, error.message)
+        attributes = assert_logged(:error, "payload_size_exceeded", job_class: monitored_job.class.name, limit_kb: 2)
+        assert_operator attributes[:size_kb], :>, 2.0
+        assert_operator attributes[:percentage], :>, 100.0
+        refute_logged :info
+        refute_logged :warn
       end
 
       it "logs info at exactly 80 percent of the limit" do
@@ -504,16 +509,9 @@ describe ActiveJob::Temporal::Payload do
 
         described_class.from_job(monitored_job)
 
-        expect(ActiveJob::Temporal::Logger).to have_received(:info).with(
-          "payload_size_large",
-          hash_including(
-            job_class: monitored_job.class.name,
-            limit_kb: 2,
-            percentage: 80.0
-          )
-        )
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+        assert_logged(:info, "payload_size_large", job_class: monitored_job.class.name, limit_kb: 2, percentage: 80.0)
+        refute_logged :warn
+        refute_logged :error
       end
 
       it "logs warn at exactly 90 percent of the limit" do
@@ -525,16 +523,15 @@ describe ActiveJob::Temporal::Payload do
 
         described_class.from_job(monitored_job)
 
-        expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        assert_logged(
+          :warn,
           "payload_size_near_limit",
-          hash_including(
-            job_class: monitored_job.class.name,
-            limit_kb: 2,
-            percentage: 90.0
-          )
+          job_class: monitored_job.class.name,
+          limit_kb: 2,
+          percentage: 90.0
         )
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+        refute_logged :info
+        refute_logged :error
       end
 
       it "logs warn and accepts payload at the exact size limit" do
@@ -544,18 +541,17 @@ describe ActiveJob::Temporal::Payload do
           config.max_payload_size_kb = 2
         end
 
-        expect { described_class.from_job(monitored_job) }.not_to raise_error
+        assert_nothing_raised { described_class.from_job(monitored_job) }
 
-        expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+        assert_logged(
+          :warn,
           "payload_size_near_limit",
-          hash_including(
-            job_class: monitored_job.class.name,
-            limit_kb: 2,
-            percentage: 100.0
-          )
+          job_class: monitored_job.class.name,
+          limit_kb: 2,
+          percentage: 100.0
         )
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:error)
+        refute_logged :info
+        refute_logged :error
       end
 
       it "logs error when payload is one byte over the limit" do
@@ -565,23 +561,17 @@ describe ActiveJob::Temporal::Payload do
           config.max_payload_size_kb = 2
         end
 
-        expect { described_class.from_job(monitored_job) }
-          .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+        error = assert_raises(ActiveJob::SerializationError) { described_class.from_job(monitored_job) }
 
-        expect(ActiveJob::Temporal::Logger).to have_received(:error).with(
-          "payload_size_exceeded",
-          hash_including(
-            job_class: monitored_job.class.name,
-            limit_kb: 2,
-            percentage: 100.0
-          )
-        )
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:info)
-        expect(ActiveJob::Temporal::Logger).not_to have_received(:warn)
+        assert_match(/exceeds maximum allowed size/, error.message)
+        assert_logged(:error, "payload_size_exceeded", job_class: monitored_job.class.name, limit_kb: 2,
+                                                       percentage: 100.0)
+        refute_logged :info
+        refute_logged :warn
       end
     end
 
-    context "with payload encryption enabled" do
+    describe "with payload encryption enabled" do
       let(:job) { SimpleJob.new(["alpha", 123, { nested: true }]) }
 
       before do
@@ -591,18 +581,21 @@ describe ActiveJob::Temporal::Payload do
       it "returns an encrypted envelope without plaintext job execution fields" do
         payload = described_class.from_job(job)
 
-        expect(payload).to include(
-          encrypted_payload: true,
-          encrypted_payload_version: 1,
-          encrypted_data: a_kind_of(String)
+        assert_hash_includes(
+          {
+            encrypted_payload: true,
+            encrypted_payload_version: 1
+          },
+          payload
         )
-        expect(payload).not_to have_key(:job_class)
-        expect(payload).not_to have_key(:job_id)
-        expect(payload).not_to have_key(:queue_name)
-        expect(payload).not_to have_key(:arguments)
-        expect(payload[:encrypted_data]).not_to include("alpha")
-        expect(payload[:encrypted_data]).not_to include(job.job_id)
-        expect(payload[:encrypted_data]).not_to include(job.class.name)
+        assert_kind_of String, payload[:encrypted_data]
+        refute payload.key?(:job_class)
+        refute payload.key?(:job_id)
+        refute payload.key?(:queue_name)
+        refute payload.key?(:arguments)
+        refute_includes payload[:encrypted_data], "alpha"
+        refute_includes payload[:encrypted_data], job.job_id
+        refute_includes payload[:encrypted_data], job.class.name
       end
 
       it "keeps scheduled_at outside the encrypted data for workflow replay" do
@@ -610,48 +603,59 @@ describe ActiveJob::Temporal::Payload do
 
         payload = described_class.from_job(job, scheduled_at: scheduled_time)
 
-        expect(payload[:scheduled_at]).to eq(scheduled_time.iso8601)
-        expect(payload[:encrypted_data]).not_to include(scheduled_time.iso8601)
+        assert_equal scheduled_time.iso8601, payload[:scheduled_at]
+        refute_includes payload[:encrypted_data], scheduled_time.iso8601
       end
 
       it "decrypts payload metadata and arguments transparently" do
         payload = described_class.from_job(job)
         decrypted_payload = described_class.deserialize_payload(payload)
 
-        expect(decrypted_payload).to include(
-          job_class: job.class.name,
-          job_id: job.job_id,
-          queue_name: job.queue_name,
-          executions: job.executions,
-          exception_executions: job.exception_executions
+        assert_hash_includes(
+          {
+            job_class: job.class.name,
+            job_id: job.job_id,
+            queue_name: job.queue_name,
+            executions: job.executions,
+            exception_executions: job.exception_executions
+          },
+          decrypted_payload
         )
-        expect(decrypted_payload[:arguments]).to eq(ActiveJob::Arguments.serialize(job.arguments))
-        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+        assert_equal ActiveJob::Arguments.serialize(job.arguments), decrypted_payload[:arguments]
+        assert_equal job.arguments, described_class.deserialize_args(payload)
       end
 
       it "binds v2 encrypted payloads to workflow context" do
         encryption_context = { namespace: "payments", workflow_id: "workflow-1" }
         payload = described_class.from_job(job, encryption_context: encryption_context)
 
-        expect(payload).to include(
-          encrypted_payload: true,
-          encrypted_payload_version: 2,
-          encrypted_key_id: "primary",
-          encrypted_data: a_kind_of(String),
-          encrypted_iv: a_kind_of(String),
-          encrypted_auth_tag: a_kind_of(String)
+        assert_hash_includes(
+          {
+            encrypted_payload: true,
+            encrypted_payload_version: 2,
+            encrypted_key_id: "primary"
+          },
+          payload
         )
-        expect(described_class.deserialize_payload(payload, encryption_context: encryption_context)).to include(
-          job_class: job.class.name,
-          job_id: job.job_id
+        assert_kind_of String, payload[:encrypted_data]
+        assert_kind_of String, payload[:encrypted_iv]
+        assert_kind_of String, payload[:encrypted_auth_tag]
+        assert_hash_includes(
+          {
+            job_class: job.class.name,
+            job_id: job.job_id
+          },
+          described_class.deserialize_payload(payload, encryption_context: encryption_context)
         )
 
-        expect do
+        error = assert_raises(ActiveJob::SerializationError) do
           described_class.deserialize_payload(
             payload,
             encryption_context: { namespace: "payments", workflow_id: "workflow-2" }
           )
-        end.to raise_error(ActiveJob::SerializationError, /Unable to decrypt ActiveJob::Temporal payload/)
+        end
+
+        assert_match(/Unable to decrypt ActiveJob::Temporal payload/, error.message)
       end
 
       it "pins v2 decryption to the encrypted key id" do
@@ -664,28 +668,35 @@ describe ActiveJob::Temporal::Payload do
 
         rotated_config = encrypted_configuration(key: { id: "new", key: new_key })
         rotated_config.encryption_old_keys = [{ id: "old", key: old_key }]
-        expect(
+        assert_equal(
+          job.arguments,
           described_class.deserialize_args(payload, config: rotated_config, encryption_context: encryption_context)
-        ).to eq(job.arguments)
+        )
 
         unknown_key_payload = payload.merge(encrypted_key_id: "missing")
-        expect do
+        error = assert_raises(ActiveJob::SerializationError) do
           described_class.deserialize_args(
             unknown_key_payload,
             config: rotated_config,
             encryption_context: encryption_context
           )
-        end.to raise_error(ActiveJob::SerializationError, /Unknown encrypted payload key id/)
+        end
+
+        assert_match(/Unknown encrypted payload key id/, error.message)
 
         rotated_config.encryption_old_keys = [{ id: "old", key: old_key, decrypt_until: Time.utc(2000, 1, 1) }]
-        expect do
+        error = assert_raises(ActiveJob::SerializationError) do
           described_class.deserialize_args(payload, config: rotated_config, encryption_context: encryption_context)
-        end.to raise_error(ActiveJob::SerializationError, /expired/)
+        end
+
+        assert_match(/expired/, error.message)
 
         rotated_config.encryption_old_keys = [{ id: "old", key: encryption_key_for("wrong") }]
-        expect do
+        error = assert_raises(ActiveJob::SerializationError) do
           described_class.deserialize_args(payload, config: rotated_config, encryption_context: encryption_context)
-        end.to raise_error(ActiveJob::SerializationError, /Unable to decrypt ActiveJob::Temporal payload/)
+        end
+
+        assert_match(/Unable to decrypt ActiveJob::Temporal payload/, error.message)
       end
 
       it "does not trust rate limit metadata added outside encrypted data" do
@@ -697,7 +708,7 @@ describe ActiveJob::Temporal::Payload do
 
         decrypted_payload = described_class.deserialize_payload(payload)
 
-        expect(decrypted_payload[:rate_limits]).to be_nil
+        assert_nil decrypted_payload[:rate_limits]
       end
 
       it "does not trust chain metadata added outside encrypted data" do
@@ -714,19 +725,17 @@ describe ActiveJob::Temporal::Payload do
 
         decrypted_payload = described_class.deserialize_payload(payload)
 
-        expect(decrypted_payload[:chain]).to be_nil
+        assert_nil decrypted_payload[:chain]
       end
 
       it "emits encrypted payload size with plaintext labels" do
         payload = described_class.from_job(job)
 
-        expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
+        assert_observability_emit(
           :payload_serialize,
-          hash_including(
-            job_class: job.class.name,
-            queue: job.queue_name,
-            bytes: JSON.generate(payload).bytesize
-          )
+          job_class: job.class.name,
+          queue: job.queue_name,
+          bytes: JSON.generate(payload).bytesize
         )
       end
 
@@ -739,7 +748,7 @@ describe ActiveJob::Temporal::Payload do
 
         configure_payload_encryption(key: new_key, old_keys: [old_key])
 
-        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+        assert_equal job.arguments, described_class.deserialize_args(payload)
       end
 
       it "raises SerializationError when no configured key can decrypt the payload" do
@@ -750,8 +759,9 @@ describe ActiveJob::Temporal::Payload do
         payload = described_class.from_job(job)
         configure_payload_encryption(key: new_key)
 
-        expect { described_class.deserialize_args(payload) }
-          .to raise_error(ActiveJob::SerializationError, /Unable to decrypt ActiveJob::Temporal payload/)
+        error = assert_raises(ActiveJob::SerializationError) { described_class.deserialize_args(payload) }
+
+        assert_match(/Unable to decrypt ActiveJob::Temporal payload/, error.message)
       end
 
       it "encrypts serialized MessagePack execution data and preserves workflow controls" do
@@ -771,32 +781,38 @@ describe ActiveJob::Temporal::Payload do
         )
         payload = described_class.encrypt_payload(payload)
 
-        expect(payload).to include(
-          encrypted_payload: true,
-          encrypted_payload_version: 1,
-          payload_serializer: "message_pack",
-          payload_serializer_version: 1,
-          encrypted_data: a_kind_of(String),
-          scheduled_at: scheduled_time.iso8601
+        assert_hash_includes(
+          {
+            encrypted_payload: true,
+            encrypted_payload_version: 1,
+            payload_serializer: "message_pack",
+            payload_serializer_version: 1,
+            scheduled_at: scheduled_time.iso8601
+          },
+          payload
         )
-        expect(payload).not_to have_key(:serialized_payload)
-        expect(payload).not_to have_key(:serialized_data)
-        expect(described_class.deserialize_payload(payload)).to include(
-          job_class: job.class.name,
-          job_id: job.job_id,
-          queue_name: job.queue_name,
-          scheduled_at: scheduled_time.iso8601,
-          rate_limits: [{ "limit" => 100, "interval" => 1.0, "key" => "global" }],
-          chain: [
-            {
-              "job_class" => "EncryptedSerializedChainNextJob",
-              "options" => {
-                "queue" => "reporting"
+        assert_kind_of String, payload[:encrypted_data]
+        refute payload.key?(:serialized_payload)
+        refute payload.key?(:serialized_data)
+        assert_hash_includes(
+          {
+            job_class: job.class.name,
+            job_id: job.job_id,
+            queue_name: job.queue_name,
+            scheduled_at: scheduled_time.iso8601,
+            rate_limits: [{ "limit" => 100, "interval" => 1.0, "key" => "global" }],
+            chain: [
+              {
+                "job_class" => "EncryptedSerializedChainNextJob",
+                "options" => {
+                  "queue" => "reporting"
+                }
               }
-            }
-          ]
+            ]
+          },
+          described_class.deserialize_payload(payload)
         )
-        expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+        assert_equal job.arguments, described_class.deserialize_args(payload)
       end
     end
   end
@@ -813,14 +829,20 @@ describe ActiveJob::Temporal::Payload do
 
       payload = described_class.from_job(job, storage_metadata: { workflow_id: "workflow-1" })
 
-      expect(payload).to include(
-        external_payload: true,
-        external_payload_version: 1,
-        external_payload_reference: a_kind_of(String)
+      assert_hash_includes(
+        {
+          external_payload: true,
+          external_payload_version: 1
+        },
+        payload
       )
-      expect(payload).not_to have_key(:job_class)
-      expect(adapter.metadata_for(payload.fetch(:external_payload_reference))).to include(workflow_id: "workflow-1")
-      expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+      assert_kind_of String, payload[:external_payload_reference]
+      refute payload.key?(:job_class)
+      assert_hash_includes(
+        { workflow_id: "workflow-1" },
+        adapter.metadata_for(payload.fetch(:external_payload_reference))
+      )
+      assert_equal job.arguments, described_class.deserialize_args(payload)
     end
 
     it "stores encrypted transport payloads when payload encryption is enabled" do
@@ -841,10 +863,10 @@ describe ActiveJob::Temporal::Payload do
       )
       stored_payload = adapter.payload_for(payload.fetch(:external_payload_reference))
 
-      expect(payload).to include(external_payload: true)
-      expect(stored_payload).to include(encrypted_payload: true, encrypted_payload_version: 2)
-      expect(stored_payload[:encrypted_data]).not_to include("secret")
-      expect(described_class.deserialize_args(payload, encryption_context: encryption_context)).to eq(job.arguments)
+      assert_hash_includes({ external_payload: true }, payload)
+      assert_hash_includes({ encrypted_payload: true, encrypted_payload_version: 2 }, stored_payload)
+      refute_includes stored_payload[:encrypted_data], "secret"
+      assert_equal job.arguments, described_class.deserialize_args(payload, encryption_context: encryption_context)
     end
 
     it "keeps small payloads inline" do
@@ -858,9 +880,9 @@ describe ActiveJob::Temporal::Payload do
 
       payload = described_class.from_job(job)
 
-      expect(payload).to include(job_class: job.class.name)
-      expect(payload).not_to include(external_payload: true)
-      expect(adapter.references).to be_empty
+      assert_hash_includes({ job_class: job.class.name }, payload)
+      refute_equal true, payload[:external_payload]
+      assert_empty adapter.references
     end
 
     it "raises a serialization error when external payloads cannot be loaded" do
@@ -883,8 +905,9 @@ describe ActiveJob::Temporal::Payload do
         external_payload_reference: "missing"
       }
 
-      expect { described_class.deserialize_payload(payload) }
-        .to raise_error(ActiveJob::SerializationError, /external payload is missing/)
+      error = assert_raises(ActiveJob::SerializationError) { described_class.deserialize_payload(payload) }
+
+      assert_match(/external payload is missing/, error.message)
     end
 
     it "lets transient external storage load errors retry the activity" do
@@ -907,8 +930,9 @@ describe ActiveJob::Temporal::Payload do
         external_payload_reference: "payload-1"
       }
 
-      expect { described_class.deserialize_payload(payload) }
-        .to raise_error(RuntimeError, /storage timeout/)
+      error = assert_raises(RuntimeError) { described_class.deserialize_payload(payload) }
+
+      assert_match(/storage timeout/, error.message)
     end
   end
 
@@ -917,7 +941,7 @@ describe ActiveJob::Temporal::Payload do
       job = SimpleJob.new(["string", 123, { foo: "bar" }])
       payload = described_class.from_job(job)
 
-      expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+      assert_equal job.arguments, described_class.deserialize_args(payload)
     end
 
     it "deserializes legacy payloads with top-level arguments" do
@@ -929,7 +953,7 @@ describe ActiveJob::Temporal::Payload do
         arguments: ActiveJob::Arguments.serialize(job.arguments)
       }
 
-      expect(described_class.deserialize_args(payload)).to eq(job.arguments)
+      assert_equal job.arguments, described_class.deserialize_args(payload)
     end
 
     it "prefers canonical ActiveJob arguments when duplicate legacy arguments exist" do
@@ -941,7 +965,7 @@ describe ActiveJob::Temporal::Payload do
         arguments: ActiveJob::Arguments.serialize(["legacy"])
       )
 
-      expect(described_class.deserialize_args(payload)).to eq(["canonical"])
+      assert_equal ["canonical"], described_class.deserialize_args(payload)
     end
 
     it "uses the provided config when deserializing encrypted arguments" do
@@ -949,12 +973,11 @@ describe ActiveJob::Temporal::Payload do
       config = encrypted_configuration(key: encryption_key_for("local"))
       payload = described_class.from_job(job, config: config)
 
-      expect(described_class.deserialize_args(payload, config: config)).to eq(job.arguments)
+      assert_equal job.arguments, described_class.deserialize_args(payload, config: config)
     end
 
     it "raises when payload is missing arguments" do
-      expect { described_class.deserialize_args({}) }
-        .to raise_error(ActiveJob::SerializationError)
+      assert_raises(ActiveJob::SerializationError) { described_class.deserialize_args({}) }
     end
 
     it "round-trips GlobalID compatible objects" do
@@ -964,13 +987,43 @@ describe ActiveJob::Temporal::Payload do
       job = SimpleJob.new([model])
       global_id = model.to_global_id.to_s
 
-      allow(GlobalID::Locator).to receive(:locate).with(global_id).and_return(model)
+      call_recorded_method(GlobalID::Locator, :locate) do |actual_global_id|
+        model if actual_global_id == global_id
+      end
 
       payload = described_class.from_job(job)
-      expect(payload[:arguments].first["_aj_globalid"]).to eq(global_id)
+      assert_equal global_id, payload[:arguments].first["_aj_globalid"]
 
-      expect(described_class.deserialize_args(payload)).to eq([model])
+      assert_equal [model], described_class.deserialize_args(payload)
     end
+  end
+
+  def assert_logged(level, event_name, expected_attributes)
+    call = logger_calls(level).find { |recorded_call| recorded_call.arguments.first == event_name }
+    refute_nil call, "Expected #{level} log #{event_name.inspect}"
+
+    attributes = call.arguments[1]
+    assert_hash_includes expected_attributes, attributes
+    attributes
+  end
+
+  def refute_logged(level)
+    assert_empty logger_calls(level), "Expected no #{level} logs"
+  end
+
+  def logger_calls(level)
+    @logger_recorders.fetch(level).calls_for(level)
+  end
+
+  def assert_observability_emit(event_name, expected_attributes)
+    call = @observability_emit_recorder.calls_for(:emit).find do |recorded_call|
+      recorded_call.arguments.first == event_name
+    end
+    refute_nil call, "Expected observability emit #{event_name.inspect}"
+
+    attributes = call.arguments[1]
+    assert_hash_includes expected_attributes, attributes
+    attributes
   end
 
   def job_for_payload_usage(target_usage, max_size_kb:)

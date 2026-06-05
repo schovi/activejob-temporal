@@ -25,7 +25,7 @@ describe ActiveJob::Temporal::JobTags do
   end
 
   it "is prepended into ActiveJob::Base" do
-    expect(ActiveJob::Base.ancestors).to include(described_class)
+    assert_includes ActiveJob::Base.ancestors, described_class
   end
 
   it "stores string tags configured on a job instance" do
@@ -33,7 +33,7 @@ describe ActiveJob::Temporal::JobTags do
 
     job.set(tags: %w[urgent customer_123])
 
-    expect(job.temporal_tags).to eq(%w[urgent customer_123])
+    assert_equal %w[urgent customer_123], job.temporal_tags
   end
 
   it "normalizes symbol tags to strings" do
@@ -41,14 +41,14 @@ describe ActiveJob::Temporal::JobTags do
 
     job.set(tags: %i[urgent customer])
 
-    expect(job.temporal_tags).to eq(%w[urgent customer])
+    assert_equal %w[urgent customer], job.temporal_tags
   end
 
   it "preserves tags from configured jobs" do
     job = job_class.set(tags: %w[urgent]).perform_later("payload")
 
-    expect(job.temporal_tags).to eq(["urgent"])
-    expect(queue_adapter.enqueued_jobs.size).to eq(1)
+    assert_equal ["urgent"], job.temporal_tags
+    assert_equal 1, queue_adapter.enqueued_jobs.size
   end
 
   it "forwards standard ActiveJob set options" do
@@ -57,10 +57,10 @@ describe ActiveJob::Temporal::JobTags do
     job = job_class.set(queue: "critical", wait_until: scheduled_at, priority: 7, tags: %w[urgent])
                    .perform_later("payload")
 
-    expect(job.temporal_tags).to eq(["urgent"])
-    expect(queue_adapter.enqueued_jobs.first[:queue]).to eq("critical")
-    expect(queue_adapter.enqueued_jobs.first[:at]).to be_within(0.001).of(scheduled_at.to_f)
-    expect(queue_adapter.enqueued_jobs.first[:priority]).to eq(7)
+    assert_equal ["urgent"], job.temporal_tags
+    assert_equal "critical", queue_adapter.enqueued_jobs.first[:queue]
+    assert_in_delta scheduled_at.to_f, queue_adapter.enqueued_jobs.first[:at], 0.001
+    assert_equal 7, queue_adapter.enqueued_jobs.first[:priority]
   end
 
   it "deduplicates tags after normalization" do
@@ -68,7 +68,7 @@ describe ActiveJob::Temporal::JobTags do
 
     job.set(tags: [:urgent, "urgent"])
 
-    expect(job.temporal_tags).to eq(["urgent"])
+    assert_equal ["urgent"], job.temporal_tags
   end
 
   it "treats nil tags as empty" do
@@ -76,20 +76,20 @@ describe ActiveJob::Temporal::JobTags do
 
     job.set(tags: nil)
 
-    expect(job.temporal_tags).to eq([])
+    assert_empty job.temporal_tags
   end
 
   it "rejects a non-array tag value" do
     job = job_class.new
 
-    expect { job.set(tags: "urgent") }
-      .to raise_error(ArgumentError, /tags must be an Array/)
+    error = assert_raises(ArgumentError) { job.set(tags: "urgent") }
+    assert_match(/tags must be an Array/, error.message)
   end
 
   it "rejects unsupported tag members" do
     job = job_class.new
 
-    expect { job.set(tags: ["urgent", 123]) }
-      .to raise_error(ArgumentError, /tags must contain only Strings or Symbols/)
+    error = assert_raises(ArgumentError) { job.set(tags: ["urgent", 123]) }
+    assert_match(/tags must contain only Strings or Symbols/, error.message)
   end
 end

@@ -17,53 +17,49 @@ describe ActiveJob::Temporal::PayloadSerializers do
   it "keeps JSON as the legacy inline payload format" do
     serializer = described_class.fetch(:json)
 
-    expect(serializer.envelope?(payload)).to be(false)
-    expect(serializer.dump(payload)).to eq(payload)
-    expect(serializer.load(payload)).to eq(payload)
+    refute serializer.envelope?(payload)
+    assert_equal payload, serializer.dump(payload)
+    assert_equal payload, serializer.load(payload)
   end
 
   it "round-trips payloads through MessagePack envelopes" do
     serializer = described_class.fetch(:message_pack)
     envelope = serializer.dump(payload)
 
-    expect(envelope).to include(
-      serialized_payload: true,
-      payload_serializer: "message_pack",
-      payload_serializer_version: 1,
-      serialized_data: a_kind_of(String)
-    )
-    expect(envelope).not_to have_key(:job_class)
-    expect(serializer.load(envelope)).to eq(payload)
+    assert_equal true, envelope.fetch(:serialized_payload)
+    assert_equal "message_pack", envelope.fetch(:payload_serializer)
+    assert_equal 1, envelope.fetch(:payload_serializer_version)
+    assert_kind_of String, envelope.fetch(:serialized_data)
+    refute envelope.key?(:job_class)
+    assert_equal payload, serializer.load(envelope)
   end
 
   it "raises a configuration error when MessagePack is not installed" do
     serializer = described_class.fetch(:message_pack)
-    allow(serializer).to receive(:require).with("msgpack").and_raise(LoadError)
+    call_recorded_method(serializer, :require, raises: LoadError.new)
 
-    expect { serializer.dump(payload) }
-      .to raise_error(ActiveJob::Temporal::ConfigurationError, /add gem "msgpack"/)
+    error = assert_raises(ActiveJob::Temporal::ConfigurationError) { serializer.dump(payload) }
+    assert_match(/add gem "msgpack"/, error.message)
   end
 
   it "accepts msgpack as an alias for message_pack" do
-    expect(described_class.fetch(:msgpack)).to be(described_class.fetch(:message_pack))
+    assert_same described_class.fetch(:message_pack), described_class.fetch(:msgpack)
   end
 
   it "round-trips payloads through Marshal envelopes" do
     serializer = described_class.fetch(:marshal)
     envelope = serializer.dump(payload)
 
-    expect(envelope).to include(
-      serialized_payload: true,
-      payload_serializer: "marshal",
-      payload_serializer_version: 1,
-      serialized_data: a_kind_of(String)
-    )
-    expect(envelope).not_to have_key(:job_class)
-    expect(serializer.load(envelope)).to eq(payload)
+    assert_equal true, envelope.fetch(:serialized_payload)
+    assert_equal "marshal", envelope.fetch(:payload_serializer)
+    assert_equal 1, envelope.fetch(:payload_serializer_version)
+    assert_kind_of String, envelope.fetch(:serialized_data)
+    refute envelope.key?(:job_class)
+    assert_equal payload, serializer.load(envelope)
   end
 
   it "rejects unknown serializers" do
-    expect { described_class.fetch(:yaml) }
-      .to raise_error(ActiveJob::Temporal::ConfigurationError, /Unsupported payload serializer/)
+    error = assert_raises(ActiveJob::Temporal::ConfigurationError) { described_class.fetch(:yaml) }
+    assert_match(/Unsupported payload serializer/, error.message)
   end
 end

@@ -8,7 +8,7 @@
 # @example Basic usage
 #   TestState.instance.reset!
 #   TestState.instance.attempt_count += 1
-#   expect(TestState.instance.test_result).to eq("success")
+#   assert_equal "success", TestState.instance.test_result
 class TestState
   include Singleton
 

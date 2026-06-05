@@ -14,14 +14,15 @@ describe ActiveJob::Temporal::JobDescriptor do
 
   it "normalizes to the nested job payload shape" do
     descriptor = described_class.new(job_class, queue: "critical", priority: 7)
-
-    expect(descriptor.to_h).to eq(
+    expected_payload = {
       job_class: "DescriptorJob",
       options: {
         queue: "critical",
         priority: 7
       }
-    )
+    }
+
+    assert_equal expected_payload, descriptor.to_h
   end
 
   it "duplicates option hashes for callers" do
@@ -29,31 +30,32 @@ describe ActiveJob::Temporal::JobDescriptor do
     descriptor = described_class.new(job_class, options)
     options[:queue] = "changed"
 
-    expect(descriptor.to_h[:options]).to eq(queue: "critical")
-    expect(descriptor.to_h[:options]).not_to equal(descriptor.options)
+    assert_equal({ queue: "critical" }, descriptor.to_h[:options])
+    refute_same descriptor.options, descriptor.to_h[:options]
   end
 
   it "is exposed through ActiveJob::Temporal.job" do
     descriptor = ActiveJob::Temporal.job(job_class, queue: "critical")
-
-    expect(descriptor).to be_a(described_class)
-    expect(descriptor.to_h).to eq(
+    expected_payload = {
       job_class: "DescriptorJob",
       options: {
         queue: "critical"
       }
-    )
+    }
+
+    assert_instance_of described_class, descriptor
+    assert_equal expected_payload, descriptor.to_h
   end
 
   it "rejects anonymous ActiveJob classes" do
     anonymous_job = Class.new(ActiveJob::Base)
 
-    expect { described_class.new(anonymous_job) }
-      .to raise_error(ArgumentError, /named ActiveJob class/)
+    error = assert_raises(ArgumentError) { described_class.new(anonymous_job) }
+    assert_match(/named ActiveJob class/, error.message)
   end
 
   it "rejects non-ActiveJob classes" do
-    expect { described_class.new(Object) }
-      .to raise_error(ArgumentError, /named ActiveJob class/)
+    error = assert_raises(ArgumentError) { described_class.new(Object) }
+    assert_match(/named ActiveJob class/, error.message)
   end
 end

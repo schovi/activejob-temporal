@@ -33,7 +33,7 @@ describe "ActiveJob Temporal scheduled jobs", :integration do
     # Wait for the job to complete
     wait_for_result(42)
 
-    expect(TestJob.last_argument).to eq(42)
+    assert_equal 42, TestJob.last_argument
 
     # Wait for workflow to reach completed state
     handle = client.workflow_handle(workflow_id)
@@ -48,13 +48,13 @@ describe "ActiveJob Temporal scheduled jobs", :integration do
 
     # Verify workflow completed successfully
     description = handle.describe
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
 
     # The key test: verify that a Temporal timer was used for scheduling
     # This proves the workflow delayed execution rather than running immediately
     history = handle.fetch_history
     event_types = history.events.map(&:event_type)
-    expect(event_types).to include(:EVENT_TYPE_TIMER_STARTED)
+    assert_includes event_types, :EVENT_TYPE_TIMER_STARTED
   ensure
     stop_worker(@worker_thread)
   end

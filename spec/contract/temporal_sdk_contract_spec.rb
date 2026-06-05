@@ -29,8 +29,8 @@ describe "Temporal Ruby SDK contract", :contract do
   end
 
   it "connects to the configured namespace" do
-    expect(client.namespace).to eq(TemporalTestHelper::TEST_NAMESPACE)
-    expect(client.list_workflow_page(nil, page_size: 1).executions).to respond_to(:each)
+    assert_equal TemporalTestHelper::TEST_NAMESPACE, client.namespace
+    assert_respond_to client.list_workflow_page(nil, page_size: 1).executions, :each
   end
 
   it "executes workflows and activities with search attributes" do
@@ -44,7 +44,7 @@ describe "Temporal Ruby SDK contract", :contract do
     wait_until { TestJob.last_argument == 42 }
     description = wait_for_terminal_status(workflow_id)
 
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
     expect_search_attributes(description.search_attributes, job, task_queue)
   end
 
@@ -60,9 +60,9 @@ describe "Temporal Ruby SDK contract", :contract do
     description = wait_for_terminal_status(workflow_id)
     activity_started_event = activity_started_event_for(workflow_id)
 
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
-    expect(TestState.instance.attempt_count).to eq(2)
-    expect(activity_started_event.activity_task_started_event_attributes.attempt).to eq(2)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
+    assert_equal 2, TestState.instance.attempt_count
+    assert_equal 2, activity_started_event.activity_task_started_event_attributes.attempt
   end
 
   it "cancels running workflow activities" do
@@ -79,9 +79,9 @@ describe "Temporal Ruby SDK contract", :contract do
     ActiveJob::Temporal.cancel(LongRunningJob, job.job_id)
     description = wait_for_status(workflow_id, Temporalio::Client::WorkflowExecutionStatus::CANCELED)
 
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::CANCELED)
-    expect(TestState.instance.long_running_completed).to be(false)
-    expect(TestState.instance.long_running_iterations).to be < 10
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::CANCELED, description.status
+    assert_equal false, TestState.instance.long_running_completed
+    assert_operator TestState.instance.long_running_iterations, :<, 10
   end
 
   private
@@ -147,9 +147,9 @@ describe "Temporal Ruby SDK contract", :contract do
 
   def expect_search_attributes(search_attributes, job, task_queue)
     expected_search_attributes(job, task_queue).each do |name, type, value|
-      expect(search_attributes[search_attribute_key(name, type)]).to eq(value)
+      assert_equal value, search_attributes[search_attribute_key(name, type)]
     end
-    expect(search_attributes[search_attribute_key("ajEnqueuedAt", :TIME)]).to be_a(Time)
+    assert_instance_of Time, search_attributes[search_attribute_key("ajEnqueuedAt", :TIME)]
   end
 
   def expected_search_attributes(job, task_queue)

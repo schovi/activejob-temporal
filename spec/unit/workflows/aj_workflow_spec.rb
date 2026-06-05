@@ -4,8 +4,25 @@ require "spec_helper"
 require "time"
 require "activejob/temporal/workflows/aj_workflow"
 
+module AjWorkflowSpecSupport
+  WorkflowInfo = Struct.new(:workflow_id, :first_execution_run_id, :run_id, keyword_init: true)
+  ChildWorkflowHandle = Struct.new(:result, keyword_init: true)
+
+  class RecordingLogger
+    attr_reader :warn_calls
+
+    def initialize
+      @warn_calls = []
+    end
+
+    def warn(attributes)
+      warn_calls << attributes
+    end
+  end
+end
+
 describe ActiveJob::Temporal::Workflows::AjWorkflow do
-  subject(:workflow) { described_class.new }
+  let(:workflow) { described_class.new }
 
   let(:activity_timeout) { 900.0 }
   let(:retry_policy_hash) do
@@ -31,51 +48,158 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
   before do
     stub_const("SampleJob", Class.new)
-    allow(Temporalio::Workflow).to receive(:now).and_return(Time.utc(2024, 1, 1, 12, 0, 0))
-    allow(Temporalio::Workflow).to receive(:current_history_length).and_return(1)
-    allow(Temporalio::Workflow).to receive(:continue_as_new_suggested).and_return(false)
-    allow(Temporalio::Workflow).to receive(:search_attributes).and_return(nil)
-    allow(Temporalio::Workflow).to receive(:all_handlers_finished?).and_return(true)
-    allow(Temporalio::Workflow).to receive(:patched).and_return(true)
-    allow(Temporalio::Workflow).to receive(:execute_activity).and_return(:activity_result)
-    allow(Temporalio::Workflow).to receive(:execute_child_workflow).and_return(:child_workflow_result)
-    allow(Temporalio::Workflow).to receive(:execute_local_activity).and_return(:activity_result)
-    allow(Temporalio::Workflow).to receive(:sleep)
-    allow(Temporalio::Workflow).to receive(:start_child_workflow)
-    allow(Temporalio::Workflow).to receive(:timeout) { |_duration, *_args, **_options, &block| block.call }
-    allow(Temporalio::Workflow).to receive(:wait_condition)
-    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return({})
+    @workflow_now = Time.utc(2024, 1, 1, 12, 0, 0)
+    @workflow_history_length = 1
+    @workflow_history_lengths = nil
+    @continue_as_new_suggested = false
+    @search_attributes = nil
+    @all_handlers_finished = true
+    @workflow_patches = Hash.new(true)
+    @execute_activity_handler = proc { :activity_result }
+    @execute_child_workflow_handler = proc { :child_workflow_result }
+    @execute_local_activity_handler = proc { :activity_result }
+    @start_child_workflow_handler = proc {}
+    @timeout_handler = proc { |_duration, *_args, **_options, &block| block.call }
+    @wait_condition_handler = proc { |&condition| condition&.call }
+    @create_nexus_client_handler = proc {}
+    @workflow_info = AjWorkflowSpecSupport::WorkflowInfo.new(
+      workflow_id: "ajwf:SampleJob:abc-123",
+      first_execution_run_id: "run-123",
+      run_id: "run-123"
+    )
+    @workflow_logger = AjWorkflowSpecSupport::RecordingLogger.new
+
+    call_recorded_method(Temporalio::Workflow, :now) { @workflow_now }
+    @history_length_recorder = call_recorded_method(Temporalio::Workflow, :current_history_length) do
+      next @workflow_history_length unless @workflow_history_lengths
+
+      @workflow_history_lengths.length > 1 ? @workflow_history_lengths.shift : @workflow_history_lengths.first
+    end
+    call_recorded_method(Temporalio::Workflow, :continue_as_new_suggested) { @continue_as_new_suggested }
+    call_recorded_method(Temporalio::Workflow, :search_attributes) { @search_attributes }
+    @all_handlers_finished_recorder = call_recorded_method(Temporalio::Workflow, :all_handlers_finished?) do
+      @all_handlers_finished
+    end
+    @patched_recorder = call_recorded_method(Temporalio::Workflow, :patched) do |patch_name|
+      @workflow_patches[patch_name]
+    end
+    @execute_activity_recorder = call_recorded_method(Temporalio::Workflow, :execute_activity) do |*args, **options|
+      @execute_activity_handler.call(*args, **options)
+    end
+    @execute_child_workflow_recorder =
+      call_recorded_method(Temporalio::Workflow, :execute_child_workflow) do |*args, **options|
+        @execute_child_workflow_handler.call(*args, **options)
+      end
+    @execute_local_activity_recorder =
+      call_recorded_method(Temporalio::Workflow, :execute_local_activity) do |*args, **options|
+        @execute_local_activity_handler.call(*args, **options)
+      end
+    @sleep_recorder = call_recorded_method(Temporalio::Workflow, :sleep)
+    @start_child_workflow_recorder =
+      call_recorded_method(Temporalio::Workflow, :start_child_workflow) do |*args, **options|
+        @start_child_workflow_handler.call(*args, **options)
+      end
+    @timeout_recorder = call_recorded_method(Temporalio::Workflow, :timeout) do |*args, **options, &block|
+      @timeout_handler.call(*args, **options, &block)
+    end
+    @wait_condition_recorder = call_recorded_method(Temporalio::Workflow, :wait_condition) do |&condition|
+      @wait_condition_handler.call(&condition)
+    end
+    call_recorded_method(Temporalio::Workflow, :info) { @workflow_info }
+    call_recorded_method(Temporalio::Workflow, :logger) { @workflow_logger }
+    @create_nexus_client_recorder = call_recorded_method(Temporalio::Workflow, :create_nexus_client) do |**options|
+      @create_nexus_client_handler.call(**options)
+    end
+    call_recorded_method(ActiveJob::Temporal::RetryMapper, :for, returns: {})
+  end
+
+  def workflow_class
+    described_class
+  end
+
+  def workflow_history_lengths(*lengths)
+    @workflow_history_lengths = lengths
+  end
+
+  def activity_calls
+    @execute_activity_recorder.calls_for(:execute_activity)
+  end
+
+  def last_activity_call
+    activity_calls.last
+  end
+
+  def child_workflow_calls
+    @execute_child_workflow_recorder.calls_for(:execute_child_workflow)
+  end
+
+  def local_activity_calls
+    @execute_local_activity_recorder.calls_for(:execute_local_activity)
+  end
+
+  def sleep_calls
+    @sleep_recorder.calls_for(:sleep)
+  end
+
+  def sleep_durations
+    sleep_calls.map { |call| call.arguments.first }
+  end
+
+  def start_child_workflow_calls
+    @start_child_workflow_recorder.calls_for(:start_child_workflow)
+  end
+
+  def timeout_calls
+    @timeout_recorder.calls_for(:timeout)
+  end
+
+  def assert_activity_executed(expected_payload = nil)
+    call = last_activity_call
+
+    assert_equal ActiveJob::Temporal::Activities::AjRunnerActivity, call.arguments[0]
+    assert_equal expected_payload, call.arguments[1] if expected_payload
+    assert_kind_of Temporalio::RetryPolicy, call.keywords[:retry_policy]
+    call
+  end
+
+  def assert_hash_matches(expected, actual)
+    expected.each do |key, value|
+      if value.is_a?(Hash)
+        assert_hash_matches value, actual.fetch(key)
+      else
+        assert_equal value, actual.fetch(key)
+      end
+    end
   end
 
   describe "Nexus integration seam" do
     it "creates Nexus clients from the workflow layer" do
-      nexus_client = instance_double("Temporalio::Workflow::NexusClient")
+      nexus_client = Object.new
 
-      allow(Temporalio::Workflow).to receive(:create_nexus_client)
-        .with(endpoint: "payments", service: "authorization")
-        .and_return(nexus_client)
+      @create_nexus_client_handler = proc { nexus_client }
 
-      expect(workflow.send(:nexus_client_for, endpoint: "payments", service: "authorization")).to eq(nexus_client)
+      assert_same nexus_client, workflow.send(:nexus_client_for, endpoint: "payments", service: "authorization")
+      assert_called_with(
+        @create_nexus_client_recorder,
+        :create_nexus_client,
+        endpoint: "payments",
+        service: "authorization"
+      )
     end
   end
 
   describe "#execute" do
-    context "when payload has no scheduled_at" do
+    describe "when payload has no scheduled_at" do
       it "invokes the activity immediately" do
         workflow.execute(base_payload)
 
-        expect(Temporalio::Workflow).not_to have_received(:sleep)
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload, options|
-          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
-          expect(payload).to eq(base_payload)
-          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
-          expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
-        end
+        assert_empty sleep_calls
+        activity_call = assert_activity_executed(base_payload)
+        assert_equal activity_timeout, activity_call.keywords[:start_to_close_timeout]
       end
 
       it "uses the scheduled workflow occurrence ID as the activity job identity" do
-        workflow_info = instance_double(
-          "Temporalio::Workflow::Info",
+        @workflow_info = AjWorkflowSpecSupport::WorkflowInfo.new(
           workflow_id: "ajschwf:reports-2024-01-01T12:00:00Z",
           first_execution_run_id: "run-123"
         )
@@ -85,60 +209,56 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           "schedule_workflow_id_prefix" => "ajschwf:reports"
         )
 
-        allow(Temporalio::Workflow).to receive(:info).and_return(workflow_info)
-
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class,
-                                                                              activity_payload,
-                                                                              _options|
-          expect(activity_payload).to include(
+        assert_hash_includes(
+          {
             "job_id" => "ajschwf:reports-2024-01-01T12:00:00Z:run-123",
             "schedule_execution_job_id" => "ajschwf:reports-2024-01-01T12:00:00Z:run-123",
             "schedule_id" => "ajsch:reports"
-          )
-        end
-        expect(workflow.handle_dynamic_query("state")).to include(
-          "job_id" => "ajschwf:reports-2024-01-01T12:00:00Z:run-123"
+          },
+          last_activity_call.arguments[1]
+        )
+        assert_hash_includes(
+          {
+            "job_id" => "ajschwf:reports-2024-01-01T12:00:00Z:run-123"
+          },
+          workflow.handle_dynamic_query("state")
         )
       end
     end
 
-    context "when payload is scheduled in the future" do
+    describe "when payload is scheduled in the future" do
       it "sleeps for the exact delay before executing" do
         current_time = Time.utc(2024, 1, 1, 12, 0, 0)
         scheduled_time = current_time + 300
         payload = base_payload.merge("scheduled_at" => scheduled_time.iso8601)
 
-        allow(Temporalio::Workflow).to receive(:now).and_return(current_time)
+        @workflow_now = current_time
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:sleep).with(be_within(1e-6).of(300.0))
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload_arg, options|
-          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
-          expect(payload_arg).to eq(payload)
-          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
-          expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
-        end
+        assert_in_delta 300.0, sleep_calls.first.arguments.first, 1e-6
+        activity_call = assert_activity_executed(payload)
+        assert_equal activity_timeout, activity_call.keywords[:start_to_close_timeout]
       end
     end
 
-    context "when scheduled_at is in the past" do
+    describe "when scheduled_at is in the past" do
       it "skips sleeping and runs immediately" do
         current_time = Time.utc(2024, 1, 1, 12, 0, 0)
         payload = base_payload.merge("scheduled_at" => (current_time - 120).iso8601)
 
-        allow(Temporalio::Workflow).to receive(:now).and_return(current_time)
+        @workflow_now = current_time
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).not_to have_received(:sleep)
-        expect(Temporalio::Workflow).to have_received(:execute_activity)
+        assert_empty sleep_calls
+        refute_empty activity_calls
       end
     end
 
-    context "when retry policy metadata is available" do
+    describe "when retry policy metadata is available" do
       it "passes the retry policy through to the activity call" do
         custom_retry_policy = {
           initial_interval: 15.0,
@@ -150,12 +270,8 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload_arg, options|
-          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
-          expect(payload_arg).to eq(payload)
-          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
-          expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
-        end
+        activity_call = assert_activity_executed(payload)
+        assert_equal activity_timeout, activity_call.keywords[:start_to_close_timeout]
       end
 
       it "uses Temporal retry defaults when optional retry fields are nil" do
@@ -170,20 +286,23 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
-          retry_policy = options[:retry_policy]
-          expect(retry_policy.initial_interval).to eq(1.0)
-          expect(retry_policy.backoff_coefficient).to eq(2.0)
-          expect(retry_policy.max_interval).to be_nil
-          expect(retry_policy.max_attempts).to eq(3)
-          expect(retry_policy.non_retryable_error_types).to be_nil
-        end
+        retry_policy = last_activity_call.keywords[:retry_policy]
+
+        assert_equal 1.0, retry_policy.initial_interval
+        assert_equal 2.0, retry_policy.backoff_coefficient
+        assert_nil retry_policy.max_interval
+        assert_equal 3, retry_policy.max_attempts
+        assert_nil retry_policy.non_retryable_error_types
       end
     end
 
-    context "when payload is encrypted" do
+    describe "when payload is encrypted" do
       it "passes the encrypted envelope to the activity without reading encryption config" do
-        allow(ActiveJob::Temporal).to receive(:config).and_raise("workflow must not decrypt payload")
+        call_recorded_method(
+          ActiveJob::Temporal,
+          :config,
+          raises: RuntimeError.new("workflow must not decrypt payload")
+        )
         encrypted_payload = {
           "encrypted_payload" => true,
           "encrypted_payload_version" => 1,
@@ -196,68 +315,70 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(encrypted_payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload_arg, options|
-          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
-          expect(payload_arg).to eq(encrypted_payload)
-          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
-          expect(options[:retry_policy]).to be_a(Temporalio::RetryPolicy)
-        end
+        activity_call = assert_activity_executed(encrypted_payload)
+        assert_equal activity_timeout, activity_call.keywords[:start_to_close_timeout]
       end
     end
 
-    context "when continue-as-new is configured" do
+    describe "when continue-as-new is configured" do
       it "does not roll over while workflow history stays below the threshold" do
         payload = base_payload.merge("continue_as_new" => { "history_event_threshold" => 10 })
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity)
+        refute_empty activity_calls
       end
 
       it "keeps rollover behind a deterministic workflow patch marker" do
         payload = base_payload.merge("continue_as_new" => { "history_event_threshold" => 5 })
 
-        allow(Temporalio::Workflow).to receive(:current_history_length).and_return(5)
-        allow(Temporalio::Workflow).to receive(:patched)
-          .with("activejob-temporal.continue-as-new-v1")
-          .and_return(false)
+        @workflow_history_length = 5
+        @workflow_patches["activejob-temporal.continue-as-new-v1"] = false
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity)
+        refute_empty activity_calls
       end
 
       it "rolls over with job payload, restored state, and current search attributes when threshold is reached" do
-        search_attributes = instance_double(Temporalio::SearchAttributes)
+        search_attributes = Object.new
         continue_error = StandardError.new("continue as new")
         payload = base_payload.merge("continue_as_new" => { "history_event_threshold" => 5 })
 
-        allow(Temporalio::Workflow).to receive(:current_history_length).and_return(5)
-        allow(Temporalio::Workflow).to receive(:search_attributes).and_return(search_attributes)
-        allow(Temporalio::Workflow::ContinueAsNewError).to receive(:new).and_return(continue_error)
+        @workflow_history_length = 5
+        @search_attributes = search_attributes
+        continue_as_new_recorder =
+          call_recorded_method(Temporalio::Workflow::ContinueAsNewError, :new, returns: continue_error)
 
         workflow.handle_dynamic_signal("pause", "manual hold")
 
-        expect { workflow.execute(payload) }.to raise_error(continue_error)
+        error = assert_raises(StandardError) { workflow.execute(payload) }
 
-        expect(Temporalio::Workflow).to have_received(:all_handlers_finished?)
-        expect(Temporalio::Workflow::ContinueAsNewError).to have_received(:new) do |rollover_payload, options|
-          expect(rollover_payload).to include(
+        assert_same continue_error, error
+        refute_empty @all_handlers_finished_recorder.calls_for(:all_handlers_finished?)
+        continue_as_new_call = continue_as_new_recorder.calls_for(:new).last
+        rollover_payload = continue_as_new_call.arguments.first
+        assert_hash_includes(
+          {
             "job_class" => "SampleJob",
             "job_id" => "abc-123",
             "queue_name" => "default",
             "continue_as_new" => { "history_event_threshold" => 5 }
-          )
-          expect(rollover_payload["workflow_state"]).to include(
+          },
+          rollover_payload
+        )
+        assert_hash_includes(
+          {
             "job_class" => "SampleJob",
             "job_id" => "abc-123",
             "paused" => true,
             "pause_reason" => "manual hold",
             "phase" => "continuing_as_new"
-          )
-          expect(options).to eq(search_attributes: search_attributes)
-        end
-        expect(Temporalio::Workflow).not_to have_received(:execute_activity)
+          },
+          rollover_payload.fetch("workflow_state")
+        )
+        assert_equal({ search_attributes: search_attributes }, continue_as_new_call.keywords)
+        assert_empty activity_calls
       end
 
       it "restores deterministic workflow state supplied by the previous run" do
@@ -278,12 +399,17 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(workflow.handle_dynamic_query("state")).to include(
-          "job_class" => "SampleJob",
-          "job_id" => "abc-123",
-          "signals" => hash_including("progress"),
-          "custom" => { "progress" => 75 }
+        state = workflow.handle_dynamic_query("state")
+
+        assert_hash_includes(
+          {
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "custom" => { "progress" => 75 }
+          },
+          state
         )
+        assert_includes state.fetch("signals"), "progress"
       end
 
       it "keeps restored workflow state behind a deterministic workflow patch marker" do
@@ -297,21 +423,22 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           }
         )
 
-        allow(Temporalio::Workflow).to receive(:patched)
-          .with("activejob-temporal.workflow-state-v1")
-          .and_return(false)
+        @workflow_patches["activejob-temporal.workflow-state-v1"] = false
 
         workflow.execute(payload)
 
-        expect(workflow.handle_dynamic_query("state")).to include(
-          "job_class" => "SampleJob",
-          "job_id" => "abc-123",
-          "custom" => {}
+        assert_hash_includes(
+          {
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "custom" => {}
+          },
+          workflow.handle_dynamic_query("state")
         )
       end
     end
 
-    context "when chain metadata is present" do
+    describe "when chain metadata is present" do
       it "executes chained activities sequentially with each previous result as the next raw argument" do
         payload = base_payload.merge(
           "chain" => [
@@ -337,36 +464,42 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
         )
         calls = []
         results = %w[first-result second-result third-result]
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **options|
+        @execute_activity_handler = proc do |*args, **options|
           calls << [args, options]
           results.shift
         end
 
-        expect(workflow.execute(payload)).to eq("third-result")
+        assert_equal "third-result", workflow.execute(payload)
 
-        expect(calls.map { |args, _options| args.first }).to eq([
-                                                                  ActiveJob::Temporal::Activities::AjRunnerActivity,
-                                                                  ActiveJob::Temporal::Activities::AjRunnerActivity,
-                                                                  ActiveJob::Temporal::Activities::AjRunnerActivity
-                                                                ])
-        expect(calls[0][0]).to eq([
-                                    ActiveJob::Temporal::Activities::AjRunnerActivity,
-                                    payload
-                                  ])
-        expect(calls[1][0][1]).to include(
-          "job_class" => "SecondChainJob",
-          "queue_name" => "reporting",
-          "arguments" => ["first-result"]
+        assert_equal(
+          [
+            ActiveJob::Temporal::Activities::AjRunnerActivity,
+            ActiveJob::Temporal::Activities::AjRunnerActivity,
+            ActiveJob::Temporal::Activities::AjRunnerActivity
+          ],
+          calls.map { |args, _options| args.first }
         )
-        expect(calls[1][0][2]).to eq(["first-result"])
-        expect(calls[1][1][:task_queue]).to eq("reporting")
-        expect(calls[2][0][1]).to include(
-          "job_class" => "ThirdChainJob",
-          "activity_task_queue" => "priority_reports",
-          "arguments" => ["second-result"]
+        assert_equal [ActiveJob::Temporal::Activities::AjRunnerActivity, payload], calls[0][0]
+        assert_hash_includes(
+          {
+            "job_class" => "SecondChainJob",
+            "queue_name" => "reporting",
+            "arguments" => ["first-result"]
+          },
+          calls[1][0][1]
         )
-        expect(calls[2][0][2]).to eq(["second-result"])
-        expect(calls[2][1][:task_queue]).to eq("priority_reports")
+        assert_equal ["first-result"], calls[1][0][2]
+        assert_equal "reporting", calls[1][1][:task_queue]
+        assert_hash_includes(
+          {
+            "job_class" => "ThirdChainJob",
+            "activity_task_queue" => "priority_reports",
+            "arguments" => ["second-result"]
+          },
+          calls[2][0][1]
+        )
+        assert_equal ["second-result"], calls[2][0][2]
+        assert_equal "priority_reports", calls[2][1][:task_queue]
       end
 
       it "dispatches external activity and workflow chain steps with the previous result as input" do
@@ -399,11 +532,7 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             }
           ]
         )
-        activity_calls = []
-        workflow_calls = []
-
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity, *args, **options|
-          activity_calls << [activity, args, options]
+        @execute_activity_handler = proc do |activity, *args, **_options|
           if activity == ActiveJob::Temporal::Activities::AjRunnerActivity &&
              args.first.fetch("job_class") == "SampleJob"
             "payment-request"
@@ -413,31 +542,45 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             "complete"
           end
         end
-        allow(Temporalio::Workflow).to receive(:execute_child_workflow) do |workflow_type, *args, **options|
-          workflow_calls << [workflow_type, args, options]
+        @execute_child_workflow_handler = proc do |_workflow_type, *_args, **_options|
           "reservation"
         end
 
-        expect(workflow.execute(payload)).to eq("complete")
+        assert_equal "complete", workflow.execute(payload)
 
-        expect(activity_calls[1][0]).to eq("payments.AuthorizePayment")
-        expect(activity_calls[1][1]).to eq(["payment-request"])
-        expect(activity_calls[1][2]).to include(
-          task_queue: "payments-kotlin",
-          start_to_close_timeout: 30.0
+        recorded_activity_calls = activity_calls.map do |call|
+          [call.arguments[0], call.arguments.drop(1), call.keywords]
+        end
+        recorded_workflow_calls =
+          child_workflow_calls.map { |call| [call.arguments[0], call.arguments.drop(1), call.keywords] }
+
+        assert_equal "payments.AuthorizePayment", recorded_activity_calls[1][0]
+        assert_equal ["payment-request"], recorded_activity_calls[1][1]
+        assert_hash_includes(
+          {
+            task_queue: "payments-kotlin",
+            start_to_close_timeout: 30.0
+          },
+          recorded_activity_calls[1][2]
         )
-        expect(workflow_calls.first[0]).to eq("inventory.ReserveInventoryWorkflow")
-        expect(workflow_calls.first[1]).to eq(["authorization"])
-        expect(workflow_calls.first[2]).to include(
-          task_queue: "inventory-kotlin",
-          run_timeout: 300.0
+        assert_equal "inventory.ReserveInventoryWorkflow", recorded_workflow_calls.first[0]
+        assert_equal ["authorization"], recorded_workflow_calls.first[1]
+        assert_hash_includes(
+          {
+            task_queue: "inventory-kotlin",
+            run_timeout: 300.0
+          },
+          recorded_workflow_calls.first[2]
         )
-        expect(activity_calls.last.first).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
-        expect(activity_calls.last[1][0]).to include(
-          "job_class" => "CompleteCheckoutJob",
-          "arguments" => ["reservation"]
+        assert_equal ActiveJob::Temporal::Activities::AjRunnerActivity, recorded_activity_calls.last.first
+        assert_hash_includes(
+          {
+            "job_class" => "CompleteCheckoutJob",
+            "arguments" => ["reservation"]
+          },
+          recorded_activity_calls.last[1][0]
         )
-        expect(activity_calls.last[1][1]).to eq(["reservation"])
+        assert_equal ["reservation"], recorded_activity_calls.last[1][1]
       end
 
       it "stops before later chain steps when a chained activity fails" do
@@ -457,17 +600,18 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           ]
         )
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **_options|
+        @execute_activity_handler = proc do |*args, **_options|
           calls << args
           raise error if calls.length == 2
 
           "first-result"
         end
 
-        expect { workflow.execute(payload) }.to raise_error(error)
+        raised = assert_raises(Temporalio::Error::ActivityError) { workflow.execute(payload) }
 
-        expect(calls.length).to eq(2)
-        expect(calls.dig(1, 1)).to include("job_class" => "SecondChainJob")
+        assert_same error, raised
+        assert_equal 2, calls.length
+        assert_hash_includes({ "job_class" => "SecondChainJob" }, calls.dig(1, 1))
       end
 
       it "dead-letters a failed chain step with chain step metadata" do
@@ -515,37 +659,47 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           ]
         )
         calls = []
-        allow(error).to receive(:cause).and_return(application_error)
-        allow(Temporalio::Workflow).to receive(:now).and_return(Time.utc(2026, 5, 21, 10, 0, 0))
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **_options|
+        call_recorded_method(error, :cause, returns: application_error)
+        @workflow_now = Time.utc(2026, 5, 21, 10, 0, 0)
+        @execute_activity_handler = proc do |*args, **_options|
           calls << args
           raise error if calls.length == 2
 
           "first-result"
         end
 
-        expect { workflow.execute(payload) }.to raise_error(error)
+        raised = assert_raises(Temporalio::Error::ActivityError) { workflow.execute(payload) }
 
-        expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
-          ActiveJob::Temporal::Workflows::DeadLetterWorkflow,
-          hash_including(
-            "id" => "ajdlq:SecondChainJob:abc-123:chain:1",
-            "payload" => hash_including(
-              "job_class" => "SecondChainJob",
-              "job_id" => "abc-123:chain:1",
-              "queue_name" => "reporting"
-            ),
-            "metadata" => hash_including(
-              "job_class" => "SecondChainJob",
-              "job_id" => "abc-123:chain:1",
-              "original_queue_name" => "reporting",
-              "original_task_queue" => "priority_reports",
-              "auto_discard_after_seconds" => 86_400.0
-            )
-          ),
-          id: "ajdlq:SecondChainJob:abc-123:chain:1",
-          task_queue: "failed_jobs",
-          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+        assert_same error, raised
+        dead_letter_call = start_child_workflow_calls.last
+        assert_equal ActiveJob::Temporal::Workflows::DeadLetterWorkflow, dead_letter_call.arguments[0]
+        dead_letter_entry = dead_letter_call.arguments[1]
+        assert_hash_includes({ "id" => "ajdlq:SecondChainJob:abc-123:chain:1" }, dead_letter_entry)
+        assert_hash_includes(
+          {
+            "job_class" => "SecondChainJob",
+            "job_id" => "abc-123:chain:1",
+            "queue_name" => "reporting"
+          },
+          dead_letter_entry.fetch("payload")
+        )
+        assert_hash_includes(
+          {
+            "job_class" => "SecondChainJob",
+            "job_id" => "abc-123:chain:1",
+            "original_queue_name" => "reporting",
+            "original_task_queue" => "priority_reports",
+            "auto_discard_after_seconds" => 86_400.0
+          },
+          dead_letter_entry.fetch("metadata")
+        )
+        assert_equal(
+          {
+            id: "ajdlq:SecondChainJob:abc-123:chain:1",
+            task_queue: "failed_jobs",
+            parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+          },
+          dead_letter_call.keywords
         )
       end
 
@@ -559,7 +713,6 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           activity_id: "activity-1",
           retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
         )
-        workflow_logger = instance_spy(Logger)
         payload = base_payload.merge(
           "chain" => [
             {
@@ -582,31 +735,32 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           ]
         )
         calls = []
-        allow(Temporalio::Workflow).to receive(:logger).and_return(workflow_logger)
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **_options|
+        @execute_activity_handler = proc do |*args, **_options|
           calls << args
           raise error if calls.length == 2
 
           "first-result"
         end
 
-        expect { workflow.execute(payload) }.to raise_error(error)
+        raised = assert_raises(Temporalio::Error::ActivityError) { workflow.execute(payload) }
 
-        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
-        expect(workflow_logger).to have_received(:warn).with(
-          hash_including(
+        assert_same error, raised
+        assert_empty start_child_workflow_calls
+        assert_hash_includes(
+          {
             event: "dead_letter_skipped",
             reason: "blank_queue",
             job_class: "SecondChainJob",
             job_id: "abc-123:chain:1",
             queue_name: "reporting",
             retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
-          )
+          },
+          @workflow_logger.warn_calls.last
         )
       end
     end
 
-    context "when child workflow metadata is present" do
+    describe "when child workflow metadata is present" do
       it "starts child workflows, waits for results, and returns a result collection" do
         payload = base_payload.merge(
           "child_workflows" => [
@@ -623,32 +777,42 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             }
           ]
         )
-        child_handle = instance_double(Temporalio::Workflow::ChildWorkflowHandle, result: "child-result")
-        allow(Temporalio::Workflow).to receive(:execute_activity).and_return("parent-result")
-        allow(Temporalio::Workflow).to receive(:start_child_workflow).and_return(child_handle)
+        child_handle = AjWorkflowSpecSupport::ChildWorkflowHandle.new(result: "child-result")
+        @execute_activity_handler = proc { "parent-result" }
+        @start_child_workflow_handler = proc { child_handle }
 
-        expect(workflow.execute(payload)).to eq(
-          "parent_result" => "parent-result",
-          "child_results" => [
-            {
-              "job_class" => "ChildWorkflowJob",
-              "job_id" => "abc-123:child:1",
-              "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
-              "result" => "child-result"
-            }
-          ]
+        assert_equal(
+          {
+            "parent_result" => "parent-result",
+            "child_results" => [
+              {
+                "job_class" => "ChildWorkflowJob",
+                "job_id" => "abc-123:child:1",
+                "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
+                "result" => "child-result"
+              }
+            ]
+          },
+          workflow.execute(payload)
         )
-        expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
-          described_class,
-          hash_including(
+        child_call = start_child_workflow_calls.first
+        assert_equal workflow_class, child_call.arguments[0]
+        assert_hash_includes(
+          {
             "job_class" => "ChildWorkflowJob",
             "job_id" => "abc-123:child:1",
             "arguments" => ["parent-result"]
-          ),
-          id: "ajwf:ChildWorkflowJob:abc-123:child:1",
-          task_queue: "children",
-          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::REQUEST_CANCEL,
-          cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
+          },
+          child_call.arguments[1]
+        )
+        assert_equal(
+          {
+            id: "ajwf:ChildWorkflowJob:abc-123:child:1",
+            task_queue: "children",
+            parent_close_policy: Temporalio::Workflow::ParentClosePolicy::REQUEST_CANCEL,
+            cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
+          },
+          child_call.keywords
         )
       end
 
@@ -677,42 +841,47 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             }
           ]
         )
-        active_child_handle = instance_double(Temporalio::Workflow::ChildWorkflowHandle, result: "active-child")
-        external_child_handle = instance_double(Temporalio::Workflow::ChildWorkflowHandle, result: "external-child")
-        child_calls = []
+        active_child_handle = AjWorkflowSpecSupport::ChildWorkflowHandle.new(result: "active-child")
+        external_child_handle = AjWorkflowSpecSupport::ChildWorkflowHandle.new(result: "external-child")
 
-        allow(Temporalio::Workflow).to receive(:execute_activity).and_return("parent-result")
-        allow(Temporalio::Workflow).to receive(:start_child_workflow) do |workflow_type, *args, **options|
-          child_calls << [workflow_type, args, options]
-          workflow_type == described_class ? active_child_handle : external_child_handle
+        @execute_activity_handler = proc { "parent-result" }
+        @start_child_workflow_handler = proc do |workflow_type, *_args, **_options|
+          workflow_type == workflow_class ? active_child_handle : external_child_handle
         end
 
-        expect(workflow.execute(payload)).to eq(
-          "parent_result" => "parent-result",
-          "child_results" => [
-            {
-              "job_class" => "ChildWorkflowJob",
-              "job_id" => "abc-123:child:1",
-              "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
-              "result" => "active-child"
-            },
-            {
-              "temporal_operation" => "workflow",
-              "temporal_type" => "fulfillment.PrepareShipmentWorkflow",
-              "workflow_id" => "shipment-child-1",
-              "task_queue" => "fulfillment-kotlin",
-              "result" => "external-child"
-            }
-          ]
+        assert_equal(
+          {
+            "parent_result" => "parent-result",
+            "child_results" => [
+              {
+                "job_class" => "ChildWorkflowJob",
+                "job_id" => "abc-123:child:1",
+                "workflow_id" => "ajwf:ChildWorkflowJob:abc-123:child:1",
+                "result" => "active-child"
+              },
+              {
+                "temporal_operation" => "workflow",
+                "temporal_type" => "fulfillment.PrepareShipmentWorkflow",
+                "workflow_id" => "shipment-child-1",
+                "task_queue" => "fulfillment-kotlin",
+                "result" => "external-child"
+              }
+            ]
+          },
+          workflow.execute(payload)
         )
-        expect(child_calls.last[0]).to eq("fulfillment.PrepareShipmentWorkflow")
-        expect(child_calls.last[1]).to eq(["parent-result"])
-        expect(child_calls.last[2]).to include(
-          id: "shipment-child-1",
-          task_queue: "fulfillment-kotlin",
-          run_timeout: 300.0,
-          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::REQUEST_CANCEL,
-          cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
+        external_child_call = start_child_workflow_calls.last
+        assert_equal "fulfillment.PrepareShipmentWorkflow", external_child_call.arguments[0]
+        assert_equal ["parent-result"], external_child_call.arguments.drop(1)
+        assert_hash_includes(
+          {
+            id: "shipment-child-1",
+            task_queue: "fulfillment-kotlin",
+            run_timeout: 300.0,
+            parent_close_policy: Temporalio::Workflow::ParentClosePolicy::REQUEST_CANCEL,
+            cancellation_type: Temporalio::Workflow::ChildWorkflowCancellationType::WAIT_CANCELLATION_COMPLETED
+          },
+          external_child_call.keywords
         )
       end
 
@@ -743,17 +912,14 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             }
           ]
         )
-        child_handle = instance_double(Temporalio::Workflow::ChildWorkflowHandle, result: "child-result")
-        calls = []
-        allow(Temporalio::Workflow).to receive(:start_child_workflow).and_return(child_handle)
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |*args, **options|
-          calls << [args, options]
-          calls.size == 1 ? "parent-result" : "chain-result"
-        end
+        child_handle = AjWorkflowSpecSupport::ChildWorkflowHandle.new(result: "child-result")
+        results = %w[parent-result chain-result]
+        @start_child_workflow_handler = proc { child_handle }
+        @execute_activity_handler = proc { results.shift }
 
-        expect(workflow.execute(payload)).to eq("chain-result")
+        assert_equal "chain-result", workflow.execute(payload)
 
-        activity_class, activity_payload, raw_arguments = calls.last.first
+        activity_class, activity_payload, raw_arguments = last_activity_call.arguments
         expected_chain_argument = {
           "parent_result" => "parent-result",
           "child_results" => [
@@ -766,16 +932,19 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           ]
         }
 
-        expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
-        expect(activity_payload).to include(
-          "job_class" => "AfterChildrenJob",
-          "arguments" => [expected_chain_argument]
+        assert_equal ActiveJob::Temporal::Activities::AjRunnerActivity, activity_class
+        assert_hash_includes(
+          {
+            "job_class" => "AfterChildrenJob",
+            "arguments" => [expected_chain_argument]
+          },
+          activity_payload
         )
-        expect(raw_arguments).to eq([expected_chain_argument])
+        assert_equal [expected_chain_argument], raw_arguments
       end
     end
 
-    context "when dependencies are present" do
+    describe "when dependencies are present" do
       let(:dependency_payload) do
         base_payload.merge(
           "dependencies" => [
@@ -790,7 +959,7 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
       it "checks dependencies before executing the job activity" do
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+        @execute_activity_handler = proc do |activity_class, *args, **options|
           calls << [activity_class, args, options]
           if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
             [
@@ -807,14 +976,17 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(dependency_payload)
 
-        expect(calls.map(&:first)).to eq([
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::AjRunnerActivity
-                                         ])
-        expect(calls.first[1]).to eq([dependency_payload.fetch("dependencies")])
-        expect(calls.first[2][:schedule_to_close_timeout]).to eq(described_class::DEPENDENCY_CHECK_ACTIVITY_TIMEOUT)
-        expect(calls.first[2][:start_to_close_timeout]).to eq(described_class::DEPENDENCY_CHECK_ACTIVITY_TIMEOUT)
-        expect(calls.first[2][:retry_policy].max_attempts).to eq(1)
+        assert_equal(
+          [
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::AjRunnerActivity
+          ],
+          calls.map(&:first)
+        )
+        assert_equal [dependency_payload.fetch("dependencies")], calls.first[1]
+        assert_equal workflow_class::DEPENDENCY_CHECK_ACTIVITY_TIMEOUT, calls.first[2][:schedule_to_close_timeout]
+        assert_equal workflow_class::DEPENDENCY_CHECK_ACTIVITY_TIMEOUT, calls.first[2][:start_to_close_timeout]
+        assert_equal 1, calls.first[2][:retry_policy].max_attempts
       end
 
       it "sleeps durably and rechecks while dependencies are pending" do
@@ -823,7 +995,7 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           [{ "job_id" => "parent-123", "state" => "completed" }]
         ]
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+        @execute_activity_handler = proc do |activity_class, *args, **options|
           calls << [activity_class, args, options]
           if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
             statuses.shift
@@ -834,12 +1006,12 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(dependency_payload)
 
-        expect(Temporalio::Workflow).to have_received(:sleep).with(described_class::DEPENDENCY_WAIT_INTERVAL)
+        assert_equal [workflow_class::DEPENDENCY_WAIT_INTERVAL], sleep_durations
         dependency_checks = calls.count do |activity_class, _args, _options|
           activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
         end
-        expect(dependency_checks).to eq(2)
-        expect(calls.last.first).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
+        assert_equal 2, dependency_checks
+        assert_equal ActiveJob::Temporal::Activities::AjRunnerActivity, calls.last.first
       end
 
       it "backs off dependency checks while dependencies keep running" do
@@ -856,9 +1028,7 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           [{ "job_id" => "parent-123", "state" => "running" }],
           [{ "job_id" => "parent-123", "state" => "completed" }]
         ]
-        sleeps = []
-        allow(Temporalio::Workflow).to receive(:sleep) { |duration| sleeps << duration }
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *_args, **_options|
+        @execute_activity_handler = proc do |activity_class, *_args, **_options|
           if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
             statuses.shift
           else
@@ -868,9 +1038,12 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:timeout)
-          .with(120.0, Timeout::Error, /dependency wait timed out/, summary: "Dependency wait timeout")
-        expect(sleeps).to eq([5.0, 10.0, 20.0])
+        timeout_call = timeout_calls.last
+        assert_equal 120.0, timeout_call.arguments[0]
+        assert_equal Timeout::Error, timeout_call.arguments[1]
+        assert_match(/dependency wait timed out/, timeout_call.arguments[2])
+        assert_equal({ summary: "Dependency wait timeout" }, timeout_call.keywords)
+        assert_equal [5.0, 10.0, 20.0], sleep_durations
       end
 
       it "uses the remaining dependency wait timeout after continue-as-new" do
@@ -883,8 +1056,8 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             }
           }
         )
-        allow(Temporalio::Workflow).to receive(:now).and_return(current_time)
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *_args, **_options|
+        @workflow_now = current_time
+        @execute_activity_handler = proc do |activity_class, *_args, **_options|
           if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
             [{ "job_id" => "parent-123", "state" => "completed" }]
           else
@@ -894,8 +1067,11 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:timeout)
-          .with(30.0, Timeout::Error, /dependency wait timed out/, summary: "Dependency wait timeout")
+        timeout_call = timeout_calls.last
+        assert_equal 30.0, timeout_call.arguments[0]
+        assert_equal Timeout::Error, timeout_call.arguments[1]
+        assert_match(/dependency wait timed out/, timeout_call.arguments[2])
+        assert_equal({ summary: "Dependency wait timeout" }, timeout_call.keywords)
       end
 
       it "carries dependency wait deadline when continuing as new while waiting" do
@@ -909,10 +1085,11 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           }
         )
 
-        allow(Temporalio::Workflow).to receive(:now).and_return(current_time)
-        allow(Temporalio::Workflow).to receive(:current_history_length).and_return(0, 0, 1)
-        allow(Temporalio::Workflow::ContinueAsNewError).to receive(:new).and_return(continue_error)
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *_args, **_options|
+        @workflow_now = current_time
+        workflow_history_lengths(0, 0, 1)
+        continue_as_new_recorder =
+          call_recorded_method(Temporalio::Workflow::ContinueAsNewError, :new, returns: continue_error)
+        @execute_activity_handler = proc do |activity_class, *_args, **_options|
           if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
             [{ "job_id" => "parent-123", "state" => "running" }]
           else
@@ -920,32 +1097,42 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           end
         end
 
-        expect { workflow.execute(payload) }.to raise_error(continue_error)
+        error = assert_raises(StandardError) { workflow.execute(payload) }
 
-        expect(Temporalio::Workflow::ContinueAsNewError).to have_received(:new) do |rollover_payload, _options|
-          expect(rollover_payload.dig("workflow_state", "dependency_wait")).to include(
+        assert_same continue_error, error
+        dependency_wait_state = continue_as_new_recorder.calls_for(:new).last.arguments.first.dig(
+          "workflow_state",
+          "dependency_wait"
+        )
+        assert_hash_includes(
+          {
             "deadline_at" => Time.utc(2024, 1, 1, 12, 1, 0).iso8601,
             "current_interval" => 5.0,
             "not_found_counts" => {}
-          )
-        end
+          },
+          dependency_wait_state
+        )
       end
 
       it "fails when running dependencies exceed the dependency wait timeout" do
         payload = dependency_payload.merge("dependency_wait" => { "timeout" => 30.0 })
-        allow(Temporalio::Workflow).to receive(:timeout)
-          .and_raise(Timeout::Error, "dependency wait timed out")
+        @timeout_handler = proc do |_duration, *_args, **_options, &_block|
+          raise Timeout::Error, "dependency wait timed out"
+        end
 
-        expect { workflow.execute(payload) }
-          .to raise_error(Temporalio::Error::ApplicationError, /timed_out/)
+        error = assert_raises(Temporalio::Error::ApplicationError) { workflow.execute(payload) }
 
-        expect(Temporalio::Workflow).to have_received(:timeout)
-          .with(30.0, Timeout::Error, /dependency wait timed out/, summary: "Dependency wait timeout")
+        assert_match(/timed_out/, error.message)
+        timeout_call = timeout_calls.last
+        assert_equal 30.0, timeout_call.arguments[0]
+        assert_equal Timeout::Error, timeout_call.arguments[1]
+        assert_match(/dependency wait timed out/, timeout_call.arguments[2])
+        assert_equal({ summary: "Dependency wait timeout" }, timeout_call.keywords)
       end
 
       it "continues when a dependency has continued as new" do
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+        @execute_activity_handler = proc do |activity_class, *args, **options|
           calls << [activity_class, args, options]
           if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
             [{ "job_id" => "parent-123", "state" => "continued_as_new" }]
@@ -956,15 +1143,18 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(dependency_payload)
 
-        expect(calls.map(&:first)).to eq([
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::AjRunnerActivity
-                                         ])
+        assert_equal(
+          [
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::AjRunnerActivity
+          ],
+          calls.map(&:first)
+        )
       end
 
       it "fails before executing the job activity when a dependency fails" do
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+        @execute_activity_handler = proc do |activity_class, *args, **options|
           calls << [activity_class, args, options]
           [
             {
@@ -975,16 +1165,16 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           ]
         end
 
-        expect { workflow.execute(dependency_payload) }
-          .to raise_error(Temporalio::Error::ApplicationError, /Job dependency failed/)
+        error = assert_raises(Temporalio::Error::ApplicationError) { workflow.execute(dependency_payload) }
 
-        expect(calls.map(&:first)).to eq([ActiveJob::Temporal::Activities::DependencyStatusActivity])
+        assert_match(/Job dependency failed/, error.message)
+        assert_equal [ActiveJob::Temporal::Activities::DependencyStatusActivity], calls.map(&:first)
       end
 
       it "continues when failed dependencies are ignored" do
         payload = dependency_payload.merge("dependency_failure_policy" => "ignore")
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+        @execute_activity_handler = proc do |activity_class, *args, **options|
           calls << [activity_class, args, options]
           if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
             [{ "job_id" => "parent-123", "state" => "failed" }]
@@ -995,28 +1185,34 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(calls.map(&:first)).to eq([
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::AjRunnerActivity
-                                         ])
+        assert_equal(
+          [
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::AjRunnerActivity
+          ],
+          calls.map(&:first)
+        )
       end
 
       it "fails after a missing dependency stays missing" do
         stub_const("ActiveJob::Temporal::Workflows::WorkflowDependencies::DEPENDENCY_NOT_FOUND_MAX_CHECKS", 2)
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+        @execute_activity_handler = proc do |activity_class, *args, **options|
           calls << [activity_class, args, options]
           [{ "job_id" => "parent-123", "state" => "not_found" }]
         end
 
-        expect { workflow.execute(dependency_payload) }
-          .to raise_error(Temporalio::Error::ApplicationError, /parent-123: not_found/)
+        error = assert_raises(Temporalio::Error::ApplicationError) { workflow.execute(dependency_payload) }
 
-        expect(Temporalio::Workflow).to have_received(:sleep).with(described_class::DEPENDENCY_WAIT_INTERVAL).once
-        expect(calls.map(&:first)).to eq([
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity
-                                         ])
+        assert_match(/parent-123: not_found/, error.message)
+        assert_equal [workflow_class::DEPENDENCY_WAIT_INTERVAL], sleep_durations
+        assert_equal(
+          [
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::DependencyStatusActivity
+          ],
+          calls.map(&:first)
+        )
       end
 
       it "resets missing dependency checks when a dependency reappears" do
@@ -1040,7 +1236,7 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           ]
         ]
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+        @execute_activity_handler = proc do |activity_class, *args, **options|
           calls << [activity_class, args, options]
           if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
             dependency_statuses.shift
@@ -1051,20 +1247,23 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(dependency_payload)
 
-        expect(calls.map(&:first)).to eq([
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::AjRunnerActivity
-                                         ])
+        assert_equal(
+          [
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::AjRunnerActivity
+          ],
+          calls.map(&:first)
+        )
       end
 
       it "continues after a missing dependency stays missing when failures are ignored" do
         stub_const("ActiveJob::Temporal::Workflows::WorkflowDependencies::DEPENDENCY_NOT_FOUND_MAX_CHECKS", 2)
         payload = dependency_payload.merge("dependency_failure_policy" => "ignore")
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, *args, **options|
+        @execute_activity_handler = proc do |activity_class, *args, **options|
           calls << [activity_class, args, options]
           if activity_class == ActiveJob::Temporal::Activities::DependencyStatusActivity
             [{ "job_id" => "parent-123", "state" => "not_found" }]
@@ -1075,23 +1274,30 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(calls.map(&:first)).to eq([
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::DependencyStatusActivity,
-                                           ActiveJob::Temporal::Activities::AjRunnerActivity
-                                         ])
+        assert_equal(
+          [
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::DependencyStatusActivity,
+            ActiveJob::Temporal::Activities::AjRunnerActivity
+          ],
+          calls.map(&:first)
+        )
       end
     end
 
     it "does not read process configuration during workflow execution" do
-      allow(ActiveJob::Temporal).to receive(:config).and_raise("workflow must use payload data")
+      call_recorded_method(
+        ActiveJob::Temporal,
+        :config,
+        raises: RuntimeError.new("workflow must use payload data")
+      )
 
       workflow.execute(base_payload)
 
-      expect(Temporalio::Workflow).to have_received(:execute_activity)
+      refute_empty activity_calls
     end
 
-    context "when rate limits are present" do
+    describe "when rate limits are present" do
       let(:rate_limited_payload) do
         base_payload.merge(
           "rate_limits" => [
@@ -1102,75 +1308,78 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
       it "checks rate limits before executing the job activity" do
         calls = []
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, payload_arg, options|
+        @execute_activity_handler = proc do |activity_class, payload_arg, **options|
           calls << [activity_class, payload_arg, options]
           activity_class == ActiveJob::Temporal::Activities::RateLimitActivity ? 0.0 : :activity_result
         end
 
         workflow.execute(rate_limited_payload)
 
-        expect(calls.map(&:first)).to eq([
-                                           ActiveJob::Temporal::Activities::RateLimitActivity,
-                                           ActiveJob::Temporal::Activities::AjRunnerActivity
-                                         ])
-        expect(calls.first[1]).to eq(rate_limited_payload)
-        expect(calls.first[2][:schedule_to_close_timeout]).to eq(described_class::RATE_LIMIT_ACTIVITY_TIMEOUT)
-        expect(calls.first[2][:start_to_close_timeout]).to eq(described_class::RATE_LIMIT_ACTIVITY_TIMEOUT)
-        expect(calls.first[2][:retry_policy].max_attempts).to eq(1)
+        assert_equal(
+          [
+            ActiveJob::Temporal::Activities::RateLimitActivity,
+            ActiveJob::Temporal::Activities::AjRunnerActivity
+          ],
+          calls.map(&:first)
+        )
+        assert_equal rate_limited_payload, calls.first[1]
+        assert_equal workflow_class::RATE_LIMIT_ACTIVITY_TIMEOUT, calls.first[2][:schedule_to_close_timeout]
+        assert_equal workflow_class::RATE_LIMIT_ACTIVITY_TIMEOUT, calls.first[2][:start_to_close_timeout]
+        assert_equal 1, calls.first[2][:retry_policy].max_attempts
       end
 
       it "sleeps durably and rechecks when the limiter returns a wait time" do
         waits = [3.5, 0.0]
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, _payload_arg, _options|
+        @execute_activity_handler = proc do |activity_class, _payload_arg, **_options|
           activity_class == ActiveJob::Temporal::Activities::RateLimitActivity ? waits.shift : :activity_result
         end
 
         workflow.execute(rate_limited_payload)
 
-        expect(Temporalio::Workflow).to have_received(:sleep).with(3.5)
-        expect(Temporalio::Workflow).to have_received(:execute_activity)
-          .with(ActiveJob::Temporal::Activities::RateLimitActivity, rate_limited_payload, anything)
-          .twice
+        assert_equal [3.5], sleep_durations
+        rate_limit_calls = activity_calls.select do |call|
+          call.arguments == [ActiveJob::Temporal::Activities::RateLimitActivity, rate_limited_payload]
+        end
+        assert_equal 2, rate_limit_calls.length
       end
 
       it "can run rate limit checks as local activities while job execution stays remote" do
         payload = rate_limited_payload.merge("local_activity_helpers" => ["rate_limit"])
         waits = [1.0, 0.0]
 
-        allow(Temporalio::Workflow).to receive(:execute_local_activity) do |activity_class, payload_arg, options|
-          expect(activity_class).to eq(ActiveJob::Temporal::Activities::RateLimitActivity)
-          expect(payload_arg).to eq(payload)
-          expect(options[:start_to_close_timeout]).to eq(described_class::RATE_LIMIT_ACTIVITY_TIMEOUT)
+        @execute_local_activity_handler = proc do |activity_class, payload_arg, **options|
+          assert_equal ActiveJob::Temporal::Activities::RateLimitActivity, activity_class
+          assert_equal payload, payload_arg
+          assert_equal workflow_class::RATE_LIMIT_ACTIVITY_TIMEOUT, options[:start_to_close_timeout]
           waits.shift
         end
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_local_activity).twice
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |activity_class, payload_arg, _options|
-          expect(activity_class).to eq(ActiveJob::Temporal::Activities::AjRunnerActivity)
-          expect(payload_arg).to eq(payload)
-        end
+        assert_equal 2, local_activity_calls.length
+        activity_call = last_activity_call
+        assert_equal ActiveJob::Temporal::Activities::AjRunnerActivity, activity_call.arguments[0]
+        assert_equal payload, activity_call.arguments[1]
       end
 
       it "falls back to standard helper activities when the local activity patch is disabled" do
         payload = rate_limited_payload.merge("local_activity_helpers" => ["rate_limit"])
-        allow(Temporalio::Workflow).to receive(:patched)
-          .with("activejob-temporal.local-activity-helpers-v1")
-          .and_return(false)
-        allow(Temporalio::Workflow).to receive(:execute_activity) do |activity_class, _payload_arg, _options|
+        @workflow_patches["activejob-temporal.local-activity-helpers-v1"] = false
+        @execute_activity_handler = proc do |activity_class, _payload_arg, **_options|
           activity_class == ActiveJob::Temporal::Activities::RateLimitActivity ? 0.0 : :activity_result
         end
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).not_to have_received(:execute_local_activity)
-        expect(Temporalio::Workflow).to have_received(:execute_activity)
-          .with(ActiveJob::Temporal::Activities::RateLimitActivity, payload, anything)
+        assert_empty local_activity_calls
+        rate_limit_call = activity_calls.find do |call|
+          call.arguments == [ActiveJob::Temporal::Activities::RateLimitActivity, payload]
+        end
+        refute_nil rate_limit_call
       end
     end
 
-    context "when temporal_options are present in payload" do
+    describe "when temporal_options are present in payload" do
       it "overrides timeout values with per-job temporal_options" do
         temporal_options = {
           start_to_close_timeout: 7200.0,
@@ -1180,10 +1389,10 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
-          expect(options[:start_to_close_timeout]).to eq(7200.0)
-          expect(options[:heartbeat_timeout]).to eq(30.0)
-        end
+        options = last_activity_call.keywords
+
+        assert_equal 7200.0, options[:start_to_close_timeout]
+        assert_equal 30.0, options[:heartbeat_timeout]
       end
 
       it "applies all four timeout types when specified" do
@@ -1197,12 +1406,12 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
-          expect(options[:start_to_close_timeout]).to eq(3600.0)
-          expect(options[:schedule_to_close_timeout]).to eq(7200.0)
-          expect(options[:schedule_to_start_timeout]).to eq(300.0)
-          expect(options[:heartbeat_timeout]).to eq(30.0)
-        end
+        options = last_activity_call.keywords
+
+        assert_equal 3600.0, options[:start_to_close_timeout]
+        assert_equal 7200.0, options[:schedule_to_close_timeout]
+        assert_equal 300.0, options[:schedule_to_start_timeout]
+        assert_equal 30.0, options[:heartbeat_timeout]
       end
 
       it "handles symbol keys in temporal_options" do
@@ -1213,22 +1422,20 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
-          expect(options[:start_to_close_timeout]).to eq(1800.0)
-        end
+        assert_equal 1800.0, last_activity_call.keywords[:start_to_close_timeout]
       end
 
       it "uses default activity options when temporal_options are not present" do
         workflow.execute(base_payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
-          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
-          expect(options[:heartbeat_timeout]).to be_nil
-        end
+        options = last_activity_call.keywords
+
+        assert_equal activity_timeout, options[:start_to_close_timeout]
+        assert_nil options[:heartbeat_timeout]
       end
     end
 
-    context "when default activity options are present" do
+    describe "when default activity options are present" do
       let(:payload_with_defaults) do
         base_payload.merge(
           "default_activity_options" => {
@@ -1242,11 +1449,11 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
       it "applies default activity options" do
         workflow.execute(payload_with_defaults)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
-          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
-          expect(options[:heartbeat_timeout]).to eq(60)
-          expect(options[:schedule_to_start_timeout]).to eq(120)
-        end
+        options = last_activity_call.keywords
+
+        assert_equal activity_timeout, options[:start_to_close_timeout]
+        assert_equal 60, options[:heartbeat_timeout]
+        assert_equal 120, options[:schedule_to_start_timeout]
       end
 
       it "allows per-job temporal_options to override global defaults" do
@@ -1257,14 +1464,14 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
-          expect(options[:heartbeat_timeout]).to eq(15.0)
-          expect(options[:schedule_to_start_timeout]).to eq(120)
-        end
+        options = last_activity_call.keywords
+
+        assert_equal 15.0, options[:heartbeat_timeout]
+        assert_equal 120, options[:schedule_to_start_timeout]
       end
     end
 
-    context "when workflow interactions are present" do
+    describe "when workflow interactions are present" do
       it "supports built-in pause, resume, paused, and state handlers" do
         payload = base_payload.merge(
           "workflow_interactions" => {
@@ -1275,24 +1482,27 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect(workflow.handle_dynamic_query("paused")).to be(false)
+        refute workflow.handle_dynamic_query("paused")
 
         workflow.handle_dynamic_signal("pause")
 
-        expect(workflow.handle_dynamic_query("paused")).to be(true)
-        expect(workflow.handle_dynamic_query("state")).to include(
-          "job_class" => "SampleJob",
-          "job_id" => "abc-123",
-          "paused" => true
+        assert workflow.handle_dynamic_query("paused")
+        assert_hash_includes(
+          {
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "paused" => true
+          },
+          workflow.handle_dynamic_query("state")
         )
 
         workflow.handle_dynamic_signal("resume")
 
-        expect(workflow.handle_dynamic_query("paused")).to be(false)
+        refute workflow.handle_dynamic_query("paused")
       end
 
       it "waits while paused before executing the job activity" do
-        allow(Temporalio::Workflow).to receive(:wait_condition) do |&condition|
+        @wait_condition_handler = proc do |&condition|
           workflow.handle_dynamic_signal("resume")
           condition.call
         end
@@ -1300,10 +1510,11 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
         workflow.handle_dynamic_signal("pause", "manual hold")
         workflow.execute(base_payload)
 
-        expect(Temporalio::Workflow).to have_received(:wait_condition)
-        expect(Temporalio::Workflow).to have_received(:execute_activity)
-          .with(ActiveJob::Temporal::Activities::AjRunnerActivity, base_payload, anything)
-        expect(workflow.handle_dynamic_query("paused")).to be(false)
+        refute_empty @wait_condition_recorder.calls_for(:wait_condition)
+        activity_call = last_activity_call
+        assert_equal ActiveJob::Temporal::Activities::AjRunnerActivity, activity_call.arguments[0]
+        assert_equal base_payload, activity_call.arguments[1]
+        refute workflow.handle_dynamic_query("paused")
       end
 
       it "routes declared custom interactions to the ActiveJob handlers" do
@@ -1329,7 +1540,7 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
         workflow.execute(payload)
         workflow.handle_dynamic_signal("progress", 75)
 
-        expect(workflow.handle_dynamic_query("progress")).to eq(75)
+        assert_equal 75, workflow.handle_dynamic_query("progress")
       end
 
       it "routes declared custom updates to the ActiveJob handlers and returns their result" do
@@ -1356,13 +1567,15 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
         workflow.execute(payload)
         result = workflow.handle_dynamic_update("set_progress", 450, 1_000)
 
-        expect(result).to eq("completed" => 450, "total" => 1_000)
-        expect(workflow.handle_dynamic_query("progress")).to eq("completed" => 450, "total" => 1_000)
-        expect(workflow.handle_dynamic_query("state")).to include(
-          "updates" => hash_including(
-            "set_progress" => hash_including("args" => [450, 1_000])
-          )
+        assert_equal({ "completed" => 450, "total" => 1_000 }, result)
+        assert_equal(
+          { "completed" => 450, "total" => 1_000 },
+          workflow.handle_dynamic_query("progress")
         )
+        state = workflow.handle_dynamic_query("state")
+
+        assert_includes state.fetch("updates"), "set_progress"
+        assert_hash_includes({ "args" => [450, 1_000] }, state.fetch("updates").fetch("set_progress"))
       end
 
       it "routes buffered custom signals after workflow interactions are configured" do
@@ -1388,7 +1601,7 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
         workflow.handle_dynamic_signal("progress", 75)
         workflow.execute(payload)
 
-        expect(workflow.handle_dynamic_query("progress")).to eq(75)
+        assert_equal 75, workflow.handle_dynamic_query("progress")
       end
 
       it "rejects undeclared custom interactions" do
@@ -1401,28 +1614,28 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
 
         workflow.execute(payload)
 
-        expect { workflow.handle_dynamic_signal("missing") }
-          .to raise_error(ArgumentError, /Unknown workflow signal/)
-        expect { workflow.handle_dynamic_query("missing") }
-          .to raise_error(ArgumentError, /Unknown workflow query/)
-        expect { workflow.handle_dynamic_update("missing") }
-          .to raise_error(ArgumentError, /Unknown workflow update/)
+        error = assert_raises(ArgumentError) { workflow.handle_dynamic_signal("missing") }
+        assert_match(/Unknown workflow signal/, error.message)
+
+        error = assert_raises(ArgumentError) { workflow.handle_dynamic_query("missing") }
+        assert_match(/Unknown workflow query/, error.message)
+
+        error = assert_raises(ArgumentError) { workflow.handle_dynamic_update("missing") }
+        assert_match(/Unknown workflow update/, error.message)
       end
     end
 
-    context "when legacy payloads omit default activity options" do
+    describe "when legacy payloads omit default activity options" do
       it "falls back to the library default timeout" do
         payload = base_payload.except("default_activity_options")
 
         workflow.execute(payload)
 
-        expect(Temporalio::Workflow).to have_received(:execute_activity) do |_activity_class, _payload_arg, options|
-          expect(options[:start_to_close_timeout]).to eq(activity_timeout)
-        end
+        assert_equal activity_timeout, last_activity_call.keywords[:start_to_close_timeout]
       end
     end
 
-    context "when activity retries are exhausted and dead letter metadata is present" do
+    describe "when activity retries are exhausted and dead letter metadata is present" do
       it "starts a dead letter workflow on the configured DLQ task queue" do
         error = Temporalio::Error::ActivityError.new(
           "activity failed",
@@ -1447,36 +1660,51 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             "queue_name" => "default"
           }
         )
-        allow(error).to receive(:cause).and_return(application_error)
-        allow(Temporalio::Workflow).to receive(:now).and_return(Time.utc(2026, 5, 21, 10, 0, 0))
-        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+        call_recorded_method(error, :cause, returns: application_error)
+        @workflow_now = Time.utc(2026, 5, 21, 10, 0, 0)
+        @execute_activity_handler = proc { raise error }
 
-        expect { workflow.execute(payload) }.to raise_error(error)
+        raised = assert_raises(Temporalio::Error::ActivityError) { workflow.execute(payload) }
 
-        expect(Temporalio::Workflow).to have_received(:start_child_workflow).with(
-          ActiveJob::Temporal::Workflows::DeadLetterWorkflow,
-          hash_including(
+        assert_same error, raised
+        dead_letter_call = start_child_workflow_calls.last
+        assert_equal ActiveJob::Temporal::Workflows::DeadLetterWorkflow, dead_letter_call.arguments[0]
+        dead_letter_entry = dead_letter_call.arguments[1]
+        assert_hash_includes(
+          {
             "id" => "ajdlq:SampleJob:abc-123",
             "state" => "pending",
-            "payload" => payload,
-            "metadata" => hash_including(
-              "job_class" => "SampleJob",
-              "job_id" => "abc-123",
-              "original_queue_name" => "default",
-              "original_task_queue" => "default",
-              "workflow_id" => "ajwf:SampleJob:abc-123",
-              "auto_discard_after_seconds" => 86_400.0,
-              "failed_at" => "2026-05-21T10:00:00Z"
-            ),
-            "failure" => hash_including(
-              "class" => "StandardError",
-              "message" => "permanent failure",
-              "retry_state" => Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
-            )
-          ),
-          id: "ajdlq:SampleJob:abc-123",
-          task_queue: "failed_jobs",
-          parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+            "payload" => payload
+          },
+          dead_letter_entry
+        )
+        assert_hash_includes(
+          {
+            "job_class" => "SampleJob",
+            "job_id" => "abc-123",
+            "original_queue_name" => "default",
+            "original_task_queue" => "default",
+            "workflow_id" => "ajwf:SampleJob:abc-123",
+            "auto_discard_after_seconds" => 86_400.0,
+            "failed_at" => "2026-05-21T10:00:00Z"
+          },
+          dead_letter_entry.fetch("metadata")
+        )
+        assert_hash_includes(
+          {
+            "class" => "StandardError",
+            "message" => "permanent failure",
+            "retry_state" => Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+          },
+          dead_letter_entry.fetch("failure")
+        )
+        assert_equal(
+          {
+            id: "ajdlq:SampleJob:abc-123",
+            task_queue: "failed_jobs",
+            parent_close_policy: Temporalio::Workflow::ParentClosePolicy::ABANDON
+          },
+          dead_letter_call.keywords
         )
       end
 
@@ -1498,11 +1726,12 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             "queue_name" => "default"
           }
         )
-        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+        @execute_activity_handler = proc { raise error }
 
-        expect { workflow.execute(payload) }.to raise_error(error)
+        raised = assert_raises(Temporalio::Error::ActivityError) { workflow.execute(payload) }
 
-        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+        assert_same error, raised
+        assert_empty start_child_workflow_calls
       end
 
       it "does not dead-letter when workflow payload lacks DLQ metadata" do
@@ -1515,11 +1744,12 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           activity_id: "activity-1",
           retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
         )
-        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+        @execute_activity_handler = proc { raise error }
 
-        expect { workflow.execute(base_payload) }.to raise_error(error)
+        raised = assert_raises(Temporalio::Error::ActivityError) { workflow.execute(base_payload) }
 
-        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+        assert_same error, raised
+        assert_empty start_child_workflow_calls
       end
 
       it "logs skipped dead-lettering when DLQ metadata has a blank queue" do
@@ -1532,7 +1762,6 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
           activity_id: "activity-1",
           retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
         )
-        workflow_logger = instance_spy(Logger)
         payload = base_payload.merge(
           "dead_letter" => {
             "queue" => " ",
@@ -1541,21 +1770,22 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             "queue_name" => "default"
           }
         )
-        allow(Temporalio::Workflow).to receive(:logger).and_return(workflow_logger)
-        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+        @execute_activity_handler = proc { raise error }
 
-        expect { workflow.execute(payload) }.to raise_error(error)
+        raised = assert_raises(Temporalio::Error::ActivityError) { workflow.execute(payload) }
 
-        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
-        expect(workflow_logger).to have_received(:warn).with(
-          hash_including(
+        assert_same error, raised
+        assert_empty start_child_workflow_calls
+        assert_hash_includes(
+          {
             event: "dead_letter_skipped",
             reason: "blank_queue",
             job_class: "SampleJob",
             job_id: "abc-123",
             queue_name: "default",
             retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
-          )
+          },
+          @workflow_logger.warn_calls.last
         )
       end
 
@@ -1578,11 +1808,12 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
             "queue_name" => "default"
           }
         )
-        allow(Temporalio::Workflow).to receive(:execute_activity).and_raise(error)
+        @execute_activity_handler = proc { raise error }
 
-        expect { workflow.execute(payload) }.to raise_error(error)
+        raised = assert_raises(Temporalio::Error::ActivityError) { workflow.execute(payload) }
 
-        expect(Temporalio::Workflow).not_to have_received(:start_child_workflow)
+        assert_same error, raised
+        assert_empty start_child_workflow_calls
       end
     end
   end

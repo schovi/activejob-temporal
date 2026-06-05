@@ -19,12 +19,12 @@ describe ActiveJob::Temporal::SignalQueryOptions do
     job_class.temporal_signal_handlers.fetch("progress").call(state, 50)
     job_class.temporal_signal_handlers.fetch("append_event").call(state, "started")
 
-    expect(job_class.temporal_signal_handler_names).to contain_exactly("progress", "append_event")
-    expect(job_class.temporal_query_handler_names).to contain_exactly("progress", "events")
-    expect(job_class.temporal_update_handler_names).to contain_exactly("advance_progress")
-    expect(job_class.temporal_query_handlers.fetch("progress").call(state)).to eq(50)
-    expect(job_class.temporal_query_handlers.fetch("events").call(state)).to eq(["started"])
-    expect(job_class.temporal_update_handlers.fetch("advance_progress").call(state, 75)).to eq(75)
+    assert_unordered_equal %w[progress append_event], job_class.temporal_signal_handler_names
+    assert_unordered_equal %w[progress events], job_class.temporal_query_handler_names
+    assert_unordered_equal ["advance_progress"], job_class.temporal_update_handler_names
+    assert_equal 50, job_class.temporal_query_handlers.fetch("progress").call(state)
+    assert_equal ["started"], job_class.temporal_query_handlers.fetch("events").call(state)
+    assert_equal 75, job_class.temporal_update_handlers.fetch("advance_progress").call(state, 75)
   end
 
   it "inherits handlers and allows subclasses to add their own" do
@@ -44,9 +44,9 @@ describe ActiveJob::Temporal::SignalQueryOptions do
       temporal_update(:checkpoint) { |state, value| state["checkpoint"] = value }
     end
 
-    expect(child_class.temporal_signal_handler_names).to contain_exactly("progress", "checkpoint")
-    expect(child_class.temporal_query_handler_names).to contain_exactly("progress", "checkpoint")
-    expect(child_class.temporal_update_handler_names).to contain_exactly("progress", "checkpoint")
+    assert_unordered_equal %w[progress checkpoint], child_class.temporal_signal_handler_names
+    assert_unordered_equal %w[progress checkpoint], child_class.temporal_query_handler_names
+    assert_unordered_equal %w[progress checkpoint], child_class.temporal_update_handler_names
   end
 
   it "rejects invalid handler names" do
@@ -54,12 +54,14 @@ describe ActiveJob::Temporal::SignalQueryOptions do
       def self.name = "InvalidSignalQueryOptionsJob"
     end
 
-    expect { job_class.temporal_signal("invalid-name") }
-      .to raise_error(ArgumentError, /signal and query names/)
-    expect { job_class.temporal_query("1invalid") { nil } }
-      .to raise_error(ArgumentError, /signal and query names/)
-    expect { job_class.temporal_update("invalid-name") { nil } }
-      .to raise_error(ArgumentError, /signal and query names/)
+    error = assert_raises(ArgumentError) { job_class.temporal_signal("invalid-name") }
+    assert_match(/signal and query names/, error.message)
+
+    error = assert_raises(ArgumentError) { job_class.temporal_query("1invalid") { nil } }
+    assert_match(/signal and query names/, error.message)
+
+    error = assert_raises(ArgumentError) { job_class.temporal_update("invalid-name") { nil } }
+    assert_match(/signal and query names/, error.message)
   end
 
   it "rejects custom handlers that conflict with built-in workflow interactions" do
@@ -67,10 +69,11 @@ describe ActiveJob::Temporal::SignalQueryOptions do
       def self.name = "ReservedSignalQueryOptionsJob"
     end
 
-    expect { job_class.temporal_signal(:pause) }
-      .to raise_error(ArgumentError, /reserved/)
-    expect { job_class.temporal_query(:state) { nil } }
-      .to raise_error(ArgumentError, /reserved/)
+    error = assert_raises(ArgumentError) { job_class.temporal_signal(:pause) }
+    assert_match(/reserved/, error.message)
+
+    error = assert_raises(ArgumentError) { job_class.temporal_query(:state) { nil } }
+    assert_match(/reserved/, error.message)
   end
 
   it "requires temporal queries to provide a block" do
@@ -78,8 +81,8 @@ describe ActiveJob::Temporal::SignalQueryOptions do
       def self.name = "QueryBlockSignalQueryOptionsJob"
     end
 
-    expect { job_class.temporal_query(:progress) }
-      .to raise_error(ArgumentError, /temporal_query requires a block/)
+    error = assert_raises(ArgumentError) { job_class.temporal_query(:progress) }
+    assert_match(/temporal_query requires a block/, error.message)
   end
 
   it "requires temporal updates to provide a block" do
@@ -87,7 +90,7 @@ describe ActiveJob::Temporal::SignalQueryOptions do
       def self.name = "UpdateBlockSignalQueryOptionsJob"
     end
 
-    expect { job_class.temporal_update(:progress) }
-      .to raise_error(ArgumentError, /temporal_update requires a block/)
+    error = assert_raises(ArgumentError) { job_class.temporal_update(:progress) }
+    assert_match(/temporal_update requires a block/, error.message)
   end
 end

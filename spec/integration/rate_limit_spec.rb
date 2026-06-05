@@ -76,16 +76,16 @@ describe "Rate limiting", :integration do
       end
     end
 
-    expect(limiter.calls).to eq([
-                                  [
-                                    { "limit" => 10, "interval" => 60.0, "key" => "activejob-temporal:global" },
-                                    {
-                                      "limit" => 1,
-                                      "interval" => 1.0,
-                                      "key" => "activejob-temporal:job:RateLimitedIntegrationJob"
-                                    }
-                                  ]
-                                ])
+    assert_equal [
+      [
+        { "limit" => 10, "interval" => 60.0, "key" => "activejob-temporal:global" },
+        {
+          "limit" => 1,
+          "interval" => 1.0,
+          "key" => "activejob-temporal:job:RateLimitedIntegrationJob"
+        }
+      ]
+    ], limiter.calls
   ensure
     stop_worker(@worker_thread)
   end

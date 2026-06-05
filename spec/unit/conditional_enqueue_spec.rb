@@ -29,7 +29,7 @@ describe ActiveJob::Temporal::ConditionalEnqueue do
   end
 
   it "is included in ActiveJob::Base" do
-    expect(ActiveJob::Base.included_modules).to include(described_class)
+    assert_includes ActiveJob::Base.included_modules, described_class
   end
 
   it "enqueues when a callable condition returns true" do
@@ -41,66 +41,60 @@ describe ActiveJob::Temporal::ConditionalEnqueue do
 
     job = job_class.perform_later_if(condition, :allowed, "payload")
 
-    expect(job).to be_a(job_class)
-    expect(seen_arguments).to eq([:allowed, "payload"])
-    expect(queue_adapter.enqueued_jobs.size).to eq(1)
+    assert_instance_of job_class, job
+    assert_equal [:allowed, "payload"], seen_arguments
+    assert_equal 1, queue_adapter.enqueued_jobs.size
   end
 
   it "returns nil without enqueueing when a callable condition returns false" do
     condition = ->(_arguments) { false }
 
-    expect(job_class.perform_later_if(condition, :blocked)).to be_nil
-    expect(queue_adapter.enqueued_jobs).to be_empty
+    assert_nil job_class.perform_later_if(condition, :blocked)
+    assert_empty queue_adapter.enqueued_jobs
   end
 
   it "enqueues when a symbol condition returns true" do
     job = job_class.perform_later_if(:should_enqueue?, :allowed)
 
-    expect(job).to be_a(job_class)
-    expect(queue_adapter.enqueued_jobs.size).to eq(1)
+    assert_instance_of job_class, job
+    assert_equal 1, queue_adapter.enqueued_jobs.size
   end
 
   it "returns nil without enqueueing when a symbol condition returns false" do
-    expect(job_class.perform_later_if(:should_enqueue?, :blocked)).to be_nil
-    expect(queue_adapter.enqueued_jobs).to be_empty
+    assert_nil job_class.perform_later_if(:should_enqueue?, :blocked)
+    assert_empty queue_adapter.enqueued_jobs
   end
 
   it "enqueues when a string condition returns true" do
     job = job_class.perform_later_if("should_enqueue?", :allowed)
 
-    expect(job).to be_a(job_class)
-    expect(queue_adapter.enqueued_jobs.size).to eq(1)
+    assert_instance_of job_class, job
+    assert_equal 1, queue_adapter.enqueued_jobs.size
   end
 
   it "supports configured jobs from set" do
-    allow(ActiveJob::Temporal::Logger).to receive(:warn)
+    logger_warnings = call_recorded_method(ActiveJob::Temporal::Logger, :warn)
 
     job = job_class.set(queue: "critical").perform_later_if(:should_enqueue?, :allowed)
 
-    expect(job).to be_a(job_class)
-    expect(queue_adapter.enqueued_jobs.size).to eq(1)
-    expect(queue_adapter.enqueued_jobs.first[:queue]).to eq("critical")
-    expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
-      "active_job_configured_job_private_api",
-      hash_including(feature: "conditional_enqueue")
-    )
+    assert_instance_of job_class, job
+    assert_equal 1, queue_adapter.enqueued_jobs.size
+    assert_equal "critical", queue_adapter.enqueued_jobs.first[:queue]
+    assert_private_api_warning logger_warnings
   end
 
   it "returns nil for configured jobs when the condition returns false" do
-    allow(ActiveJob::Temporal::Logger).to receive(:warn)
+    call_recorded_method(ActiveJob::Temporal::Logger, :warn)
 
-    expect(job_class.set(queue: "critical").perform_later_if(:should_enqueue?, :blocked)).to be_nil
-    expect(queue_adapter.enqueued_jobs).to be_empty
+    assert_nil job_class.set(queue: "critical").perform_later_if(:should_enqueue?, :blocked)
+    assert_empty queue_adapter.enqueued_jobs
   end
 
   it "fails clearly when configured job internals are unsupported" do
     configured_job = ActiveJob::ConfiguredJob.allocate
 
-    expect { configured_job.perform_later_if(:should_enqueue?, :allowed) }
-      .to raise_error(
-        ArgumentError,
-        /ActiveJob::ConfiguredJob internals changed for conditional_enqueue.*@job_class/
-      )
+    error = assert_raises(ArgumentError) { configured_job.perform_later_if(:should_enqueue?, :allowed) }
+    assert_match(/ActiveJob::ConfiguredJob internals changed for conditional_enqueue.*@job_class/, error.message)
   end
 
   it "passes keyword arguments to the condition as job arguments" do
@@ -112,19 +106,29 @@ describe ActiveJob::Temporal::ConditionalEnqueue do
 
     job_class.perform_later_if(condition, :allowed, count: 2)
 
-    expect(seen_arguments).to eq([:allowed, { count: 2 }])
+    assert_equal [:allowed, { count: 2 }], seen_arguments
   end
 
   it "rejects unsupported conditions" do
-    expect { job_class.perform_later_if(true, :allowed) }
-      .to raise_error(ArgumentError, /condition must be a Symbol, String, or respond to #call/)
+    error = assert_raises(ArgumentError) { job_class.perform_later_if(true, :allowed) }
+    assert_match(/condition must be a Symbol, String, or respond to #call/, error.message)
   end
 
   it "lets condition exceptions bubble" do
     error = RuntimeError.new("condition failed")
     condition = ->(_arguments) { raise error }
 
-    expect { job_class.perform_later_if(condition, :allowed) }.to raise_error(error)
-    expect(queue_adapter.enqueued_jobs).to be_empty
+    raised_error = assert_raises(RuntimeError) { job_class.perform_later_if(condition, :allowed) }
+    assert_same error, raised_error
+    assert_empty queue_adapter.enqueued_jobs
+  end
+
+  def assert_private_api_warning(logger_warnings)
+    warning = logger_warnings.calls_for(:warn).find do |call|
+      call.arguments == ["active_job_configured_job_private_api"] &&
+        call.keywords[:feature] == "conditional_enqueue"
+    end
+
+    refute_nil warning
   end
 end

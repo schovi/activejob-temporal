@@ -38,29 +38,29 @@ describe "ActiveJob Temporal retry behavior", :integration do
 
     # Verify job executed exactly twice (failed once, then succeeded)
     # The test state proves the retry mechanism worked
-    expect(TestState.instance.test_result).to eq("success")
-    expect(TestState.instance.attempt_count).to eq(2)
+    assert_equal "success", TestState.instance.test_result
+    assert_equal 2, TestState.instance.attempt_count
 
     # Verify workflow completed successfully
     handle = client.workflow_handle(workflow_id)
     description = handle.describe
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
 
     # Verify workflow history shows activity retry
     history = handle.fetch_history
     event_types = history.events.map(&:event_type)
 
     # Verify activity was scheduled and eventually completed
-    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED)
-    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_COMPLETED)
+    assert_includes event_types, :EVENT_TYPE_ACTIVITY_TASK_SCHEDULED
+    assert_includes event_types, :EVENT_TYPE_ACTIVITY_TASK_COMPLETED
 
     # Verify retry occurred by checking the attempt number in ACTIVITY_TASK_STARTED event
     # Note: Temporal Ruby SDK handles activity retries at the worker level,
     # so the workflow history shows only the final STARTED event, but its
     # attempt counter indicates how many times the activity was executed
     activity_started_event = history.events.find { |e| e.event_type == :EVENT_TYPE_ACTIVITY_TASK_STARTED }
-    expect(activity_started_event).not_to be_nil
-    expect(activity_started_event.activity_task_started_event_attributes.attempt).to eq(2)
+    refute_nil activity_started_event
+    assert_equal 2, activity_started_event.activity_task_started_event_attributes.attempt
   end
 
   it "discards non-retryable errors according to discard_on configuration" do
@@ -75,26 +75,26 @@ describe "ActiveJob Temporal retry behavior", :integration do
     wait_for_workflow_failure(workflow_id)
 
     # Verify job executed exactly once (no retries)
-    expect(TestState.instance.discard_test_executed).to eq(true)
+    assert_equal true, TestState.instance.discard_test_executed
 
     # Verify workflow failed (not completed)
     handle = client.workflow_handle(workflow_id)
     description = handle.describe
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::FAILED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::FAILED, description.status
 
     # Verify workflow history shows activity failed with non-retryable error
     history = handle.fetch_history
     event_types = history.events.map(&:event_type)
 
     # Verify activity was scheduled and failed
-    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_SCHEDULED)
-    expect(event_types).to include(:EVENT_TYPE_ACTIVITY_TASK_FAILED)
-    expect(event_types).to include(:EVENT_TYPE_WORKFLOW_EXECUTION_FAILED)
+    assert_includes event_types, :EVENT_TYPE_ACTIVITY_TASK_SCHEDULED
+    assert_includes event_types, :EVENT_TYPE_ACTIVITY_TASK_FAILED
+    assert_includes event_types, :EVENT_TYPE_WORKFLOW_EXECUTION_FAILED
 
     # Verify activity executed only once (no retries)
     activity_started_event = history.events.find { |e| e.event_type == :EVENT_TYPE_ACTIVITY_TASK_STARTED }
-    expect(activity_started_event).not_to be_nil
-    expect(activity_started_event.activity_task_started_event_attributes.attempt).to eq(1)
+    refute_nil activity_started_event
+    assert_equal 1, activity_started_event.activity_task_started_event_attributes.attempt
   end
 
   private

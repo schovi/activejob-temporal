@@ -20,71 +20,77 @@ describe ActiveJob::Temporal::ConfiguredJobCompatibility do
 
   describe ".payload" do
     it "returns nil for values that are not ActiveJob configured jobs" do
-      expect(
-        described_class.payload(job_class, feature: "chain", normalize_options: method(:symbolize_options))
-      ).to be_nil
+      assert_nil described_class.payload(job_class, feature: "chain", normalize_options: method(:symbolize_options))
     end
 
     it "extracts configured job class and options through the isolated compatibility layer" do
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      logger_warnings = call_recorded_method(ActiveJob::Temporal::Logger, :warn)
 
       payload = described_class.payload(
         job_class.set(queue: "critical", priority: 7),
         feature: "chain",
         normalize_options: method(:symbolize_options)
       )
-
-      expect(payload).to eq(
+      expected_payload = {
         job_class: "ConfiguredCompatibilityJob",
         options: {
           queue: "critical",
           priority: 7
         }
-      )
-      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
-        "active_job_configured_job_private_api",
-        hash_including(feature: "chain", replacement: "ActiveJob::Temporal.job")
-      )
+      }
+
+      assert_equal expected_payload, payload
+      assert_private_api_warning logger_warnings, feature: "chain", replacement: "ActiveJob::Temporal.job"
     end
 
     it "fails clearly when ActiveJob moves configured job internals to an untested version" do
-      allow(described_class).to receive(:active_job_version).and_return(Gem::Version.new("8.2.0"))
+      call_recorded_method(described_class, :active_job_version, returns: Gem::Version.new("8.2.0"))
 
-      expect do
+      error = assert_raises(ArgumentError) do
         described_class.payload(
           job_class.set(queue: "critical"),
           feature: "chain",
           normalize_options: method(:symbolize_options)
         )
-      end.to raise_error(
-        ArgumentError,
-        /ActiveJob::ConfiguredJob internals are not supported for chain on ActiveJob 8\.2\.0.*ActiveJob::Temporal\.job/
+      end
+      assert_match(
+        /ActiveJob::ConfiguredJob internals are not supported for chain on ActiveJob 8\.2\.0.*ActiveJob::Temporal\.job/,
+        error.message
       )
     end
 
     it "fails clearly when configured job internals do not expose a job class" do
       configured_job = ActiveJob::ConfiguredJob.allocate
 
-      expect do
+      error = assert_raises(ArgumentError) do
         described_class.payload(
           configured_job,
           feature: "child_workflows",
           normalize_options: method(:symbolize_options)
         )
-      end.to raise_error(
-        ArgumentError,
-        /ActiveJob::ConfiguredJob internals changed for child_workflows.*@job_class.*ActiveJob::Temporal\.job/
+      end
+      assert_match(
+        /ActiveJob::ConfiguredJob internals changed for child_workflows.*@job_class.*ActiveJob::Temporal\.job/,
+        error.message
       )
     end
   end
 
   describe ".job_class" do
     it "extracts the configured job class for compatibility helpers" do
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      call_recorded_method(ActiveJob::Temporal::Logger, :warn)
 
-      expect(
-        described_class.job_class(job_class.set(queue: "critical"), feature: "conditional_enqueue")
-      ).to eq(job_class)
+      assert_same job_class, described_class.job_class(job_class.set(queue: "critical"), feature: "conditional_enqueue")
     end
+  end
+
+  def assert_private_api_warning(logger_warnings, feature:, replacement:)
+    warning = logger_warnings.calls_for(:warn).find do |call|
+      call.arguments == ["active_job_configured_job_private_api"] &&
+        call.keywords[:feature] == feature &&
+        call.keywords[:replacement] == replacement
+    end
+
+    refute_nil warning
   end
 end

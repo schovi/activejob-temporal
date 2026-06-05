@@ -48,14 +48,14 @@ describe "ActiveJob Temporal cancellation", :integration do
     # Verify workflow status is CANCELED
     handle = client.workflow_handle(workflow_id)
     description = handle.describe
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::CANCELED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::CANCELED, description.status
 
     # Verify job did not complete (heartbeat loop was interrupted)
-    expect(TestState.instance.long_running_completed).to eq(false)
+    assert_equal false, TestState.instance.long_running_completed
     # Verify job was interrupted mid-execution (not all 10 iterations)
-    expect(TestState.instance.long_running_iterations).to be < 10
+    assert_operator TestState.instance.long_running_iterations, :<, 10
     # Verify job started executing (at least 1 iteration)
-    expect(TestState.instance.long_running_iterations).to be > 0
+    assert_operator TestState.instance.long_running_iterations, :>, 0
   end
 
   private

@@ -54,7 +54,7 @@ describe ActiveJob::Temporal::WorkerPool do
   let(:worker_command) { ["temporal-worker"] }
 
   before do
-    allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+    @logger_events = call_recorded_method(ActiveJob::Temporal::Logger, :log_event)
   end
 
   def build_pool(**options)
@@ -73,10 +73,11 @@ describe ActiveJob::Temporal::WorkerPool do
 
     pool.start(supervise: false)
 
-    expect(process_adapter.forks.map(&:pid)).to eq([1001, 1002, 1003])
-    expect(process_adapter.forks.map(&:command)).to all(eq(worker_command))
-    expect(process_adapter.forks.map { |fork| fork.environment["ACTIVEJOB_TEMPORAL_WORKER_POOL_INDEX"] })
-      .to eq(%w[0 1 2])
+    assert_equal [1001, 1002, 1003], process_adapter.forks.map(&:pid)
+    assert(process_adapter.forks.all? { |fork| fork.command == worker_command })
+
+    worker_indexes = process_adapter.forks.map { |fork| fork.environment["ACTIVEJOB_TEMPORAL_WORKER_POOL_INDEX"] }
+    assert_equal %w[0 1 2], worker_indexes
   ensure
     pool&.stop
   end
@@ -84,9 +85,9 @@ describe ActiveJob::Temporal::WorkerPool do
   it "uses the bundled worker executable by default" do
     command = described_class.default_worker_command
 
-    expect(command.first).to eq(RbConfig.ruby)
-    expect(command.last).to end_with("/bin/temporal-worker")
-    expect(File).to exist(command.last)
+    assert_equal RbConfig.ruby, command.first
+    assert command.last.end_with?("/bin/temporal-worker")
+    assert File.exist?(command.last)
   end
 
   it "assigns per-worker health and metrics ports from base ports" do
@@ -104,11 +105,12 @@ describe ActiveJob::Temporal::WorkerPool do
 
     pool.start(supervise: false)
 
-    expect(process_adapter.forks.map { |fork| fork.environment["ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT"] })
-      .to eq(%w[8080 8081 8082])
-    expect(process_adapter.forks.map { |fork| fork.environment["ACTIVEJOB_TEMPORAL_METRICS_PORT"] })
-      .to eq(%w[9394 9395 9396])
-    expect(process_adapter.forks.first.environment).to include(
+    health_check_ports = process_adapter.forks.map { |fork| fork.environment["ACTIVEJOB_TEMPORAL_HEALTH_CHECK_PORT"] }
+    metrics_ports = process_adapter.forks.map { |fork| fork.environment["ACTIVEJOB_TEMPORAL_METRICS_PORT"] }
+
+    assert_equal %w[8080 8081 8082], health_check_ports
+    assert_equal %w[9394 9395 9396], metrics_ports
+    expected_environment = {
       "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_BIND" => "0.0.0.0",
       "ACTIVEJOB_TEMPORAL_HEALTH_CHECK_ALLOW_PUBLIC_BIND" => "true",
       "ACTIVEJOB_TEMPORAL_METRICS_BIND" => "0.0.0.0",
@@ -116,7 +118,8 @@ describe ActiveJob::Temporal::WorkerPool do
       "ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_ACTIVITIES" => "200",
       "ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS" => "25",
       "ACTIVEJOB_TEMPORAL_WORKER_POOL_SIZE" => "1"
-    )
+    }
+    assert_hash_includes expected_environment, process_adapter.forks.first.environment
   ensure
     pool&.stop
   end
@@ -127,8 +130,8 @@ describe ActiveJob::Temporal::WorkerPool do
 
     pool.__send__(:handle_worker_exit, 1001, WorkerPoolSpecSupport::FakeStatus.new(success?: false))
 
-    expect(process_adapter.forks.map(&:pid)).to eq([1001, 1002])
-    expect(process_adapter.forks.last.environment["ACTIVEJOB_TEMPORAL_WORKER_POOL_INDEX"]).to eq("0")
+    assert_equal [1001, 1002], process_adapter.forks.map(&:pid)
+    assert_equal "0", process_adapter.forks.last.environment["ACTIVEJOB_TEMPORAL_WORKER_POOL_INDEX"]
   ensure
     pool&.stop
   end
@@ -142,9 +145,14 @@ describe ActiveJob::Temporal::WorkerPool do
       pool.__send__(:handle_worker_exit, 1001 + offset, WorkerPoolSpecSupport::FakeStatus.new(success?: false))
     end
 
-    expect(ActiveJob::Temporal::Logger).to have_received(:log_event)
-      .with("worker_pool_worker_started", hash_including(worker_index: 0, restarts: 2))
-      .exactly(3).times
+    started_with_capped_restarts = @logger_events.calls_for(:log_event).count do |call|
+      attributes = call.arguments[1] || call.keywords
+
+      call.arguments.first == "worker_pool_worker_started" &&
+        attributes[:worker_index] == 0 &&
+        attributes[:restarts] == 2
+    end
+    assert_equal 3, started_with_capped_restarts
   ensure
     pool&.stop
   end
@@ -156,7 +164,7 @@ describe ActiveJob::Temporal::WorkerPool do
 
     pool.__send__(:handle_worker_exit, 1001, WorkerPoolSpecSupport::FakeStatus.new(success?: false))
 
-    expect(process_adapter.forks.map(&:pid)).to eq([1001])
+    assert_equal [1001], process_adapter.forks.map(&:pid)
   end
 
   it "does not restart a worker when shutdown begins during the restart delay" do
@@ -169,7 +177,7 @@ describe ActiveJob::Temporal::WorkerPool do
 
     pool.__send__(:handle_worker_exit, 1001, WorkerPoolSpecSupport::FakeStatus.new(success?: false))
 
-    expect(process_adapter.forks.map(&:pid)).to eq([1001])
+    assert_equal [1001], process_adapter.forks.map(&:pid)
   end
 
   it "terminates a restarted worker when shutdown begins before registration" do
@@ -179,9 +187,9 @@ describe ActiveJob::Temporal::WorkerPool do
 
     pool.__send__(:handle_worker_exit, 1001, WorkerPoolSpecSupport::FakeStatus.new(success?: false))
 
-    expect(process_adapter.forks.map(&:pid)).to eq([1001, 1002])
-    expect(process_adapter.signals).to eq([["TERM", 1002]])
-    expect(pool.__send__(:child_count)).to be(0)
+    assert_equal [1001, 1002], process_adapter.forks.map(&:pid)
+    assert_equal [["TERM", 1002]], process_adapter.signals
+    assert_equal 0, pool.__send__(:child_count)
   end
 
   it "stops only once when stop is called concurrently" do
@@ -204,7 +212,7 @@ describe ActiveJob::Temporal::WorkerPool do
     release_first_wait << true
     stop_thread.join
 
-    expect(process_adapter.signals).to eq([["TERM", 1001]])
+    assert_equal [["TERM", 1001]], process_adapter.signals
   end
 
   it "sends TERM to child workers when stopped" do
@@ -213,17 +221,17 @@ describe ActiveJob::Temporal::WorkerPool do
 
     pool.stop
 
-    expect(process_adapter.signals).to contain_exactly(["TERM", 1001], ["TERM", 1002])
+    assert_unordered_equal [["TERM", 1001], ["TERM", 1002]], process_adapter.signals
   end
 
   it "waits only on child workers managed by the pool" do
     pool = build_pool(size: 2)
     pool.start(supervise: false)
-    allow(pool).to receive(:running?).and_return(false)
+    call_recorded_method(pool, :running?, returns: false)
 
     pool.__send__(:supervise_workers)
 
-    expect(process_adapter.waits.first).to eq([1001, 1002])
+    assert_equal [1001, 1002], process_adapter.waits.first
   ensure
     pool&.stop
   end
@@ -238,8 +246,8 @@ describe ActiveJob::Temporal::WorkerPool do
 
     waited_pid, = adapter.wait([pool_child])
 
-    expect(waited_pid).to eq(pool_child)
-    expect(Process.wait(unrelated_child)).to eq(unrelated_child)
+    assert_equal pool_child, waited_pid
+    assert_equal unrelated_child, Process.wait(unrelated_child)
   ensure
     [pool_child, unrelated_child].compact.each do |pid|
       Process.kill("KILL", pid)
@@ -250,19 +258,24 @@ describe ActiveJob::Temporal::WorkerPool do
   end
 
   it "rejects invalid pool sizes" do
-    expect { build_pool(size: 0) }
-      .to raise_error(ArgumentError, /pool size must be a positive integer/)
+    error = assert_raises(ArgumentError) { build_pool(size: 0) }
+
+    assert_match(/pool size must be a positive integer/, error.message)
   end
 
   it "rejects public health binds without explicit opt-in" do
-    expect do
+    error = assert_raises(ArgumentError) do
       build_pool(health_check_port: 8080, health_check_bind: "0.0.0.0")
-    end.to raise_error(ArgumentError, /health check endpoint.*public bind opt-in/)
+    end
+
+    assert_match(/health check endpoint.*public bind opt-in/, error.message)
   end
 
   it "rejects public metrics binds without explicit opt-in" do
-    expect do
+    error = assert_raises(ArgumentError) do
       build_pool(metrics_port: 9394, metrics_bind: "0.0.0.0")
-    end.to raise_error(ArgumentError, /metrics endpoint.*public bind opt-in/)
+    end
+
+    assert_match(/metrics endpoint.*public bind opt-in/, error.message)
   end
 end

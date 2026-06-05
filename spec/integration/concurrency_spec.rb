@@ -70,7 +70,7 @@ describe "Concurrent worker execution", :integration do
     sleep 0.5
 
     # Verify job executed exactly once
-    expect(job_class.execution_count).to eq(1)
+    assert_equal 1, job_class.execution_count
 
     @worker_threads = [worker1, worker2]
   end
@@ -115,7 +115,7 @@ describe "Concurrent worker execution", :integration do
     end
 
     # Verify all 5 jobs executed
-    expect(executed_jobs.sort).to eq([0, 1, 2, 3, 4])
+    assert_equal [0, 1, 2, 3, 4], executed_jobs.sort
   end
 
   private

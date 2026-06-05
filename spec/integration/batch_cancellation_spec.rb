@@ -31,7 +31,7 @@ describe "ActiveJob Temporal batch cancellation", :integration do
 
     result = ActiveJob::Temporal.cancel_where(ajQueue: task_queue)
 
-    expect(result).to eq(terminated: 2, failed: 0, errors: [])
+    assert_equal({ terminated: 2, failed: 0, errors: [] }, result)
     @workflow_ids.each { |workflow_id| wait_for_workflow_terminated(workflow_id) }
   end
 

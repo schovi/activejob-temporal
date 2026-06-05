@@ -36,16 +36,17 @@ describe "ActiveJob Temporal job dependencies" do
     parent_job.job_id = "parent-123"
 
     job = child_job_class.set(depends_on: parent_job).perform_later
+    expected_dependencies = [
+      {
+        job_class: "DependencyParentJob",
+        job_id: "parent-123",
+        workflow_id: "ajwf:DependencyParentJob:parent-123"
+      }
+    ]
 
-    expect(job.temporal_dependencies).to eq([
-                                              {
-                                                job_class: "DependencyParentJob",
-                                                job_id: "parent-123",
-                                                workflow_id: "ajwf:DependencyParentJob:parent-123"
-                                              }
-                                            ])
-    expect(job.temporal_dependency_failure_policy).to eq(:fail)
-    expect(queue_adapter.enqueued_jobs.size).to eq(1)
+    assert_equal expected_dependencies, job.temporal_dependencies
+    assert_equal :fail, job.temporal_dependency_failure_policy
+    assert_equal 1, queue_adapter.enqueued_jobs.size
   end
 
   it "captures configured workflow IDs for enqueued job instance dependencies" do
@@ -54,24 +55,26 @@ describe "ActiveJob Temporal job dependencies" do
     parent_job.job_id = "parent-123"
 
     job = child_job_class.set(depends_on: parent_job).perform_later
+    expected_dependencies = [
+      {
+        job_class: "DependencyParentJob",
+        job_id: "parent-123",
+        workflow_id: "tenant-42:DependencyParentJob:parent-123"
+      }
+    ]
 
-    expect(job.temporal_dependencies).to eq([
-                                              {
-                                                job_class: "DependencyParentJob",
-                                                job_id: "parent-123",
-                                                workflow_id: "tenant-42:DependencyParentJob:parent-123"
-                                              }
-                                            ])
+    assert_equal expected_dependencies, job.temporal_dependencies
   end
 
   it "captures job ID dependencies with an explicit failure policy" do
     job = child_job_class.set(depends_on: %w[parent-123 parent-456], on_dependency_failure: :ignore).perform_later
+    expected_dependencies = [
+      { job_id: "parent-123" },
+      { job_id: "parent-456" }
+    ]
 
-    expect(job.temporal_dependencies).to eq([
-                                              { job_id: "parent-123" },
-                                              { job_id: "parent-456" }
-                                            ])
-    expect(job.temporal_dependency_failure_policy).to eq(:ignore)
+    assert_equal expected_dependencies, job.temporal_dependencies
+    assert_equal :ignore, job.temporal_dependency_failure_policy
   end
 
   it "captures dependency wait options" do
@@ -84,13 +87,14 @@ describe "ActiveJob Temporal job dependencies" do
         backoff: 3.0
       }
     ).perform_later
-
-    expect(job.temporal_dependency_wait).to eq(
+    expected_wait = {
       timeout: 300.0,
       initial_interval: 5.0,
       max_interval: 30.0,
       backoff: 3.0
-    )
+    }
+
+    assert_equal expected_wait, job.temporal_dependency_wait
   end
 
   it "captures explicit dependency hashes" do
@@ -100,27 +104,29 @@ describe "ActiveJob Temporal job dependencies" do
         { workflow_id: "custom-workflow-id" }
       ]
     ).perform_later
+    expected_dependencies = [
+      {
+        job_class: "DependencyParentJob",
+        job_id: "parent-123"
+      },
+      {
+        workflow_id: "custom-workflow-id"
+      }
+    ]
 
-    expect(job.temporal_dependencies).to eq([
-                                              {
-                                                job_class: "DependencyParentJob",
-                                                job_id: "parent-123"
-                                              },
-                                              {
-                                                workflow_id: "custom-workflow-id"
-                                              }
-                                            ])
+    assert_equal expected_dependencies, job.temporal_dependencies
   end
 
   it "captures a single explicit dependency hash" do
     job = child_job_class.set(depends_on: { job_class: parent_job_class, job_id: "parent-123" }).perform_later
+    expected_dependencies = [
+      {
+        job_class: "DependencyParentJob",
+        job_id: "parent-123"
+      }
+    ]
 
-    expect(job.temporal_dependencies).to eq([
-                                              {
-                                                job_class: "DependencyParentJob",
-                                                job_id: "parent-123"
-                                              }
-                                            ])
+    assert_equal expected_dependencies, job.temporal_dependencies
   end
 
   it "captures exact dependency run IDs" do
@@ -130,54 +136,59 @@ describe "ActiveJob Temporal job dependencies" do
         run_id: "run-123"
       }
     ).perform_later
+    expected_dependencies = [
+      {
+        workflow_id: "ajwf:DependencyParentJob:parent-123",
+        run_id: "run-123"
+      }
+    ]
 
-    expect(job.temporal_dependencies).to eq([
-                                              {
-                                                workflow_id: "ajwf:DependencyParentJob:parent-123",
-                                                run_id: "run-123"
-                                              }
-                                            ])
+    assert_equal expected_dependencies, job.temporal_dependencies
   end
 
   it "preserves standard ActiveJob set options" do
     job = child_job_class.set(depends_on: "parent-123", queue: "critical", priority: 10).perform_later
 
-    expect(job.queue_name).to eq("critical")
-    expect(job.priority).to eq(10)
+    assert_equal "critical", job.queue_name
+    assert_equal 10, job.priority
   end
 
   it "rejects an empty dependency list" do
-    expect { child_job_class.new.set(depends_on: []) }
-      .to raise_error(ArgumentError, /must contain at least one/)
+    error = assert_raises(ArgumentError) { child_job_class.new.set(depends_on: []) }
+    assert_match(/must contain at least one/, error.message)
   end
 
   it "rejects unsupported dependency entries" do
-    expect { child_job_class.new.set(depends_on: [Object.new]) }
-      .to raise_error(ArgumentError, /ActiveJob instances, job IDs, or dependency hashes/)
+    error = assert_raises(ArgumentError) { child_job_class.new.set(depends_on: [Object.new]) }
+    assert_match(/ActiveJob instances, job IDs, or dependency hashes/, error.message)
   end
 
   it "rejects dependency hashes without identifiers" do
-    expect { child_job_class.new.set(depends_on: [{ job_class: parent_job_class }]) }
-      .to raise_error(ArgumentError, /must include job_id or workflow_id/)
+    error = assert_raises(ArgumentError) { child_job_class.new.set(depends_on: [{ job_class: parent_job_class }]) }
+    assert_match(/must include job_id or workflow_id/, error.message)
   end
 
   it "rejects invalid failure policies" do
-    expect { child_job_class.new.set(depends_on: "parent-123", on_dependency_failure: :retry) }
-      .to raise_error(ArgumentError, /must be :fail or :ignore/)
+    error = assert_raises(ArgumentError) do
+      child_job_class.new.set(depends_on: "parent-123", on_dependency_failure: :retry)
+    end
+    assert_match(/must be :fail or :ignore/, error.message)
   end
 
   it "rejects invalid dependency wait options" do
-    expect { child_job_class.new.set(depends_on: "parent-123", dependency_wait: { timeout: 0 }) }
-      .to raise_error(ArgumentError, /dependency_wait timeout must be positive/)
+    error = assert_raises(ArgumentError) do
+      child_job_class.new.set(depends_on: "parent-123", dependency_wait: { timeout: 0 })
+    end
+    assert_match(/dependency_wait timeout must be positive/, error.message)
   end
 
   it "rejects failure policy configuration without dependencies" do
-    expect { child_job_class.new.set(on_dependency_failure: :ignore) }
-      .to raise_error(ArgumentError, /requires depends_on/)
+    error = assert_raises(ArgumentError) { child_job_class.new.set(on_dependency_failure: :ignore) }
+    assert_match(/requires depends_on/, error.message)
   end
 
   it "rejects dependency wait configuration without dependencies" do
-    expect { child_job_class.new.set(dependency_wait: { timeout: 1.minute }) }
-      .to raise_error(ArgumentError, /dependency_wait requires depends_on/)
+    error = assert_raises(ArgumentError) { child_job_class.new.set(dependency_wait: { timeout: 1.minute }) }
+    assert_match(/dependency_wait requires depends_on/, error.message)
   end
 end

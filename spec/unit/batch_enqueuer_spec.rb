@@ -21,29 +21,31 @@ describe ActiveJob::Temporal::BatchEnqueuer do
 
     result = enqueuer.enqueue(enumerable, concurrency: 2)
 
-    expect(result.success_count).to eq(3)
-    expect(result.results.map(&:index)).to eq([0, 1, 2])
-    expect(enumerable.each_count).to eq(1)
+    assert_equal 3, result.success_count
+    assert_equal [0, 1, 2], result.results.map(&:index)
+    assert_equal 1, enumerable.each_count
   end
 
   it "rejects oversized inputs from size hints without iterating" do
     items = sized_without_each(described_class::MAX_BATCH_SIZE + 1)
 
-    expect do
+    error = assert_raises(ArgumentError) do
       enqueuer.enqueue(items)
-    end.to raise_error(ArgumentError, /at most #{described_class::MAX_BATCH_SIZE}/)
+    end
+    assert_match(/at most #{described_class::MAX_BATCH_SIZE}/, error.message)
 
-    expect(items.each_called).to be(false)
+    refute items.each_called
   end
 
   it "stops traversing unsized enumerables after the batch size limit is exceeded" do
     items = infinite_jobs(fake_job("streamed-job"))
 
-    expect do
+    error = assert_raises(ArgumentError) do
       enqueuer.enqueue(items)
-    end.to raise_error(ArgumentError, /at most #{described_class::MAX_BATCH_SIZE}/)
+    end
+    assert_match(/at most #{described_class::MAX_BATCH_SIZE}/, error.message)
 
-    expect(items.yield_count).to eq(described_class::MAX_BATCH_SIZE + 1)
+    assert_equal described_class::MAX_BATCH_SIZE + 1, items.yield_count
   end
 
   it "keeps per-item failure reporting bounded by the accepted batch size" do
@@ -61,11 +63,11 @@ describe ActiveJob::Temporal::BatchEnqueuer do
 
     result = failing_enqueuer.enqueue(jobs)
 
-    expect(result.success?).to be(false)
-    expect(result.success_count).to eq(2)
-    expect(result.failure_count).to eq(1)
-    expect(result.failures.first.index).to eq(1)
-    expect(result.results.length).to eq(3)
+    refute result.success?
+    assert_equal 2, result.success_count
+    assert_equal 1, result.failure_count
+    assert_equal 1, result.failures.first.index
+    assert_equal 3, result.results.length
   end
 
   def fake_job(job_id)

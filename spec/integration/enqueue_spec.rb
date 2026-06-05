@@ -34,10 +34,10 @@ describe "ActiveJob Temporal enqueue", :integration do
 
     wait_for_result(42)
 
-    expect(TestJob.last_argument).to eq(42)
+    assert_equal 42, TestJob.last_argument
 
     description = wait_for_workflow_terminal_status(workflow_id)
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
   ensure
     stop_worker(@worker_thread)
   end
@@ -53,13 +53,13 @@ describe "ActiveJob Temporal enqueue", :integration do
     wait_for_result(42)
 
     # Verify job executed
-    expect(TestJob.last_argument).to eq(42)
+    assert_equal 42, TestJob.last_argument
 
     # Query workflow description to access search attributes
     description = wait_for_workflow_terminal_status(workflow_id)
 
     # Verify workflow completed
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
 
     # Access search attributes
     search_attrs = description.search_attributes
@@ -72,19 +72,19 @@ describe "ActiveJob Temporal enqueue", :integration do
     aj_tags_key = Temporalio::SearchAttributes::Key.new("ajTags", Temporalio::SearchAttributes::IndexedValueType::KEYWORD_LIST)
 
     # Verify search attributes
-    expect(search_attrs[aj_class_key]).to eq("TestJob")
-    expect(search_attrs[aj_queue_key]).to eq(task_queue)
-    expect(search_attrs[aj_job_id_key]).to eq(job.job_id)
-    expect(search_attrs[aj_tags_key]).to eq(%w[urgent customer_123])
+    assert_equal "TestJob", search_attrs[aj_class_key]
+    assert_equal task_queue, search_attrs[aj_queue_key]
+    assert_equal job.job_id, search_attrs[aj_job_id_key]
+    assert_equal %w[urgent customer_123], search_attrs[aj_tags_key]
 
     # Verify ajEnqueuedAt is a recent timestamp
     enqueued_at = search_attrs[aj_enqueued_at_key]
-    expect(enqueued_at).to be_a(Time)
-    expect(enqueued_at).to be_within(10).of(Time.now)
+    assert_instance_of Time, enqueued_at
+    assert_in_delta Time.now, enqueued_at, 10
 
     # Verify ajTenantId is not present (since job argument is an integer, not a tenant object)
     aj_tenant_id_key = Temporalio::SearchAttributes::Key.new("ajTenantId", Temporalio::SearchAttributes::IndexedValueType::INTEGER)
-    expect(search_attrs[aj_tenant_id_key]).to be_nil
+    assert_nil search_attrs[aj_tenant_id_key]
   ensure
     stop_worker(@worker_thread)
   end
@@ -115,13 +115,13 @@ describe "ActiveJob Temporal enqueue", :integration do
 
     result = ActiveJob::Temporal.update(job_class, job.job_id, :set_progress, 3, 10)
 
-    expect(result).to eq("completed" => 3, "total" => 10)
-    expect(ActiveJob::Temporal.query(job_class, job.job_id, :progress)).to eq("completed" => 3, "total" => 10)
+    assert_equal({ "completed" => 3, "total" => 10 }, result)
+    assert_equal({ "completed" => 3, "total" => 10 }, ActiveJob::Temporal.query(job_class, job.job_id, :progress))
   ensure
     stop_worker(@worker_thread)
   end
 
-  context "large payloads" do
+  describe "large payloads" do
     it "rejects job with payload > 250KB (default limit)" do
       # Create a large argument that exceeds the default 250KB limit
       large_argument = "x" * (251 * 1024)
@@ -133,9 +133,11 @@ describe "ActiveJob Temporal enqueue", :integration do
 
       ActiveJob::Base.queue_adapter = :temporal
 
-      expect do
+      error = assert_raises(ActiveJob::SerializationError) do
         job_class.perform_later(large_argument)
-      end.to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+      end
+
+      assert_match(/exceeds maximum allowed size/, error.message)
     end
 
     it "accepts job with payload < 250KB (default limit)" do
@@ -167,7 +169,7 @@ describe "ActiveJob Temporal enqueue", :integration do
         end
       end
 
-      expect(job_class.last_executed).to eq(100 * 1024)
+      assert_equal 100 * 1024, job_class.last_executed
     ensure
       stop_worker(@worker_thread)
     end
@@ -188,9 +190,11 @@ describe "ActiveJob Temporal enqueue", :integration do
 
       ActiveJob::Base.queue_adapter = :temporal
 
-      expect do
+      error = assert_raises(ActiveJob::SerializationError) do
         job_class.perform_later(medium_argument)
-      end.to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+      end
+
+      assert_match(/exceeds maximum allowed size/, error.message)
     ensure
       # Reset to default
       ActiveJob::Temporal.configure do |config|

@@ -20,7 +20,7 @@ describe ActiveJob::Temporal::AuditLog do
     ActiveJob::Temporal.config.audit_logger = nil
     ActiveJob::Temporal.config.logger = ruby_logger
     ActiveJob::Temporal.config.identity = nil
-    allow(Time).to receive(:now).and_return(fixed_time)
+    call_recorded_method(Time, :now, returns: fixed_time)
   end
 
   after do
@@ -34,7 +34,7 @@ describe ActiveJob::Temporal::AuditLog do
     it "does not log when audit logging is disabled" do
       described_class.record("job.started", job_id: "job-1")
 
-      expect(log_io.string).to eq("")
+      assert_equal "", log_io.string
     end
 
     it "writes structured JSON through the configured logger when enabled" do
@@ -43,10 +43,10 @@ describe ActiveJob::Temporal::AuditLog do
       described_class.record("job.started", job_id: "job-1", workflow_id: "workflow-1")
 
       payload = parsed_lines.first
-      expect(payload["event"]).to eq("job.started")
-      expect(payload["timestamp"]).to eq("2026-05-21T12:00:00Z")
-      expect(payload["job_id"]).to eq("job-1")
-      expect(payload["workflow_id"]).to eq("workflow-1")
+      assert_equal "job.started", payload["event"]
+      assert_equal "2026-05-21T12:00:00Z", payload["timestamp"]
+      assert_equal "job-1", payload["job_id"]
+      assert_equal "workflow-1", payload["workflow_id"]
     end
 
     it "uses audit_logger when configured" do
@@ -58,8 +58,8 @@ describe ActiveJob::Temporal::AuditLog do
 
       described_class.record("job.completed", job_id: "job-1")
 
-      expect(log_io.string).to eq("")
-      expect(JSON.parse(audit_io.string)["event"]).to eq("job.completed")
+      assert_equal "", log_io.string
+      assert_equal "job.completed", JSON.parse(audit_io.string)["event"]
     end
 
     it "keeps JSON output for plain audit loggers when SemanticLogger is loaded" do
@@ -68,7 +68,7 @@ describe ActiveJob::Temporal::AuditLog do
 
       described_class.record("job.started", job_id: "job-1")
 
-      expect(JSON.parse(log_io.string)["event"]).to eq("job.started")
+      assert_equal "job.started", JSON.parse(log_io.string)["event"]
     end
 
     it "removes raw arguments, payloads, and results from attributes" do
@@ -83,10 +83,10 @@ describe ActiveJob::Temporal::AuditLog do
       )
 
       payload = parsed_lines.first
-      expect(payload).to include("job_id" => "job-1")
-      expect(payload).not_to have_key("arguments")
-      expect(payload).not_to have_key("payload")
-      expect(payload).not_to have_key("result")
+      assert_equal "job-1", payload["job_id"]
+      refute payload.key?("arguments")
+      refute payload.key?("payload")
+      refute payload.key?("result")
     end
 
     it "removes free-form upstream error fields from attributes" do
@@ -104,14 +104,14 @@ describe ActiveJob::Temporal::AuditLog do
       )
 
       payload = parsed_lines.first
-      expect(payload).to include("job_id" => "job-1")
-      expect(payload).not_to have_key("message")
-      expect(payload).not_to have_key("target")
-      expect(payload).not_to have_key("error")
-      expect(payload).not_to have_key("error_message")
-      expect(payload).not_to have_key("exception")
-      expect(payload).not_to have_key("cause")
-      expect(log_io.string).not_to include("secret")
+      assert_equal "job-1", payload["job_id"]
+      refute payload.key?("message")
+      refute payload.key?("target")
+      refute payload.key?("error")
+      refute payload.key?("error_message")
+      refute payload.key?("exception")
+      refute payload.key?("cause")
+      refute_includes log_io.string, "secret"
     end
   end
 
@@ -121,24 +121,19 @@ describe ActiveJob::Temporal::AuditLog do
 
       attributes = described_class.error_attributes(error)
 
-      expect(attributes).to include(error_class: "RuntimeError")
-      expect(attributes[:error_fingerprint]).to match(/\A[0-9a-f]{64}\z/)
-      expect(attributes.values).not_to include(error.message)
+      assert_equal "RuntimeError", attributes[:error_class]
+      assert_match(/\A[0-9a-f]{64}\z/, attributes[:error_fingerprint])
+      refute_includes attributes.values, error.message
     end
   end
 
   describe ".activity_attributes_from_payload" do
     it "adds payload metadata and Temporal correlation IDs without arguments" do
-      info = instance_double(
-        "Temporalio::Activity::Info",
-        workflow_id: "workflow-1",
-        workflow_run_id: "run-1",
-        attempt: 2
-      )
-      context = instance_double("Temporalio::Activity::Context", info: info)
+      info = Struct.new(:workflow_id, :workflow_run_id, :attempt).new("workflow-1", "run-1", 2)
+      context = Struct.new(:info).new(info)
 
-      allow(Temporalio::Activity::Context).to receive(:exist?).and_return(true)
-      allow(Temporalio::Activity::Context).to receive(:current).and_return(context)
+      call_recorded_method(Temporalio::Activity::Context, :exist?, returns: true)
+      call_recorded_method(Temporalio::Activity::Context, :current, returns: context)
       ActiveJob::Temporal.config.identity = "worker-1"
 
       attributes = described_class.activity_attributes_from_payload(
@@ -148,16 +143,14 @@ describe ActiveJob::Temporal::AuditLog do
         "arguments" => ["secret"]
       )
 
-      expect(attributes).to include(
-        job_class: "AuditJob",
-        job_id: "job-1",
-        queue: "critical",
-        workflow_id: "workflow-1",
-        run_id: "run-1",
-        attempt: 2,
-        worker_id: "worker-1"
-      )
-      expect(attributes).not_to have_key(:arguments)
+      assert_equal "AuditJob", attributes[:job_class]
+      assert_equal "job-1", attributes[:job_id]
+      assert_equal "critical", attributes[:queue]
+      assert_equal "workflow-1", attributes[:workflow_id]
+      assert_equal "run-1", attributes[:run_id]
+      assert_equal 2, attributes[:attempt]
+      assert_equal "worker-1", attributes[:worker_id]
+      refute attributes.key?(:arguments)
     end
   end
 

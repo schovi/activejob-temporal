@@ -3,13 +3,13 @@
 require "spec_helper"
 
 describe ActiveJob::Temporal::Middleware::Chain do
-  subject(:chain) { described_class.new }
+  let(:chain) { described_class.new }
 
-  let(:job) { instance_double("Job") }
+  let(:job) { Object.new }
 
   describe "#call" do
     it "calls the terminal block when no middleware is registered" do
-      expect(chain.call(job) { :performed }).to eq(:performed)
+      assert_equal :performed, chain.call(job) { :performed }
     end
 
     it "preserves registration order" do
@@ -36,14 +36,17 @@ describe ActiveJob::Temporal::Middleware::Chain do
         :performed
       end
 
-      expect(result).to eq(:performed)
-      expect(events).to eq([
-                             "before first",
-                             "before second",
-                             "perform",
-                             "after second",
-                             "after first"
-                           ])
+      assert_equal :performed, result
+      assert_equal(
+        [
+          "before first",
+          "before second",
+          "perform",
+          "after second",
+          "after first"
+        ],
+        events
+      )
     end
 
     it "supports callable middleware instances" do
@@ -55,18 +58,20 @@ describe ActiveJob::Temporal::Middleware::Chain do
 
       chain.add(middleware)
 
-      expect(chain.call(job) { :performed }).to eq(:performed)
-      expect(events).to eq([job])
+      assert_equal :performed, chain.call(job) { :performed }
+      assert_equal [job], events
     end
 
     it "does not rebuild the middleware stack for each call" do
       middleware = ->(_received_job, &block) { block.call }
       chain.add(middleware)
-      entries = chain.instance_variable_get(:@entries)
+      entries = Object.new
+      def entries.reverse_each
+        raise "middleware stack was rebuilt"
+      end
+      chain.instance_variable_set(:@entries, entries)
 
-      expect(entries).not_to receive(:reverse_each)
-
-      expect(chain.call(job) { :performed }).to eq(:performed)
+      assert_equal :performed, chain.call(job) { :performed }
     end
 
     it "propagates middleware exceptions" do
@@ -83,11 +88,13 @@ describe ActiveJob::Temporal::Middleware::Chain do
 
       chain.add(middleware_class, error)
 
-      expect { chain.call(job) { :performed } }.to raise_error(error)
+      raised_error = assert_raises(RuntimeError) { chain.call(job) { :performed } }
+      assert_same error, raised_error
     end
 
     it "requires a terminal block" do
-      expect { chain.call(job) }.to raise_error(ArgumentError, /requires a block/)
+      error = assert_raises(ArgumentError) { chain.call(job) }
+      assert_match(/requires a block/, error.message)
     end
   end
 
@@ -109,7 +116,7 @@ describe ActiveJob::Temporal::Middleware::Chain do
       chain.add(middleware_class, events)
       chain.call(job) { :performed }
 
-      expect(events).to eq([:called])
+      assert_equal [:called], events
     end
 
     it "keeps equivalent registrations stable when constructor arguments mutate" do
@@ -130,7 +137,7 @@ describe ActiveJob::Temporal::Middleware::Chain do
       chain.add(middleware_class, events)
       chain.call(job) { :performed }
 
-      expect(events).to eq(%i[called called])
+      assert_equal %i[called called], events
     end
 
     it "keeps scalar argument keys stable when original strings mutate" do
@@ -153,7 +160,7 @@ describe ActiveJob::Temporal::Middleware::Chain do
       chain.add(middleware_class, "initial", events)
       chain.call(job) { :performed }
 
-      expect(events).to eq(["initial"])
+      assert_equal ["initial"], events
     end
 
     it "allows repeated middleware classes with different arguments" do
@@ -174,7 +181,7 @@ describe ActiveJob::Temporal::Middleware::Chain do
       chain.add(middleware_class, :second, events)
       chain.call(job) { :performed }
 
-      expect(events).to eq(%i[first second])
+      assert_equal %i[first second], events
     end
 
     it "replaces reloaded middleware classes with the same name" do
@@ -200,7 +207,7 @@ describe ActiveJob::Temporal::Middleware::Chain do
       chain.add(first_class)
       chain.add(second_class)
 
-      expect(chain.call(job) { :performed }).to eq(:performed)
+      assert_equal :performed, chain.call(job) { :performed }
     end
 
     it "replaces reloaded callable middleware from the same source" do
@@ -210,19 +217,21 @@ describe ActiveJob::Temporal::Middleware::Chain do
       chain.add(build_reloadable_callable(events))
       chain.call(job) { :performed }
 
-      expect(events).to eq([:called])
+      assert_equal [:called], events
     end
 
     it "rejects middleware that cannot be called" do
       middleware_class = Class.new
 
-      expect { chain.add(middleware_class) }.to raise_error(ArgumentError, /respond to #call/)
+      error = assert_raises(ArgumentError) { chain.add(middleware_class) }
+      assert_match(/respond to #call/, error.message)
     end
 
     it "rejects constructor arguments for callable instances" do
       middleware = ->(_job, &block) { block.call }
 
-      expect { chain.add(middleware, :argument) }.to raise_error(ArgumentError, /arguments require/)
+      error = assert_raises(ArgumentError) { chain.add(middleware, :argument) }
+      assert_match(/arguments require/, error.message)
     end
   end
 

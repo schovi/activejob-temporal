@@ -3,9 +3,47 @@
 require "spec_helper"
 require "activejob/temporal/observability/datadog"
 
+module DatadogSpecSupport
+  class FakeStatsd
+    attr_reader :calls
+
+    def initialize
+      @calls = []
+    end
+
+    def increment(metric, **keywords)
+      calls << { method_name: :increment, metric: metric, value: nil, keywords: keywords }
+    end
+
+    def histogram(metric, value, **keywords)
+      calls << { method_name: :histogram, metric: metric, value: value, keywords: keywords }
+    end
+
+    def gauge(metric, value, **keywords)
+      calls << { method_name: :gauge, metric: metric, value: value, keywords: keywords }
+    end
+  end
+
+  class FakeSpan
+    attr_reader :tags
+
+    def initialize
+      @tags = []
+    end
+
+    def set_tag(name, value)
+      tags << [name, value]
+    end
+  end
+
+  class FakeTrace
+    def to_digest = "digest"
+  end
+end
+
 describe ActiveJob::Temporal::Observability::Datadog do
-  let(:statsd) { double("Statsd", increment: nil, histogram: nil, gauge: nil) }
-  let(:span) { double("Span", set_tag: nil) }
+  let(:statsd) { DatadogSpecSupport::FakeStatsd.new }
+  let(:span) { DatadogSpecSupport::FakeSpan.new }
   let(:payload) do
     {
       job_class: "ExampleJob",
@@ -16,12 +54,12 @@ describe ActiveJob::Temporal::Observability::Datadog do
     }
   end
   let(:metric_tags) do
-    contain_exactly(
+    [
       "job_class:ExampleJob",
       "queue:critical",
       "namespace:default",
       "task_queue:workers"
-    )
+    ]
   end
 
   before do
@@ -33,7 +71,9 @@ describe ActiveJob::Temporal::Observability::Datadog do
     Datadog::Tracing.define_singleton_method(:active_trace) { nil }
     Datadog::Tracing::Contrib::HTTP.define_singleton_method(:inject) { |_digest, _carrier| nil }
     Datadog::Tracing::Contrib::HTTP.define_singleton_method(:extract) { |_carrier| nil }
-    allow(Datadog::Tracing).to receive(:trace).and_yield(span)
+    @trace_calls = call_recorded_method(Datadog::Tracing, :trace) do |_name, **_options, &block|
+      block.call(span)
+    end
   end
 
   it "creates APM spans and DogStatsD metrics for job execution" do
@@ -41,21 +81,18 @@ describe ActiveJob::Temporal::Observability::Datadog do
 
     result = adapter.instrument(:perform, payload) { :ok }
 
-    expect(result).to be(:ok)
-    expect(Datadog::Tracing).to have_received(:trace).with(
-      "activejob_temporal.perform",
-      hash_including(service: "activejob-temporal", resource: "ExampleJob")
-    )
-    expect(span).to have_received(:set_tag).with("activejob_temporal.workflow_id", "workflow-1")
-    expect(statsd).to have_received(:increment).with(
-      "activejob_temporal.jobs.completed",
-      tags: metric_tags
-    )
-    expect(statsd).to have_received(:histogram).with(
-      "activejob_temporal.job_duration.seconds",
-      kind_of(Float),
-      tags: metric_tags
-    )
+    assert_same :ok, result
+
+    trace_call = @trace_calls.calls_for(:trace).first
+    assert_equal ["activejob_temporal.perform"], trace_call.arguments
+    assert_hash_includes({ service: "activejob-temporal", resource: "ExampleJob" }, trace_call.keywords)
+    assert_includes span.tags, ["activejob_temporal.workflow_id", "workflow-1"]
+
+    completed_call = assert_statsd_call(:increment, "activejob_temporal.jobs.completed")
+    duration_call = assert_statsd_call(:histogram, "activejob_temporal.job_duration.seconds")
+    assert_unordered_equal metric_tags, completed_call[:keywords][:tags]
+    assert_kind_of Float, duration_call[:value]
+    assert_unordered_equal metric_tags, duration_call[:keywords][:tags]
   end
 
   it "records point metrics through DogStatsD" do
@@ -64,68 +101,64 @@ describe ActiveJob::Temporal::Observability::Datadog do
     adapter.record(:enqueue, payload)
     adapter.record(:active_tasks, task_queue: "default", count: 2)
 
-    expect(statsd).to have_received(:increment).with(
-      "activejob_temporal.jobs.enqueued",
-      tags: metric_tags
-    )
-    expect(statsd).to have_received(:gauge).with(
-      "activejob_temporal.active_tasks",
-      2,
-      tags: include("task_queue:default")
-    )
+    enqueue_call = assert_statsd_call(:increment, "activejob_temporal.jobs.enqueued")
+    active_tasks_call = assert_statsd_call(:gauge, "activejob_temporal.active_tasks")
+    assert_unordered_equal metric_tags, enqueue_call[:keywords][:tags]
+    assert_equal 2, active_tasks_call[:value]
+    assert_includes active_tasks_call[:keywords][:tags], "task_queue:default"
   end
 
   it "omits workflow_id from failure, retry, and payload size metric tags" do
     stub_const("DatadogSpecExampleError", Class.new(StandardError))
     adapter = described_class.new(statsd: statsd)
 
-    expect do
+    assert_raises(DatadogSpecExampleError) do
       adapter.instrument(:perform, payload) { raise DatadogSpecExampleError }
-    end.to raise_error(DatadogSpecExampleError)
+    end
 
     adapter.record(:retry, payload.merge(error: "DatadogSpecExampleError"))
     adapter.record(:payload_serialize, payload.merge(bytes: 512))
 
-    expect(statsd).to have_received(:increment).with(
-      "activejob_temporal.jobs.failed",
-      tags: contain_exactly(
-        "job_class:ExampleJob",
-        "queue:critical",
-        "namespace:default",
-        "task_queue:workers",
-        "error:DatadogSpecExampleError"
-      )
-    )
-    expect(statsd).to have_received(:increment).with(
-      "activejob_temporal.retries",
-      tags: contain_exactly(
-        "job_class:ExampleJob",
-        "queue:critical",
-        "namespace:default",
-        "task_queue:workers",
-        "error:DatadogSpecExampleError"
-      )
-    )
-    expect(statsd).to have_received(:histogram).with(
-      "activejob_temporal.job_duration.seconds",
-      kind_of(Float),
-      tags: metric_tags
-    )
-    expect(statsd).to have_received(:histogram).with(
-      "activejob_temporal.payload_size.bytes",
-      512,
-      tags: metric_tags
-    )
+    error_tags = [
+      "job_class:ExampleJob",
+      "queue:critical",
+      "namespace:default",
+      "task_queue:workers",
+      "error:DatadogSpecExampleError"
+    ]
+
+    failed_call = assert_statsd_call(:increment, "activejob_temporal.jobs.failed")
+    retry_call = assert_statsd_call(:increment, "activejob_temporal.retries")
+    duration_call = assert_statsd_call(:histogram, "activejob_temporal.job_duration.seconds")
+    payload_size_call = assert_statsd_call(:histogram, "activejob_temporal.payload_size.bytes")
+
+    assert_unordered_equal error_tags, failed_call[:keywords][:tags]
+    assert_unordered_equal error_tags, retry_call[:keywords][:tags]
+    assert_kind_of Float, duration_call[:value]
+    assert_unordered_equal metric_tags, duration_call[:keywords][:tags]
+    assert_equal 512, payload_size_call[:value]
+    assert_unordered_equal metric_tags, payload_size_call[:keywords][:tags]
   end
 
   it "injects Datadog trace context into a carrier" do
-    trace = double("Trace", to_digest: "digest")
+    trace = DatadogSpecSupport::FakeTrace.new
     adapter = described_class.new(statsd: statsd)
-    allow(Datadog::Tracing).to receive(:active_trace).and_return(trace)
-    allow(Datadog::Tracing::Contrib::HTTP).to receive(:inject) do |_digest, carrier|
+    call_recorded_method(Datadog::Tracing, :active_trace, returns: trace)
+    call_recorded_method(Datadog::Tracing::Contrib::HTTP, :inject) do |_digest, carrier|
       carrier["x-datadog-trace-id"] = "123"
     end
 
-    expect(adapter.trace_context_for_enqueue({})).to eq("x-datadog-trace-id" => "123")
+    assert_equal({ "x-datadog-trace-id" => "123" }, adapter.trace_context_for_enqueue({}))
+  end
+
+  private
+
+  def assert_statsd_call(method_name, metric)
+    call = statsd.calls.find do |candidate|
+      candidate[:method_name] == method_name && candidate[:metric] == metric
+    end
+
+    refute_nil call
+    call
   end
 end

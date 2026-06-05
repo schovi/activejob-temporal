@@ -22,7 +22,7 @@ describe ActiveJob::Temporal::ConnectionWorkerPool do
     successful_connection = connection_class.new(Queue.new)
     handled_connections = Queue.new
 
-    allow(ActiveJob::Temporal::Logger).to receive(:error)
+    logger_errors = call_recorded_method(ActiveJob::Temporal::Logger, :error)
 
     @pool = described_class.new(size: 1, queue_size: 2, name: "test-pool") do |connection|
       raise "handler failed" if connection.equal?(failed_connection)
@@ -30,15 +30,19 @@ describe ActiveJob::Temporal::ConnectionWorkerPool do
       handled_connections << connection
     end.start
 
-    expect(@pool.enqueue(failed_connection)).to be(true)
-    expect(pop_queue(failed_connection.closed_connections)).to be(failed_connection)
-    expect(ActiveJob::Temporal::Logger).to have_received(:error).with(
-      "connection_worker_handler_failed",
-      hash_including(pool: "test-pool", error_class: "RuntimeError", message: "handler failed")
-    )
+    assert @pool.enqueue(failed_connection)
+    assert_same failed_connection, pop_queue(failed_connection.closed_connections)
 
-    expect(@pool.enqueue(successful_connection)).to be(true)
-    expect(pop_queue(handled_connections)).to be(successful_connection)
+    error_call = logger_errors.calls_for(:error).find do |call|
+      call.arguments == ["connection_worker_handler_failed"]
+    end
+    refute_nil error_call
+    assert_equal "test-pool", error_call.keywords.fetch(:pool)
+    assert_equal "RuntimeError", error_call.keywords.fetch(:error_class)
+    assert_equal "handler failed", error_call.keywords.fetch(:message)
+
+    assert @pool.enqueue(successful_connection)
+    assert_same successful_connection, pop_queue(handled_connections)
   end
 
   def pop_queue(queue)

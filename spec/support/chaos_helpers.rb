@@ -151,7 +151,7 @@ module ChaosHelpers
 
   def expect_completed_once(label)
     completed = ChaosEventLog.events_for("job.completed", label: label)
-    expect(completed.size).to eq(1)
+    assert_equal 1, completed.size
     completed.first
   end
 

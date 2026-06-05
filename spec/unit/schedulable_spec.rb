@@ -15,78 +15,87 @@ describe ActiveJob::Temporal::Schedulable do
   end
 
   it "is included into ActiveJob::Base" do
-    expect(ActiveJob::Base.included_modules).to include(described_class)
+    assert_includes ActiveJob::Base.included_modules, described_class
   end
 
   it "does not add a generic schedule class method" do
-    expect(job_class).not_to respond_to(:schedule)
+    refute_respond_to job_class, :schedule
   end
 
   it "stores a schedule declaration on the job class" do
     schedule = job_class.temporal_schedule(cron: "0 2 * * *", timezone: "America/New_York")
 
-    expect(schedule).to be_a(ActiveJob::Temporal::Schedule)
-    expect(job_class.temporal_schedule).to be(schedule)
+    assert_instance_of ActiveJob::Temporal::Schedule, schedule
+    assert_same schedule, job_class.temporal_schedule
   end
 
   it "registers a declared schedule explicitly" do
-    schedule = instance_double(ActiveJob::Temporal::Schedule)
-    allow(ActiveJob::Temporal::Schedule).to receive(:new).and_return(schedule)
-    allow(schedule).to receive(:create).and_return("schedule-handle")
+    schedule = fake_schedule
+    call_recorded_method(ActiveJob::Temporal::Schedule, :new, returns: schedule)
 
     job_class.temporal_schedule(cron: "0 2 * * *")
 
-    expect(job_class.create_temporal_schedule).to eq("schedule-handle")
-    expect(schedule).to have_received(:create)
+    assert_equal "schedule-handle", job_class.create_temporal_schedule
+    assert_equal 1, schedule.create_count
   end
 
   it "registers an ad hoc schedule without storing it first" do
-    schedule = instance_double(ActiveJob::Temporal::Schedule)
-    allow(ActiveJob::Temporal::Schedule).to receive(:new).and_return(schedule)
-    allow(schedule).to receive(:create).and_return("schedule-handle")
+    schedule = fake_schedule
+    schedule_calls = call_recorded_method(ActiveJob::Temporal::Schedule, :new, returns: schedule)
 
     result = job_class.create_temporal_schedule(cron: "0 */6 * * *", timezone: "UTC", overlap_policy: :skip)
 
-    expect(result).to eq("schedule-handle")
-    expect(ActiveJob::Temporal::Schedule).to have_received(:new).with(
+    assert_equal "schedule-handle", result
+    assert_equal [
       job_class,
-      cron: "0 */6 * * *",
-      timezone: "UTC",
-      overlap_policy: :skip
-    )
+      { cron: "0 */6 * * *", timezone: "UTC", overlap_policy: :skip }
+    ], schedule_calls.calls_for(:new).first.arguments
   end
 
   it "merges declared schedule options when registering with overrides" do
-    schedule = instance_double(ActiveJob::Temporal::Schedule)
-    allow(ActiveJob::Temporal::Schedule).to receive(:new).and_return(schedule)
-    allow(schedule).to receive(:options).and_return(
+    schedule = fake_schedule(
       cron: "0 2 * * *",
       timezone: "America/New_York",
       overlap_policy: :skip
     )
-    allow(schedule).to receive(:create).and_return("schedule-handle")
+    schedule_calls = call_recorded_method(ActiveJob::Temporal::Schedule, :new, returns: schedule)
 
     job_class.temporal_schedule(cron: "0 2 * * *", timezone: "America/New_York", overlap_policy: :skip)
 
     job_class.create_temporal_schedule(id: "daily-report:42", args: [42])
 
-    expect(ActiveJob::Temporal::Schedule).to have_received(:new).with(
+    assert_equal [
       job_class,
-      cron: "0 2 * * *",
-      timezone: "America/New_York",
-      overlap_policy: :skip,
-      id: "daily-report:42",
-      args: [42]
-    )
+      {
+        cron: "0 2 * * *",
+        timezone: "America/New_York",
+        overlap_policy: :skip,
+        id: "daily-report:42",
+        args: [42]
+      }
+    ], schedule_calls.calls_for(:new).last.arguments
   end
 
   it "raises when registering without a declaration or options" do
-    expect { job_class.create_temporal_schedule }
-      .to raise_error(ArgumentError, /No temporal_schedule defined/)
+    error = assert_raises(ArgumentError) { job_class.create_temporal_schedule }
+
+    assert_match(/No temporal_schedule defined/, error.message)
   end
 
   it "raises when declaration options are not a hash" do
-    expect { job_class.temporal_schedule("daily") }
-      .to raise_error(ArgumentError, /temporal_schedule options must be a Hash/)
+    error = assert_raises(ArgumentError) { job_class.temporal_schedule("daily") }
+
+    assert_match(/temporal_schedule options must be a Hash/, error.message)
+  end
+
+  private
+
+  def fake_schedule(**options)
+    Struct.new(:options, :create_count, keyword_init: true) do
+      def create
+        self.create_count += 1
+        "schedule-handle"
+      end
+    end.new(options: options, create_count: 0)
   end
 end

@@ -25,13 +25,15 @@ describe ActiveJob::Temporal::HealthCheckServer do
     it "defaults to localhost binding" do
       @server = described_class.new(port: 0, state: state).start
 
-      expect(@server.bind_address).to eq("127.0.0.1")
+      assert_equal "127.0.0.1", @server.bind_address
     end
 
     it "rejects public binds without explicit opt-in" do
-      expect do
+      error = assert_raises(ArgumentError) do
         described_class.new(port: 0, bind_address: "0.0.0.0", state: state).start
-      end.to raise_error(ArgumentError, /health check endpoint.*public bind opt-in/)
+      end
+
+      assert_match(/health check endpoint.*public bind opt-in/, error.message)
     end
 
     it "serves worker health as JSON" do
@@ -42,13 +44,13 @@ describe ActiveJob::Temporal::HealthCheckServer do
       response = http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
       status, body = parse_response(response)
 
-      expect(status).to eq("HTTP/1.1 200 OK")
-      expect(body["status"]).to eq("ok")
-      expect(body["worker_running"]).to be(true)
-      expect(body["task_queue"]).to eq("critical")
-      expect(body["max_concurrent_activities"]).to eq(50)
-      expect(body["active_tasks"]).to eq(1)
-      expect(body["last_poll"]).to eq("2026-05-20T10:01:00Z")
+      assert_equal "HTTP/1.1 200 OK", status
+      assert_equal "ok", body["status"]
+      assert_equal true, body["worker_running"]
+      assert_equal "critical", body["task_queue"]
+      assert_equal 50, body["max_concurrent_activities"]
+      assert_equal 1, body["active_tasks"]
+      assert_equal "2026-05-20T10:01:00Z", body["last_poll"]
     end
 
     it "returns service unavailable when the worker is stopped" do
@@ -57,8 +59,8 @@ describe ActiveJob::Temporal::HealthCheckServer do
       response = http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
       status, body = parse_response(response)
 
-      expect(status).to eq("HTTP/1.1 503 Service Unavailable")
-      expect(body["status"]).to eq("stopped")
+      assert_equal "HTTP/1.1 503 Service Unavailable", status
+      assert_equal "stopped", body["status"]
     end
 
     it "returns not found for other paths" do
@@ -67,8 +69,8 @@ describe ActiveJob::Temporal::HealthCheckServer do
       response = http_request("GET /missing HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
       status, body = parse_response(response)
 
-      expect(status).to eq("HTTP/1.1 404 Not Found")
-      expect(body["error"]).to eq("not_found")
+      assert_equal "HTTP/1.1 404 Not Found", status
+      assert_equal "not_found", body["error"]
     end
 
     it "returns no response body for HEAD requests" do
@@ -78,9 +80,9 @@ describe ActiveJob::Temporal::HealthCheckServer do
       response = http_request("HEAD /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
       headers, body = response.split("\r\n\r\n", 2)
 
-      expect(headers).to include("HTTP/1.1 200 OK")
-      expect(headers).to include("Content-Length: 0")
-      expect(body.to_s).to eq("")
+      assert_includes headers, "HTTP/1.1 200 OK"
+      assert_includes headers, "Content-Length: 0"
+      assert_empty body.to_s
     end
 
     it "returns bad request for malformed request lines" do
@@ -89,8 +91,8 @@ describe ActiveJob::Temporal::HealthCheckServer do
       response = http_request("GET\r\nHost: 127.0.0.1\r\n\r\n")
       status, body = parse_response(response)
 
-      expect(status).to eq("HTTP/1.1 400 Bad Request")
-      expect(body["error"]).to eq("bad_request")
+      assert_equal "HTTP/1.1 400 Bad Request", status
+      assert_equal "bad_request", body["error"]
     end
 
     it "keeps serving when another client stalls mid-request" do
@@ -102,8 +104,8 @@ describe ActiveJob::Temporal::HealthCheckServer do
       response = http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
       status, body = parse_response(response)
 
-      expect(status).to eq("HTTP/1.1 200 OK")
-      expect(body["status"]).to eq("ok")
+      assert_equal "HTTP/1.1 200 OK", status
+      assert_equal "ok", body["status"]
     ensure
       stalled_socket&.close
     end
@@ -111,9 +113,10 @@ describe ActiveJob::Temporal::HealthCheckServer do
     it "does not create a thread for each stalled client" do
       state.mark_started!
       created_threads = Queue.new
-      allow(Thread).to receive(:new).and_wrap_original do |original, *arguments, &block|
+      original_thread_new = Thread.method(:new)
+      call_recorded_method(Thread, :new) do |*arguments, &block|
         created_threads << true
-        original.call(*arguments, &block)
+        original_thread_new.call(*arguments, &block)
       end
       @server = described_class.new(port: 0, bind_address: "127.0.0.1", state: state).start
       threads_after_start = created_threads.length
@@ -125,7 +128,7 @@ describe ActiveJob::Temporal::HealthCheckServer do
       end
       sleep 0.2
 
-      expect(created_threads.length).to eq(threads_after_start)
+      assert_equal threads_after_start, created_threads.length
     ensure
       stalled_sockets&.each(&:close)
     end
@@ -145,8 +148,8 @@ describe ActiveJob::Temporal::HealthCheckServer do
       response = http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
       status, body = parse_response(response)
 
-      expect(status).to eq("HTTP/1.1 200 OK")
-      expect(body["status"]).to eq("ok")
+      assert_equal "HTTP/1.1 200 OK", status
+      assert_equal "ok", body["status"]
     ensure
       stalled_sockets&.each(&:close)
     end
@@ -161,31 +164,36 @@ describe ActiveJob::Temporal::HealthCheckServer do
       response = http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
       status, body = parse_response(response)
 
-      expect(@server.running?).to be(true)
-      expect(status).to eq("HTTP/1.1 200 OK")
-      expect(body["status"]).to eq("ok")
+      assert @server.running?
+      assert_equal "HTTP/1.1 200 OK", status
+      assert_equal "ok", body["status"]
     end
 
     it "returns internal server error for state failures and keeps serving later requests" do
       failing_state = flaky_health_state(described_class::CONNECTION_WORKERS)
-      allow(ActiveJob::Temporal::Logger).to receive(:error)
+      logger_errors = call_recorded_method(ActiveJob::Temporal::Logger, :error)
       @server = described_class.new(port: 0, bind_address: "127.0.0.1", state: failing_state).start
 
       described_class::CONNECTION_WORKERS.times do
         status, body = parse_response(http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"))
 
-        expect(status).to eq("HTTP/1.1 500 Internal Server Error")
-        expect(body["error"]).to eq("internal_server_error")
+        assert_equal "HTTP/1.1 500 Internal Server Error", status
+        assert_equal "internal_server_error", body["error"]
       end
 
       status, body = parse_response(http_request("GET /health HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"))
 
-      expect(status).to eq("HTTP/1.1 200 OK")
-      expect(body["status"]).to eq("ok")
-      expect(ActiveJob::Temporal::Logger).to have_received(:error).with(
-        "health_check_request_failed",
-        hash_including(error_class: "RuntimeError", message: "health snapshot failed")
-      ).exactly(described_class::CONNECTION_WORKERS).times
+      assert_equal "HTTP/1.1 200 OK", status
+      assert_equal "ok", body["status"]
+
+      matching_errors = logger_errors.calls_for(:error).count do |call|
+        attributes = call.arguments[1] || call.keywords
+
+        call.arguments.first == "health_check_request_failed" &&
+          attributes[:error_class] == "RuntimeError" &&
+          attributes[:message] == "health snapshot failed"
+      end
+      assert_equal described_class::CONNECTION_WORKERS, matching_errors
     end
   end
 

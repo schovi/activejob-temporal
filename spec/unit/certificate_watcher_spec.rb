@@ -27,14 +27,10 @@ end
 
 describe ActiveJob::Temporal::CertificateWatcher do
   it "extracts configured TLS paths" do
-    config = instance_double(
-      ActiveJob::Temporal::Configuration,
-      tls_cert_path: "/cert.pem",
-      tls_key_path: "/key.pem",
-      tls_server_root_ca_cert_path: nil
-    )
+    config_class = Struct.new(:tls_cert_path, :tls_key_path, :tls_server_root_ca_cert_path)
+    config = config_class.new("/cert.pem", "/key.pem", nil)
 
-    expect(described_class.paths_from_config(config)).to eq(["/cert.pem", "/key.pem"])
+    assert_equal ["/cert.pem", "/key.pem"], described_class.paths_from_config(config)
   end
 
   it "watches parent directories and reloads when a watched file changes" do
@@ -51,13 +47,13 @@ describe ActiveJob::Temporal::CertificateWatcher do
         debounce_seconds: 0
       )
 
-      expect(watcher.start).to be(watcher)
-      expect(listener_factory.listener.started).to be(true)
-      expect(listener_factory.listener.directories).to eq([directory])
+      assert_same watcher, watcher.start
+      assert listener_factory.listener.started
+      assert_equal [directory], listener_factory.listener.directories
 
       listener_factory.listener.callback.call([cert_path], [], [])
 
-      expect(reloads).to eq([:reload])
+      assert_equal [:reload], reloads
     end
   end
 
@@ -74,7 +70,7 @@ describe ActiveJob::Temporal::CertificateWatcher do
 
       watcher.handle_changes([File.join(directory, "other.pem")])
 
-      expect(reloads).to be_empty
+      assert_empty reloads
     end
   end
 
@@ -92,7 +88,7 @@ describe ActiveJob::Temporal::CertificateWatcher do
       watcher.handle_changes([cert_path])
       watcher.handle_changes([cert_path])
 
-      expect(reloads).to eq([:reload])
+      assert_equal [:reload], reloads
     end
   end
 
@@ -109,7 +105,7 @@ describe ActiveJob::Temporal::CertificateWatcher do
       watcher.start
       watcher.stop
 
-      expect(listener_factory.listener.stopped).to be(true)
+      assert listener_factory.listener.stopped
     end
   end
 end

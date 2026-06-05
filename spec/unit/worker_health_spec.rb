@@ -4,7 +4,7 @@ require "spec_helper"
 require "activejob/temporal/worker_runtime"
 
 describe ActiveJob::Temporal::WorkerHealth do
-  subject(:worker_health) do
+  let(:worker_health) do
     described_class.new(
       task_queue: "critical",
       namespace: "production",
@@ -15,40 +15,37 @@ describe ActiveJob::Temporal::WorkerHealth do
   end
 
   before do
-    allow(ActiveJob::Temporal::Observability).to receive(:emit)
+    @observability_events = call_recorded_method(ActiveJob::Temporal::Observability, :emit)
   end
 
   it "reports stopped state before the worker starts" do
     payload = worker_health.snapshot
 
-    expect(payload[:status]).to eq("stopped")
-    expect(payload[:worker_running]).to be(false)
-    expect(payload[:uptime_seconds]).to eq(0)
-    expect(payload[:active_tasks]).to eq(0)
-    expect(payload[:last_poll]).to be_nil
-    expect(payload[:task_queue]).to eq("critical")
-    expect(payload[:namespace]).to eq("production")
-    expect(payload[:target]).to eq("temporal.example.com:7233")
-    expect(payload[:max_concurrent_activities]).to eq(50)
-    expect(payload[:max_concurrent_workflows]).to eq(10)
-    expect(payload[:pid]).to eq(Process.pid)
+    assert_equal "stopped", payload[:status]
+    refute payload[:worker_running]
+    assert_equal 0, payload[:uptime_seconds]
+    assert_equal 0, payload[:active_tasks]
+    assert_nil payload[:last_poll]
+    assert_equal "critical", payload[:task_queue]
+    assert_equal "production", payload[:namespace]
+    assert_equal "temporal.example.com:7233", payload[:target]
+    assert_equal 50, payload[:max_concurrent_activities]
+    assert_equal 10, payload[:max_concurrent_workflows]
+    assert_equal Process.pid, payload[:pid]
   end
 
   it "reports ok state while the worker is running" do
     started_at = Time.utc(2026, 5, 20, 10, 0, 0)
-    allow(Time).to receive(:now).and_return(started_at)
+    call_recorded_method(Time, :now, returns: started_at)
     worker_health.mark_started!
 
     payload = worker_health.snapshot(now: started_at + 12)
 
-    expect(payload[:status]).to eq("ok")
-    expect(payload[:worker_running]).to be(true)
-    expect(payload[:started_at]).to eq("2026-05-20T10:00:00Z")
-    expect(payload[:uptime_seconds]).to eq(12)
-    expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
-      :worker_start,
-      hash_including(task_queue: "critical", namespace: "production")
-    )
+    assert_equal "ok", payload[:status]
+    assert payload[:worker_running]
+    assert_equal "2026-05-20T10:00:00Z", payload[:started_at]
+    assert_equal 12, payload[:uptime_seconds]
+    assert_observability_event :worker_start, task_queue: "critical", namespace: "production"
   end
 
   it "tracks active activity tasks and last task start" do
@@ -57,32 +54,23 @@ describe ActiveJob::Temporal::WorkerHealth do
     worker_health.record_task_started!(now: polled_at)
     started_payload = worker_health.snapshot
 
-    expect(started_payload[:active_tasks]).to eq(1)
-    expect(started_payload[:last_poll]).to eq("2026-05-20T10:01:00Z")
+    assert_equal 1, started_payload[:active_tasks]
+    assert_equal "2026-05-20T10:01:00Z", started_payload[:last_poll]
 
     worker_health.record_task_finished!
 
-    expect(worker_health.snapshot[:active_tasks]).to eq(0)
-    expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
-      :active_tasks,
-      hash_including(task_queue: "critical", count: 1)
-    )
-    expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
-      :active_tasks,
-      hash_including(task_queue: "critical", count: 0)
-    )
+    assert_equal 0, worker_health.snapshot[:active_tasks]
+    assert_observability_event :active_tasks, task_queue: "critical", count: 1
+    assert_observability_event :active_tasks, task_queue: "critical", count: 0
   end
 
   it "reports stopped after shutdown" do
     worker_health.mark_started!
     worker_health.mark_stopped!
 
-    expect(worker_health.snapshot[:status]).to eq("stopped")
-    expect(worker_health.snapshot[:worker_running]).to be(false)
-    expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
-      :worker_stop,
-      hash_including(task_queue: "critical", namespace: "production")
-    )
+    assert_equal "stopped", worker_health.snapshot[:status]
+    refute worker_health.snapshot[:worker_running]
+    assert_observability_event :worker_stop, task_queue: "critical", namespace: "production"
   end
 
   it "wraps activity execution with health tracking" do
@@ -97,9 +85,20 @@ describe ActiveJob::Temporal::WorkerHealth do
 
     result = inbound.execute(:input)
 
-    expect(result).to eq(:ok)
-    expect(active_tasks_during_execution).to eq(1)
-    expect(worker_health.snapshot[:active_tasks]).to eq(0)
-    expect(worker_health.snapshot[:last_poll]).not_to be_nil
+    assert_equal :ok, result
+    assert_equal 1, active_tasks_during_execution
+    assert_equal 0, worker_health.snapshot[:active_tasks]
+    refute_nil worker_health.snapshot[:last_poll]
+  end
+
+  def assert_observability_event(event_name, **expected_attributes)
+    event = @observability_events.calls_for(:emit).find do |call|
+      payload = call.arguments[1] || call.keywords
+
+      call.arguments.first == event_name &&
+        expected_attributes.all? { |key, value| payload[key] == value }
+    end
+
+    refute_nil event
   end
 end

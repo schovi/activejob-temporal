@@ -15,7 +15,8 @@ describe ActiveJob::Temporal::Observability do
 
     described_class.emit(:enqueue, job_class: "NotificationJob")
 
-    expect(events.map(&:payload)).to include(hash_including(job_class: "NotificationJob"))
+    matching_event = events.any? { |event| event.payload[:job_class] == "NotificationJob" }
+    assert matching_event
   ensure
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
@@ -45,9 +46,16 @@ describe ActiveJob::Temporal::Observability do
     described_class.emit(:enqueue, job_class: "AdapterJob")
     result = described_class.instrument(:perform, job_class: "AdapterJob") { :performed }
 
-    expect(result).to be(:performed)
-    expect(adapter.records).to include([:enqueue, hash_including(job_class: "AdapterJob")])
-    expect(adapter.instruments).to include([:perform, hash_including(job_class: "AdapterJob")])
+    enqueue_recorded = adapter.records.any? do |event_name, payload|
+      event_name == :enqueue && payload[:job_class] == "AdapterJob"
+    end
+    perform_instrumented = adapter.instruments.any? do |event_name, payload|
+      event_name == :perform && payload[:job_class] == "AdapterJob"
+    end
+
+    assert_same :performed, result
+    assert enqueue_recorded
+    assert perform_instrumented
   end
 
   it "injects adapter trace context into payload observability metadata" do
@@ -66,12 +74,15 @@ describe ActiveJob::Temporal::Observability do
 
     described_class.inject_trace_context(payload, job_class: "TraceJob")
 
-    expect(payload).to include(
-      observability: {
-        "trace_context" => {
-          "trace_spec" => { "traceparent" => "00-trace-span-01" }
+    assert_equal(
+      {
+        observability: {
+          "trace_context" => {
+            "trace_spec" => { "traceparent" => "00-trace-span-01" }
+          }
         }
-      }
+      },
+      payload
     )
   end
 
@@ -85,11 +96,10 @@ describe ActiveJob::Temporal::Observability do
         require_dependency("missing-gem", "missing/path", "Missing")
       end
     end.new
-    allow(adapter).to receive(:require)
-      .with("missing/path")
-      .and_raise(LoadError, "cannot load such file -- missing/path")
+    load_error = LoadError.new("cannot load such file -- missing/path")
+    call_recorded_method(adapter, :require, raises: load_error)
 
-    expect { adapter.validate! }
-      .to raise_error(described_class::MissingDependency, /missing-gem/)
+    error = assert_raises(described_class::MissingDependency) { adapter.validate! }
+    assert_match(/missing-gem/, error.message)
   end
 end

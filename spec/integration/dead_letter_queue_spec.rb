@@ -52,15 +52,19 @@ describe "ActiveJob Temporal dead letter queue", :integration do
     wait_for_workflow_failure(ActiveJob::Temporal::Adapter.build_workflow_id(job))
     entry = wait_for_dead_letter_entry("DeadLetterRetryIntegrationJob")
 
-    expect(entry).to include(
-      "state" => "pending",
-      "failure" => hash_including("class" => "StandardError", "message" => "permanent failure"),
-      "metadata" => hash_including(
+    assert_equal "pending", entry["state"]
+    assert_hash_includes(
+      { "class" => "StandardError", "message" => "permanent failure" },
+      entry["failure"]
+    )
+    assert_hash_includes(
+      {
         "job_class" => "DeadLetterRetryIntegrationJob",
         "attempt" => 2,
         "max_attempts" => 2,
         "original_task_queue" => task_queue
-      )
+      },
+      entry["metadata"]
     )
 
     retry_workflow_id = ActiveJob::Temporal::DeadLetterQueue.retry(retryable_job_class, job.job_id)

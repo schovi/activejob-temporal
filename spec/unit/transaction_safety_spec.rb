@@ -3,8 +3,23 @@
 require "spec_helper"
 require "active_job/enqueue_after_transaction_commit"
 
+module TransactionSafetySpecSupport
+  class FakeTemporalClient
+    attr_reader :start_workflow_calls
+
+    def initialize
+      @start_workflow_calls = []
+    end
+
+    def start_workflow(*arguments, **keywords)
+      start_workflow_calls << [arguments, keywords]
+      "workflow-handle"
+    end
+  end
+end
+
 describe "ActiveJob::Temporal transaction safety" do
-  let(:client) { instance_double(Temporalio::Client) }
+  let(:client) { TransactionSafetySpecSupport::FakeTemporalClient.new }
   let(:config) { build_configuration }
   let(:fake_active_record) do
     Class.new do
@@ -47,35 +62,34 @@ describe "ActiveJob::Temporal transaction safety" do
     stub_const("ActiveRecord", fake_active_record)
     fake_active_record.reset!
 
-    allow(ActiveJob::Temporal).to receive(:client).and_return(client)
-    allow(ActiveJob::Temporal).to receive(:config).and_return(config)
-    allow(client).to receive(:start_workflow).and_return("workflow-handle")
-    allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+    call_recorded_method(ActiveJob::Temporal, :client, returns: client)
+    call_recorded_method(ActiveJob::Temporal, :config, returns: config)
+    call_recorded_method(ActiveJob::Temporal::Logger, :log_event)
   end
 
   it "enables the Rails transaction commit setting when a job uses the Temporal adapter" do
-    expect(job_class.enqueue_after_transaction_commit).to be false
+    assert_equal false, job_class.enqueue_after_transaction_commit
 
     job_class.queue_adapter = :temporal
 
-    expect(job_class.enqueue_after_transaction_commit).to be true
+    assert_equal true, job_class.enqueue_after_transaction_commit
   end
 
   it "enables transaction safety when a Temporal adapter instance is assigned" do
-    expect(job_class.enqueue_after_transaction_commit).to be false
+    assert_equal false, job_class.enqueue_after_transaction_commit
 
     job_class.queue_adapter = ActiveJob::QueueAdapters::TemporalAdapter.new
 
-    expect(job_class.enqueue_after_transaction_commit).to be true
+    assert_equal true, job_class.enqueue_after_transaction_commit
   end
 
   it "restores the previous transaction commit setting when switching away from Temporal" do
-    expect(job_class.enqueue_after_transaction_commit).to be false
+    assert_equal false, job_class.enqueue_after_transaction_commit
 
     job_class.queue_adapter = :temporal
     job_class.queue_adapter = :test
 
-    expect(job_class.enqueue_after_transaction_commit).to be false
+    assert_equal false, job_class.enqueue_after_transaction_commit
   end
 
   it "restores a previous explicit transaction commit setting when switching away from Temporal" do
@@ -84,7 +98,7 @@ describe "ActiveJob::Temporal transaction safety" do
     job_class.queue_adapter = :temporal
     job_class.queue_adapter = :test
 
-    expect(job_class.enqueue_after_transaction_commit).to be true
+    assert_equal true, job_class.enqueue_after_transaction_commit
   end
 
   it "respects an explicit job-level opt-out before selecting the Temporal adapter" do
@@ -92,7 +106,7 @@ describe "ActiveJob::Temporal transaction safety" do
 
     job_class.queue_adapter = :temporal
 
-    expect(job_class.enqueue_after_transaction_commit).to be false
+    assert_equal false, job_class.enqueue_after_transaction_commit
   end
 
   it "respects an explicit job-level opt-out after selecting the Temporal adapter" do
@@ -101,7 +115,7 @@ describe "ActiveJob::Temporal transaction safety" do
 
     job_class.queue_adapter = :temporal
 
-    expect(job_class.enqueue_after_transaction_commit).to be false
+    assert_equal false, job_class.enqueue_after_transaction_commit
   end
 
   it "keeps per-job Temporal adapter transaction settings scoped to that job class" do
@@ -114,9 +128,9 @@ describe "ActiveJob::Temporal transaction safety" do
     job_class.queue_adapter = :temporal
     sibling_job_class.queue_adapter = :test
 
-    expect(job_class.enqueue_after_transaction_commit).to be true
-    expect(sibling_job_class.enqueue_after_transaction_commit).to be false
-    expect(ActiveJob::Base.enqueue_after_transaction_commit).to be false
+    assert_equal true, job_class.enqueue_after_transaction_commit
+    assert_equal false, sibling_job_class.enqueue_after_transaction_commit
+    assert_equal false, ActiveJob::Base.enqueue_after_transaction_commit
   end
 
   it "does not leak inherited Temporal transaction safety to child jobs using another adapter" do
@@ -134,8 +148,8 @@ describe "ActiveJob::Temporal transaction safety" do
     parent_job_class.queue_adapter = :temporal
     child_job_class.queue_adapter = :test
 
-    expect(parent_job_class.enqueue_after_transaction_commit).to be true
-    expect(child_job_class.enqueue_after_transaction_commit).to be false
+    assert_equal true, parent_job_class.enqueue_after_transaction_commit
+    assert_equal false, child_job_class.enqueue_after_transaction_commit
   end
 
   it "restores inherited pre-Temporal transaction settings when a child switches away" do
@@ -154,8 +168,8 @@ describe "ActiveJob::Temporal transaction safety" do
     child_job_class.queue_adapter = :temporal
     child_job_class.queue_adapter = :test
 
-    expect(parent_job_class.enqueue_after_transaction_commit).to be true
-    expect(child_job_class.enqueue_after_transaction_commit).to be false
+    assert_equal true, parent_job_class.enqueue_after_transaction_commit
+    assert_equal false, child_job_class.enqueue_after_transaction_commit
   end
 
   it "respects inherited explicit opt-out settings when a child uses the Temporal adapter" do
@@ -174,7 +188,7 @@ describe "ActiveJob::Temporal transaction safety" do
 
     child_job_class.queue_adapter = :temporal
 
-    expect(child_job_class.enqueue_after_transaction_commit).to be false
+    assert_equal false, child_job_class.enqueue_after_transaction_commit
   end
 
   it "does not start a Temporal workflow when the surrounding transaction rolls back" do
@@ -183,19 +197,19 @@ describe "ActiveJob::Temporal transaction safety" do
     result = job_class.perform_later
     fake_active_record.rollback!
 
-    expect(result).to be_a(job_class)
-    expect(client).not_to have_received(:start_workflow)
+    assert_instance_of job_class, result
+    assert_empty client.start_workflow_calls
   end
 
   it "starts the Temporal workflow after the surrounding transaction commits" do
     job_class.queue_adapter = :temporal
 
     job_class.perform_later
-    expect(client).not_to have_received(:start_workflow)
+    assert_empty client.start_workflow_calls
 
     fake_active_record.commit!
 
-    expect(client).to have_received(:start_workflow).once
+    assert_equal 1, client.start_workflow_calls.size
   end
 
   def build_configuration

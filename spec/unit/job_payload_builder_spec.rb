@@ -20,9 +20,9 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
       global_config.payload_storage_threshold_kb = nil
     end
 
-    allow(ActiveJob::Temporal::Logger).to receive(:info)
-    allow(ActiveJob::Temporal::Logger).to receive(:warn)
-    allow(ActiveJob::Temporal::Logger).to receive(:error)
+    call_recorded_method(ActiveJob::Temporal::Logger, :info)
+    call_recorded_method(ActiveJob::Temporal::Logger, :warn)
+    call_recorded_method(ActiveJob::Temporal::Logger, :error)
   end
 
   it "builds a workflow payload with global activity defaults" do
@@ -33,11 +33,14 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:default_activity_options]).to eq(
-      start_to_close_timeout: 900.0,
-      schedule_to_close_timeout: 1200.0,
-      schedule_to_start_timeout: 120.0,
-      heartbeat_timeout: 45.0
+    assert_equal(
+      {
+        start_to_close_timeout: 900.0,
+        schedule_to_close_timeout: 1200.0,
+        schedule_to_start_timeout: 120.0,
+        heartbeat_timeout: 45.0
+      },
+      payload[:default_activity_options]
     )
   end
 
@@ -56,11 +59,14 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:active_job]).to include(
-      "job_class" => "CustomSerializedPayloadJob",
-      "job_id" => job.job_id,
-      "queue_name" => "default",
-      "tenant" => "tenant-42"
+    assert_hash_includes(
+      {
+        "job_class" => "CustomSerializedPayloadJob",
+        "job_id" => job.job_id,
+        "queue_name" => "default",
+        "tenant" => "tenant-42"
+      },
+      payload[:active_job]
     )
   end
 
@@ -83,10 +89,13 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
       encryption_context: { namespace: "default", workflow_id: "workflow-1" }
     )
 
-    expect(payload[:observability]).to eq(
-      "trace_context" => {
-        "payload_trace_spec" => { "traceparent" => "00-trace-span-01" }
-      }
+    assert_equal(
+      {
+        "trace_context" => {
+          "payload_trace_spec" => { "traceparent" => "00-trace-span-01" }
+        }
+      },
+      payload[:observability]
     )
   ensure
     ActiveJob::Temporal::Observability.reset!
@@ -102,7 +111,7 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:temporal_options]).to eq(start_to_close_timeout: 7200.0)
+    assert_equal({ start_to_close_timeout: 7200.0 }, payload[:temporal_options])
   end
 
   it "includes temporal options inherited from a parent job class" do
@@ -116,7 +125,7 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:temporal_options]).to eq(start_to_close_timeout: 7200.0)
+    assert_equal({ start_to_close_timeout: 7200.0 }, payload[:temporal_options])
   end
 
   it "includes the configured continue-as-new threshold" do
@@ -125,7 +134,7 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:continue_as_new]).to eq(history_event_threshold: 10_000)
+    assert_equal({ history_event_threshold: 10_000 }, payload[:continue_as_new])
   end
 
   it "includes configured local activity helpers" do
@@ -134,7 +143,7 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:local_activity_helpers]).to eq(["rate_limit"])
+    assert_equal ["rate_limit"], payload[:local_activity_helpers]
   end
 
   it "includes workflow interaction metadata for declared signals, queries, and updates" do
@@ -151,11 +160,14 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:workflow_interactions]).to eq(
-      job_class: "WorkflowInteractionJob",
-      signals: %w[append_event progress],
-      queries: %w[events progress],
-      updates: %w[set_progress]
+    assert_equal(
+      {
+        job_class: "WorkflowInteractionJob",
+        signals: %w[append_event progress],
+        queries: %w[events progress],
+        updates: %w[set_progress]
+      },
+      payload[:workflow_interactions]
     )
   end
 
@@ -169,9 +181,12 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job_class.new)
 
-    expect(payload[:workflow_identity]).to eq(
-      workflow_name: "payments.charge_payment",
-      workflow_id_prefix: "payment"
+    assert_equal(
+      {
+        workflow_name: "payments.charge_payment",
+        workflow_id_prefix: "payment"
+      },
+      payload[:workflow_identity]
     )
   end
 
@@ -211,15 +226,17 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:chain]).to contain_exactly(
-      hash_including(
+    assert_equal 2, payload[:chain].size
+
+    next_payload = payload_entry(payload[:chain], "PayloadBuilderNextJob")
+    assert_hash_includes(
+      {
         job_class: "PayloadBuilderNextJob",
         job_id: "#{job.job_id}:chain:1",
         queue_name: "mailers",
         arguments: [],
         activity_task_queue: "prod-mailers",
         temporal_options: { start_to_close_timeout: 7200.0 },
-        retry_policy: hash_including(initial_interval: 10.0, maximum_attempts: 4),
         rate_limits: [
           {
             limit: 5,
@@ -227,16 +244,23 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
             key: "activejob-temporal:job:PayloadBuilderNextJob"
           }
         ]
-      ),
-      hash_including(
+      },
+      next_payload
+    )
+    assert_hash_includes({ initial_interval: 10.0, maximum_attempts: 4 }, next_payload[:retry_policy])
+
+    final_payload = payload_entry(payload[:chain], "PayloadBuilderFinalJob")
+    assert_hash_includes(
+      {
         job_class: "PayloadBuilderFinalJob",
         job_id: "#{job.job_id}:chain:2",
         queue_name: "reporting",
         arguments: [],
-        activity_task_queue: "prod-priority_reports",
-        retry_policy: hash_including(maximum_attempts: 1)
-      )
+        activity_task_queue: "prod-priority_reports"
+      },
+      final_payload
     )
+    assert_hash_includes({ maximum_attempts: 1 }, final_payload[:retry_policy])
   end
 
   it "includes external Temporal refs in chain payloads without ActiveJob execution metadata" do
@@ -258,24 +282,27 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:chain]).to eq([
-                                    {
-                                      temporal_operation: "activity",
-                                      temporal_type: "payments.AuthorizePayment",
-                                      options: {
-                                        task_queue: "payments-kotlin",
-                                        start_to_close_timeout: 30.0
-                                      }
-                                    },
-                                    {
-                                      temporal_operation: "workflow",
-                                      temporal_type: "inventory.ReserveInventoryWorkflow",
-                                      options: {
-                                        task_queue: "inventory-kotlin",
-                                        run_timeout: 300.0
-                                      }
-                                    }
-                                  ])
+    assert_equal(
+      [
+        {
+          temporal_operation: "activity",
+          temporal_type: "payments.AuthorizePayment",
+          options: {
+            task_queue: "payments-kotlin",
+            start_to_close_timeout: 30.0
+          }
+        },
+        {
+          temporal_operation: "workflow",
+          temporal_type: "inventory.ReserveInventoryWorkflow",
+          options: {
+            task_queue: "inventory-kotlin",
+            run_timeout: 300.0
+          }
+        }
+      ],
+      payload[:chain]
+    )
   end
 
   it "includes child workflow payloads with child workflow IDs and execution metadata" do
@@ -318,8 +345,11 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:child_workflows]).to contain_exactly(
-      hash_including(
+    assert_equal 2, payload[:child_workflows].size
+
+    child_payload = payload_entry(payload[:child_workflows], "PayloadBuilderChildJob")
+    assert_hash_includes(
+      {
         job_class: "PayloadBuilderChildJob",
         job_id: "#{job.job_id}:child:1",
         workflow_id: "invoice-child:#{job.job_id}:child:1",
@@ -328,38 +358,50 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
         activity_task_queue: "prod-mailers",
         workflow_task_queue: "prod-mailers",
         temporal_options: { start_to_close_timeout: 7200.0 },
-        retry_policy: hash_including(initial_interval: 10.0, maximum_attempts: 4),
         rate_limits: [
           {
             limit: 5,
             interval: 60.0,
             key: "activejob-temporal:job:PayloadBuilderChildJob"
           }
-        ],
-        search_attributes: hash_including(
-          job_class: "PayloadBuilderChildJob",
-          job_id: "#{job.job_id}:child:1",
-          queue_name: "mailers",
-          enqueued_at: a_kind_of(String),
-          tags: []
-        )
-      ),
-      hash_including(
+        ]
+      },
+      child_payload
+    )
+    assert_hash_includes({ initial_interval: 10.0, maximum_attempts: 4 }, child_payload[:retry_policy])
+    assert_hash_includes(
+      {
+        job_class: "PayloadBuilderChildJob",
+        job_id: "#{job.job_id}:child:1",
+        queue_name: "mailers",
+        tags: []
+      },
+      child_payload[:search_attributes]
+    )
+    assert_kind_of String, child_payload[:search_attributes][:enqueued_at]
+
+    final_child_payload = payload_entry(payload[:child_workflows], "PayloadBuilderFinalChildJob")
+    assert_hash_includes(
+      {
         job_class: "PayloadBuilderFinalChildJob",
         job_id: "#{job.job_id}:child:2",
         workflow_id: "ajwf:PayloadBuilderFinalChildJob:#{job.job_id}:child:2",
         queue_name: "reporting",
         arguments: [],
         activity_task_queue: "prod-priority_reports",
-        workflow_task_queue: "prod-priority_reports",
-        retry_policy: hash_including(maximum_attempts: 1),
-        search_attributes: hash_including(
-          job_class: "PayloadBuilderFinalChildJob",
-          job_id: "#{job.job_id}:child:2",
-          queue_name: "reporting",
-          tags: %w[fanout urgent]
-        )
-      )
+        workflow_task_queue: "prod-priority_reports"
+      },
+      final_child_payload
+    )
+    assert_hash_includes({ maximum_attempts: 1 }, final_child_payload[:retry_policy])
+    assert_hash_includes(
+      {
+        job_class: "PayloadBuilderFinalChildJob",
+        job_id: "#{job.job_id}:child:2",
+        queue_name: "reporting",
+        tags: %w[fanout urgent]
+      },
+      final_child_payload[:search_attributes]
     )
   end
 
@@ -377,16 +419,19 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:child_workflows]).to eq([
-                                              {
-                                                temporal_operation: "workflow",
-                                                temporal_type: "fulfillment.PrepareShipmentWorkflow",
-                                                options: {
-                                                  task_queue: "fulfillment-kotlin",
-                                                  run_timeout: 300.0
-                                                }
-                                              }
-                                            ])
+    assert_equal(
+      [
+        {
+          temporal_operation: "workflow",
+          temporal_type: "fulfillment.PrepareShipmentWorkflow",
+          options: {
+            task_queue: "fulfillment-kotlin",
+            run_timeout: 300.0
+          }
+        }
+      ],
+      payload[:child_workflows]
+    )
   end
 
   it "includes dependency metadata with default workflow references" do
@@ -406,17 +451,20 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:dependencies]).to eq([
-                                           {
-                                             job_class: "DependencyBuilderParentJob",
-                                             job_id: "parent-123",
-                                             workflow_id: "ajwf:DependencyBuilderParentJob:parent-123"
-                                           },
-                                           {
-                                             job_id: "search-only-parent"
-                                           }
-                                         ])
-    expect(payload[:dependency_failure_policy]).to eq("ignore")
+    assert_equal(
+      [
+        {
+          job_class: "DependencyBuilderParentJob",
+          job_id: "parent-123",
+          workflow_id: "ajwf:DependencyBuilderParentJob:parent-123"
+        },
+        {
+          job_id: "search-only-parent"
+        }
+      ],
+      payload[:dependencies]
+    )
+    assert_equal "ignore", payload[:dependency_failure_policy]
   end
 
   it "includes dependency wait options" do
@@ -432,11 +480,14 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:dependency_wait]).to eq(
-      timeout: 1800.0,
-      initial_interval: 5.0,
-      max_interval: 60.0,
-      backoff: 3.0
+    assert_equal(
+      {
+        timeout: 1800.0,
+        initial_interval: 5.0,
+        max_interval: 60.0,
+        backoff: 3.0
+      },
+      payload[:dependency_wait]
     )
   end
 
@@ -452,11 +503,14 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:dependency_wait]).to include(
-      timeout: 60.0,
-      initial_interval: 2.0,
-      max_interval: 60.0,
-      backoff: 2.0
+    assert_hash_includes(
+      {
+        timeout: 60.0,
+        initial_interval: 2.0,
+        max_interval: 60.0,
+        backoff: 2.0
+      },
+      payload[:dependency_wait]
     )
   end
 
@@ -471,13 +525,16 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:rate_limits]).to eq([
-                                          {
-                                            limit: 100,
-                                            interval: 1.0,
-                                            key: "activejob-temporal:job:RateLimitedJob"
-                                          }
-                                        ])
+    assert_equal(
+      [
+        {
+          limit: 100,
+          interval: 1.0,
+          key: "activejob-temporal:job:RateLimitedJob"
+        }
+      ],
+      payload[:rate_limits]
+    )
   end
 
   it "requires a limiter backend when per-job rate limits are configured" do
@@ -487,8 +544,11 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
       rate_limit 100, per: :second
     end
 
-    expect { described_class.new(config).build(job_class.new) }
-      .to raise_error(ActiveJob::Temporal::ConfigurationError, /rate_limiter is required/)
+    error = assert_raises(ActiveJob::Temporal::ConfigurationError) do
+      described_class.new(config).build(job_class.new)
+    end
+
+    assert_match(/rate_limiter is required/, error.message)
   end
 
   it "includes global and per-job rate limits" do
@@ -502,18 +562,21 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job_class.new)
 
-    expect(payload[:rate_limits]).to eq([
-                                          {
-                                            limit: 1000,
-                                            interval: 60.0,
-                                            key: "activejob-temporal:global"
-                                          },
-                                          {
-                                            limit: 100,
-                                            interval: 1.0,
-                                            key: "external-api"
-                                          }
-                                        ])
+    assert_equal(
+      [
+        {
+          limit: 1000,
+          interval: 60.0,
+          key: "activejob-temporal:global"
+        },
+        {
+          limit: 100,
+          interval: 1.0,
+          key: "external-api"
+        }
+      ],
+      payload[:rate_limits]
+    )
   end
 
   it "adds dead letter metadata when a dead letter queue is configured" do
@@ -524,13 +587,16 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload[:dead_letter]).to eq(
-      queue: "failed_jobs",
-      after_attempts: 3,
-      auto_discard_after_seconds: 604_800.0,
-      job_class: "DeadLetterBuilderJob",
-      job_id: job.job_id,
-      queue_name: "default"
+    assert_equal(
+      {
+        queue: "failed_jobs",
+        after_attempts: 3,
+        auto_discard_after_seconds: 604_800.0,
+        job_class: "DeadLetterBuilderJob",
+        job_id: job.job_id,
+        queue_name: "default"
+      },
+      payload[:dead_letter]
     )
   end
 
@@ -539,36 +605,44 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload).not_to have_key(:dead_letter)
+    refute payload.key?(:dead_letter)
   end
 
   it "uses dead_letter_after_attempts as the activity retry limit" do
     config.dead_letter_queue = "failed_jobs"
     config.dead_letter_after_attempts = 2
-    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return(
-      initial_interval: 30.0,
-      backoff_coefficient: 2.0,
-      maximum_attempts: 5,
-      non_retryable_error_types: []
+    call_recorded_method(
+      ActiveJob::Temporal::RetryMapper,
+      :for,
+      returns: {
+        initial_interval: 30.0,
+        backoff_coefficient: 2.0,
+        maximum_attempts: 5,
+        non_retryable_error_types: []
+      }
     )
 
     payload = described_class.new(config).build(build_job("DeadLetterAttemptsBuilderJob"))
 
-    expect(payload[:retry_policy][:maximum_attempts]).to eq(2)
+    assert_equal 2, payload[:retry_policy][:maximum_attempts]
   end
 
   it "records the retry policy attempt limit when no dead letter threshold is configured" do
     config.dead_letter_queue = "failed_jobs"
-    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return(
-      initial_interval: 30.0,
-      backoff_coefficient: 2.0,
-      maximum_attempts: 4,
-      non_retryable_error_types: []
+    call_recorded_method(
+      ActiveJob::Temporal::RetryMapper,
+      :for,
+      returns: {
+        initial_interval: 30.0,
+        backoff_coefficient: 2.0,
+        maximum_attempts: 4,
+        non_retryable_error_types: []
+      }
     )
 
     payload = described_class.new(config).build(build_job("DeadLetterPolicyLimitBuilderJob"))
 
-    expect(payload[:dead_letter][:after_attempts]).to eq(4)
+    assert_equal 4, payload[:dead_letter][:after_attempts]
   end
 
   it "keeps workflow-control fields readable when payload encryption is enabled" do
@@ -611,71 +685,101 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload).to include(
-      encrypted_payload: true,
-      encrypted_payload_version: 1,
-      encrypted_data: a_kind_of(String),
-      default_activity_options: hash_including(start_to_close_timeout: 900.0),
-      retry_policy: hash_including(maximum_attempts: 3),
-      rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
-      dead_letter: hash_including(
+    assert_hash_includes(
+      {
+        encrypted_payload: true,
+        encrypted_payload_version: 1,
+        dependency_failure_policy: "fail"
+      },
+      payload
+    )
+    assert_kind_of String, payload[:encrypted_data]
+    assert_hash_includes({ start_to_close_timeout: 900.0 }, payload[:default_activity_options])
+    assert_hash_includes({ maximum_attempts: 3 }, payload[:retry_policy])
+    assert_hash_includes(
+      { limit: 1000, interval: 60.0, key: "activejob-temporal:global" },
+      payload[:rate_limits].first
+    )
+    assert_hash_includes(
+      {
         queue: "failed_jobs",
         after_attempts: 3,
         job_class: "EncryptedBuilderJob",
         job_id: job.job_id
-      ),
-      workflow_interactions: hash_including(
+      },
+      payload[:dead_letter]
+    )
+    assert_hash_includes(
+      {
         job_class: "EncryptedBuilderJob",
         signals: ["pause"],
         queries: ["paused"]
-      ),
-      child_workflows: [
-        hash_including(
-          job_class: "EncryptedBuilderNextJob",
-          queue_name: "reporting",
-          activity_task_queue: "reporting",
-          workflow_task_queue: "reporting",
-          workflow_id: "ajwf:EncryptedBuilderNextJob:#{job.job_id}:child:1"
-        )
-      ],
-      chain: [
-        hash_including(
-          job_class: "EncryptedBuilderNextJob",
-          queue_name: "reporting",
-          activity_task_queue: "reporting",
-          dead_letter: hash_including(job_class: "EncryptedBuilderNextJob")
-        )
-      ],
-      dependencies: [
-        hash_including(job_id: "parent-123", workflow_id: "custom-parent-workflow")
-      ],
-      dependency_failure_policy: "fail"
+      },
+      payload[:workflow_interactions]
     )
-    expect(payload).not_to have_key(:job_class)
-    expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
-      job_class: "EncryptedBuilderJob",
-      default_activity_options: hash_including("start_to_close_timeout" => 900.0),
-      retry_policy: hash_including("maximum_attempts" => 3),
-      rate_limits: [hash_including("limit" => 1000, "interval" => 60.0, "key" => "activejob-temporal:global")],
-      dead_letter: hash_including("queue" => "failed_jobs"),
-      chain: [
-        hash_including(
-          "job_class" => "EncryptedBuilderNextJob",
-          "queue_name" => "reporting",
-          "activity_task_queue" => "reporting"
-        )
-      ],
-      child_workflows: [
-        hash_including(
-          "job_class" => "EncryptedBuilderNextJob",
-          "queue_name" => "reporting",
-          "workflow_task_queue" => "reporting"
-        )
-      ],
-      dependencies: [
-        hash_including("job_id" => "parent-123", "workflow_id" => "custom-parent-workflow")
-      ],
-      dependency_failure_policy: "fail"
+
+    encrypted_child_payload = payload_entry(payload[:child_workflows], "EncryptedBuilderNextJob")
+    assert_hash_includes(
+      {
+        job_class: "EncryptedBuilderNextJob",
+        queue_name: "reporting",
+        activity_task_queue: "reporting",
+        workflow_task_queue: "reporting",
+        workflow_id: "ajwf:EncryptedBuilderNextJob:#{job.job_id}:child:1"
+      },
+      encrypted_child_payload
+    )
+
+    encrypted_chain_payload = payload_entry(payload[:chain], "EncryptedBuilderNextJob")
+    assert_hash_includes(
+      {
+        job_class: "EncryptedBuilderNextJob",
+        queue_name: "reporting",
+        activity_task_queue: "reporting"
+      },
+      encrypted_chain_payload
+    )
+    assert_hash_includes({ job_class: "EncryptedBuilderNextJob" }, encrypted_chain_payload[:dead_letter])
+    assert_hash_includes(
+      { job_id: "parent-123", workflow_id: "custom-parent-workflow" },
+      payload[:dependencies].first
+    )
+    refute payload.key?(:job_class)
+
+    decrypted_payload = ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)
+    assert_hash_includes(
+      {
+        job_class: "EncryptedBuilderJob",
+        dependency_failure_policy: "fail"
+      },
+      decrypted_payload
+    )
+    assert_hash_includes({ "start_to_close_timeout" => 900.0 }, decrypted_payload[:default_activity_options])
+    assert_hash_includes({ "maximum_attempts" => 3 }, decrypted_payload[:retry_policy])
+    assert_hash_includes(
+      { "limit" => 1000, "interval" => 60.0, "key" => "activejob-temporal:global" },
+      decrypted_payload[:rate_limits].first
+    )
+    assert_hash_includes({ "queue" => "failed_jobs" }, decrypted_payload[:dead_letter])
+    assert_hash_includes(
+      {
+        "job_class" => "EncryptedBuilderNextJob",
+        "queue_name" => "reporting",
+        "activity_task_queue" => "reporting"
+      },
+      payload_entry(decrypted_payload[:chain], "EncryptedBuilderNextJob")
+    )
+    assert_hash_includes(
+      {
+        "job_class" => "EncryptedBuilderNextJob",
+        "queue_name" => "reporting",
+        "workflow_task_queue" => "reporting"
+      },
+      payload_entry(decrypted_payload[:child_workflows], "EncryptedBuilderNextJob")
+    )
+    assert_hash_includes(
+      { "job_id" => "parent-123", "workflow_id" => "custom-parent-workflow" },
+      decrypted_payload[:dependencies].first
     )
 
     tampered_payload = payload.merge(
@@ -699,26 +803,29 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
       dependency_failure_policy: "ignore"
     )
 
-    expect(ActiveJob::Temporal::Payload.deserialize_payload(tampered_payload, config: config)).to include(
-      default_activity_options: hash_including("start_to_close_timeout" => 900.0),
-      retry_policy: hash_including("maximum_attempts" => 3),
-      chain: [
-        hash_including(
-          "job_class" => "EncryptedBuilderNextJob",
-          "activity_task_queue" => "reporting"
-        )
-      ],
-      child_workflows: [
-        hash_including(
-          "job_class" => "EncryptedBuilderNextJob",
-          "workflow_task_queue" => "reporting"
-        )
-      ],
-      dependencies: [
-        hash_including("job_id" => "parent-123", "workflow_id" => "custom-parent-workflow")
-      ],
-      dependency_failure_policy: "fail"
+    decrypted_tampered_payload = ActiveJob::Temporal::Payload.deserialize_payload(tampered_payload, config: config)
+
+    assert_hash_includes({ "start_to_close_timeout" => 900.0 }, decrypted_tampered_payload[:default_activity_options])
+    assert_hash_includes({ "maximum_attempts" => 3 }, decrypted_tampered_payload[:retry_policy])
+    assert_hash_includes(
+      {
+        "job_class" => "EncryptedBuilderNextJob",
+        "activity_task_queue" => "reporting"
+      },
+      payload_entry(decrypted_tampered_payload[:chain], "EncryptedBuilderNextJob")
     )
+    assert_hash_includes(
+      {
+        "job_class" => "EncryptedBuilderNextJob",
+        "workflow_task_queue" => "reporting"
+      },
+      payload_entry(decrypted_tampered_payload[:child_workflows], "EncryptedBuilderNextJob")
+    )
+    assert_hash_includes(
+      { "job_id" => "parent-123", "workflow_id" => "custom-parent-workflow" },
+      decrypted_tampered_payload[:dependencies].first
+    )
+    assert_equal "fail", decrypted_tampered_payload[:dependency_failure_policy]
   end
 
   it "keeps workflow-control fields outside non-JSON serializer envelopes" do
@@ -758,87 +865,121 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
 
     payload = described_class.new(config).build(job)
 
-    expect(payload).to include(
-      serialized_payload: true,
-      payload_serializer: "message_pack",
-      payload_serializer_version: 1,
-      serialized_data: a_kind_of(String),
-      default_activity_options: hash_including(start_to_close_timeout: 900.0),
-      retry_policy: hash_including(maximum_attempts: 3),
-      rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
-      dead_letter: hash_including(
+    assert_hash_includes(
+      {
+        serialized_payload: true,
+        payload_serializer: "message_pack",
+        payload_serializer_version: 1,
+        dependency_failure_policy: "ignore"
+      },
+      payload
+    )
+    assert_kind_of String, payload[:serialized_data]
+    assert_hash_includes({ start_to_close_timeout: 900.0 }, payload[:default_activity_options])
+    assert_hash_includes({ maximum_attempts: 3 }, payload[:retry_policy])
+    assert_hash_includes(
+      { limit: 1000, interval: 60.0, key: "activejob-temporal:global" },
+      payload[:rate_limits].first
+    )
+    assert_hash_includes(
+      {
         queue: "failed_jobs",
         after_attempts: 3,
         job_class: "SerializedBuilderJob",
         job_id: job.job_id
-      ),
-      workflow_interactions: hash_including(
+      },
+      payload[:dead_letter]
+    )
+    assert_hash_includes(
+      {
         job_class: "SerializedBuilderJob",
         signals: ["pause"],
         queries: ["paused"]
-      ),
-      child_workflows: [
-        hash_including(
-          job_class: "SerializedBuilderNextJob",
-          queue_name: "reporting",
-          activity_task_queue: "reporting",
-          workflow_task_queue: "reporting",
-          workflow_id: "ajwf:SerializedBuilderNextJob:#{job.job_id}:child:1"
-        )
-      ],
-      chain: [
-        hash_including(
-          job_class: "SerializedBuilderNextJob",
-          queue_name: "reporting",
-          activity_task_queue: "reporting",
-          dead_letter: hash_including(job_class: "SerializedBuilderNextJob")
-        )
-      ],
-      dependencies: [
-        hash_including(job_id: "parent-123", workflow_id: "custom-parent-workflow")
-      ],
-      dependency_failure_policy: "ignore"
+      },
+      payload[:workflow_interactions]
     )
-    expect(payload).not_to have_key(:job_class)
-    expect(payload).not_to have_key(:arguments)
 
-    expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
-      job_class: "SerializedBuilderJob",
-      default_activity_options: hash_including(start_to_close_timeout: 900.0),
-      retry_policy: hash_including(maximum_attempts: 3),
-      rate_limits: [hash_including(limit: 1000, interval: 60.0, key: "activejob-temporal:global")],
-      dead_letter: hash_including(queue: "failed_jobs"),
-      chain: [
-        hash_including(
-          job_class: "SerializedBuilderNextJob",
-          queue_name: "reporting",
-          activity_task_queue: "reporting"
-        )
-      ],
-      child_workflows: [
-        hash_including(
-          job_class: "SerializedBuilderNextJob",
-          queue_name: "reporting",
-          workflow_task_queue: "reporting"
-        )
-      ],
-      dependencies: [
-        hash_including(job_id: "parent-123", workflow_id: "custom-parent-workflow")
-      ],
-      dependency_failure_policy: "ignore"
+    serialized_child_payload = payload_entry(payload[:child_workflows], "SerializedBuilderNextJob")
+    assert_hash_includes(
+      {
+        job_class: "SerializedBuilderNextJob",
+        queue_name: "reporting",
+        activity_task_queue: "reporting",
+        workflow_task_queue: "reporting",
+        workflow_id: "ajwf:SerializedBuilderNextJob:#{job.job_id}:child:1"
+      },
+      serialized_child_payload
+    )
+
+    serialized_chain_payload = payload_entry(payload[:chain], "SerializedBuilderNextJob")
+    assert_hash_includes(
+      {
+        job_class: "SerializedBuilderNextJob",
+        queue_name: "reporting",
+        activity_task_queue: "reporting"
+      },
+      serialized_chain_payload
+    )
+    assert_hash_includes({ job_class: "SerializedBuilderNextJob" }, serialized_chain_payload[:dead_letter])
+    assert_hash_includes(
+      { job_id: "parent-123", workflow_id: "custom-parent-workflow" },
+      payload[:dependencies].first
+    )
+    refute payload.key?(:job_class)
+    refute payload.key?(:arguments)
+
+    deserialized_payload = ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)
+    assert_hash_includes(
+      {
+        job_class: "SerializedBuilderJob",
+        dependency_failure_policy: "ignore"
+      },
+      deserialized_payload
+    )
+    assert_hash_includes({ start_to_close_timeout: 900.0 }, deserialized_payload[:default_activity_options])
+    assert_hash_includes({ maximum_attempts: 3 }, deserialized_payload[:retry_policy])
+    assert_hash_includes(
+      { limit: 1000, interval: 60.0, key: "activejob-temporal:global" },
+      deserialized_payload[:rate_limits].first
+    )
+    assert_hash_includes({ queue: "failed_jobs" }, deserialized_payload[:dead_letter])
+    assert_hash_includes(
+      {
+        job_class: "SerializedBuilderNextJob",
+        queue_name: "reporting",
+        activity_task_queue: "reporting"
+      },
+      payload_entry(deserialized_payload[:chain], "SerializedBuilderNextJob")
+    )
+    assert_hash_includes(
+      {
+        job_class: "SerializedBuilderNextJob",
+        queue_name: "reporting",
+        workflow_task_queue: "reporting"
+      },
+      payload_entry(deserialized_payload[:child_workflows], "SerializedBuilderNextJob")
+    )
+    assert_hash_includes(
+      { job_id: "parent-123", workflow_id: "custom-parent-workflow" },
+      deserialized_payload[:dependencies].first
     )
   end
 
   it "enforces payload size after workflow-control fields are added" do
     job = build_job("FinalSizeBuilderJob")
-    allow(ActiveJob::Temporal::RetryMapper).to receive(:for).and_return(
-      non_retryable_error_types: ["x" * 2048]
+    call_recorded_method(
+      ActiveJob::Temporal::RetryMapper,
+      :for,
+      returns: { non_retryable_error_types: ["x" * 2048] }
     )
 
     config.max_payload_size_kb = 1
 
-    expect { described_class.new(config).build(job) }
-      .to raise_error(ActiveJob::SerializationError, /exceeds maximum allowed size/)
+    error = assert_raises(ActiveJob::SerializationError) do
+      described_class.new(config).build(job)
+    end
+
+    assert_match(/exceeds maximum allowed size/, error.message)
   end
 
   it "offloads payloads after workflow-control fields are added" do
@@ -855,34 +996,46 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
       encryption_context: { namespace: "default", workflow_id: "workflow-1" }
     )
 
-    expect(payload).to include(
-      external_payload: true,
-      external_payload_version: 1,
-      external_payload_reference: a_kind_of(String),
-      default_activity_options: hash_including(start_to_close_timeout: 900.0),
-      retry_policy: hash_including(maximum_attempts: 1),
-      continue_as_new: { history_event_threshold: 10_000 }
+    assert_hash_includes(
+      {
+        external_payload: true,
+        external_payload_version: 1,
+        continue_as_new: { history_event_threshold: 10_000 }
+      },
+      payload
     )
-    expect(adapter.metadata_for(payload.fetch(:external_payload_reference))).to include(
-      namespace: "default",
-      workflow_id: "workflow-1",
-      job_class: "ExternalBuilderJob",
-      job_id: job.job_id,
-      queue_name: "default"
+    assert_kind_of String, payload[:external_payload_reference]
+    assert_hash_includes({ start_to_close_timeout: 900.0 }, payload[:default_activity_options])
+    assert_hash_includes({ maximum_attempts: 1 }, payload[:retry_policy])
+    assert_hash_includes(
+      {
+        namespace: "default",
+        workflow_id: "workflow-1",
+        job_class: "ExternalBuilderJob",
+        job_id: job.job_id,
+        queue_name: "default"
+      },
+      adapter.metadata_for(payload.fetch(:external_payload_reference))
     )
-    expect(ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)).to include(
-      job_class: "ExternalBuilderJob",
-      continue_as_new: { history_event_threshold: 10_000 }
+    assert_hash_includes(
+      {
+        job_class: "ExternalBuilderJob",
+        continue_as_new: { history_event_threshold: 10_000 }
+      },
+      ActiveJob::Temporal::Payload.deserialize_payload(payload, config: config)
     )
   end
 
   it "serializes once when enforcing final payload size" do
     job = build_job("SingleSizeBuilderJob")
-    allow(JSON).to receive(:generate).and_call_original
+    original_generate = JSON.method(:generate)
+    recorder = call_recorded_method(JSON, :generate) do |*arguments, **keywords|
+      original_generate.call(*arguments, **keywords)
+    end
 
     described_class.new(config).build(job)
 
-    expect(JSON).to have_received(:generate).once
+    assert_equal 1, recorder.calls_for(:generate).size
   end
 
   private
@@ -895,6 +1048,11 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
         define_singleton_method(:temporal_query_handler_names) { ["paused"] }
       end
     end.new
+  end
+
+  def payload_entry(entries, job_class)
+    entries.find { |entry| entry[:job_class] == job_class || entry["job_class"] == job_class } ||
+      flunk("Expected payload entry for #{job_class}")
   end
 
   def encryption_key

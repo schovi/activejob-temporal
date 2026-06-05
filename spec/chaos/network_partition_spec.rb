@@ -27,13 +27,13 @@ describe "ActiveJob Temporal network partition recovery", :chaos do
       workflow_id = record_workflow_id(job)
 
       sleep 1.0
-      expect(ChaosEventLog.events_for("job.completed", label: label)).to be_empty
+      assert_empty ChaosEventLog.events_for("job.completed", label: label)
       wait_for_workflow_status(workflow_id, Temporalio::Client::WorkflowExecutionStatus::RUNNING)
     end
 
     description = wait_for_terminal_status(@workflow_ids.last)
 
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
     expect_completed_once(label)
   end
 
@@ -47,16 +47,16 @@ describe "ActiveJob Temporal network partition recovery", :chaos do
 
     with_temporal_target(ChaosHelpers::PROXIED_TEMPORAL_TARGET) do
       with_network_partition do
-        expect do
+        assert_raises(ActiveJob::EnqueueError) do
           ActiveJob::Base.queue_adapter.enqueue(job)
-        end.to raise_error(ActiveJob::EnqueueError)
+        end
       end
 
       reset_temporal_queue_adapter!
-      expect(ActiveJob::Base.queue_adapter.enqueue(job)).not_to be_nil
+      refute_nil ActiveJob::Base.queue_adapter.enqueue(job)
       description = wait_for_terminal_status(workflow_id)
 
-      expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+      assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
     end
 
     expect_completed_once(label)
@@ -70,16 +70,16 @@ describe "ActiveJob Temporal network partition recovery", :chaos do
     job = ChaosScheduledJob.set(queue: task_queue, wait: 8.seconds).perform_later(label)
     workflow_id = record_workflow_id(job)
     wait_for_history_event(workflow_id, :EVENT_TYPE_TIMER_STARTED)
-    expect(ChaosEventLog.events_for("job.completed", label: label)).to be_empty
+    assert_empty ChaosEventLog.events_for("job.completed", label: label)
 
     with_network_partition do
       sleep 8.5
-      expect(ChaosEventLog.events_for("job.completed", label: label)).to be_empty
+      assert_empty ChaosEventLog.events_for("job.completed", label: label)
     end
 
     description = wait_for_terminal_status(workflow_id)
 
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
     expect_completed_once(label)
   end
 end

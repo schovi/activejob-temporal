@@ -6,20 +6,24 @@ require_relative "../../fixtures/sample_jobs"
 require "activejob/temporal/activities/aj_runner_activity"
 require "activejob/temporal/observability/prometheus"
 
+module AjRunnerActivitySpecSupport
+  ActivityInfo = Struct.new(:workflow_id, :workflow_namespace, :attempt, keyword_init: true)
+  ActivityContext = Struct.new(:info, keyword_init: true)
+end
+
 describe ActiveJob::Temporal::Activities::AjRunnerActivity do
-  subject(:activity) { described_class.new }
+  let(:activity) { described_class.new }
 
   let(:workflow_id) { "wf-123" }
   let(:workflow_namespace) { "test-namespace" }
   let(:activity_info) do
-    instance_double(
-      "Temporalio::Activity::Info",
+    AjRunnerActivitySpecSupport::ActivityInfo.new(
       workflow_id: workflow_id,
       workflow_namespace: workflow_namespace,
       attempt: 1
     )
   end
-  let(:activity_context) { instance_double("Temporalio::Activity::Context", info: activity_info) }
+  let(:activity_context) { AjRunnerActivitySpecSupport::ActivityContext.new(info: activity_info) }
   let(:args) { [42, "payload"] }
   let(:idempotency_key) { :aj_temporal_idempotency_key }
   let(:middleware_chain) { ActiveJob::Temporal::Middleware::Chain.new }
@@ -29,13 +33,39 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     ActiveJob::Temporal.config.encrypt_payload = false
     ActiveJob::Temporal.config.encryption_key = nil
     ActiveJob::Temporal.config.encryption_old_keys = []
-    allow(Temporalio::Activity::Context).to receive(:exist?).and_return(true)
-    allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
-    allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?).and_return(false)
-    allow(ActiveJob::Temporal.config).to receive(:middleware_chain).and_return(middleware_chain)
-    allow(ActiveJob::Temporal::Observability).to receive(:instrument).and_call_original
-    allow(ActiveJob::Temporal::Observability).to receive(:emit).and_call_original
-    allow(ActiveJob::Temporal::AuditLog).to receive(:record)
+
+    call_recorded_method(Temporalio::Activity::Context, :exist?, returns: true)
+    call_recorded_method(Temporalio::Activity::Context, :current, returns: activity_context)
+    call_recorded_method(ActiveJob::Temporal.config, :middleware_chain, returns: middleware_chain)
+
+    @discard_exception_handler = proc { false }
+    @discard_exception_recorder =
+      call_recorded_method(ActiveJob::Temporal::RetryMapper, :discard_exception?) do |*call_args|
+        @discard_exception_handler.call(*call_args)
+      end
+
+    original_instrument = ActiveJob::Temporal::Observability.method(:instrument)
+    @instrument_handler = proc do |event_name, attributes, &block|
+      original_instrument.call(event_name, attributes, &block)
+    end
+    @instrument_recorder = call_recorded_method(ActiveJob::Temporal::Observability, :instrument) do |*call_args, &block|
+      @instrument_handler.call(*call_args, &block)
+    end
+
+    original_emit = ActiveJob::Temporal::Observability.method(:emit)
+    @emit_handler = proc { |*call_args| original_emit.call(*call_args) }
+    @emit_recorder = call_recorded_method(ActiveJob::Temporal::Observability, :emit) do |*call_args|
+      @emit_handler.call(*call_args)
+    end
+
+    @audit_record_handler = proc {}
+    @audit_record_recorder = call_recorded_method(ActiveJob::Temporal::AuditLog, :record) do |*call_args|
+      @audit_record_handler.call(*call_args)
+    end
+
+    @logger_warn_recorder = call_recorded_method(ActiveJob::Temporal::Logger, :warn)
+    @delete_external_payload_recorder =
+      call_recorded_method(ActiveJob::Temporal::Payload, :delete_external_payload)
   end
 
   describe "#execute" do
@@ -55,13 +85,13 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new(*args))
 
-      expect(activity.execute(payload)).to eq("performed")
+      assert_equal "performed", activity.execute(payload)
 
-      expect(job_class.received_args).to eq(args)
-      expect(job_class.thread_key).to eq("#{workflow_id}/runner")
-      expect(job_class.fiber_key).to eq("#{workflow_id}/runner")
-      expect(Thread.current[idempotency_key]).to be_nil
-      expect(Fiber[idempotency_key]).to be_nil
+      assert_equal args, job_class.received_args
+      assert_equal "#{workflow_id}/runner", job_class.thread_key
+      assert_equal "#{workflow_id}/runner", job_class.fiber_key
+      assert_nil Thread.current[idempotency_key]
+      assert_nil Fiber[idempotency_key]
     end
 
     it "makes the idempotency key available to child fibers" do
@@ -79,8 +109,8 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
 
       activity.execute(payload)
 
-      expect(captured_keys).to eq(["#{workflow_id}/runner", nil])
-      expect(Fiber[idempotency_key]).to be_nil
+      assert_equal ["#{workflow_id}/runner", nil], captured_keys
+      assert_nil Fiber[idempotency_key]
     end
 
     it "deserializes payloads with workflow encryption context" do
@@ -91,12 +121,18 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
       encryption_context = { namespace: workflow_namespace, workflow_id: workflow_id }
+      expected_context = encryption_context
 
-      expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload)
-        .with(payload, encryption_context: encryption_context)
-        .and_return(payload)
+      deserialize_recorder =
+        call_recorded_method(ActiveJob::Temporal::Payload, :deserialize_payload) do |actual_payload, **keywords|
+          assert_equal payload, actual_payload
+          assert_equal expected_context, keywords.fetch(:encryption_context)
 
-      expect(activity.execute(payload)).to eq("performed")
+          payload
+        end
+
+      assert_equal "performed", activity.execute(payload)
+      assert_equal 1, deserialize_recorder.calls_for(:deserialize_payload).size
     end
 
     it "deserializes scheduled payloads with the schedule encryption context" do
@@ -109,11 +145,17 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         payload_encryption_context: { namespace: "default", workflow_id: "ajschwf:daily-report" }
       )
 
-      expect(ActiveJob::Temporal::Payload).to receive(:deserialize_payload)
-        .with(payload, encryption_context: { namespace: "default", workflow_id: "ajschwf:daily-report" })
-        .and_return(payload)
+      expected_context = { namespace: "default", workflow_id: "ajschwf:daily-report" }
+      deserialize_recorder =
+        call_recorded_method(ActiveJob::Temporal::Payload, :deserialize_payload) do |actual_payload, **keywords|
+          assert_equal payload, actual_payload
+          assert_equal expected_context, keywords.fetch(:encryption_context)
 
-      expect(activity.execute(payload)).to eq("performed")
+          payload
+        end
+
+      assert_equal "performed", activity.execute(payload)
+      assert_equal 1, deserialize_recorder.calls_for(:deserialize_payload).size
     end
 
     it "uses the scheduled workflow occurrence ID as the ActiveJob execution identity" do
@@ -134,7 +176,7 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job = job_class.new
       job.job_id = "ajsch:daily-report"
       execution_job_id = "ajschwf:daily-report-2024-01-01T12:00:00Z"
-      allow(activity_info).to receive(:workflow_id).and_return(execution_job_id)
+      activity_info.workflow_id = execution_job_id
       payload = ActiveJob::Temporal::Payload.from_job(job).merge(
         schedule_id: "ajsch:daily-report",
         schedule_workflow_id_prefix: "ajschwf:daily-report",
@@ -143,10 +185,13 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
 
       activity.execute(payload)
 
-      expect(job_class.performed).to eq(
-        job_id: execution_job_id,
-        provider_job_id: execution_job_id,
-        idempotency_key: "#{execution_job_id}/runner"
+      assert_equal(
+        {
+          job_id: execution_job_id,
+          provider_job_id: execution_job_id,
+          idempotency_key: "#{execution_job_id}/runner"
+        },
+        job_class.performed
       )
     end
 
@@ -164,8 +209,8 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new("serialized"))
 
-      expect(activity.execute(payload, raw_arguments)).to eq("performed")
-      expect(job_class.received_args).to eq(raw_arguments)
+      assert_equal "performed", activity.execute(payload, raw_arguments)
+      assert_equal raw_arguments, job_class.received_args
     end
 
     it "executes the deserialized job through ActiveJob callbacks with restored state" do
@@ -206,17 +251,18 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job.locale = "en"
       job.timezone = "UTC"
       payload = ActiveJob::Temporal::Payload.from_job(job)
-      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload_args).and_call_original
-
       activity.execute(payload)
 
-      expect(events).to eq([
-                             [:before, "original-job-id", ["payload"]],
-                             [:around_before],
-                             [:perform, "payload", "original-job-id", "provider-job-id", "critical", 7, "en", "UTC"],
-                             [:after, "original-job-id"],
-                             [:around_after]
-                           ])
+      assert_equal(
+        [
+          [:before, "original-job-id", ["payload"]],
+          [:around_before],
+          [:perform, "payload", "original-job-id", "provider-job-id", "critical", 7, "en", "UTC"],
+          [:after, "original-job-id"],
+          [:around_after]
+        ],
+        events
+      )
     end
 
     it "uses custom ActiveJob deserialization before performing" do
@@ -246,7 +292,7 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
 
       activity.execute(payload)
 
-      expect(job_class.tenant_seen).to eq("tenant-42")
+      assert_equal "tenant-42", job_class.tenant_seen
     end
 
     it "raises a retryable application error when retry_on requests another attempt" do
@@ -266,12 +312,11 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job_class.error_to_raise = error_class.new("timeout")
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
-      expect { activity.execute(payload) }
-        .to raise_error(Temporalio::Error::ApplicationError) do |error|
-          expect(error.retryable?).to be(true)
-          expect(error.type).to eq("RuntimeRetryTimeoutError")
-          expect(error.next_retry_delay).to eq(17.0)
-        end
+      error = assert_raises(Temporalio::Error::ApplicationError) { activity.execute(payload) }
+
+      assert error.retryable?
+      assert_equal "RuntimeRetryTimeoutError", error.type
+      assert_equal 17.0, error.next_retry_delay
     end
 
     it "stops Temporal retries when the matching retry_on attempts are exhausted" do
@@ -285,20 +330,12 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
-      retry_activity_info = instance_double(
-        "Temporalio::Activity::Info",
-        workflow_id: workflow_id,
-        workflow_namespace: workflow_namespace,
-        attempt: 2
-      )
-      allow(Temporalio::Activity::Context).to receive(:current)
-        .and_return(instance_double("Temporalio::Activity::Context", info: retry_activity_info))
+      activity_info.attempt = 2
 
-      expect { activity.execute(payload) }
-        .to raise_error(Temporalio::Error::ApplicationError) do |error|
-          expect(error.non_retryable).to be(true)
-          expect(error.type).to eq("RuntimeRetryStandardError")
-        end
+      error = assert_raises(Temporalio::Error::ApplicationError) { activity.execute(payload) }
+
+      assert error.non_retryable
+      assert_equal "RuntimeRetryStandardError", error.type
     end
 
     it "lets Temporal mark DLQ-enabled exhausted retry_on attempts as maximum attempts reached" do
@@ -318,17 +355,11 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         job_id: job.job_id,
         after_attempts: 2
       }
-      retry_activity_info = instance_double(
-        "Temporalio::Activity::Info",
-        workflow_id: workflow_id,
-        workflow_namespace: workflow_namespace,
-        attempt: 2
-      )
-      allow(Temporalio::Activity::Context).to receive(:current)
-        .and_return(instance_double("Temporalio::Activity::Context", info: retry_activity_info))
+      activity_info.attempt = 2
 
-      expect { activity.execute(payload) }
-        .to raise_error(DeadLetterRuntimeRetryError, "standard failure")
+      error = assert_raises(DeadLetterRuntimeRetryError) { activity.execute(payload) }
+
+      assert_equal "standard failure", error.message
     end
 
     it "re-raises exceptions without ActiveJob retry handlers so Temporal can retry" do
@@ -340,12 +371,11 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
-      expect do
-        activity.execute(payload)
-      end.to raise_error(error)
+      raised_error = assert_raises(error.class) { activity.execute(payload) }
 
-      expect(Thread.current[idempotency_key]).to be_nil
-      expect(ActiveJob::Temporal::RetryMapper).to have_received(:discard_exception?).with(job_class, error)
+      assert_same error, raised_error
+      assert_nil Thread.current[idempotency_key]
+      assert_called_with @discard_exception_recorder, :discard_exception?, job_class, error
     end
 
     it "executes the job through configured middleware" do
@@ -373,14 +403,17 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job = job_class.new(*args)
       payload = ActiveJob::Temporal::Payload.from_job(job)
 
-      expect(activity.execute(payload)).to eq("performed")
-      expect(events[0][0]).to eq(:before)
-      expect(events[0][1]).to be_a(job_class)
-      expect(events[0][2]).to eq("#{workflow_id}/runner")
-      expect(events[1..]).to eq([
-                                  [:perform, args],
-                                  [:after, "performed"]
-                                ])
+      assert_equal "performed", activity.execute(payload)
+      assert_equal :before, events[0][0]
+      assert_kind_of job_class, events[0][1]
+      assert_equal "#{workflow_id}/runner", events[0][2]
+      assert_equal(
+        [
+          [:perform, args],
+          [:after, "performed"]
+        ],
+        events[1..]
+      )
     end
 
     it "records job execution observability around perform" do
@@ -393,12 +426,9 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
-      expect(activity.execute(payload)).to eq("performed")
+      assert_equal "performed", activity.execute(payload)
 
-      expect(ActiveJob::Temporal::Observability).to have_received(:instrument).with(
-        :perform,
-        hash_including(job_class: "MetricsRunnerJob", queue: "critical")
-      )
+      assert_instrumented :perform, job_class: "MetricsRunnerJob", queue: "critical"
     end
 
     it "returns the job result when observability fails after perform succeeds" do
@@ -410,26 +440,23 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
-      allow(ActiveJob::Temporal::Observability).to receive(:instrument) do |_event_name, _attributes, &block|
+      @instrument_handler = proc do |_event_name, _attributes, &block|
         block.call
         raise StandardError, "metrics down"
       end
 
-      expect(activity.execute(payload)).to eq("performed")
+      assert_equal "performed", activity.execute(payload)
 
-      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+      assert_warned(
         "activity_post_perform_side_effect_failed",
-        hash_including(
-          side_effect: "observability",
-          job_class: "PostPerformObservabilityJob",
-          queue: "critical",
-          error_class: "StandardError"
-        )
+        side_effect: "observability",
+        job_class: "PostPerformObservabilityJob",
+        queue: "critical",
+        error_class: "StandardError"
       )
-      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+      assert_audit_recorded(
         "job.completed",
-        hash_including(job_class: "PostPerformObservabilityJob")
+        job_class: "PostPerformObservabilityJob"
       )
     end
 
@@ -442,20 +469,18 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
-      allow(ActiveJob::Temporal::AuditLog).to receive(:record) do |event_name, *_arguments|
+      @audit_record_handler = proc do |event_name, *_arguments|
         raise StandardError, "audit down" if event_name == "job.completed"
       end
 
-      expect(activity.execute(payload)).to eq("performed")
+      assert_equal "performed", activity.execute(payload)
 
-      expect(ActiveJob::Temporal::AuditLog).not_to have_received(:record).with(
-        "job.failed",
-        anything
-      )
-      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+      refute_audit_recorded "job.failed"
+      assert_warned(
         "activity_post_perform_side_effect_failed",
-        hash_including(side_effect: "audit", job_class: "PostPerformAuditJob", error_class: "StandardError")
+        side_effect: "audit",
+        job_class: "PostPerformAuditJob",
+        error_class: "StandardError"
       )
     end
 
@@ -467,9 +492,8 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
-      expect(ActiveJob::Temporal::Payload).to receive(:delete_external_payload).with(payload)
-
-      expect(activity.execute(payload)).to eq("performed")
+      assert_equal "performed", activity.execute(payload)
+      assert_called_with @delete_external_payload_recorder, :delete_external_payload, payload
     end
 
     it "returns the job result when external payload cleanup fails after perform succeeds" do
@@ -479,18 +503,19 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
-      allow(ActiveJob::Temporal::Payload).to receive(:delete_external_payload).and_raise(StandardError, "delete down")
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
+      @delete_external_payload_recorder = call_recorded_method(
+        ActiveJob::Temporal::Payload,
+        :delete_external_payload,
+        raises: StandardError.new("delete down")
+      )
 
-      expect(activity.execute(payload)).to eq("performed")
+      assert_equal "performed", activity.execute(payload)
 
-      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+      assert_warned(
         "activity_post_perform_side_effect_failed",
-        hash_including(
-          side_effect: "external_payload_cleanup",
-          job_class: "ExternalPayloadCleanupJob",
-          error_class: "StandardError"
-        )
+        side_effect: "external_payload_cleanup",
+        job_class: "ExternalPayloadCleanupJob",
+        error_class: "StandardError"
       )
     end
 
@@ -502,9 +527,8 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
-      expect(ActiveJob::Temporal::Payload).not_to receive(:delete_external_payload)
-
-      expect { activity.execute(payload) }.to raise_error(SampleJobError)
+      assert_raises(SampleJobError) { activity.execute(payload) }
+      assert_empty @delete_external_payload_recorder.calls_for(:delete_external_payload)
     end
 
     it "decrypts encrypted payloads before metrics, audit, and job execution" do
@@ -522,19 +546,22 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
 
       with_payload_encryption do
         encrypted_payload = ActiveJob::Temporal::Payload.from_job(job)
-        allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload).and_call_original
+        original_deserialize_payload = ActiveJob::Temporal::Payload.method(:deserialize_payload)
+        deserialize_recorder = call_recorded_method(ActiveJob::Temporal::Payload, :deserialize_payload) do |*call_args,
+                                                                                                            **keywords|
+          original_deserialize_payload.call(*call_args, **keywords)
+        end
 
-        expect(activity.execute(encrypted_payload)).to eq("performed")
+        assert_equal "performed", activity.execute(encrypted_payload)
 
-        expect(ActiveJob::Temporal::Payload).to have_received(:deserialize_payload).once
-        expect(job_class.received_args).to eq(args)
-        expect(ActiveJob::Temporal::Observability).to have_received(:instrument).with(
-          :perform,
-          hash_including(job_class: "EncryptedRunnerJob", job_id: job.job_id, queue: "default")
-        )
-        expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+        assert_equal 1, deserialize_recorder.calls_for(:deserialize_payload).size
+        assert_equal args, job_class.received_args
+        assert_instrumented :perform, job_class: "EncryptedRunnerJob", job_id: job.job_id, queue: "default"
+        assert_audit_recorded(
           "job.started",
-          hash_including(job_class: "EncryptedRunnerJob", job_id: job.job_id, queue: "default")
+          job_class: "EncryptedRunnerJob",
+          job_id: job.job_id,
+          queue: "default"
         )
       end
     end
@@ -555,13 +582,10 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       ActiveJob::Temporal.config.payload_serializer = :message_pack
       payload = ActiveJob::Temporal::Payload.from_job(job)
 
-      expect(activity.execute(payload)).to eq("performed")
+      assert_equal "performed", activity.execute(payload)
 
-      expect(job_class.received_args).to eq(args)
-      expect(ActiveJob::Temporal::Observability).to have_received(:instrument).with(
-        :perform,
-        hash_including(job_class: "SerializedRunnerJob", job_id: job.job_id, queue: "default")
-      )
+      assert_equal args, job_class.received_args
+      assert_instrumented :perform, job_class: "SerializedRunnerJob", job_id: job.job_id, queue: "default"
     ensure
       ActiveJob::Temporal.config.payload_serializer = :json
     end
@@ -578,32 +602,24 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job.job_id = "job-1"
       payload = ActiveJob::Temporal::Payload.from_job(job)
 
-      expect(activity.execute(payload)).to eq("secret-result")
+      assert_equal "secret-result", activity.execute(payload)
 
-      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+      assert_audit_recorded(
         "job.started",
-        hash_including(
-          job_class: "AuditRunnerJob",
-          job_id: "job-1",
-          queue: "critical",
-          workflow_id: workflow_id
-        )
+        job_class: "AuditRunnerJob",
+        job_id: "job-1",
+        queue: "critical",
+        workflow_id: workflow_id
       )
-      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+      completed_attributes = assert_audit_recorded(
         "job.completed",
-        hash_including(
-          job_class: "AuditRunnerJob",
-          job_id: "job-1",
-          queue: "critical",
-          duration_ms: a_kind_of(Numeric)
-        )
+        job_class: "AuditRunnerJob",
+        job_id: "job-1",
+        queue: "critical"
       )
-      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
-        "job.completed",
-        satisfy do |attributes|
-          !attributes.key?(:arguments) && !attributes.key?(:result)
-        end
-      )
+      assert_kind_of Numeric, completed_attributes[:duration_ms]
+      refute completed_attributes.key?(:arguments)
+      refute completed_attributes.key?(:result)
     end
 
     it "records failed metrics for setup failures before perform starts" do
@@ -611,11 +627,13 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       payload = { "job_class" => "SetupFailureJob", "queue_name" => "critical" }
       error = ArgumentError.new("bad payload")
       adapter = ActiveJob::Temporal.config.observability.use(:prometheus)
-      allow(ActiveJob::Base).to receive(:deserialize).and_raise(error)
+      call_recorded_method(ActiveJob::Base, :deserialize, raises: error)
 
-      expect { activity.execute(payload) }.to raise_error(error)
+      raised_error = assert_raises(error.class) { activity.execute(payload) }
 
-      expect(adapter.render).to include(
+      assert_same error, raised_error
+      assert_includes(
+        adapter.render,
         'activejob_temporal_jobs_failed_total{class="SetupFailureJob",queue="critical",error="ArgumentError"} 1.0'
       )
     ensure
@@ -625,17 +643,19 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
     it "wraps payload deserialization failures in non-retryable ApplicationError" do
       payload = { "job_class" => "UndeserializableJob", "queue_name" => "critical" }
       original_error = ActiveJob::SerializationError.new("bad payload")
-      allow(ActiveJob::Temporal::Payload).to receive(:deserialize_payload)
-        .with(payload, encryption_context: { namespace: workflow_namespace, workflow_id: workflow_id })
-        .and_raise(original_error)
+      expected_context = { namespace: workflow_namespace, workflow_id: workflow_id }
+      call_recorded_method(ActiveJob::Temporal::Payload, :deserialize_payload) do |actual_payload, encryption_context:|
+        assert_equal payload, actual_payload
+        assert_equal expected_context, encryption_context
 
-      expect { activity.execute(payload) }
-        .to raise_error(Temporalio::Error::ApplicationError) do |error|
-          expect(error.non_retryable).to eq(true)
-          expect(error.message).to eq(original_error.message)
-        end
+        raise original_error
+      end
 
-      expect(ActiveJob::Temporal::RetryMapper).not_to have_received(:discard_exception?)
+      error = assert_raises(Temporalio::Error::ApplicationError) { activity.execute(payload) }
+
+      assert_equal true, error.non_retryable
+      assert_equal original_error.message, error.message
+      assert_empty @discard_exception_recorder.calls_for(:discard_exception?)
     end
 
     it "records failed audit events with error metadata" do
@@ -650,25 +670,19 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job.job_id = "job-1"
       payload = ActiveJob::Temporal::Payload.from_job(job)
 
-      expect { activity.execute(payload) }.to raise_error(SampleJobError)
+      assert_raises(SampleJobError) { activity.execute(payload) }
 
-      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+      failed_attributes = assert_audit_recorded(
         "job.failed",
-        hash_including(
-          job_class: "AuditFailureRunnerJob",
-          job_id: "job-1",
-          queue: "critical",
-          error_class: "SampleJobError",
-          error_fingerprint: a_string_matching(/\A[0-9a-f]{64}\z/),
-          duration_ms: a_kind_of(Numeric)
-        )
+        job_class: "AuditFailureRunnerJob",
+        job_id: "job-1",
+        queue: "critical",
+        error_class: "SampleJobError"
       )
-      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
-        "job.failed",
-        satisfy do |attributes|
-          !attributes.key?(:error_message) && !attributes.key?(:backtrace)
-        end
-      )
+      assert_match(/\A[0-9a-f]{64}\z/, failed_attributes[:error_fingerprint])
+      assert_kind_of Numeric, failed_attributes[:duration_ms]
+      refute failed_attributes.key?(:error_message)
+      refute failed_attributes.key?(:backtrace)
     end
 
     it "propagates the original job error when failed audit recording fails" do
@@ -683,16 +697,18 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job = job_class.new
       job.job_id = "job-1"
       payload = ActiveJob::Temporal::Payload.from_job(job)
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
-      allow(ActiveJob::Temporal::AuditLog).to receive(:record) do |event_name, *_arguments|
+      @audit_record_handler = proc do |event_name, *_arguments|
         raise StandardError, "audit down" if event_name == "job.failed"
       end
 
-      expect { activity.execute(payload) }.to raise_error(error)
+      raised_error = assert_raises(error.class) { activity.execute(payload) }
 
-      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+      assert_same error, raised_error
+      assert_warned(
         "activity_failure_side_effect_failed",
-        hash_including(side_effect: "audit", job_class: "AuditSideEffectFailureRunnerJob", error_class: "StandardError")
+        side_effect: "audit",
+        job_class: "AuditSideEffectFailureRunnerJob",
+        error_class: "StandardError"
       )
     end
 
@@ -708,16 +724,14 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job.job_id = "job-1"
       payload = ActiveJob::Temporal::Payload.from_job(job)
 
-      expect { activity.execute(payload) }.to raise_error(Temporalio::Error::CanceledError)
+      assert_raises(Temporalio::Error::CanceledError) { activity.execute(payload) }
 
-      expect(ActiveJob::Temporal::AuditLog).to have_received(:record).with(
+      assert_audit_recorded(
         "job.cancelled",
-        hash_including(
-          job_class: "CancelledRunnerJob",
-          job_id: "job-1",
-          queue: "critical",
-          status: "observed"
-        )
+        job_class: "CancelledRunnerJob",
+        job_id: "job-1",
+        queue: "critical",
+        status: "observed"
       )
     end
 
@@ -744,22 +758,16 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
-      expect { activity.execute(payload) }.to raise_error(error)
+      raised_error = assert_raises(error.class) { activity.execute(payload) }
 
-      expect(job_class.performed).to be_nil
-      expect(ActiveJob::Temporal::RetryMapper).to have_received(:discard_exception?).with(job_class, error)
-      expect(Thread.current[idempotency_key]).to be_nil
+      assert_same error, raised_error
+      assert_nil job_class.performed
+      assert_called_with @discard_exception_recorder, :discard_exception?, job_class, error
+      assert_nil Thread.current[idempotency_key]
     end
 
     it "records retry observability for retry attempts that fail" do
-      activity_info = instance_double(
-        "Temporalio::Activity::Info",
-        workflow_id: workflow_id,
-        workflow_namespace: workflow_namespace,
-        attempt: 2
-      )
-      activity_context = instance_double("Temporalio::Activity::Context", info: activity_info)
-      allow(Temporalio::Activity::Context).to receive(:current).and_return(activity_context)
+      activity_info.attempt = 2
       job_class = stub_const("RetryObservabilityRunnerJob", Class.new(ActiveJob::Base) do
         queue_as :critical
 
@@ -769,23 +777,13 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
 
-      expect { activity.execute(payload) }.to raise_error(SampleJobError)
+      assert_raises(SampleJobError) { activity.execute(payload) }
 
-      expect(ActiveJob::Temporal::Observability).to have_received(:emit).with(
-        :retry,
-        hash_including(job_class: "RetryObservabilityRunnerJob", queue: "critical", error: "SampleJobError")
-      )
+      assert_emitted :retry, job_class: "RetryObservabilityRunnerJob", queue: "critical", error: "SampleJobError"
     end
 
     it "propagates the original job error when retry observability fails" do
-      retry_activity_info = instance_double(
-        "Temporalio::Activity::Info",
-        workflow_id: workflow_id,
-        workflow_namespace: workflow_namespace,
-        attempt: 2
-      )
-      retry_activity_context = instance_double("Temporalio::Activity::Context", info: retry_activity_info)
-      allow(Temporalio::Activity::Context).to receive(:current).and_return(retry_activity_context)
+      activity_info.attempt = 2
       error = SampleJobError.new("boom")
       job_class = stub_const("RetryObservabilityFailureRunnerJob", Class.new(ActiveJob::Base) do
         queue_as :critical
@@ -795,20 +793,18 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
-      allow(ActiveJob::Temporal::Logger).to receive(:warn)
-      allow(ActiveJob::Temporal::Observability).to receive(:emit) do |event_name, *_arguments|
+      @emit_handler = proc do |event_name, *_arguments|
         raise StandardError, "metrics down" if event_name == :retry
       end
 
-      expect { activity.execute(payload) }.to raise_error(error)
+      raised_error = assert_raises(error.class) { activity.execute(payload) }
 
-      expect(ActiveJob::Temporal::Logger).to have_received(:warn).with(
+      assert_same error, raised_error
+      assert_warned(
         "activity_failure_side_effect_failed",
-        hash_including(
-          side_effect: "retry_observability",
-          job_class: "RetryObservabilityFailureRunnerJob",
-          error_class: "StandardError"
-        )
+        side_effect: "retry_observability",
+        job_class: "RetryObservabilityFailureRunnerJob",
+        error_class: "StandardError"
       )
     end
 
@@ -829,20 +825,55 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
         end
       end)
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new)
-      allow(ActiveJob::Temporal::RetryMapper).to receive(:discard_exception?)
-        .with(job_class, instance_of(FatalJobError))
-        .and_return(true)
+      @discard_exception_handler = proc do |actual_job_class, error|
+        actual_job_class == job_class && error.is_a?(FatalJobError)
+      end
 
-      expect { activity.execute(payload) }
-        .to raise_error(Temporalio::Error::ApplicationError) do |error|
-          expect(error.non_retryable).to be(true)
-          expect(error.type).to eq("FatalJobError")
-          expect(error.message).to include("fail fast")
-        end
+      error = assert_raises(Temporalio::Error::ApplicationError) { activity.execute(payload) }
 
-      expect(job_class.discarded_error).to be_a(FatalJobError)
-      expect(Thread.current[idempotency_key]).to be_nil
+      assert error.non_retryable
+      assert_equal "FatalJobError", error.type
+      assert_includes error.message, "fail fast"
+      assert_kind_of FatalJobError, job_class.discarded_error
+      assert_nil Thread.current[idempotency_key]
     end
+  end
+
+  def assert_instrumented(event_name, expected_attributes)
+    assert_recorded_call(@instrument_recorder, :instrument, event_name, expected_attributes)
+  end
+
+  def assert_emitted(event_name, expected_attributes)
+    assert_recorded_call(@emit_recorder, :emit, event_name, expected_attributes)
+  end
+
+  def assert_audit_recorded(event_name, expected_attributes)
+    assert_recorded_call(@audit_record_recorder, :record, event_name, expected_attributes)
+  end
+
+  def refute_audit_recorded(event_name)
+    matching_calls = @audit_record_recorder.calls_for(:record).select do |recorded_call|
+      recorded_call.arguments.first == event_name
+    end
+
+    assert_empty matching_calls, "Expected no audit record for #{event_name.inspect}"
+  end
+
+  def assert_warned(event_name, expected_attributes)
+    assert_recorded_call(@logger_warn_recorder, :warn, event_name, expected_attributes)
+  end
+
+  def assert_recorded_call(recorder, method_name, event_name, expected_attributes)
+    matching_call = recorder.calls_for(method_name).find do |recorded_call|
+      recorded_call.arguments.first == event_name &&
+        expected_attributes.all? { |key, value| recorded_call.arguments[1][key] == value }
+    end
+
+    refute_nil matching_call, "Expected #{method_name} #{event_name.inspect} with #{expected_attributes.inspect}"
+
+    attributes = matching_call.arguments[1]
+    assert_hash_includes expected_attributes, attributes
+    attributes
   end
 
   def with_payload_encryption

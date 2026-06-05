@@ -9,14 +9,14 @@ describe ActiveJob::Temporal::TLSFile do
       path = File.join(directory, "client.pem")
       File.write(path, "certificate")
 
-      expect(described_class.read(path)).to eq("certificate")
-      expect(described_class.readable_regular_file?(path)).to be(true)
+      assert_equal "certificate", described_class.read(path)
+      assert described_class.readable_regular_file?(path)
     end
   end
 
   it "returns nil for blank paths" do
-    expect(described_class.read(nil)).to be_nil
-    expect(described_class.read("")).to be_nil
+    assert_nil described_class.read(nil)
+    assert_nil described_class.read("")
   end
 
   it "rejects symlink paths" do
@@ -26,9 +26,9 @@ describe ActiveJob::Temporal::TLSFile do
       File.write(target_path, "certificate")
       File.symlink(target_path, symlink_path)
 
-      expect(described_class.readable_regular_file?(symlink_path)).to be(false)
-      expect { described_class.read(symlink_path) }
-        .to raise_error(described_class::Error, /must not be a symlink/)
+      refute described_class.readable_regular_file?(symlink_path)
+      error = assert_raises(described_class::Error) { described_class.read(symlink_path) }
+      assert_match(/must not be a symlink/, error.message)
     end
   end
 end

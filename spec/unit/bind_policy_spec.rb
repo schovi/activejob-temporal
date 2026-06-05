@@ -5,52 +5,55 @@ require "spec_helper"
 describe ActiveJob::Temporal::BindPolicy do
   describe ".public_bind?" do
     it "treats loopback binds as private" do
-      expect(described_class.public_bind?("127.0.0.1")).to be(false)
-      expect(described_class.public_bind?("::1")).to be(false)
-      expect(described_class.public_bind?("localhost")).to be(false)
+      refute described_class.public_bind?("127.0.0.1")
+      refute described_class.public_bind?("::1")
+      refute described_class.public_bind?("localhost")
     end
 
     it "treats wildcard and non-loopback binds as public" do
-      expect(described_class.public_bind?("0.0.0.0")).to be(true)
-      expect(described_class.public_bind?("::")).to be(true)
-      expect(described_class.public_bind?("192.168.1.10")).to be(true)
-      expect(described_class.public_bind?("worker.internal")).to be(true)
+      assert described_class.public_bind?("0.0.0.0")
+      assert described_class.public_bind?("::")
+      assert described_class.public_bind?("192.168.1.10")
+      assert described_class.public_bind?("worker.internal")
     end
   end
 
   describe ".allow_public_bind?" do
     it "recognizes explicit truthy opt-ins" do
-      expect(described_class.allow_public_bind?("true")).to be(true)
-      expect(described_class.allow_public_bind?("TRUE")).to be(true)
-      expect(described_class.allow_public_bind?("1")).to be(true)
-      expect(described_class.allow_public_bind?("yes")).to be(true)
-      expect(described_class.allow_public_bind?("on")).to be(true)
-      expect(described_class.allow_public_bind?("false")).to be(false)
-      expect(described_class.allow_public_bind?("0")).to be(false)
-      expect(described_class.allow_public_bind?("no")).to be(false)
-      expect(described_class.allow_public_bind?("off")).to be(false)
+      assert described_class.allow_public_bind?("true")
+      assert described_class.allow_public_bind?("TRUE")
+      assert described_class.allow_public_bind?("1")
+      assert described_class.allow_public_bind?("yes")
+      assert described_class.allow_public_bind?("on")
+      refute described_class.allow_public_bind?("false")
+      refute described_class.allow_public_bind?("0")
+      refute described_class.allow_public_bind?("no")
+      refute described_class.allow_public_bind?("off")
     end
   end
 
   describe ".validate!" do
     it "rejects public binds without explicit opt-in" do
-      expect do
+      error = assert_raises(ArgumentError) do
         described_class.validate!(
           endpoint: "health check",
           bind_address: "0.0.0.0",
           allow_public_bind: false
         )
-      end.to raise_error(ArgumentError, /without explicit public bind opt-in/)
+      end
+      assert_match(/without explicit public bind opt-in/, error.message)
     end
 
     it "warns when public binds are explicitly allowed" do
-      expect do
+      _stdout, stderr = capture_io do
         described_class.validate!(
           endpoint: "metrics",
           bind_address: "0.0.0.0",
           allow_public_bind: true
         )
-      end.to output(/Warning: exposing unauthenticated metrics endpoint/).to_stderr
+      end
+
+      assert_match(/Warning: exposing unauthenticated metrics endpoint/, stderr)
     end
   end
 end

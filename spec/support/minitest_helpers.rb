@@ -100,7 +100,7 @@ module MinitestHelpers
       singleton_class = object.singleton_class
       had_singleton_method = singleton_class.method_defined?(method_name) ||
                              singleton_class.private_method_defined?(method_name)
-      original_method = object.method(method_name) if had_singleton_method
+      original_method = singleton_class.instance_method(method_name) if had_singleton_method
       @stubbed_methods ||= []
       @stubbed_methods << [object, method_name, original_method]
 
@@ -182,9 +182,7 @@ module MinitestHelpers
 
         next unless original_method
 
-        singleton_class.define_method(method_name) do |*arguments, **keywords, &block|
-          original_method.call(*arguments, **keywords, &block)
-        end
+        singleton_class.define_method(method_name, original_method)
       end
       @stubbed_methods = []
     end

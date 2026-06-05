@@ -4,6 +4,7 @@ require "spec_helper"
 require "fileutils"
 require "stringio"
 require "tmpdir"
+require "activejob/temporal/rails_environment_loader"
 
 describe ActiveJob::Temporal::RailsEnvironmentLoader do
   around do |example|
@@ -18,8 +19,8 @@ describe ActiveJob::Temporal::RailsEnvironmentLoader do
       Dir.chdir(directory) do
         result = described_class.resolve(".")
 
-        expect(result).not_to be_loaded
-        expect(result.warnings).to be_empty
+        refute result.loaded?
+        assert_empty result.warnings
       end
     end
   end
@@ -28,8 +29,8 @@ describe ActiveJob::Temporal::RailsEnvironmentLoader do
     Dir.mktmpdir do |directory|
       missing_root = File.join(directory, "missing")
 
-      expect { described_class.resolve(missing_root) }
-        .to raise_error(described_class::Error, /Cannot find Rails application/)
+      error = assert_raises(described_class::Error) { described_class.resolve(missing_root) }
+      assert_match(/Cannot find Rails application/, error.message)
     end
   end
 
@@ -37,8 +38,8 @@ describe ActiveJob::Temporal::RailsEnvironmentLoader do
     Dir.mktmpdir do |directory|
       result = described_class.resolve(directory)
 
-      expect(result).not_to be_loaded
-      expect(result.warnings).to include("Warning: #{directory} does not appear to be a Rails application")
+      refute result.loaded?
+      assert_includes result.warnings, "Warning: #{directory} does not appear to be a Rails application"
     end
   end
 
@@ -54,9 +55,9 @@ describe ActiveJob::Temporal::RailsEnvironmentLoader do
         require_environment: ->(path) { loaded_paths << path }
       )
 
-      expect(result).to be_loaded
-      expect(loaded_paths).to eq([File.realpath(File.join(rails_root, "config", "environment.rb"))])
-      expect(warning_io.string).to eq("")
+      assert result.loaded?
+      assert_equal [File.realpath(File.join(rails_root, "config", "environment.rb"))], loaded_paths
+      assert_equal "", warning_io.string
     end
   end
 
@@ -64,8 +65,8 @@ describe ActiveJob::Temporal::RailsEnvironmentLoader do
     Dir.mktmpdir do |directory|
       rails_root = create_rails_root(directory, environment: false)
 
-      expect { described_class.resolve(rails_root) }
-        .to raise_error(described_class::Error, /Cannot find Rails environment/)
+      error = assert_raises(described_class::Error) { described_class.resolve(rails_root) }
+      assert_match(/Cannot find Rails environment/, error.message)
     end
   end
 
@@ -76,8 +77,8 @@ describe ActiveJob::Temporal::RailsEnvironmentLoader do
       File.write(outside_environment_path, "# outside\n")
       File.symlink(outside_environment_path, File.join(rails_root, "config", "environment.rb"))
 
-      expect { described_class.resolve(rails_root) }
-        .to raise_error(described_class::Error, /outside RAILS_ROOT/)
+      error = assert_raises(described_class::Error) { described_class.resolve(rails_root) }
+      assert_match(/outside RAILS_ROOT/, error.message)
     end
   end
 
@@ -87,8 +88,8 @@ describe ActiveJob::Temporal::RailsEnvironmentLoader do
       environment_path = File.join(rails_root, "config", "environment.rb")
       File.chmod(0o664, environment_path)
 
-      expect { described_class.resolve(rails_root) }
-        .to raise_error(described_class::Error, /group- or world-writable path/)
+      error = assert_raises(described_class::Error) { described_class.resolve(rails_root) }
+      assert_match(/group- or world-writable path/, error.message)
     ensure
       File.chmod(0o644, environment_path) if environment_path && File.exist?(environment_path)
     end

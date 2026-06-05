@@ -61,9 +61,9 @@ describe "Idempotency key handling", :integration do
     captured_key = job_class.captured_key
 
     # Verify the idempotency key includes the workflow ID
-    expect(captured_key).to be_present
-    expect(captured_key).to include(workflow_id)
-    expect(captured_key).to match(%r{/runner\z}) # Should end with "/runner"
+    assert captured_key.present?
+    assert_includes captured_key, workflow_id
+    assert_match %r{/runner\z}, captured_key
   end
 
   it "provides consistent idempotency key across job execution" do
@@ -105,11 +105,11 @@ describe "Idempotency key handling", :integration do
     captured_keys = job_class.captured_keys
 
     # Verify we captured at least one key
-    expect(captured_keys.size).to be >= 1
+    assert_operator captured_keys.size, :>=, 1
 
     # Verify all keys are identical (consistent throughout execution)
-    expect(captured_keys.uniq.size).to eq(1)
-    expect(captured_keys.first).to match(%r{/runner\z})
+    assert_equal 1, captured_keys.uniq.size
+    assert_match %r{/runner\z}, captured_keys.first
   end
 
   it "clears idempotency key after job execution" do
@@ -134,7 +134,7 @@ describe "Idempotency key handling", :integration do
 
     # NOTE: The activity unit specs cover execution-local cleanup directly.
     # This integration test verifies the real worker flow completes without hanging.
-    expect(@worker_thread).to be_alive
+    assert @worker_thread.alive?
   end
 
   it "generates unique idempotency keys for different jobs" do
@@ -174,17 +174,17 @@ describe "Idempotency key handling", :integration do
     end
 
     # Verify we have 3 different jobs
-    expect(executed_jobs.size).to eq(3)
+    assert_equal 3, executed_jobs.size
 
     # Extract the keys
     keys = executed_jobs.map { |job| job[:key] }
 
     # Verify all keys are unique (different jobs have different workflow IDs)
-    expect(keys.uniq.size).to eq(3)
+    assert_equal 3, keys.uniq.size
 
     # Verify all keys are properly formatted
     keys.each do |key|
-      expect(key).to match(%r{/runner\z})
+      assert_match %r{/runner\z}, key
     end
   end
 

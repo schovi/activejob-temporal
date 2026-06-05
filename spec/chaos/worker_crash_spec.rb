@@ -24,7 +24,7 @@ describe "ActiveJob Temporal worker crash recovery", :chaos do
     workflow_id = record_workflow_id(job)
     wait_for_history_event(workflow_id, :EVENT_TYPE_TIMER_STARTED)
 
-    expect(ChaosEventLog.events_for("job.completed", label: label)).to be_empty
+    assert_empty ChaosEventLog.events_for("job.completed", label: label)
     stop_worker_process(@worker_pid, signal: "KILL")
     @worker_pid = nil
     sleep 8.5
@@ -32,7 +32,7 @@ describe "ActiveJob Temporal worker crash recovery", :chaos do
     @worker_pid = start_worker_process(task_queue)
     description = wait_for_terminal_status(workflow_id)
 
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
     expect_completed_once(label)
   end
 
@@ -49,10 +49,10 @@ describe "ActiveJob Temporal worker crash recovery", :chaos do
     @worker_pid = start_worker_process(task_queue)
     description = wait_for_terminal_status(workflow_id, timeout: 45)
 
-    expect(description.status).to eq(Temporalio::Client::WorkflowExecutionStatus::COMPLETED)
-    expect(ChaosEventLog.events_for("activity.started", label: label).size).to be >= 2
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
+    assert_operator ChaosEventLog.events_for("activity.started", label: label).size, :>=, 2
     expect_completed_once(label)
-    expect(ChaosEventLog.events_for("job.completed", label: label).first[:idempotency_key])
-      .to eq(first_start[:idempotency_key])
+    assert_equal first_start[:idempotency_key],
+                 ChaosEventLog.events_for("job.completed", label: label).first[:idempotency_key]
   end
 end

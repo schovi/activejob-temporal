@@ -7,10 +7,7 @@ require "activejob/temporal/worker_runtime"
 
 describe ActiveJob::Temporal::MetricsServer do
   let(:provider) do
-    double(
-      "PrometheusProvider",
-      render: "# TYPE activejob_temporal_active_workers gauge\nactivejob_temporal_active_workers 1.0\n"
-    )
+    metrics_provider("# TYPE activejob_temporal_active_workers gauge\nactivejob_temporal_active_workers 1.0\n")
   end
 
   after do
@@ -21,13 +18,15 @@ describe ActiveJob::Temporal::MetricsServer do
     it "defaults to localhost binding" do
       @server = described_class.new(port: 0, provider: provider).start
 
-      expect(@server.bind_address).to eq("127.0.0.1")
+      assert_equal "127.0.0.1", @server.bind_address
     end
 
     it "rejects public binds without explicit opt-in" do
-      expect do
+      error = assert_raises(ArgumentError) do
         described_class.new(port: 0, bind_address: "0.0.0.0", provider: provider).start
-      end.to raise_error(ArgumentError, /metrics endpoint.*public bind opt-in/)
+      end
+
+      assert_match(/metrics endpoint.*public bind opt-in/, error.message)
     end
 
     it "serves Prometheus text metrics" do
@@ -36,9 +35,9 @@ describe ActiveJob::Temporal::MetricsServer do
       response = http_request("GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
       headers, body = response.split("\r\n\r\n", 2)
 
-      expect(headers).to include("HTTP/1.1 200 OK")
-      expect(headers).to include("Content-Type: text/plain; version=0.0.4")
-      expect(body).to include("activejob_temporal_active_workers 1.0")
+      assert_includes headers, "HTTP/1.1 200 OK"
+      assert_includes headers, "Content-Type: text/plain; version=0.0.4"
+      assert_includes body, "activejob_temporal_active_workers 1.0"
     end
 
     it "returns no response body for HEAD requests" do
@@ -47,9 +46,9 @@ describe ActiveJob::Temporal::MetricsServer do
       response = http_request("HEAD /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
       headers, body = response.split("\r\n\r\n", 2)
 
-      expect(headers).to include("HTTP/1.1 200 OK")
-      expect(headers).to include("Content-Length: 0")
-      expect(body.to_s).to eq("")
+      assert_includes headers, "HTTP/1.1 200 OK"
+      assert_includes headers, "Content-Length: 0"
+      assert_empty body.to_s
     end
 
     it "returns method not allowed for unsupported methods" do
@@ -57,14 +56,15 @@ describe ActiveJob::Temporal::MetricsServer do
 
       response = http_request("POST /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
 
-      expect(response).to include("HTTP/1.1 405 Method Not Allowed")
+      assert_includes response, "HTTP/1.1 405 Method Not Allowed"
     end
 
     it "does not create a thread for each stalled client" do
       created_threads = Queue.new
-      allow(Thread).to receive(:new).and_wrap_original do |original, *arguments, &block|
+      original_thread_new = Thread.method(:new)
+      call_recorded_method(Thread, :new) do |*arguments, &block|
         created_threads << true
-        original.call(*arguments, &block)
+        original_thread_new.call(*arguments, &block)
       end
       @server = described_class.new(port: 0, bind_address: "127.0.0.1", provider: provider).start
       threads_after_start = created_threads.length
@@ -76,7 +76,7 @@ describe ActiveJob::Temporal::MetricsServer do
       end
       sleep 0.2
 
-      expect(created_threads.length).to eq(threads_after_start)
+      assert_equal threads_after_start, created_threads.length
     ensure
       stalled_sockets&.each(&:close)
     end
@@ -94,35 +94,46 @@ describe ActiveJob::Temporal::MetricsServer do
 
       response = http_request("GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
 
-      expect(response).to include("HTTP/1.1 200 OK")
+      assert_includes response, "HTTP/1.1 200 OK"
     ensure
       stalled_sockets&.each(&:close)
     end
 
     it "returns internal server error for provider failures and keeps serving later requests" do
       failing_provider = flaky_metrics_provider(described_class::CONNECTION_WORKERS)
-      allow(ActiveJob::Temporal::Logger).to receive(:error)
+      logger_errors = call_recorded_method(ActiveJob::Temporal::Logger, :error)
       @server = described_class.new(port: 0, bind_address: "127.0.0.1", provider: failing_provider).start
 
       described_class::CONNECTION_WORKERS.times do
         response = http_request("GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
 
-        expect(response).to include("HTTP/1.1 500 Internal Server Error")
-        expect(response).to include("internal_server_error")
+        assert_includes response, "HTTP/1.1 500 Internal Server Error"
+        assert_includes response, "internal_server_error"
       end
 
       response = http_request("GET /metrics HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
 
-      expect(response).to include("HTTP/1.1 200 OK")
-      expect(response).to include("activejob_temporal_active_workers 1.0")
-      expect(ActiveJob::Temporal::Logger).to have_received(:error).with(
-        "metrics_request_failed",
-        hash_including(error_class: "RuntimeError", message: "metrics render failed")
-      ).exactly(described_class::CONNECTION_WORKERS).times
+      assert_includes response, "HTTP/1.1 200 OK"
+      assert_includes response, "activejob_temporal_active_workers 1.0"
+
+      matching_errors = logger_errors.calls_for(:error).count do |call|
+        attributes = call.arguments[1] || call.keywords
+
+        call.arguments.first == "metrics_request_failed" &&
+          attributes[:error_class] == "RuntimeError" &&
+          attributes[:message] == "metrics render failed"
+      end
+      assert_equal described_class::CONNECTION_WORKERS, matching_errors
     end
   end
 
   private
+
+  def metrics_provider(metrics)
+    Object.new.tap do |provider|
+      provider.define_singleton_method(:render) { metrics }
+    end
+  end
 
   def flaky_metrics_provider(failures)
     calls = 0

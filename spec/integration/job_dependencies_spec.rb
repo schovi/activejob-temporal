@@ -51,7 +51,7 @@ describe "ActiveJob Temporal job dependencies", :integration do
     wait_for_sequence("child_started")
 
     sequence = TestState.instance.test_result
-    expect(sequence.index("parent_completed")).to be < sequence.index("child_started")
+    assert_operator sequence.index("parent_completed"), :<, sequence.index("child_started")
   end
 
   it "waits for every independently enqueued dependency before executing" do
@@ -99,8 +99,8 @@ describe "ActiveJob Temporal job dependencies", :integration do
 
     sequence = TestState.instance.test_result
     dependent_index = sequence.index("dependent_started")
-    expect(sequence.index("first_parent_completed")).to be < dependent_index
-    expect(sequence.index("second_parent_completed")).to be < dependent_index
+    assert_operator sequence.index("first_parent_completed"), :<, dependent_index
+    assert_operator sequence.index("second_parent_completed"), :<, dependent_index
   end
 
   private

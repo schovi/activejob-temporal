@@ -4,15 +4,36 @@ require "spec_helper"
 require "active_job/continuation"
 require_relative "../fixtures/sample_jobs"
 
+module AdapterSpecSupport
+  class FakeTemporalClient
+    attr_accessor :start_workflow_result, :start_workflow_error, :on_start_workflow
+    attr_reader :start_workflow_calls
+
+    def initialize(start_workflow_result: "workflow-handle")
+      @start_workflow_result = start_workflow_result
+      @start_workflow_calls = []
+    end
+
+    def start_workflow(*arguments, **keywords)
+      @start_workflow_calls << { arguments: arguments, keywords: keywords }
+      raise start_workflow_error if start_workflow_error
+
+      return on_start_workflow.call(*arguments, **keywords) if on_start_workflow
+
+      start_workflow_result
+    end
+  end
+end
+
 describe ActiveJob::Temporal::Adapter do
   describe ".build_workflow_id" do
     let(:configuration) { ActiveJob::Temporal::Configuration.new }
 
     before do
-      allow(ActiveJob::Temporal).to receive(:config).and_return(configuration)
+      call_recorded_method(ActiveJob::Temporal, :config, returns: configuration)
     end
 
-    context "with a simple job" do
+    describe "with a simple job" do
       let(:job) do
         job = SimpleJob.new
         job.job_id = "abc-123"
@@ -22,18 +43,18 @@ describe ActiveJob::Temporal::Adapter do
       it "returns workflow ID in the expected format" do
         workflow_id = described_class.build_workflow_id(job)
 
-        expect(workflow_id).to eq("ajwf:SimpleJob:abc-123")
+        assert_equal "ajwf:SimpleJob:abc-123", workflow_id
       end
 
       it "is deterministic for the same job instance" do
         first = described_class.build_workflow_id(job)
         second = described_class.build_workflow_id(job)
 
-        expect(first).to eq(second)
+        assert_equal first, second
       end
     end
 
-    context "with different job classes sharing job_id" do
+    describe "with different job classes sharing job_id" do
       let(:simple_job) do
         job = SimpleJob.new
         job.job_id = "shared-id"
@@ -50,13 +71,13 @@ describe ActiveJob::Temporal::Adapter do
         simple_id = described_class.build_workflow_id(simple_job)
         scheduled_id = described_class.build_workflow_id(scheduled_job)
 
-        expect(simple_id).to eq("ajwf:SimpleJob:shared-id")
-        expect(scheduled_id).to eq("ajwf:ScheduledJob:shared-id")
-        expect(simple_id).not_to eq(scheduled_id)
+        assert_equal "ajwf:SimpleJob:shared-id", simple_id
+        assert_equal "ajwf:ScheduledJob:shared-id", scheduled_id
+        refute_equal simple_id, scheduled_id
       end
     end
 
-    context "with the same job class and different job IDs" do
+    describe "with the same job class and different job IDs" do
       it "returns unique workflow IDs" do
         job_one = SimpleJob.new
         job_one.job_id = "id-1"
@@ -67,19 +88,19 @@ describe ActiveJob::Temporal::Adapter do
         id_one = described_class.build_workflow_id(job_one)
         id_two = described_class.build_workflow_id(job_two)
 
-        expect(id_one).to eq("ajwf:SimpleJob:id-1")
-        expect(id_two).to eq("ajwf:SimpleJob:id-2")
-        expect(id_one).not_to eq(id_two)
+        assert_equal "ajwf:SimpleJob:id-1", id_one
+        assert_equal "ajwf:SimpleJob:id-2", id_two
+        refute_equal id_one, id_two
       end
     end
 
-    context "with a custom workflow ID generator configured" do
+    describe "with a custom workflow ID generator configured" do
       it "returns the configured workflow ID" do
         configuration.workflow_id_generator = ->(job) { "custom:#{job.class.name}:#{job.job_id}" }
         job = SimpleJob.new
         job.job_id = "custom-id"
 
-        expect(described_class.build_workflow_id(job)).to eq("custom:SimpleJob:custom-id")
+        assert_equal "custom:SimpleJob:custom-id", described_class.build_workflow_id(job)
       end
     end
   end
@@ -89,10 +110,10 @@ describe ActiveJob::Temporal::Adapter do
     let(:job) { SimpleJob.new }
 
     before do
-      allow(ActiveJob::Temporal).to receive(:config).and_return(configuration)
+      call_recorded_method(ActiveJob::Temporal, :config, returns: configuration)
     end
 
-    context "when no prefix is configured" do
+    describe "when no prefix is configured" do
       before do
         configuration.task_queue_prefix = nil
       end
@@ -100,23 +121,23 @@ describe ActiveJob::Temporal::Adapter do
       it "returns the job queue name" do
         job.queue_name = "billing"
 
-        expect(described_class.resolve_task_queue(job)).to eq("billing")
+        assert_equal "billing", described_class.resolve_task_queue(job)
       end
 
       it "falls back to the default queue when queue_name is nil" do
         job.queue_name = nil
 
-        expect(described_class.resolve_task_queue(job)).to eq("default")
+        assert_equal "default", described_class.resolve_task_queue(job)
       end
 
       it "treats blank queue names as default" do
         job.queue_name = "   "
 
-        expect(described_class.resolve_task_queue(job)).to eq("default")
+        assert_equal "default", described_class.resolve_task_queue(job)
       end
     end
 
-    context "when a prefix is configured" do
+    describe "when a prefix is configured" do
       before do
         configuration.task_queue_prefix = "prod-"
       end
@@ -124,23 +145,23 @@ describe ActiveJob::Temporal::Adapter do
       it "prepends the prefix to the queue name" do
         job.queue_name = "billing"
 
-        expect(described_class.resolve_task_queue(job)).to eq("prod-billing")
+        assert_equal "prod-billing", described_class.resolve_task_queue(job)
       end
 
       it "prepends the prefix to the default queue" do
         job.queue_name = nil
 
-        expect(described_class.resolve_task_queue(job)).to eq("prod-default")
+        assert_equal "prod-default", described_class.resolve_task_queue(job)
       end
 
       it "works for other queue names" do
         job.queue_name = "mailers"
 
-        expect(described_class.resolve_task_queue(job)).to eq("prod-mailers")
+        assert_equal "prod-mailers", described_class.resolve_task_queue(job)
       end
     end
 
-    context "when the prefix is an empty string" do
+    describe "when the prefix is an empty string" do
       before do
         configuration.task_queue_prefix = ""
       end
@@ -148,20 +169,20 @@ describe ActiveJob::Temporal::Adapter do
       it "treats an empty prefix as absent" do
         job.queue_name = "exports"
 
-        expect(described_class.resolve_task_queue(job)).to eq("exports")
+        assert_equal "exports", described_class.resolve_task_queue(job)
       end
     end
 
-    context "when priority task queues are not configured" do
+    describe "when priority task queues are not configured" do
       it "does not evaluate dynamic job priorities" do
         job.queue_name = "mailers"
         job.define_singleton_method(:priority) { raise "priority evaluated" }
 
-        expect(described_class.resolve_task_queue(job)).to eq("mailers")
+        assert_equal "mailers", described_class.resolve_task_queue(job)
       end
     end
 
-    context "when priority task queues are configured" do
+    describe "when priority task queues are configured" do
       before do
         configuration.priority_task_queues = {
           10 => "high_priority",
@@ -173,7 +194,7 @@ describe ActiveJob::Temporal::Adapter do
         job.queue_name = "default"
         job.define_singleton_method(:priority) { 10 }
 
-        expect(described_class.resolve_task_queue(job)).to eq("high_priority")
+        assert_equal "high_priority", described_class.resolve_task_queue(job)
       end
 
       it "routes priorities assigned through ActiveJob set" do
@@ -187,28 +208,28 @@ describe ActiveJob::Temporal::Adapter do
         job = priority_job_class.set(priority: 10).perform_later
         job.queue_name = "default"
 
-        expect(described_class.resolve_task_queue(job)).to eq("high_priority")
+        assert_equal "high_priority", described_class.resolve_task_queue(job)
       end
 
       it "routes other numeric priorities to the configured task queue" do
         job.queue_name = "default"
         job.define_singleton_method(:priority) { 90 }
 
-        expect(described_class.resolve_task_queue(job)).to eq("low_priority")
+        assert_equal "low_priority", described_class.resolve_task_queue(job)
       end
 
       it "falls back to the job queue when priority is unmapped" do
         job.queue_name = "mailers"
         job.define_singleton_method(:priority) { 50 }
 
-        expect(described_class.resolve_task_queue(job)).to eq("mailers")
+        assert_equal "mailers", described_class.resolve_task_queue(job)
       end
 
       it "falls back to the job queue when priority is not an integer" do
         job.queue_name = "mailers"
         job.define_singleton_method(:priority) { "10" }
 
-        expect(described_class.resolve_task_queue(job)).to eq("mailers")
+        assert_equal "mailers", described_class.resolve_task_queue(job)
       end
 
       it "applies task queue prefixes to priority task queues" do
@@ -216,7 +237,7 @@ describe ActiveJob::Temporal::Adapter do
         job.queue_name = "default"
         job.define_singleton_method(:priority) { 10 }
 
-        expect(described_class.resolve_task_queue(job)).to eq("prod-high_priority")
+        assert_equal "prod-high_priority", described_class.resolve_task_queue(job)
       end
     end
   end
@@ -230,37 +251,36 @@ describe ActiveJob::QueueAdapters::TemporalAdapter do
     job
   end
 
-  let(:client) { instance_double(Temporalio::Client) }
+  let(:client) { AdapterSpecSupport::FakeTemporalClient.new }
   let(:config) { build_configuration }
 
   before do
-    allow(ActiveJob::Temporal).to receive(:client).and_return(client)
-    allow(ActiveJob::Temporal).to receive(:config).and_return(config)
-    allow(client).to receive(:start_workflow).and_return("workflow-handle")
-    allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+    call_recorded_method(ActiveJob::Temporal, :client, returns: client)
+    call_recorded_method(ActiveJob::Temporal, :config, returns: config)
+    call_recorded_method(ActiveJob::Temporal::Logger, :log_event)
   end
 
-  subject(:adapter) { described_class.new }
+  let(:adapter) { described_class.new }
 
   describe "#initialize" do
     it "creates a WorkflowEnqueuer instance" do
-      expect(adapter.enqueuer).to be_a(ActiveJob::Temporal::WorkflowEnqueuer)
+      assert_instance_of ActiveJob::Temporal::WorkflowEnqueuer, adapter.enqueuer
     end
 
     it "inherits the Rails queue adapter contract" do
-      expect(adapter).to be_a(ActiveJob::QueueAdapters::AbstractAdapter)
+      assert_kind_of ActiveJob::QueueAdapters::AbstractAdapter, adapter
     end
   end
 
   describe "#stopping?" do
     it "defaults to false" do
-      expect(adapter.stopping?).to be false
+      assert_equal false, adapter.stopping?
     end
 
     it "returns true after the adapter is marked as stopping" do
       adapter.stopping = true
 
-      expect(adapter.stopping?).to be true
+      assert_equal true, adapter.stopping?
     end
   end
 
@@ -275,10 +295,12 @@ describe ActiveJob::QueueAdapters::TemporalAdapter do
       end
       continuable_job = continuable_job_class.new
 
-      allow(continuable_job).to receive(:queue_adapter).and_return(adapter)
+      call_recorded_method(continuable_job, :queue_adapter, returns: adapter)
       adapter.stopping = true
 
-      expect { continuable_job.checkpoint! }.to raise_error(ActiveJob::Continuation::Interrupt, /stopping/)
+      error = assert_raises(ActiveJob::Continuation::Interrupt) { continuable_job.checkpoint! }
+
+      assert_match(/stopping/, error.message)
     end
   end
 
@@ -286,38 +308,37 @@ describe ActiveJob::QueueAdapters::TemporalAdapter do
     it "delegates to the enqueuer" do
       result = adapter.enqueue(job)
 
-      expect(client).to have_received(:start_workflow).once
-      expect(result).to eq("workflow-handle")
+      assert_equal 1, client.start_workflow_calls.size
+      assert_equal "workflow-handle", result
     end
 
     it "uses the current Temporal client when enqueueing" do
-      first_client = instance_double(Temporalio::Client)
-      second_client = instance_double(Temporalio::Client)
+      first_client = AdapterSpecSupport::FakeTemporalClient.new(start_workflow_result: "first-handle")
+      second_client = AdapterSpecSupport::FakeTemporalClient.new(start_workflow_result: "second-handle")
       first_job = job
       second_job = ScheduledJob.new
+      clients = [first_client, second_client]
 
-      allow(first_client).to receive(:start_workflow).and_return("first-handle")
-      allow(second_client).to receive(:start_workflow).and_return("second-handle")
-      allow(ActiveJob::Temporal).to receive(:client).and_return(first_client, second_client)
+      call_recorded_method(ActiveJob::Temporal, :client) { clients.shift }
 
-      expect(adapter.enqueue(first_job)).to eq("first-handle")
-      expect(adapter.enqueue(second_job)).to eq("second-handle")
-      expect(first_client).to have_received(:start_workflow).once
-      expect(second_client).to have_received(:start_workflow).once
+      assert_equal "first-handle", adapter.enqueue(first_job)
+      assert_equal "second-handle", adapter.enqueue(second_job)
+      assert_equal 1, first_client.start_workflow_calls.size
+      assert_equal 1, second_client.start_workflow_calls.size
     end
 
     it "propagates enqueuer errors" do
-      allow(client).to receive(:start_workflow).and_raise(StandardError, "workflow failed")
+      client.start_workflow_error = StandardError.new("workflow failed")
 
-      expect { adapter.enqueue(job) }.to raise_error(ActiveJob::EnqueueError)
+      assert_raises(ActiveJob::EnqueueError) { adapter.enqueue(job) }
     end
 
     it "raises a duplicate enqueue error for duplicate workflows" do
       error = Class.new(StandardError)
       stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
-      allow(client).to receive(:start_workflow).and_raise(error.new("already started"))
+      client.start_workflow_error = error.new("already started")
 
-      expect { adapter.enqueue(job) }.to raise_error(ActiveJob::Temporal::DuplicateEnqueueError)
+      assert_raises(ActiveJob::Temporal::DuplicateEnqueueError) { adapter.enqueue(job) }
     end
   end
 
@@ -326,65 +347,65 @@ describe ActiveJob::QueueAdapters::TemporalAdapter do
     let(:scheduled_time) { Time.at(timestamp) }
 
     it "converts timestamp to Time and enqueues with scheduled_at" do
-      allow(Time).to receive(:at).with(timestamp).and_return(scheduled_time)
+      time_at_calls = call_recorded_method(Time, :at, returns: scheduled_time)
 
       adapter.enqueue_at(job, timestamp)
 
-      expect(Time).to have_received(:at).with(timestamp)
-      expect(client).to have_received(:start_workflow).once
+      assert_equal [[timestamp]], time_at_calls.calls_for(:at).map(&:arguments)
+      assert_equal 1, client.start_workflow_calls.size
     end
 
     it "returns workflow handle for scheduled jobs" do
-      allow(Time).to receive(:at).with(timestamp).and_return(scheduled_time)
+      call_recorded_method(Time, :at, returns: scheduled_time)
 
       result = adapter.enqueue_at(job, timestamp)
 
-      expect(result).to eq("workflow-handle")
+      assert_equal "workflow-handle", result
     end
 
     it "raises a duplicate enqueue error for duplicate scheduled workflows" do
       error = Class.new(StandardError)
       stub_const("Temporalio::Client::WorkflowAlreadyStartedError", error)
-      allow(client).to receive(:start_workflow).and_raise(error.new("already started"))
-      allow(Time).to receive(:at).with(timestamp).and_return(scheduled_time)
+      client.start_workflow_error = error.new("already started")
+      call_recorded_method(Time, :at, returns: scheduled_time)
 
-      expect { adapter.enqueue_at(job, timestamp) }.to raise_error(ActiveJob::Temporal::DuplicateEnqueueError)
+      assert_raises(ActiveJob::Temporal::DuplicateEnqueueError) { adapter.enqueue_at(job, timestamp) }
     end
 
     it "treats past timestamps as immediate" do
       now = Time.utc(2026, 5, 25, 12, 0, 0)
       past_timestamp = now.to_i - 60
-      allow(Time).to receive(:now).and_return(now)
-      allow(Time).to receive(:at).with(past_timestamp).and_return(now - 60)
-      allow(client).to receive(:start_workflow) do |_klass, payload, **_options|
-        expect(payload[:scheduled_at]).to be_nil
+      call_recorded_method(Time, :now, returns: now)
+      call_recorded_method(Time, :at, returns: now - 60)
+      client.on_start_workflow = lambda do |_workflow_class, payload, **_options|
+        assert_nil payload[:scheduled_at]
         "workflow-handle"
       end
 
       result = adapter.enqueue_at(job, past_timestamp)
 
-      expect(result).to eq("workflow-handle")
+      assert_equal "workflow-handle", result
     end
   end
 
   describe "#enqueue_after_transaction_commit?" do
     it "returns true for legacy adapter transaction contracts" do
-      expect(adapter.enqueue_after_transaction_commit?).to be true
+      assert_equal true, adapter.enqueue_after_transaction_commit?
     end
   end
 end
 
 describe "Temporal duplicate enqueue handling through ActiveJob" do
-  let(:client) { instance_double(Temporalio::Client) }
+  let(:client) { AdapterSpecSupport::FakeTemporalClient.new }
   let(:config) { build_configuration }
   let(:duplicate_error) { Class.new(StandardError) }
 
   before do
     stub_const("Temporalio::Client::WorkflowAlreadyStartedError", duplicate_error)
-    allow(ActiveJob::Temporal).to receive(:client).and_return(client)
-    allow(ActiveJob::Temporal).to receive(:config).and_return(config)
-    allow(client).to receive(:start_workflow).and_raise(duplicate_error.new("already started"))
-    allow(ActiveJob::Temporal::Logger).to receive(:log_event)
+    call_recorded_method(ActiveJob::Temporal, :client, returns: client)
+    call_recorded_method(ActiveJob::Temporal, :config, returns: config)
+    client.start_workflow_error = duplicate_error.new("already started")
+    call_recorded_method(ActiveJob::Temporal::Logger, :log_event)
   end
 
   it "returns false and exposes a duplicate enqueue error to perform_later callers" do
@@ -397,10 +418,10 @@ describe "Temporal duplicate enqueue handling through ActiveJob" do
 
     result = job_class.perform_later { |job| enqueued_job = job }
 
-    expect(result).to be false
-    expect(enqueued_job.successfully_enqueued?).to be false
-    expect(enqueued_job.enqueue_error).to be_a(ActiveJob::Temporal::DuplicateEnqueueError)
-    expect(enqueued_job.enqueue_error.message).to include("already enqueued")
+    assert_equal false, result
+    assert_equal false, enqueued_job.successfully_enqueued?
+    assert_instance_of ActiveJob::Temporal::DuplicateEnqueueError, enqueued_job.enqueue_error
+    assert_includes enqueued_job.enqueue_error.message, "already enqueued"
   end
 end
 
@@ -409,7 +430,7 @@ describe "ActiveJob adapter registration" do
     it "returns the Temporal adapter when requested by symbol" do
       adapter_class = ActiveJob::QueueAdapters.lookup(:temporal)
 
-      expect(adapter_class).to eq(ActiveJob::QueueAdapters::TemporalAdapter)
+      assert_equal ActiveJob::QueueAdapters::TemporalAdapter, adapter_class
     end
   end
 end
