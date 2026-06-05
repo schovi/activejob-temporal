@@ -42,7 +42,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "benchmark-ips", "~> 2.14"
   spec.add_development_dependency "github_changelog_generator", "~> 1.18"
   spec.add_development_dependency "listen", "~> 3.9"
-  spec.add_development_dependency "minitest", "~> 6.0"
+  spec.add_development_dependency "minitest", ">= 5.11", "< 7"
   spec.add_development_dependency "msgpack", "~> 1.8"
   spec.add_development_dependency "mutant-minitest", "~> 0.16"
   spec.add_development_dependency "prometheus-client", "~> 4.2"
