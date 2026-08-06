@@ -947,10 +947,10 @@ describe ActiveJob::Temporal::Configuration do
 
       configuration.tls_server_root_ca_cert_path = missing_path
 
-      assert_configuration_error(/readable, non-symlink file/)
+      assert_configuration_error(/readable regular file/)
     end
 
-    it "rejects symlink TLS paths" do
+    it "accepts symlinked TLS paths so Kubernetes secret mounts work" do
       with_tls_files do |cert_path, key_path, _root_ca_path|
         symlink_path = "#{cert_path}.link"
         File.symlink(cert_path, symlink_path)
@@ -959,7 +959,20 @@ describe ActiveJob::Temporal::Configuration do
         configuration.tls_key_path = key_path
         configuration.in_configure_block = false
 
-        assert_configuration_error(/readable, non-symlink file/)
+        configuration.validate!
+      end
+    end
+
+    it "rejects symlinked TLS paths pointing at a directory" do
+      with_tls_files do |cert_path, key_path, _root_ca_path|
+        symlink_path = "#{cert_path}.link"
+        File.symlink(File.dirname(cert_path), symlink_path)
+        configuration.in_configure_block = true
+        configuration.tls_cert_path = symlink_path
+        configuration.tls_key_path = key_path
+        configuration.in_configure_block = false
+
+        assert_configuration_error(/readable regular file/)
       end
     end
 

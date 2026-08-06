@@ -92,6 +92,56 @@ describe ActiveJob::Temporal::CertificateWatcher do
     end
   end
 
+  it "reloads again for the second file of a cert and key rotation pair" do
+    Dir.mktmpdir do |directory|
+      cert_path = File.join(directory, "client.pem")
+      key_path = File.join(directory, "client-key.pem")
+      reloads = Queue.new
+      watcher = described_class.new(
+        paths: [cert_path, key_path],
+        reload_callback: -> { reloads << :reload },
+        listener_factory: CertificateWatcherSpecSupport::ListenerFactory.new,
+        debounce_seconds: 0.05
+      )
+
+      watcher.handle_changes([cert_path])
+      watcher.handle_changes([key_path])
+
+      assert_equal 1, reloads.size
+      assert_equal :reload, reloads.pop(timeout: 5)
+      assert_equal :reload, reloads.pop(timeout: 5)
+    ensure
+      watcher.stop
+    end
+  end
+
+  it "retries a failed reload" do
+    Dir.mktmpdir do |directory|
+      cert_path = File.join(directory, "client.pem")
+      attempts = Queue.new
+      failed = false
+      watcher = described_class.new(
+        paths: [cert_path],
+        reload_callback: lambda {
+          attempts << :attempt
+          next if failed
+
+          failed = true
+          raise "reload failed"
+        },
+        listener_factory: CertificateWatcherSpecSupport::ListenerFactory.new,
+        debounce_seconds: 0.05
+      )
+
+      watcher.handle_changes([cert_path])
+
+      assert_equal :attempt, attempts.pop(timeout: 5)
+      assert_equal :attempt, attempts.pop(timeout: 5)
+    ensure
+      watcher.stop
+    end
+  end
+
   it "stops the listener" do
     Dir.mktmpdir do |directory|
       cert_path = File.join(directory, "client.pem")

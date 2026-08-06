@@ -263,13 +263,8 @@ certificate_watcher = nil
 if config.tls_cert_watch
   certificate_watcher = ActiveJob::Temporal::CertificateWatcher.new(
     paths: ActiveJob::Temporal::CertificateWatcher.paths_from_config(config),
-    reload_callback: lambda {
-      begin
-        client_reloader.reload(source: "file_watch")
-      rescue StandardError
-        # Reload failures are already logged and should not stop the watcher.
-      end
-    }
+    # Failures are logged by the reloader and retried by the watcher, so let them propagate.
+    reload_callback: -> { client_reloader.reload(source: "file_watch") }
   ).start
 end
 

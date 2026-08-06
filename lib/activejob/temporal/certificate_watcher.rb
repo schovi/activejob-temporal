@@ -22,6 +22,7 @@ module ActiveJob
         @mutex = Mutex.new
         @last_reload_at = nil
         @listener = nil
+        @trailing_reload = nil
       end
 
       def start
@@ -37,16 +38,43 @@ module ActiveJob
       def stop
         @listener&.stop
         @listener = nil
+        @mutex.synchronize { @trailing_reload }&.kill
       end
 
       def handle_changes(changed_paths)
         return unless relevant_change?(changed_paths)
-        return if debounced?
 
-        @reload_callback.call
+        if debounced?
+          schedule_trailing_reload
+        else
+          reload(retry_on_failure: true)
+        end
       end
 
       private
+
+      # A failed reload clears the debounce stamp so the next change reloads
+      # immediately, and gets one retry in case no further change arrives.
+      def reload(retry_on_failure:)
+        @reload_callback.call
+      rescue StandardError
+        @mutex.synchronize { @last_reload_at = nil }
+        schedule_trailing_reload if retry_on_failure
+      end
+
+      # Cert and key rotate as separate writes, so the second one lands inside
+      # the debounce window. Flush it once the window closes instead of dropping it.
+      def schedule_trailing_reload
+        @mutex.synchronize do
+          return if @trailing_reload&.alive?
+
+          @trailing_reload = Thread.new do
+            sleep(@debounce_seconds)
+            @mutex.synchronize { @last_reload_at = Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+            reload(retry_on_failure: false)
+          end
+        end
+      end
 
       def directories
         @directories ||= @paths.map { |path| File.dirname(path) }.uniq
