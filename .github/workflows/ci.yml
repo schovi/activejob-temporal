@@ -348,8 +348,12 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '4.0.3'
-          bundler-cache: true
-          working-directory: examples/basic_rails_app
+          # bundler-cache installs in deployment mode, which fails whenever the
+          # path gem's gemspec moves ahead of the committed Gemfile.lock.
+          bundler-cache: false
+
+      - name: Install dependencies
+        run: bundle install --jobs 4 --retry 3
 
       - name: Prepare test database
         run: bundle exec rails db:prepare
