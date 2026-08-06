@@ -157,21 +157,16 @@ describe ActiveJob::Temporal::Cancel do
         assert_called_with(handle.calls, :cancel)
       end
 
-      it "escapes job class names when querying workflows" do
+      it "refuses to query workflows for unsafe job class names" do
         dynamic_job_class = Class.new(ActiveJob::Base)
         unsafe_name = "CancelJob' OR '1'='1"
-        escaped_query = "ajClass='CancelJob'' OR ''1''=''1' AND ajJobId='#{job_id}' " \
-                        "AND ExecutionStatus='Running'"
-        workflow_info = CancelSpecSupport::WorkflowInfo.new("workflow-1")
 
         dynamic_job_class.define_singleton_method(:name) { unsafe_name }
-        client.register_workflows(escaped_query, [workflow_info])
-        client.register_workflow_handle("workflow-1", handle: handle)
 
-        described_class.cancel(dynamic_job_class, job_id)
-
-        assert_called_with(client.calls, :list_workflows, escaped_query)
-        assert_called_with(handle.calls, :cancel)
+        assert_raises(ActiveJob::Temporal::TemporalConnectionError) do
+          described_class.cancel(dynamic_job_class, job_id)
+        end
+        refute_called(client.calls, :list_workflows)
       end
 
       it "logs a cancellation request event" do
@@ -327,24 +322,15 @@ describe ActiveJob::Temporal::Cancel do
     end
 
     describe "job_id validation" do
-      describe "when job_id requires query escaping" do
+      describe "when job_id is unsafe in a visibility query" do
         let(:custom_job_id) { "test' OR '1'='1" }
-        let(:escaped_running_query) do
-          "ajClass='#{job_class.name}' AND ajJobId='test'' OR ''1''=''1' AND ExecutionStatus='Running'"
-        end
-        let(:escaped_workflow_id) { "ajwf:#{job_class.name}:#{custom_job_id}" }
-        let(:workflow_info) { CancelSpecSupport::WorkflowInfo.new }
 
-        before do
-          client.register_workflows(escaped_running_query, [workflow_info])
-          client.register_workflow_handle(escaped_workflow_id, handle: handle)
-        end
+        it "refuses to query Temporal" do
+          assert_raises(ActiveJob::Temporal::TemporalConnectionError) do
+            described_class.cancel(job_class, custom_job_id)
+          end
 
-        it "quotes the job ID before querying Temporal" do
-          described_class.cancel(job_class, custom_job_id)
-
-          assert_called_with(client.calls, :list_workflows, escaped_running_query)
-          assert_called_with(handle.calls, :cancel)
+          refute_called(client.calls, :list_workflows)
         end
       end
 

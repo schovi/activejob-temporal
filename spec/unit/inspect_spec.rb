@@ -141,44 +141,29 @@ describe ActiveJob::Temporal::Inspect do
       assert_includes client.workflow_handle_calls, [custom_workflow_id, run_id]
     end
 
-    it "escapes job class names when searching fallback workflows" do
+    it "refuses to search fallback workflows for unsafe job class names" do
       dynamic_job_class = Class.new(ActiveJob::Base)
       safe_name = "SimpleJob"
       unsafe_name = "SimpleJob' OR '1'='1"
       names = [safe_name, safe_name, safe_name, unsafe_name]
-      escaped_query = "ajClass='SimpleJob'' OR ''1''=''1' AND ajJobId='#{job_id}'"
-      custom_workflow_id = "tenant-42:ajwf:#{safe_name}:#{job_id}"
-      custom_execution = InspectSpecSupport::WorkflowExecution.new(id: custom_workflow_id, run_id: run_id)
-      custom_handle = InspectSpecSupport::FakeWorkflowHandle.new(description: description)
 
       handle.describe_error = not_found_error
       client.handle_for("ajwf:#{safe_name}:#{job_id}", run_id: nil, handle: handle)
-      client.list_workflows_for(escaped_query, [custom_execution])
-      client.handle_for(custom_workflow_id, run_id: run_id, handle: custom_handle)
 
       call_recorded_method(dynamic_job_class, :name) { names.shift }
 
-      described_class.status(dynamic_job_class, job_id)
-
-      assert_includes client.list_workflows_calls, escaped_query
+      assert_raises(ArgumentError) { described_class.status(dynamic_job_class, job_id) }
+      assert_empty client.list_workflows_calls
     end
 
-    it "escapes custom job IDs when searching fallback workflows" do
+    it "refuses to search fallback workflows for unsafe job IDs" do
       custom_job_id = "tenant'42:invoice-123"
-      custom_query = "ajClass='#{job_class.name}' AND ajJobId='tenant''42:invoice-123'"
-      custom_workflow_id = "tenant-42:ajwf:#{job_class.name}:#{custom_job_id}"
-      custom_execution = InspectSpecSupport::WorkflowExecution.new(id: custom_workflow_id, run_id: run_id)
-      custom_handle = InspectSpecSupport::FakeWorkflowHandle.new(description: description)
 
       handle.describe_error = not_found_error
       client.handle_for("ajwf:#{job_class.name}:#{custom_job_id}", run_id: nil, handle: handle)
-      client.list_workflows_for(custom_query, [custom_execution])
-      client.handle_for(custom_workflow_id, run_id: run_id, handle: custom_handle)
 
-      described_class.status(job_class, custom_job_id)
-
-      assert_includes client.list_workflows_calls, custom_query
-      assert_includes client.workflow_handle_calls, [custom_workflow_id, run_id]
+      assert_raises(ArgumentError) { described_class.status(job_class, custom_job_id) }
+      assert_empty client.list_workflows_calls
     end
 
     it "inspects schedule-style job IDs" do

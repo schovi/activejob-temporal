@@ -2,38 +2,38 @@
 
 module ActiveJob
   module Temporal
+    # Single-slot signal handoff between a trap handler and the reload thread.
+    #
+    # Backed by Thread::Queue because trap context forbids taking a Mutex.
     class ReloadSignalQueue
-      POLL_INTERVAL_SECONDS = 0.05
-
       def initialize
-        @pending_signal = nil
-        @closed = false
+        @queue = Thread::Queue.new
       end
 
+      # Enqueues a reload signal unless one is already pending or the queue is closed.
+      #
+      # @param signal [String] Signal name
+      # @return [String, nil] The signal when enqueued, nil when coalesced or closed
       def push(signal)
-        return if @closed || @pending_signal
+        return nil if @queue.closed? || !@queue.empty?
 
-        @pending_signal = signal
+        @queue << signal
         signal
+      rescue ClosedQueueError
+        nil
       end
 
+      # Blocks until a signal is pending or the queue is closed.
+      #
+      # @return [String, nil] The pending signal, or nil once closed
       def pop
-        loop do
-          return nil if @closed
-
-          if @pending_signal
-            signal = @pending_signal
-            @pending_signal = nil
-            return signal
-          end
-
-          sleep(POLL_INTERVAL_SECONDS)
-        end
+        @queue.pop
       end
 
+      # @return [void]
       def close
-        @closed = true
-        @pending_signal = nil
+        @queue.clear
+        @queue.close
       end
     end
   end

@@ -128,29 +128,56 @@ describe ActiveJob::Temporal::DeadLetterQueue do
       query = "WorkflowType='ActiveJobTemporalDeadLetterWorkflow' AND " \
               "ExecutionStatus='Running' AND " \
               "TaskQueue='failed_jobs'"
-      broken_handle = DeadLetterQueueSpecSupport::FakeWorkflowHandle.new
-      broken_handle.query_error = Temporalio::Error::WorkflowQueryFailedError
       result_entry = { "id" => "ajdlq:RetryableJob:job-123" }
-      successful_handle = DeadLetterQueueSpecSupport::FakeWorkflowHandle.new(query_results: [result_entry])
+      queried_handle = DeadLetterQueueSpecSupport::FakeWorkflowHandle.new(query_results: [result_entry])
+      skipped_handle = DeadLetterQueueSpecSupport::FakeWorkflowHandle.new
       workflows = [
-        DeadLetterQueueSpecSupport::WorkflowExecution.new(id: "ajdlq:RetryableJob:job-broken", run_id: "run-broken"),
-        DeadLetterQueueSpecSupport::WorkflowExecution.new(id: "ajdlq:RetryableJob:job-123", run_id: "run-1")
+        DeadLetterQueueSpecSupport::WorkflowExecution.new(id: "ajdlq:RetryableJob:job-123", run_id: "run-1"),
+        DeadLetterQueueSpecSupport::WorkflowExecution.new(id: "ajdlq:RetryableJob:job-456", run_id: "run-2")
       ]
       client.list_workflows_for(query, workflows)
-      client.handle_for("ajdlq:RetryableJob:job-broken", run_id: "run-broken", handle: broken_handle)
-      client.handle_for("ajdlq:RetryableJob:job-123", run_id: "run-1", handle: successful_handle)
+      client.handle_for("ajdlq:RetryableJob:job-123", run_id: "run-1", handle: queried_handle)
+      client.handle_for("ajdlq:RetryableJob:job-456", run_id: "run-2", handle: skipped_handle)
 
       assert_equal [result_entry], described_class.entries(queue: "failed_jobs", limit: 1, client: client)
       assert_equal [query], client.list_workflows_calls
-      assert_equal(
-        [
-          ["ajdlq:RetryableJob:job-broken", "run-broken"],
-          ["ajdlq:RetryableJob:job-123", "run-1"]
-        ],
-        client.workflow_handle_calls
-      )
-      assert_equal [:entry], broken_handle.query_calls
-      assert_equal [:entry], successful_handle.query_calls
+      assert_equal [["ajdlq:RetryableJob:job-123", "run-1"]], client.workflow_handle_calls
+      assert_equal [:entry], queried_handle.query_calls
+      assert_empty skipped_handle.query_calls
+    end
+
+    it "rejects task queue names that are unsafe in a visibility query" do
+      assert_raises(ArgumentError) { described_class.entries(queue: "failed' OR '1'='1", client: client) }
+      assert_empty client.list_workflows_calls
+    end
+
+    it "surfaces query failures instead of dropping the entry" do
+      query = "WorkflowType='ActiveJobTemporalDeadLetterWorkflow' AND ExecutionStatus='Running'"
+      broken_handle = DeadLetterQueueSpecSupport::FakeWorkflowHandle.new
+      broken_handle.query_error = Temporalio::Error::WorkflowQueryFailedError
+      workflow = DeadLetterQueueSpecSupport::WorkflowExecution.new(id: "ajdlq:RetryableJob:job-broken",
+                                                                   run_id: "run-broken")
+      client.list_workflows_for(query, [workflow])
+      client.handle_for("ajdlq:RetryableJob:job-broken", run_id: "run-broken", handle: broken_handle)
+
+      assert_raises(Temporalio::Error::WorkflowQueryFailedError) { described_class.entries(client: client) }
+    end
+
+    it "queries workflow entries concurrently and preserves list order" do
+      query = "WorkflowType='ActiveJobTemporalDeadLetterWorkflow' AND ExecutionStatus='Running'"
+      workflows = Array.new(10) do |index|
+        DeadLetterQueueSpecSupport::WorkflowExecution.new(id: "ajdlq:RetryableJob:job-#{index}",
+                                                          run_id: "run-#{index}")
+      end
+      expected_entries = workflows.each_with_index.map do |workflow, index|
+        entry = { "id" => workflow.id }
+        handle = DeadLetterQueueSpecSupport::FakeWorkflowHandle.new(query_results: [entry])
+        client.handle_for(workflow.id, run_id: "run-#{index}", handle: handle)
+        entry
+      end
+      client.list_workflows_for(query, workflows)
+
+      assert_equal expected_entries, described_class.entries(client: client)
     end
   end
 

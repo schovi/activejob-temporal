@@ -3,6 +3,7 @@
 require "temporalio/client"
 
 require_relative "logger"
+require_relative "visibility_query"
 require_relative "workflow_types"
 
 module ActiveJob
@@ -10,6 +11,7 @@ module ActiveJob
     module DeadLetterQueue
       WORKFLOW_TYPE = WorkflowTypes::DEAD_LETTER
       DEFAULT_ENTRIES_LIMIT = 100
+      ENTRY_QUERY_CONCURRENCY = 5
 
       module_function
 
@@ -20,11 +22,8 @@ module ActiveJob
       def entries(queue: nil, limit: DEFAULT_ENTRIES_LIMIT, client: ActiveJob::Temporal.client)
         validate_limit!(limit)
 
-        client.list_workflows(entries_query(queue)).each_with_object([]) do |workflow, entries|
-          entry = query_workflow_entry(client, workflow)
-          entries << entry if entry
-          break entries if entries.size >= limit
-        end
+        workflows = client.list_workflows(entries_query(queue)).first(limit)
+        query_workflow_entries(client, workflows)
       end
 
       def retry(job_class, job_id, queue: nil, client: ActiveJob::Temporal.client)
@@ -64,15 +63,36 @@ module ActiveJob
 
       def entries_query(queue)
         query = ["WorkflowType='#{WORKFLOW_TYPE}'", "ExecutionStatus='Running'"]
-        query << "TaskQueue='#{escape_query_value(queue)}'" if queue.to_s.strip.present?
+        query << "TaskQueue=#{VisibilityQuery.quote(queue)}" if queue.to_s.strip.present?
         query.join(" AND ")
       end
       private_class_method :entries_query
 
+      def query_workflow_entries(client, workflows)
+        entries = Array.new(workflows.size)
+        pending = Queue.new
+        workflows.each_with_index { |workflow, index| pending << [workflow, index] }
+
+        Array.new([workflows.size, ENTRY_QUERY_CONCURRENCY].min) do
+          worker = Thread.new do
+            loop do
+              workflow, index = pending.pop(true)
+              entries[index] = query_workflow_entry(client, workflow)
+            rescue ThreadError
+              break
+            end
+          end
+          # Failures are re-raised by Thread#value below, not lost.
+          worker.report_on_exception = false
+          worker
+        end.each(&:value)
+
+        entries
+      end
+      private_class_method :query_workflow_entries
+
       def query_workflow_entry(client, workflow)
         client.workflow_handle(workflow.id, run_id: workflow_run_id(workflow)).query(:entry)
-      rescue Temporalio::Error
-        nil
       end
       private_class_method :query_workflow_entry
 
@@ -173,11 +193,6 @@ module ActiveJob
         raise ArgumentError, "limit must be a positive integer"
       end
       private_class_method :validate_limit!
-
-      def escape_query_value(value)
-        value.to_s.gsub("'", "''")
-      end
-      private_class_method :escape_query_value
 
       def workflow_already_started?(error)
         (defined?(Temporalio::Error::WorkflowAlreadyStartedError) &&

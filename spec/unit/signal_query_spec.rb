@@ -126,39 +126,29 @@ describe ActiveJob::Temporal::SignalQuery do
       assert_called_with(custom_handle.calls, :signal, "pause", "manual hold")
     end
 
-    it "escapes job class names when searching fallback workflows" do
+    it "refuses to search fallback workflows for unsafe job class names" do
       dynamic_job_class = Class.new(ActiveJob::Base)
       safe_name = "SignalQueryJob"
       unsafe_name = "SignalQueryJob' OR '1'='1"
-      escaped_query = "ajClass='SignalQueryJob'' OR ''1''=''1' AND ajJobId='#{job_id}' " \
-                      "AND ExecutionStatus='Running'"
       name_sequence = [safe_name, safe_name, safe_name, unsafe_name]
 
       dynamic_job_class.define_singleton_method(:name) { name_sequence.shift || unsafe_name }
       client.register_workflow_handle("ajwf:#{safe_name}:#{job_id}", run_id: nil, handle: default_handle)
-      client.register_workflows(escaped_query, [workflow_execution])
       default_handle.raises(:signal, not_found_error)
 
-      described_class.signal(dynamic_job_class, job_id, :pause)
-
-      assert_called_with(client.calls, :list_workflows, escaped_query)
-      assert_called_with(custom_handle.calls, :signal, "pause")
+      assert_raises(ArgumentError) { described_class.signal(dynamic_job_class, job_id, :pause) }
+      refute_called(client.calls, :list_workflows)
     end
 
-    it "escapes custom job IDs when searching fallback workflows" do
+    it "refuses to search fallback workflows for unsafe job IDs" do
       custom_job_id = "tenant'42:invoice-123"
       custom_default_workflow_id = "ajwf:#{job_class.name}:#{custom_job_id}"
-      escaped_query = "ajClass='#{job_class.name}' AND ajJobId='tenant''42:invoice-123' " \
-                      "AND ExecutionStatus='Running'"
 
       client.register_workflow_handle(custom_default_workflow_id, run_id: nil, handle: default_handle)
-      client.register_workflows(escaped_query, [workflow_execution])
       default_handle.raises(:signal, not_found_error)
 
-      described_class.signal(job_class, custom_job_id, :pause)
-
-      assert_called_with(client.calls, :list_workflows, escaped_query)
-      assert_called_with(custom_handle.calls, :signal, "pause")
+      assert_raises(ArgumentError) { described_class.signal(job_class, custom_job_id, :pause) }
+      refute_called(client.calls, :list_workflows)
     end
 
     it "raises WorkflowNotFoundError when no running workflow is found" do

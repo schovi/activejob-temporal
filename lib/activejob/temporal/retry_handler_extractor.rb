@@ -131,16 +131,31 @@ module ActiveJob
         handlers = job_class.rescue_handlers
         return [] unless handlers.respond_to?(:reverse_each)
 
-        signature = rescue_handlers_signature(handlers)
+        cached = cache[job_class]
+        return cached[:entries] if fresh_cache_entry?(cached, handlers)
 
         @cache_mutex.synchronize do
           cached = cache[job_class]
-          return cached[:entries] if cached && cached[:signature] == signature
+          return cached[:entries] if fresh_cache_entry?(cached, handlers)
 
           entries = yield(handlers).map(&:freeze).freeze
-          cache[job_class] = { signature: signature, entries: entries }.freeze
+          cache[job_class] = {
+            handlers: handlers,
+            signature: rescue_handlers_signature(handlers),
+            entries: entries
+          }.freeze
           entries
         end
+      end
+
+      # ActiveJob replaces the rescue_handlers array on every declaration, so
+      # identity is a sound (and allocation-free) freshness check; the signature
+      # comparison stays as a fallback for in-place mutation.
+      def fresh_cache_entry?(cached, handlers)
+        return false unless cached
+        return true if cached[:handlers].equal?(handlers)
+
+        cached[:signature] == rescue_handlers_signature(handlers)
       end
 
       def rescue_handlers_signature(handlers)

@@ -161,11 +161,11 @@ module ActiveJob
         end
 
         def rpc_not_found?(error)
-          error.code == Temporalio::Error::RPCError::Code::NOT_FOUND
+          error.respond_to?(:code) && error.code == Temporalio::Error::RPCError::Code::NOT_FOUND
         end
 
         def rpc_invalid_argument?(error)
-          error.code == Temporalio::Error::RPCError::Code::INVALID_ARGUMENT
+          error.respond_to?(:code) && error.code == Temporalio::Error::RPCError::Code::INVALID_ARGUMENT
         end
       end
     end
