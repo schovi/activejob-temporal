@@ -57,20 +57,44 @@ describe ActiveJob::Temporal::CertificateWatcher do
     end
   end
 
-  it "ignores unrelated file changes" do
+  it "ignores changes outside the watched directories" do
     Dir.mktmpdir do |directory|
-      cert_path = File.join(directory, "client.pem")
+      Dir.mktmpdir do |other_directory|
+        cert_path = File.join(directory, "client.pem")
+        reloads = []
+        watcher = described_class.new(
+          paths: [cert_path],
+          reload_callback: -> { reloads << :reload },
+          listener_factory: CertificateWatcherSpecSupport::ListenerFactory.new,
+          debounce_seconds: 0
+        )
+
+        watcher.handle_changes([File.join(other_directory, "other.pem")])
+
+        assert_empty reloads
+      end
+    end
+  end
+
+  it "reloads when a Kubernetes volume rotates atomically without touching the watched path" do
+    Dir.mktmpdir do |directory|
+      token_path = File.join(directory, "token")
       reloads = []
       watcher = described_class.new(
-        paths: [cert_path],
+        paths: [token_path],
         reload_callback: -> { reloads << :reload },
         listener_factory: CertificateWatcherSpecSupport::ListenerFactory.new,
         debounce_seconds: 0
       )
 
-      watcher.handle_changes([File.join(directory, "other.pem")])
+      watcher.handle_changes(
+        [
+          File.join(directory, "..2026_08_06_10_00_00.123456789", "token"),
+          File.join(directory, "..data")
+        ]
+      )
 
-      assert_empty reloads
+      assert_equal [:reload], reloads
     end
   end
 

@@ -89,9 +89,14 @@ module ActiveJob
         end
       end
 
+      # Kubernetes projected and secret volumes rotate atomically: kubelet writes a new timestamped
+      # directory and swaps a `..data` symlink, so the watched file's own path never appears in the
+      # change events. Any change inside a watched file's directory therefore counts as relevant;
+      # the debounce absorbs the multi-event burst a rotation produces.
       def relevant_change?(changed_paths)
         changed_paths.any? do |path|
-          @paths.include?(File.expand_path(path))
+          expanded = File.expand_path(path)
+          @paths.include?(expanded) || directories.any? { |dir| expanded.start_with?("#{dir}/") }
         end
       end
 
