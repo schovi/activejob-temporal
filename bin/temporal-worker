@@ -185,7 +185,7 @@ worker_health = ActiveJob::Temporal::WorkerHealth.new(
 
 begin
   registrations = ActiveJob::Temporal::WorkerRegistrations.resolve(config)
-rescue ArgumentError, NameError => e
+rescue ActiveJob::Temporal::WorkerRegistrationError => e
   warn "Error: #{e.message}"
   exit(1)
 end
@@ -200,7 +200,7 @@ worker = Temporalio::Worker.new(
     activity_slots: max_concurrent_activities,
     local_activity_slots: max_concurrent_activities
   ),
-  graceful_shutdown_period: config.graceful_shutdown_period.to_f,
+  graceful_shutdown_period: config.graceful_shutdown_period,
   interceptors: [worker_health]
 )
 
@@ -269,13 +269,14 @@ if config.tls_cert_watch
   ).start
 end
 
-# The client reads api_key_file when it is built, so rotating the token is the same
-# operation as rotating a certificate: rebuild the client and swap it into the worker.
+# Token rotation mutates the live connection (the SDK sends the header per-RPC from the
+# connection's stored options) - no client rebuild, unlike certificate rotation above.
+# Configuration validation guarantees api_key_file is set when api_key_watch is on.
 api_key_watcher = nil
-if config.api_key_watch && !config.api_key_file.to_s.strip.empty?
+if config.api_key_watch
   api_key_watcher = ActiveJob::Temporal::CertificateWatcher.new(
-    paths: [config.api_key_file],
-    reload_callback: -> { client_reloader.reload(source: "api_key_file_watch") }
+    paths: [config.api_key_file].compact.reject { |path| path.to_s.strip.empty? },
+    reload_callback: -> { ActiveJob::Temporal.refresh_api_key! }
   ).start
 end
 

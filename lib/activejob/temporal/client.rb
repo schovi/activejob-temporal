@@ -124,28 +124,24 @@ module ActiveJob
         tls = tls_options(configuration)
         kwargs[:tls] = tls unless tls.nil?
 
-        api_key = api_key_option(configuration)
+        api_key = resolve_api_key(configuration)
         kwargs[:api_key] = api_key if api_key
 
         kwargs
       end
       private_class_method :connection_kwargs
 
-      # Resolves the API key: an explicit api_key wins, otherwise api_key_file is read at build
-      # time - which is what makes {ActiveJob::Temporal.reload_client!} pick up a rotated token.
-      # The path is resolved via File.realpath because Kubernetes projected volumes expose the
-      # token through a symlink that is swapped on rotation.
+      # Resolves the API key: an explicit api_key wins, otherwise api_key_file is read - at
+      # connection build time, and again by {ActiveJob::Temporal.refresh_api_key!} when the
+      # token file rotates.
       # @api private
-      def api_key_option(configuration)
+      def resolve_api_key(configuration)
         inline = configuration.api_key if configuration.respond_to?(:api_key)
         return inline unless inline.nil? || inline.to_s.strip.empty?
 
         path = configuration.api_key_file if configuration.respond_to?(:api_key_file)
-        return nil if path.to_s.strip.empty?
-
-        File.read(File.realpath(path)).strip
+        read_tls_file(path)&.strip
       end
-      private_class_method :api_key_option
 
       # Extracts TLS options from config or environment variables.
       # @api private

@@ -146,6 +146,15 @@ describe ActiveJob::Temporal::Configuration do
       assert_equal "HUP", configuration.tls_reload_signal
     end
 
+    it "sets API key and worker registration defaults" do
+      assert_nil configuration.api_key
+      assert_nil configuration.api_key_file
+      assert_equal false, configuration.api_key_watch
+      assert_equal [], configuration.worker_activities
+      assert_equal true, configuration.worker_activejob_workloads
+      assert_equal 0.0, configuration.graceful_shutdown_period
+    end
+
     it "sets priority task queue mappings to an empty hash" do
       assert_equal({}, configuration.priority_task_queues)
     end
@@ -480,14 +489,6 @@ describe ActiveJob::Temporal::Configuration do
 
       refute_includes output, "super-secret-token"
       assert_includes output, "api_key=\"[FILTERED]\""
-    end
-  end
-
-  describe "worker registration defaults" do
-    it "hosts the ActiveJob workloads with no custom activities and no drain period" do
-      assert_equal [], configuration.worker_activities
-      assert configuration.worker_activejob_workloads
-      assert_equal 0.0, configuration.graceful_shutdown_period
     end
   end
 
@@ -1030,6 +1031,30 @@ describe ActiveJob::Temporal::Configuration do
       configuration.tls_cert_watch = "true"
 
       assert_configuration_error(/must be true or false/)
+    end
+
+    it "rejects API key watching without an api_key_file" do
+      configuration.api_key_watch = true
+
+      assert_configuration_error(/requires api_key_file/)
+    end
+
+    it "rejects unreadable api_key_file paths" do
+      configuration.api_key_file = File.join(Dir.tmpdir, "missing-temporal-token")
+
+      assert_configuration_error(/readable regular file/)
+    end
+
+    it "rejects disabling the ActiveJob workloads with no custom activities" do
+      configuration.worker_activejob_workloads = false
+
+      assert_configuration_error(/requires worker_activities/)
+    end
+
+    it "rejects a negative graceful shutdown period" do
+      configuration.graceful_shutdown_period = -1
+
+      assert_configuration_error(/>= 0 seconds/)
     end
 
     it "rejects blank TLS domain overrides" do

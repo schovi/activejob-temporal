@@ -140,9 +140,7 @@ module ActiveJob
         default: nil,
         env_var: "ACTIVEJOB_TEMPORAL_API_KEY",
         type: :string,
-        description: "Optional API key sent as the Authorization bearer token. Caution: when an API key " \
-                     "is set and tls is nil, the Temporal SDK enables TLS - set tls = false explicitly " \
-                     "for plaintext in-cluster servers"
+        description: "Optional API key sent as the Authorization bearer token"
       },
 
       api_key_file: {
@@ -709,6 +707,13 @@ module ActiveJob
                   allow_nil: false
                 }
 
+      validates :graceful_shutdown_period,
+                numericality: {
+                  greater_than_or_equal_to: 0,
+                  message: :graceful_shutdown_period_negative,
+                  allow_nil: false
+                }
+
       validates :continue_as_new_history_event_threshold,
                 numericality: {
                   greater_than: 0,
@@ -746,6 +751,8 @@ module ActiveJob
       validate :validate_encryption_settings
       validate :validate_payload_storage_settings
       validate :validate_tls_settings
+      validate :validate_api_key_settings
+      validate :validate_worker_registration_settings
       validate :validate_local_activity_helpers
       validate :validate_dependency_wait_settings
 
@@ -1070,6 +1077,30 @@ module ActiveJob
         return unless tls_cert_watch && tls_watch_paths.empty?
 
         errors.add(:tls_cert_watch, :requires_paths)
+      end
+
+      def validate_api_key_settings
+        validate_tls_file_path(:api_key_file)
+
+        unless [true, false].include?(api_key_watch)
+          errors.add(:api_key_watch, :not_boolean, value: api_key_watch.inspect)
+          return
+        end
+
+        return unless api_key_watch && api_key_file.to_s.strip.empty?
+
+        errors.add(:api_key_watch, :requires_path)
+      end
+
+      def validate_worker_registration_settings
+        unless [true, false].include?(worker_activejob_workloads)
+          errors.add(:worker_activejob_workloads, :not_boolean, value: worker_activejob_workloads.inspect)
+          return
+        end
+
+        return if worker_activejob_workloads || Array(worker_activities).any?
+
+        errors.add(:worker_activejob_workloads, :requires_activities)
       end
 
       def validate_tls_reload_signal

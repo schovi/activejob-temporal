@@ -4,7 +4,7 @@ require "spec_helper"
 require "activejob/temporal/worker_runtime"
 
 module WorkerRegistrationsSpecSupport
-  FakeExportActivity = Class.new
+  class FakeExportActivity < Temporalio::Activity::Definition; end
 end
 
 describe ActiveJob::Temporal::WorkerRegistrations do
@@ -58,16 +58,17 @@ describe ActiveJob::Temporal::WorkerRegistrations do
     assert_equal [WorkerRegistrationsSpecSupport::FakeExportActivity], result.activities
   end
 
-  it "raises when the worker would register nothing" do
-    configuration.worker_activejob_workloads = false
-
-    error = assert_raises(ArgumentError) { described_class.resolve(configuration) }
-    assert_match(/nothing to register/, error.message)
-  end
-
-  it "raises NameError for an unknown activity class name" do
+  it "raises for an unknown activity class name" do
     configuration.worker_activities = ["WorkerRegistrationsSpecSupport::MissingActivity"]
 
-    assert_raises(NameError) { described_class.resolve(configuration) }
+    error = assert_raises(ActiveJob::Temporal::WorkerRegistrationError) { described_class.resolve(configuration) }
+    assert_match(/does not resolve to a class/, error.message)
+  end
+
+  it "raises for an entry that is not an activity definition" do
+    configuration.worker_activities = [String]
+
+    error = assert_raises(ActiveJob::Temporal::WorkerRegistrationError) { described_class.resolve(configuration) }
+    assert_match(/not a Temporalio::Activity::Definition subclass/, error.message)
   end
 end

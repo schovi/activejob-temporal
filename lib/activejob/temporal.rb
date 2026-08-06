@@ -99,6 +99,11 @@ module ActiveJob
     # @see Cancel.cancel
     class TemporalConnectionError < Error; end
 
+    # Raised when a worker_activities entry cannot be used as a Temporal activity.
+    #
+    # @see WorkerRegistrations.resolve
+    class WorkerRegistrationError < Error; end
+
     extend Configurable
 
     class << self
@@ -155,6 +160,20 @@ module ActiveJob
 
         close_client(previous_client) unless previous_client.equal?(fresh_client)
         fresh_client
+      end
+
+      # Re-reads the API key (api_key or api_key_file) and applies it to the memoized
+      # client's live connection. No reconnect happens - the SDK sends the header per-RPC
+      # from the connection's stored options. Worker processes call this from the
+      # api_key_watch file watcher; a long-lived enqueue-side process using a rotating
+      # token file must call it on its own schedule (nothing watches the file there).
+      #
+      # @return [String, nil] the freshly resolved API key
+      def refresh_api_key!
+        fresh_key = Client.resolve_api_key(config)
+        client.connection.api_key = fresh_key
+        Logger.log_event("api_key_refreshed")
+        fresh_key
       end
 
       # Cancels a running or scheduled job by job ID.

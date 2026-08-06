@@ -26,7 +26,7 @@ The canonical machine-readable schema for all configuration options is available
 | `tls_domain` | String or `nil` | `nil` | Optional SNI domain override for TLS verification. |
 | `tls_cert_watch` | Boolean | `false` | Watch configured TLS certificate files and reload worker clients when they change. |
 | `tls_reload_signal` | String | `"HUP"` | Signal name used by workers for manual TLS reload. |
-| `api_key` | String or `nil` | `nil` | API key sent as the `Authorization: Bearer` header. Redacted from `Configuration#inspect`. Caution: when an API key is set and `tls` is `nil`, the Temporal SDK enables TLS - set `tls = false` explicitly for plaintext in-cluster servers. |
+| `api_key` | String or `nil` | `nil` | API key sent as the `Authorization: Bearer` header. Redacted from `Configuration#inspect`. Mind the SDK's TLS auto-enable behavior - see [API Key Authentication](worker_setup.md#api-key-authentication). |
 | `api_key_file` | String or `nil` | `nil` | File read for the API key when the client is built, for example a projected Kubernetes ServiceAccount token. An explicit `api_key` takes precedence. Symlinked paths are resolved. |
 | `api_key_watch` | Boolean | `false` | Watch `api_key_file` and reload worker clients when it changes. |
 | `worker_activities` | Array | `[]` | Additional activity classes (or class names) the worker registers, for example activities invoked by workflows owned by another service. |

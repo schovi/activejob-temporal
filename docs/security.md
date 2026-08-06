@@ -109,6 +109,21 @@ kill -HUP <worker-pid>
 
 Legacy `TEMPORAL_TLS_CERT`, `TEMPORAL_TLS_KEY`, and `TEMPORAL_TLS_SERVER_NAME` environment variables are still accepted for PEM content, but running processes cannot observe changed environment values. Use file paths for zero-downtime certificate rotation.
 
+### API Key Handling and Rotation
+
+When authenticating with a bearer token, prefer `api_key_file` over the `ACTIVEJOB_TEMPORAL_API_KEY` environment variable: file contents can rotate without a restart, environment values cannot, and process environments leak more readily (crash dumps, `/proc`, child processes). Point it at a file readable only by the worker's user:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.api_key_file = "/var/run/secrets/tokens/temporal-token"
+  config.api_key_watch = true
+end
+```
+
+The file is read through the same hardened path as TLS material (symlinks resolved for Kubernetes projected volumes, regular-file check, `O_NOFOLLOW`). Replace it atomically, like certificate files. With `api_key_watch` enabled (requires the optional `listen` gem), workers apply a rotated token to the live connection without reconnecting; enqueue-side processes must call `ActiveJob::Temporal.refresh_api_key!` themselves when using short-lived tokens.
+
+The `api_key` value is redacted from `Configuration#inspect`, so it does not leak through logs and exception reports that dump the configuration.
+
 ### Payload Serialization
 
 Job arguments are normalized through ActiveJob before any optional payload encoding is applied:

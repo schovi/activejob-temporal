@@ -127,8 +127,7 @@ attributes:
       validation_rules:
         - "Optional field, can be nil"
         - "Redacted from Configuration#inspect"
-        - "When set and tls is nil, the Temporal SDK enables TLS - set tls explicitly for plaintext servers"
-      description: "API key sent as the Authorization bearer token on every request."
+      description: "API key sent as the Authorization bearer token on every request. See the worker setup guide for the SDK's TLS auto-enable caution."
       env_var_name: ACTIVEJOB_TEMPORAL_API_KEY
       example: "my-temporal-cloud-api-key"
 

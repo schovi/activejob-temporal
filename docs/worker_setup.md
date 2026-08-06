@@ -225,7 +225,9 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-`api_key_watch` reuses the certificate reload path: when the file changes, the worker rebuilds the client and swaps it in without dropping polls. Manual reload via the `tls_reload_signal` signal (default `HUP`) also picks up a fresh token.
+When the file changes, the worker re-reads it and applies the fresh token to the live connection (`ActiveJob::Temporal.refresh_api_key!`) - no reconnect, the SDK sends the header per-RPC. Manual client reload via the `tls_reload_signal` signal (default `HUP`) also picks up a fresh token, because the key is resolved again whenever a client is built.
+
+**Enqueue-side processes:** `api_key_watch` only runs in the worker binary. A web or Sidekiq process reads the token once, when its memoized client is first built - with a rotating token file (projected Kubernetes tokens rotate roughly every 48 minutes) it must call `ActiveJob::Temporal.refresh_api_key!` on its own schedule, or its enqueues start failing once the boot-time token expires.
 
 **Caution:** the Temporal SDK enables TLS whenever an API key is set and `tls` is `nil`. Against a plaintext in-cluster server this fails the TLS handshake with `InvalidContentType` at connect - set `tls = false` explicitly. For Temporal Cloud, leave `tls` unset (TLS on is what you want).
 

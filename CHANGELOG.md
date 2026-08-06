@@ -8,12 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Bearer-token authentication: `api_key` (sent as the `Authorization: Bearer` header) and `api_key_file`, read when the client is built — for example a projected Kubernetes ServiceAccount token. `api_key_watch` reloads worker clients when the token file rotates, reusing the certificate reload path. `api_key` is redacted from `Configuration#inspect`. Caution: the Temporal SDK enables TLS when an API key is set and `tls` is nil — set `tls = false` explicitly for plaintext in-cluster servers.
-- Custom activity hosting: `worker_activities` registers additional activity classes (or class names) on the worker — for example activities invoked by workflows owned by another service, where only the activity name and JSON payloads travel over the wire. `worker_activejob_workloads = false` turns off the built-in ActiveJob workflows and activities for activities-only workers.
+- Bearer-token authentication: `api_key` (sent as the `Authorization: Bearer` header) and `api_key_file`, read through the same hardened path as TLS files — for example a projected Kubernetes ServiceAccount token. `api_key_watch` watches the token file and applies rotated tokens to the live connection via the new `ActiveJob::Temporal.refresh_api_key!` (no reconnect); enqueue-side processes using a rotating token file should call `refresh_api_key!` on their own schedule. `api_key` is redacted from `Configuration#inspect`. Caution: the Temporal SDK enables TLS when an API key is set and `tls` is nil — set `tls = false` explicitly for plaintext in-cluster servers (see the worker setup guide).
+- Custom activity hosting: `worker_activities` registers additional activity classes (or class names) on the worker — for example activities invoked by workflows owned by another service, where only the activity name and JSON payloads travel over the wire. `worker_activejob_workloads = false` turns off the built-in ActiveJob workflows and activities for activities-only workers. Entries must be `Temporalio::Activity::Definition` subclasses; anything else fails worker startup with a `WorkerRegistrationError`.
 - `graceful_shutdown_period` is passed to the Temporal worker, so a shutting-down worker lets running activities finish before their tasks are cancelled instead of cancelling them immediately.
+- Configuration validation for the new attributes: `api_key_file` must be a readable regular file, `api_key_watch` requires `api_key_file`, disabling `worker_activejob_workloads` requires `worker_activities`, and `graceful_shutdown_period` must be >= 0.
 
 ### Changed
-- Allow temporalio 1.5 and 1.6 (dependency constraint is now `>= 1.4.0, < 1.7`); both added to the SDK contract-test matrix.
+- Allow temporalio 1.5 and 1.6 (dependency constraint is now `>= 1.4.0, < 1.7`); both added to the SDK contract-test matrix. Note for consumers upgrading within the range: temporalio 1.6 enables gzip gRPC transport compression by default — opt out with `grpc_compression` if an intermediary cannot handle it.
 
 ## [0.2.0] - 2026-08-06
 

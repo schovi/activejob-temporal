@@ -160,18 +160,6 @@ describe ActiveJob::Temporal, ".client" do
   end
 
   describe "API key" do
-    around do |example|
-      original_api_key = described_class.config.api_key
-      original_api_key_file = described_class.config.api_key_file
-
-      example.run
-    ensure
-      described_class.configure do |config|
-        config.api_key = original_api_key
-        config.api_key_file = original_api_key_file
-      end
-    end
-
     it "passes the configured api_key as a connection keyword" do
       described_class.configure { |config| config.api_key = "secret-token" }
       client_instance = fake_client
@@ -232,6 +220,25 @@ describe ActiveJob::Temporal, ".client" do
       described_class.client
 
       refute connect_call.keywords.key?(:api_key)
+    end
+
+    it "applies a rotated token to the live connection via refresh_api_key!" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "token")
+        File.write(path, "token-one")
+        described_class.configure { |config| config.api_key_file = path }
+        connection = Struct.new(:api_key).new
+        client_instance = fake_client
+        client_instance.define_singleton_method(:connection) { connection }
+        stub_connect(client_instance)
+        described_class.client
+
+        File.write(path, "token-two")
+        described_class.refresh_api_key!
+
+        assert_equal "token-two", connection.api_key
+        assert_equal 1, connect_calls.size
+      end
     end
   end
 
