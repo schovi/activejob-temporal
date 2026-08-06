@@ -15,6 +15,9 @@ module ActiveJob
       MESSAGE_PACK_ALIAS = :msgpack
       MARSHAL = :marshal
       SUPPORTED = [JSON, MESSAGE_PACK, MESSAGE_PACK_ALIAS, MARSHAL].freeze
+      # Serializers that cannot instantiate arbitrary objects, so a payload may select them
+      # even when the configuration names a different serializer.
+      DATA_ONLY = [JSON, MESSAGE_PACK].freeze
 
       def fetch(name)
         case normalize_name(name)

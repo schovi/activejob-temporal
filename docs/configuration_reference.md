@@ -54,6 +54,7 @@ The canonical machine-readable schema for all configuration options is available
 | `encrypt_payload` | Boolean | `false` | Encrypt serialized job execution payloads before sending them to Temporal. |
 | `encryption_key` | String, Hash, or `nil` | `nil` | Base64-encoded 32-byte AES-256-GCM payload encryption key, or `{ id:, key: }` metadata. Required when `encrypt_payload` is true. |
 | `encryption_old_keys` | Array | `[]` | Previous encryption keys accepted for decryption during key rotation. Entries may be Base64 strings or `{ id:, key:, decrypt_until: }` hashes. |
+| `allow_legacy_encrypted_payloads` | Boolean | `false` | Accept version 1 encrypted payloads, which are not bound to a namespace/workflow context. Enable only while draining payloads enqueued by gem versions before context-bound encryption. |
 | `identity` | String or `nil` | `nil` | Optional worker identity string for observability and debugging. Useful in multi-worker deployments. |
 | `max_concurrent_activities` | Integer | `100` | Maximum activity execution slots per worker process. The default is tuned for I/O-bound work; lower it near CPU core count for CPU-bound MRI workers. |
 | `max_concurrent_workflow_tasks` | Integer | `5` | Maximum workflow task execution slots per worker process. |

@@ -158,9 +158,13 @@ module ActiveJob
         final_payload = serializer_for(config).dump(payload)
         final_payload[:scheduled_at] = scheduled_timestamp if scheduled_timestamp
         final_payload = encrypt_payload_for_transport(final_payload, encrypt, config, encryption_context)
-        final_payload = offload_payload_for_transport(final_payload, storage_metadata, config) if offload
-        enforce_size!(final_payload, metrics_payload: payload, config: config) if enforce_size
-        final_payload
+        finalize_transport_payload(
+          final_payload,
+          metrics_payload: payload,
+          config: config,
+          offload: offload ? storage_metadata || {} : nil,
+          enforce_size: enforce_size
+        )
       end
 
       # Deserializes job arguments from a payload hash.
@@ -221,12 +225,13 @@ module ActiveJob
         encrypt_payload_if_configured(payload, config, encryption_context: encryption_context)
       end
 
-      def offload_payload(payload, metadata:, config: ActiveJob::Temporal.config)
+      def offload_payload(payload, metadata:, config: ActiveJob::Temporal.config, byte_size: nil)
         PayloadStorage.offload_if_needed(
           payload,
           config: config,
           metadata: metadata,
-          workflow_control_fields: WORKFLOW_CONTROL_FIELDS
+          workflow_control_fields: WORKFLOW_CONTROL_FIELDS,
+          byte_size: byte_size
         )
       end
 
@@ -234,19 +239,19 @@ module ActiveJob
         PayloadStorage.delete(payload, config: config)
       end
 
-      def enforce_size!(payload, metrics_payload: payload, config: ActiveJob::Temporal.config)
-        json = JSON.generate(payload)
+      def enforce_size!(payload, metrics_payload: payload, config: ActiveJob::Temporal.config, byte_size: nil)
+        bytes = byte_size || JSON.generate(payload).bytesize
         max_size_kb = config.max_payload_size_kb || 250
         size_limit_bytes = max_size_kb * 1024
-        actual_size_kb = json.bytesize / 1024.0
-        usage_ratio = json.bytesize.to_f / size_limit_bytes
+        actual_size_kb = bytes / 1024.0
+        usage_ratio = bytes.to_f / size_limit_bytes
 
         Observability.emit(
           :payload_serialize,
-          Observability.attributes_from_payload(metrics_payload, bytes: json.bytesize)
+          Observability.attributes_from_payload(metrics_payload, bytes: bytes)
         )
         log_payload_size(metrics_payload, actual_size_kb, max_size_kb, usage_ratio)
-        return if json.bytesize <= size_limit_bytes
+        return if bytes <= size_limit_bytes
 
         message = format(
           "Job payload size (%<actual>.1f KB) exceeds maximum allowed size (%<max>d KB). " \
@@ -267,8 +272,18 @@ module ActiveJob
         encrypt_payload(payload, config: config, encryption_context: encryption_context)
       end
 
-      def offload_payload_for_transport(payload, storage_metadata, config)
-        offload_payload(payload, metadata: storage_metadata || {}, config: config)
+      # One JSON pass feeds both the storage threshold check and the size limit check.
+      def finalize_transport_payload(payload, metrics_payload:, config:, offload:, enforce_size:)
+        return payload unless offload || enforce_size
+
+        byte_size = JSON.generate(payload).bytesize
+        if offload
+          offloaded = offload_payload(payload, metadata: offload, config: config, byte_size: byte_size)
+          byte_size = nil unless offloaded.equal?(payload)
+          payload = offloaded
+        end
+        enforce_size!(payload, metrics_payload: metrics_payload, config: config, byte_size: byte_size) if enforce_size
+        payload
       end
 
       def decrypt_transport_payload(payload, config, encryption_context)
@@ -301,10 +316,22 @@ module ActiveJob
         PayloadSerializers.fetch(config.payload_serializer)
       end
 
-      def serializer_for_transport_payload(payload, _config)
+      def serializer_for_transport_payload(payload, config)
         payload_serializer = payload_serializer_name(payload)
         validate_payload_serializer_version!(payload) if payload_serializer_metadata?(payload)
+        validate_payload_serializer_allowed!(payload_serializer, config)
         PayloadSerializers.fetch(payload_serializer)
+      end
+
+      # The payload names its own serializer, so an attacker-supplied workflow input could
+      # otherwise select Marshal (arbitrary code execution) regardless of configuration.
+      def validate_payload_serializer_allowed!(payload_serializer, config)
+        return if PayloadSerializers::DATA_ONLY.include?(payload_serializer)
+        return if payload_serializer == PayloadSerializers.normalize_name(config.payload_serializer)
+
+        raise ActiveJob::SerializationError,
+              "Payload serializer #{payload_serializer.inspect} is not permitted by the configured " \
+              "payload_serializer (#{config.payload_serializer.inspect})"
       end
 
       def payload_serializer_name(payload)

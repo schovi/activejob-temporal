@@ -678,6 +678,7 @@ describe ActiveJob::Temporal::JobPayloadBuilder do
     config.encryption_key = encryption_key
     config.encryption_old_keys = []
     config.encrypt_payload = true
+    config.allow_legacy_encrypted_payloads = true
     config.dead_letter_queue = "failed_jobs"
     config.dead_letter_after_attempts = 3
     config.rate_limiter = ->(_rate_limits) { 0 }

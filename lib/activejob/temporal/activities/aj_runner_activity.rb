@@ -353,10 +353,9 @@ module ActiveJob
           Fiber[IDEMPOTENCY_KEY] = nil
         end
 
+        # The AES-GCM authenticated data must come from the activity context, never from the
+        # payload: a payload-supplied context would let a tampered envelope pick its own AAD.
         def activity_encryption_context(payload = nil)
-          payload_context = payload && (payload[:payload_encryption_context] || payload["payload_encryption_context"])
-          return payload_context if payload_context
-
           return unless defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
 
           info = Temporalio::Activity::Context.current.info
@@ -365,7 +364,17 @@ module ActiveJob
                       else
                         ActiveJob::Temporal.config.namespace
                       end
-          { namespace: namespace, workflow_id: activity_workflow_id }
+          { namespace: namespace, workflow_id: encryption_context_workflow_id(payload) }
+        end
+
+        # Scheduled payloads are encrypted once against the schedule's workflow-ID prefix, while
+        # each occurrence runs under a longer workflow ID derived from that prefix.
+        def encryption_context_workflow_id(payload)
+          workflow_id = activity_workflow_id
+          prefix = payload && payload_value(payload, :schedule_workflow_id_prefix)
+          return workflow_id unless prefix && workflow_id.to_s.start_with?(prefix.to_s)
+
+          prefix
         end
 
         def activity_workflow_id

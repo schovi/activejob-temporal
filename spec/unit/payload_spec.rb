@@ -52,6 +52,7 @@ describe ActiveJob::Temporal::Payload do
       config.encrypt_payload = false
       config.encryption_key = nil
       config.encryption_old_keys = []
+      config.allow_legacy_encrypted_payloads = false
       config.payload_serializer = :json
       config.payload_storage_adapter = nil
       config.payload_storage_threshold_kb = nil
@@ -350,12 +351,26 @@ describe ActiveJob::Temporal::Payload do
         assert_equal job.arguments, described_class.deserialize_args(payload)
       end
 
-      it "reads Marshal payloads after the configured serializer changes" do
+      it "rejects Marshal payloads when the configured serializer is not Marshal" do
         ActiveJob::Temporal.config.payload_serializer = :marshal
         payload = described_class.from_job(job)
         ActiveJob::Temporal.config.payload_serializer = :json
 
-        assert_equal job.arguments, described_class.deserialize_args(payload)
+        error = assert_raises(ActiveJob::SerializationError) { described_class.deserialize_args(payload) }
+
+        assert_match(/Payload serializer :marshal is not permitted/, error.message)
+      end
+
+      it "rejects hand-crafted Marshal envelopes on a JSON-configured worker" do
+        ActiveJob::Temporal.config.payload_serializer = :json
+        hostile_payload = {
+          serialized_payload: true,
+          payload_serializer: "marshal",
+          payload_serializer_version: 1,
+          serialized_data: Base64.strict_encode64(Marshal.dump({ job_class: "SimpleJob" }))
+        }
+
+        assert_raises(ActiveJob::SerializationError) { described_class.deserialize_args(hostile_payload) }
       end
     end
 
@@ -764,6 +779,15 @@ describe ActiveJob::Temporal::Payload do
         assert_match(/Unable to decrypt ActiveJob::Temporal payload/, error.message)
       end
 
+      it "rejects version 1 encrypted payloads unless legacy payloads are allowed" do
+        payload = described_class.from_job(job)
+        ActiveJob::Temporal.config.allow_legacy_encrypted_payloads = false
+
+        error = assert_raises(ActiveJob::SerializationError) { described_class.deserialize_args(payload) }
+
+        assert_match(/Version 1 encrypted payloads are rejected/, error.message)
+      end
+
       it "encrypts serialized MessagePack execution data and preserves workflow controls" do
         ActiveJob::Temporal.config.payload_serializer = :message_pack
         scheduled_time = Time.utc(2024, 10, 20, 12, 0, 0)
@@ -1054,11 +1078,12 @@ describe ActiveJob::Temporal::Payload do
     JSON.generate(payload).bytesize
   end
 
-  def configure_payload_encryption(key: encryption_key_for("primary"), old_keys: [])
+  def configure_payload_encryption(key: encryption_key_for("primary"), old_keys: [], allow_legacy: true)
     ActiveJob::Temporal.configure do |config|
       config.encrypt_payload = true
       config.encryption_key = key
       config.encryption_old_keys = old_keys
+      config.allow_legacy_encrypted_payloads = allow_legacy
     end
   end
 
@@ -1067,6 +1092,7 @@ describe ActiveJob::Temporal::Payload do
       config.encryption_key = key
       config.encryption_old_keys = []
       config.encrypt_payload = true
+      config.allow_legacy_encrypted_payloads = true
     end
   end
 

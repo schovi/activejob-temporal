@@ -313,6 +313,13 @@ module ActiveJob
         description: "Base64-encoded 32-byte AES-256-GCM payload encryption key or key metadata"
       },
 
+      allow_legacy_encrypted_payloads: {
+        default: false,
+        env_var: "ACTIVEJOB_TEMPORAL_ALLOW_LEGACY_ENCRYPTED_PAYLOADS",
+        type: :boolean,
+        description: "Accept version 1 encrypted payloads, which are not bound to a namespace/workflow context"
+      },
+
       encryption_old_keys: {
         default: -> { [] },
         type: :array,

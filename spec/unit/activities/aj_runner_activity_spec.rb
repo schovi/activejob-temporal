@@ -141,11 +141,14 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
           "performed"
         end
       end)
+      activity_info.workflow_id = "ajschwf:daily-report-2024-01-01T12:00:00Z"
       payload = ActiveJob::Temporal::Payload.from_job(job_class.new).merge(
-        payload_encryption_context: { namespace: "default", workflow_id: "ajschwf:daily-report" }
+        schedule_id: "ajsch:daily-report",
+        schedule_workflow_id_prefix: "ajschwf:daily-report",
+        payload_encryption_context: { namespace: "attacker", workflow_id: "attacker-workflow" }
       )
 
-      expected_context = { namespace: "default", workflow_id: "ajschwf:daily-report" }
+      expected_context = { namespace: workflow_namespace, workflow_id: "ajschwf:daily-report" }
       deserialize_recorder =
         call_recorded_method(ActiveJob::Temporal::Payload, :deserialize_payload) do |actual_payload, **keywords|
           assert_equal payload, actual_payload
@@ -545,7 +548,10 @@ describe ActiveJob::Temporal::Activities::AjRunnerActivity do
       job = job_class.new(*args)
 
       with_payload_encryption do
-        encrypted_payload = ActiveJob::Temporal::Payload.from_job(job)
+        encrypted_payload = ActiveJob::Temporal::Payload.from_job(
+          job,
+          encryption_context: { namespace: workflow_namespace, workflow_id: workflow_id }
+        )
         original_deserialize_payload = ActiveJob::Temporal::Payload.method(:deserialize_payload)
         deserialize_recorder = call_recorded_method(ActiveJob::Temporal::Payload, :deserialize_payload) do |*call_args,
                                                                                                             **keywords|

@@ -16,9 +16,9 @@ module ActiveJob
         payload[:external_payload] == true || payload["external_payload"] == true
       end
 
-      def offload_if_needed(payload, config:, metadata:, workflow_control_fields:)
+      def offload_if_needed(payload, config:, metadata:, workflow_control_fields:, byte_size: nil)
         return payload unless configured?(config)
-        return payload unless payload_exceeds_threshold?(payload, config)
+        return payload unless payload_exceeds_threshold?(payload, config, byte_size)
 
         reference = dump_payload(payload, config, metadata)
         envelope = {
@@ -62,8 +62,8 @@ module ActiveJob
         !config.payload_storage_adapter.nil? && !config.payload_storage_threshold_kb.nil?
       end
 
-      def payload_exceeds_threshold?(payload, config)
-        JSON.generate(payload).bytesize > (config.payload_storage_threshold_kb * 1024)
+      def payload_exceeds_threshold?(payload, config, byte_size = nil)
+        (byte_size || JSON.generate(payload).bytesize) > (config.payload_storage_threshold_kb * 1024)
       end
 
       def dump_payload(payload, config, metadata)

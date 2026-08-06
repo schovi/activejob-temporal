@@ -32,7 +32,15 @@ module ActiveJob
 
       def decrypt(payload, config, context: nil)
         version = payload[:encrypted_payload_version] || payload["encrypted_payload_version"]
-        return decrypt_legacy(payload, config) if version == LEGACY_VERSION
+        if version == LEGACY_VERSION
+          unless config.allow_legacy_encrypted_payloads
+            raise ActiveJob::SerializationError,
+                  "Version 1 encrypted payloads are rejected; set allow_legacy_encrypted_payloads " \
+                  "to accept payloads enqueued before context-bound encryption"
+          end
+
+          return decrypt_legacy(payload, config)
+        end
         return decrypt_v2(payload, config, context) if version == VERSION
 
         raise ActiveJob::SerializationError, "Unsupported encrypted payload version: #{version.inspect}"
