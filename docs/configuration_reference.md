@@ -26,6 +26,12 @@ The canonical machine-readable schema for all configuration options is available
 | `tls_domain` | String or `nil` | `nil` | Optional SNI domain override for TLS verification. |
 | `tls_cert_watch` | Boolean | `false` | Watch configured TLS certificate files and reload worker clients when they change. |
 | `tls_reload_signal` | String | `"HUP"` | Signal name used by workers for manual TLS reload. |
+| `api_key` | String or `nil` | `nil` | API key sent as the `Authorization: Bearer` header. Redacted from `Configuration#inspect`. Caution: when an API key is set and `tls` is `nil`, the Temporal SDK enables TLS - set `tls = false` explicitly for plaintext in-cluster servers. |
+| `api_key_file` | String or `nil` | `nil` | File read for the API key when the client is built, for example a projected Kubernetes ServiceAccount token. An explicit `api_key` takes precedence. Symlinked paths are resolved. |
+| `api_key_watch` | Boolean | `false` | Watch `api_key_file` and reload worker clients when it changes. |
+| `worker_activities` | Array | `[]` | Additional activity classes (or class names) the worker registers, for example activities invoked by workflows owned by another service. |
+| `worker_activejob_workloads` | Boolean | `true` | Register the built-in ActiveJob workflows and activities on the worker. Disable for workers that only host `worker_activities`. |
+| `graceful_shutdown_period` | Float | `0.0` | Seconds a shutting-down worker lets running activities finish before their tasks are cancelled. |
 | `workflow_id_generator` | Callable or `nil` | `nil` | Optional callable that receives one positional ActiveJob instance and returns a custom Temporal workflow ID. When unset, the adapter uses `"ajwf:<ClassName>:<job_id>"`. |
 | `default_activity_timeout` | `ActiveSupport::Duration` | `15.minutes` | Default `start_to_close` timeout applied to activities that do not override it. Must be positive. |
 | `default_heartbeat_timeout` | `ActiveSupport::Duration` or `nil` | `nil` | Default `heartbeat` timeout for long-running activities. Optional - only applied if set. |
@@ -111,6 +117,11 @@ Boolean configuration environment variables accept `true`, `1`, `yes`, and `on` 
 | `ACTIVEJOB_TEMPORAL_TLS_DOMAIN` | `tls_domain` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH` | `tls_cert_watch` | Boolean | `false` |
 | `ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL` | `tls_reload_signal` | String | `"HUP"` |
+| `ACTIVEJOB_TEMPORAL_API_KEY` | `api_key` | String | `nil` |
+| `ACTIVEJOB_TEMPORAL_API_KEY_FILE` | `api_key_file` | String | `nil` |
+| `ACTIVEJOB_TEMPORAL_API_KEY_WATCH` | `api_key_watch` | Boolean | `false` |
+| `ACTIVEJOB_TEMPORAL_WORKER_ACTIVEJOB_WORKLOADS` | `worker_activejob_workloads` | Boolean | `true` |
+| `ACTIVEJOB_TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD` | `graceful_shutdown_period` | Float | `0.0` |
 
 **Example:** Setting `ACTIVEJOB_TEMPORAL_TARGET=temporal.production.com:7233` before your Rails app boots will configure the adapter to connect to that Temporal server, unless you override it in an initializer.
 

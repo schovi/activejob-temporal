@@ -116,15 +116,36 @@ module ActiveJob
               )
       end
 
-      # Builds connection keyword arguments (including TLS options).
+      # Builds connection keyword arguments (TLS options and API key).
       # @api private
       def connection_kwargs(configuration)
-        tls = tls_options(configuration)
-        return {} if tls.nil?
+        kwargs = {}
 
-        { tls: tls }
+        tls = tls_options(configuration)
+        kwargs[:tls] = tls unless tls.nil?
+
+        api_key = api_key_option(configuration)
+        kwargs[:api_key] = api_key if api_key
+
+        kwargs
       end
       private_class_method :connection_kwargs
+
+      # Resolves the API key: an explicit api_key wins, otherwise api_key_file is read at build
+      # time - which is what makes {ActiveJob::Temporal.reload_client!} pick up a rotated token.
+      # The path is resolved via File.realpath because Kubernetes projected volumes expose the
+      # token through a symlink that is swapped on rotation.
+      # @api private
+      def api_key_option(configuration)
+        inline = configuration.api_key if configuration.respond_to?(:api_key)
+        return inline unless inline.nil? || inline.to_s.strip.empty?
+
+        path = configuration.api_key_file if configuration.respond_to?(:api_key_file)
+        return nil if path.to_s.strip.empty?
+
+        File.read(File.realpath(path)).strip
+      end
+      private_class_method :api_key_option
 
       # Extracts TLS options from config or environment variables.
       # @api private

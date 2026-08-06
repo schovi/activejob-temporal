@@ -121,6 +121,38 @@ attributes:
       env_var_name: ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL
       example: "HUP"
 
+    - name: api_key
+      type: String
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "Redacted from Configuration#inspect"
+        - "When set and tls is nil, the Temporal SDK enables TLS - set tls explicitly for plaintext servers"
+      description: "API key sent as the Authorization bearer token on every request."
+      env_var_name: ACTIVEJOB_TEMPORAL_API_KEY
+      example: "my-temporal-cloud-api-key"
+
+    - name: api_key_file
+      type: String
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "Read when the client is built; an explicit api_key takes precedence"
+        - "Symlinked paths are resolved via File.realpath"
+      description: "File read for the API key at client build time, for example a projected Kubernetes ServiceAccount token."
+      env_var_name: ACTIVEJOB_TEMPORAL_API_KEY_FILE
+      example: "/var/run/secrets/tokens/temporal-token"
+
+    - name: api_key_watch
+      type: Boolean
+      default: false
+      validation_rules:
+        - "When true, api_key_file should be configured"
+        - "When true, the application bundle must include the optional listen gem"
+      description: "Watch api_key_file and reload worker clients when the token file changes."
+      env_var_name: ACTIVEJOB_TEMPORAL_API_KEY_WATCH
+      example: true
+
     - name: identity
       type: String
       default: null
@@ -510,6 +542,34 @@ attributes:
       description: "Maximum workflow task execution slots per worker process. This setting is used by the Temporal worker process to control simultaneous workflow task processing capacity."
       env_var_name: ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS
       example: 20
+
+    - name: worker_activities
+      type: Array
+      default: []
+      validation_rules:
+        - "Entries are activity classes or resolvable class names"
+      description: "Additional activity classes the worker registers, for example activities invoked by workflows owned by another service, where only the activity name and JSON payloads travel over the wire."
+      env_var_name: null
+      example: ["Tiptap::Temporal::ExportBackfillSnapshotActivity"]
+
+    - name: worker_activejob_workloads
+      type: Boolean
+      default: true
+      validation_rules:
+        - "When false, worker_activities must not be empty"
+      description: "Register the built-in ActiveJob workflows and activities on the worker. Disable for workers that only host worker_activities."
+      env_var_name: ACTIVEJOB_TEMPORAL_WORKER_ACTIVEJOB_WORKLOADS
+      example: false
+
+    - name: graceful_shutdown_period
+      type: Float
+      default: 0.0
+      validation_rules:
+        - "Must be >= 0"
+        - "Should stay below the pod or service manager termination grace period"
+      description: "Seconds a shutting-down worker lets running activities finish before their tasks are cancelled. 0 cancels immediately, matching the SDK default."
+      env_var_name: ACTIVEJOB_TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD
+      example: 105.0
 
 # Practical configuration examples for common deployment scenarios
 examples:

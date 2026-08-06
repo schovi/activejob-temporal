@@ -472,6 +472,23 @@ describe ActiveJob::Temporal::Configuration do
       assert_includes output, "encryption_key=nil"
       assert_includes output, "tls=nil"
     end
+
+    it "redacts the api_key" do
+      configuration.api_key = "super-secret-token"
+
+      output = configuration.inspect
+
+      refute_includes output, "super-secret-token"
+      assert_includes output, "api_key=\"[FILTERED]\""
+    end
+  end
+
+  describe "worker registration defaults" do
+    it "hosts the ActiveJob workloads with no custom activities and no drain period" do
+      assert_equal [], configuration.worker_activities
+      assert configuration.worker_activejob_workloads
+      assert_equal 0.0, configuration.graceful_shutdown_period
+    end
   end
 
   describe "#task_queue_prefix=" do

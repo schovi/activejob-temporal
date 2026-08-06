@@ -194,7 +194,40 @@ When the worker shuts down (for example, via `Ctrl+C`), you should see:
 When metrics are enabled, startup also logs `metrics_server_started` with the bind address and assigned port.
 
 ## Stopping the Worker
-Press `Ctrl+C` or send `SIGTERM` to the worker process. The Temporal SDK will finish in-flight activities before exiting and will emit the `worker_shutdown` log event.
+Press `Ctrl+C` or send `SIGTERM` to the worker process. By default the SDK cancels in-flight activity tasks immediately; set `graceful_shutdown_period` (seconds) to let running activities finish first. Keep it below your pod's or service manager's termination grace period so the drain is not force-killed. The worker emits the `worker_shutdown` log event on exit.
+
+## Hosting Custom Activities (Cross-Service Workers)
+
+Workflows owned by another service - in any Temporal SDK language - can call activities served by your Rails worker: only the activity name and JSON payloads travel over the wire. Register those activity classes with `worker_activities`:
+
+```ruby
+# config/initializers/activejob_temporal.rb
+ActiveJob::Temporal.configure do |config|
+  config.worker_activities = [Tiptap::Temporal::ExportBackfillSnapshotActivity]
+
+  # Optional: turn off the built-in ActiveJob workflows and activities for a
+  # worker that only serves custom activities.
+  config.worker_activejob_workloads = false
+end
+```
+
+The classes are plain `Temporalio::Activity::Definition` subclasses - use `activity_name` to pin the wire name the calling workflow uses. String class names are accepted and resolved after Rails boots.
+
+## API Key Authentication
+
+Send a bearer token with every request by setting `api_key`, or point `api_key_file` at a token file that is read whenever the client is built - for example a projected Kubernetes ServiceAccount token:
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.api_key_file = "/var/run/secrets/tokens/temporal-token"
+  config.api_key_watch = true  # reload worker clients when kubelet rotates the token
+  config.tls = false           # see caution below
+end
+```
+
+`api_key_watch` reuses the certificate reload path: when the file changes, the worker rebuilds the client and swaps it in without dropping polls. Manual reload via the `tls_reload_signal` signal (default `HUP`) also picks up a fresh token.
+
+**Caution:** the Temporal SDK enables TLS whenever an API key is set and `tls` is `nil`. Against a plaintext in-cluster server this fails the TLS handshake with `InvalidContentType` at connect - set `tls = false` explicitly. For Temporal Cloud, leave `tls` unset (TLS on is what you want).
 
 ## Manual Test
 

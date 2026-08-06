@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Bearer-token authentication: `api_key` (sent as the `Authorization: Bearer` header) and `api_key_file`, read when the client is built — for example a projected Kubernetes ServiceAccount token. `api_key_watch` reloads worker clients when the token file rotates, reusing the certificate reload path. `api_key` is redacted from `Configuration#inspect`. Caution: the Temporal SDK enables TLS when an API key is set and `tls` is nil — set `tls = false` explicitly for plaintext in-cluster servers.
+- Custom activity hosting: `worker_activities` registers additional activity classes (or class names) on the worker — for example activities invoked by workflows owned by another service, where only the activity name and JSON payloads travel over the wire. `worker_activejob_workloads = false` turns off the built-in ActiveJob workflows and activities for activities-only workers.
+- `graceful_shutdown_period` is passed to the Temporal worker, so a shutting-down worker lets running activities finish before their tasks are cancelled instead of cancelling them immediately.
+
+### Changed
+- Allow temporalio 1.5 and 1.6 (dependency constraint is now `>= 1.4.0, < 1.7`); both added to the SDK contract-test matrix.
+
 ## [0.2.0] - 2026-08-06
 
 ### Security
