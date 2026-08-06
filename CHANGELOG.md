@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-06
+
 ### Added
 - Bearer-token authentication: `api_key` (sent as the `Authorization: Bearer` header) and `api_key_file`, read through the same hardened path as TLS files — for example a projected Kubernetes ServiceAccount token. `api_key_watch` watches the token file and applies rotated tokens to the live connection via the new `ActiveJob::Temporal.refresh_api_key!` (no reconnect); enqueue-side processes using a rotating token file should call `refresh_api_key!` on their own schedule. `api_key` is redacted from `Configuration#inspect`. Caution: the Temporal SDK enables TLS when an API key is set and `tls` is nil — set `tls = false` explicitly for plaintext in-cluster servers (see the worker setup guide).
 - Custom activity hosting: `worker_activities` registers additional activity classes (or class names) on the worker — for example activities invoked by workflows owned by another service, where only the activity name and JSON payloads travel over the wire. `worker_activejob_workloads = false` turns off the built-in ActiveJob workflows and activities for activities-only workers. Entries must be `Temporalio::Activity::Definition` subclasses; anything else fails worker startup with a `WorkerRegistrationError`.
