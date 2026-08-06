@@ -136,3 +136,18 @@ en:
             tls_reload_signal:
               blank: "must be present when configured"
               invalid: "must be a signal name like HUP or USR1, got: %{value}"
+
+            api_key_file:
+              invalid_path: "must be a non-empty file path, got: %{value}"
+              unreadable_path: "must resolve to a readable regular file, got: %{value}"
+
+            api_key_watch:
+              not_boolean: "must be true or false, got: %{value}"
+              requires_path: "requires api_key_file to watch"
+
+            worker_activejob_workloads:
+              not_boolean: "must be true or false, got: %{value}"
+              requires_activities: "requires worker_activities when disabled - the worker would have nothing to register"
+
+            graceful_shutdown_period:
+              graceful_shutdown_period_negative: "must be >= 0 seconds, got: %{value}"

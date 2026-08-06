@@ -116,15 +116,32 @@ module ActiveJob
               )
       end
 
-      # Builds connection keyword arguments (including TLS options).
+      # Builds connection keyword arguments (TLS options and API key).
       # @api private
       def connection_kwargs(configuration)
-        tls = tls_options(configuration)
-        return {} if tls.nil?
+        kwargs = {}
 
-        { tls: tls }
+        tls = tls_options(configuration)
+        kwargs[:tls] = tls unless tls.nil?
+
+        api_key = resolve_api_key(configuration)
+        kwargs[:api_key] = api_key if api_key
+
+        kwargs
       end
       private_class_method :connection_kwargs
+
+      # Resolves the API key: an explicit api_key wins, otherwise api_key_file is read - at
+      # connection build time, and again by {ActiveJob::Temporal.refresh_api_key!} when the
+      # token file rotates.
+      # @api private
+      def resolve_api_key(configuration)
+        inline = configuration.api_key if configuration.respond_to?(:api_key)
+        return inline unless inline.nil? || inline.to_s.strip.empty?
+
+        path = configuration.api_key_file if configuration.respond_to?(:api_key_file)
+        read_tls_file(path)&.strip.presence
+      end
 
       # Extracts TLS options from config or environment variables.
       # @api private

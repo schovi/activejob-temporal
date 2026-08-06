@@ -4,6 +4,12 @@ require "spec_helper"
 require "temporalio/worker"
 require "activejob/temporal/rails_environment_loader"
 
+require "temporalio/activity"
+
+module WorkerConfigurationSpecSupport
+  class FakeExportActivity < Temporalio::Activity::Definition; end
+end
+
 describe "Worker configuration" do
   let(:client) { Object.new }
   let(:worker) { Object.new }
@@ -53,6 +59,44 @@ describe "Worker configuration" do
 
     refute_includes worker_options, :max_concurrent_activity_task_polls
     refute_includes worker_options, :max_concurrent_workflow_task_polls
+  end
+
+  it "registers configured custom activities ahead of the ActiveJob workloads" do
+    config.worker_activities = [WorkerConfigurationSpecSupport::FakeExportActivity]
+
+    worker_options = load_worker_options
+
+    assert_equal(
+      [ActiveJob::Temporal::Workflows::AjWorkflow, ActiveJob::Temporal::Workflows::DeadLetterWorkflow],
+      worker_options.fetch(:workflows)
+    )
+    assert_equal(
+      [
+        WorkerConfigurationSpecSupport::FakeExportActivity,
+        ActiveJob::Temporal::Activities::RateLimitActivity,
+        ActiveJob::Temporal::Activities::DependencyStatusActivity,
+        ActiveJob::Temporal::Activities::AjRunnerActivity
+      ],
+      worker_options.fetch(:activities)
+    )
+  end
+
+  it "hosts an activities-only worker when the ActiveJob workloads are disabled" do
+    config.worker_activejob_workloads = false
+    config.worker_activities = [WorkerConfigurationSpecSupport::FakeExportActivity]
+
+    worker_options = load_worker_options
+
+    assert_equal [], worker_options.fetch(:workflows)
+    assert_equal [WorkerConfigurationSpecSupport::FakeExportActivity], worker_options.fetch(:activities)
+  end
+
+  it "passes the configured graceful shutdown period to the worker" do
+    config.graceful_shutdown_period = 105.0
+
+    worker_options = load_worker_options
+
+    assert_equal 105.0, worker_options.fetch(:graceful_shutdown_period)
   end
 
   def load_worker_options

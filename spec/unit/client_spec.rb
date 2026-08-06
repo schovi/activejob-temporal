@@ -159,6 +159,102 @@ describe ActiveJob::Temporal, ".client" do
     )
   end
 
+  describe "API key" do
+    it "passes the configured api_key as a connection keyword" do
+      described_class.configure { |config| config.api_key = "secret-token" }
+      client_instance = fake_client
+      stub_connect(client_instance)
+
+      assert_same client_instance, described_class.client
+      assert_equal "secret-token", connect_call.keywords[:api_key]
+    end
+
+    it "reads the api_key from api_key_file when the client is built" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "token")
+        File.write(path, "file-token\n")
+        described_class.configure { |config| config.api_key_file = path }
+        client_instance = fake_client
+        stub_connect(client_instance)
+
+        assert_same client_instance, described_class.client
+        assert_equal "file-token", connect_call.keywords[:api_key]
+      end
+    end
+
+    it "prefers an explicit api_key over api_key_file" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "token")
+        File.write(path, "file-token")
+        described_class.configure do |config|
+          config.api_key = "inline-token"
+          config.api_key_file = path
+        end
+        stub_connect(fake_client)
+
+        described_class.client
+
+        assert_equal "inline-token", connect_call.keywords[:api_key]
+      end
+    end
+
+    it "re-reads api_key_file when the client is reloaded" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "token")
+        File.write(path, "token-one")
+        described_class.configure { |config| config.api_key_file = path }
+        stub_connect(fake_client, fake_client)
+
+        described_class.client
+        File.write(path, "token-two")
+        described_class.reload_client!
+
+        assert_equal "token-one", connect_call(0).keywords[:api_key]
+        assert_equal "token-two", connect_call(1).keywords[:api_key]
+      end
+    end
+
+    it "omits the api_key keyword when neither api_key nor api_key_file is set" do
+      stub_connect(fake_client)
+
+      described_class.client
+
+      refute connect_call.keywords.key?(:api_key)
+    end
+
+    it "treats an empty api_key_file as no API key" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "token")
+        File.write(path, "\n")
+        described_class.configure { |config| config.api_key_file = path }
+        stub_connect(fake_client)
+
+        described_class.client
+
+        refute connect_call.keywords.key?(:api_key)
+      end
+    end
+
+    it "applies a rotated token to the live connection via refresh_api_key!" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "token")
+        File.write(path, "token-one")
+        described_class.configure { |config| config.api_key_file = path }
+        connection = Struct.new(:api_key).new
+        client_instance = fake_client
+        client_instance.define_singleton_method(:connection) { connection }
+        stub_connect(client_instance)
+        described_class.client
+
+        File.write(path, "token-two")
+        described_class.refresh_api_key!
+
+        assert_equal "token-two", connection.api_key
+        assert_equal 1, connect_calls.size
+      end
+    end
+  end
+
   it "compacts TLS options when only some environment variables are set" do
     ENV["TEMPORAL_TLS_CERT"] = "cert-data"
     client_instance = fake_client

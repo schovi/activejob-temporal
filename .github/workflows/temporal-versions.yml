@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        temporalio-version: ['1.4.0', '1.4.1']
+        temporalio-version: ['1.4.0', '1.4.1', '1.5.1', '1.6.0']
 
     env:
       BUNDLE_GEMFILE: gemfiles/temporalio_contract.gemfile

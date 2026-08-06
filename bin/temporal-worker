@@ -183,23 +183,24 @@ worker_health = ActiveJob::Temporal::WorkerHealth.new(
   max_concurrent_workflows: max_concurrent_workflows
 )
 
+begin
+  registrations = ActiveJob::Temporal::WorkerRegistrations.resolve(config)
+rescue ActiveJob::Temporal::WorkerRegistrationError => e
+  warn "Error: #{e.message}"
+  exit(1)
+end
+
 worker = Temporalio::Worker.new(
   client: client,
   task_queue: task_queue,
-  workflows: [
-    ActiveJob::Temporal::Workflows::AjWorkflow,
-    ActiveJob::Temporal::Workflows::DeadLetterWorkflow
-  ],
-  activities: [
-    ActiveJob::Temporal::Activities::RateLimitActivity,
-    ActiveJob::Temporal::Activities::DependencyStatusActivity,
-    ActiveJob::Temporal::Activities::AjRunnerActivity
-  ],
+  workflows: registrations.workflows,
+  activities: registrations.activities,
   tuner: Temporalio::Worker::Tuner.create_fixed(
     workflow_slots: max_concurrent_workflows,
     activity_slots: max_concurrent_activities,
     local_activity_slots: max_concurrent_activities
   ),
+  graceful_shutdown_period: config.graceful_shutdown_period,
   interceptors: [worker_health]
 )
 
@@ -268,6 +269,17 @@ if config.tls_cert_watch
   ).start
 end
 
+# Token rotation mutates the live connection (the SDK sends the header per-RPC from the
+# connection's stored options) - no client rebuild, unlike certificate rotation above.
+# Configuration validation guarantees api_key_file is set when api_key_watch is on.
+api_key_watcher = nil
+if config.api_key_watch
+  api_key_watcher = ActiveJob::Temporal::CertificateWatcher.new(
+    paths: [config.api_key_file],
+    reload_callback: -> { ActiveJob::Temporal.refresh_api_key! }
+  ).start
+end
+
 begin
   worker_health.mark_started!
   Temporalio::Worker.run_all(
@@ -279,6 +291,7 @@ rescue Interrupt
 ensure
   worker_health.mark_stopped!
   certificate_watcher&.stop
+  api_key_watcher&.stop
   reload_signal_queue.close
   reload_signal_thread.join(1)
   health_check_server&.stop
