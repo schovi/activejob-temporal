@@ -155,8 +155,8 @@ module ActiveJob
         default: false,
         env_var: "ACTIVEJOB_TEMPORAL_API_KEY_WATCH",
         type: :boolean,
-        description: "Watch api_key_file and reload worker clients when it changes (kubelet rewrites " \
-                     "projected tokens in place long before they expire)"
+        description: "Watch api_key_file and refresh the token when it changes (kubelet rotates " \
+                     "projected tokens atomically, long before they expire)"
       },
 
       priority_task_queues: {
