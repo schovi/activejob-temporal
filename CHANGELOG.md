@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-06
+
+### Security
+- Reject payload-declared serializers not permitted by the configured `payload_serializer`, closing a `Marshal.load` code-execution path from attacker-supplied workflow input.
+- Derive the AES-GCM payload encryption context from the activity context instead of the payload, so captured ciphertexts cannot be replayed into other workflows or namespaces.
+- Reject legacy V1 (context-unbound) encrypted payloads by default; `allow_legacy_encrypted_payloads` opts back in during migration.
+- Validate values interpolated into Temporal visibility queries with a strict allowlist, preventing query-structure injection through job IDs and class names in cancel/inspect APIs.
+- Redact encryption keys and TLS settings from `Configuration#inspect`.
+- Cap request line length and header count and enforce a whole-request deadline in the health check and metrics HTTP servers.
+
+### Fixed
+- Retry certificate reloads after a failure so cert+key rotation pairs written within the debounce window are not dropped.
+- Accept symlinked TLS certificate paths (resolved via `File.realpath`), unblocking Kubernetes secret volume mounts.
+- Rescue `SystemCallError` in health check and metrics accept loops so errors like `EMFILE` no longer kill the listener silently.
+- Reject overlapping worker pool health check and metrics port ranges at validation time instead of crash-looping the colliding child.
+- Raise the documented `TemporalConnectionError` from client connect failures.
+- Surface dead letter queue query failures instead of silently dropping entries, and fetch entries concurrently.
+
 <!-- github_changelog_generator:start -->
 
 **Implemented enhancements:**
