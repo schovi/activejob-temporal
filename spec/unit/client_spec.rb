@@ -222,6 +222,19 @@ describe ActiveJob::Temporal, ".client" do
       refute connect_call.keywords.key?(:api_key)
     end
 
+    it "treats an empty api_key_file as no API key" do
+      Dir.mktmpdir do |dir|
+        path = File.join(dir, "token")
+        File.write(path, "\n")
+        described_class.configure { |config| config.api_key_file = path }
+        stub_connect(fake_client)
+
+        described_class.client
+
+        refute connect_call.keywords.key?(:api_key)
+      end
+    end
+
     it "applies a rotated token to the live connection via refresh_api_key!" do
       Dir.mktmpdir do |dir|
         path = File.join(dir, "token")

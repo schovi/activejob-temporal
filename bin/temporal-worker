@@ -275,7 +275,7 @@ end
 api_key_watcher = nil
 if config.api_key_watch
   api_key_watcher = ActiveJob::Temporal::CertificateWatcher.new(
-    paths: [config.api_key_file].compact.reject { |path| path.to_s.strip.empty? },
+    paths: [config.api_key_file],
     reload_callback: -> { ActiveJob::Temporal.refresh_api_key! }
   ).start
 end

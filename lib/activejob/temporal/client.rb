@@ -140,7 +140,7 @@ module ActiveJob
         return inline unless inline.nil? || inline.to_s.strip.empty?
 
         path = configuration.api_key_file if configuration.respond_to?(:api_key_file)
-        read_tls_file(path)&.strip
+        read_tls_file(path)&.strip.presence
       end
 
       # Extracts TLS options from config or environment variables.
