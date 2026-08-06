@@ -231,6 +231,8 @@ When the file changes, the worker re-reads it and applies the fresh token to the
 
 **Caution:** the Temporal SDK enables TLS whenever an API key is set and `tls` is `nil`. Against a plaintext in-cluster server this fails the TLS handshake with `InvalidContentType` at connect - set `tls = false` explicitly. For Temporal Cloud, leave `tls` unset (TLS on is what you want).
 
+**Note on Kubernetes volumes:** kubelet keeps a `..data` symlink inside secret and projected volumes, which trips listen's symlink detector (`directory is already being watched!`). The condition is expected and harmless there, so the gem silences exactly that warning; all other listen warnings keep their configured behavior.
+
 ## Manual Test
 
 With a Temporal server running, run the worker from your Rails app directory:

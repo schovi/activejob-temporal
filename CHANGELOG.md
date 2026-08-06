@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- File watchers no longer let listen print `** ERROR: directory is already being watched! **` on every boot for Kubernetes secret and projected volumes. The `..data` symlink kubelet maintains inside those volumes makes the same real directory reachable twice, which trips listen's symlink detector; the condition is expected and harmless there (change events still flow), but the warning landed in pod logs at error severity. The gem now installs a `Listen.adapter_warn_behavior` filter that silences exactly that message when it names a `..`-prefixed path component; all other listen warnings keep the previously configured behavior.
+
 ## [0.3.1] - 2026-08-06
 
 ### Fixed

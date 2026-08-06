@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "listen_warning_filter"
+
 module ActiveJob
   module Temporal
     # Watches TLS certificate files and runs a reload callback when they change.
@@ -83,6 +85,7 @@ module ActiveJob
       def listener_factory
         @listener_factory ||= begin
           require "listen"
+          ListenWarningFilter.install!
           Listen
         rescue LoadError => e
           raise LoadError, "listen gem is required when tls_cert_watch is enabled: #{e.message}"
