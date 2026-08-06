@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-06
+
 ### Fixed
 - `api_key_watch` and `tls_cert_watch` now fire on Kubernetes projected and secret volumes: kubelet rotates them atomically by swapping a `..data` symlink into a new timestamped directory, so the watched file's own path never appears in the change events and the previous exact-path filter dropped every rotation. Any change inside a watched file's directory now counts as relevant.
 
