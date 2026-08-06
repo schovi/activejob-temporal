@@ -140,6 +140,19 @@ module ActiveJob
         end
 
         validate_public_binds!
+        validate_port_ranges!
+      end
+
+      # Each worker binds base_port + index, so overlapping ranges would make
+      # workers fight over the same port and crash-loop.
+      def validate_port_ranges!
+        return unless @health_check_port && @metrics_port
+        return unless @health_check_port < @metrics_port + @size && @metrics_port < @health_check_port + @size
+
+        raise ArgumentError,
+              "health_check_port and metrics_port ranges overlap for #{@size} workers: " \
+              "health check #{@health_check_port}-#{@health_check_port + @size - 1}, " \
+              "metrics #{@metrics_port}-#{@metrics_port + @size - 1}"
       end
 
       def positive_integer(value, name)

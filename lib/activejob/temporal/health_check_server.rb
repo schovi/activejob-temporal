@@ -88,17 +88,24 @@ module ActiveJob
           connection_pool.enqueue(server.accept)
         rescue IOError, Errno::EBADF
           break
+        rescue SystemCallError => e
+          # Transient accept failures (fd exhaustion, aborted connections) must not kill the listener.
+          ActiveJob::Temporal::Logger.error(
+            "health_check_accept_failed", error_class: e.class.name, message: e.message.to_s
+          )
+          sleep 0.05
         end
       ensure
         @mutex.synchronize { @running = false if @server }
       end
 
       def handle_client(client)
-        request_line = read_line(client)
+        deadline = request_deadline
+        request_line = read_line(client, deadline)
         return unless request_line
 
         method, path = request_line.split.first(2)
-        drain_headers(client)
+        drain_headers(client, deadline)
 
         unless method && path
           write_json(client, 400, { error: "bad_request" })
@@ -122,13 +129,6 @@ module ActiveJob
 
       def health_status(payload)
         payload[:worker_running] ? 200 : 503
-      end
-
-      def drain_headers(client)
-        loop do
-          line = read_line(client)
-          break if line.nil? || line == "\r\n" || line == "\n"
-        end
       end
 
       def write_json(client, status, payload, body: true)

@@ -90,17 +90,24 @@ module ActiveJob
           connection_pool.enqueue(server.accept)
         rescue IOError, Errno::EBADF
           break
+        rescue SystemCallError => e
+          # Transient accept failures (fd exhaustion, aborted connections) must not kill the listener.
+          ActiveJob::Temporal::Logger.error(
+            "metrics_accept_failed", error_class: e.class.name, message: e.message.to_s
+          )
+          sleep 0.05
         end
       ensure
         @mutex.synchronize { @running = false if @server }
       end
 
       def handle_client(client)
-        request_line = read_line(client)
+        deadline = request_deadline
+        request_line = read_line(client, deadline)
         return unless request_line
 
         method, path = request_line.split.first(2)
-        drain_headers(client)
+        drain_headers(client, deadline)
 
         unless method && path
           write_text(client, 400, "bad_request\n")
@@ -114,13 +121,6 @@ module ActiveJob
           write_text(client, 405, "method_not_allowed\n")
         else
           write_text(client, 404, "not_found\n")
-        end
-      end
-
-      def drain_headers(client)
-        loop do
-          line = read_line(client)
-          break if line.nil? || line == "\r\n" || line == "\n"
         end
       end
 

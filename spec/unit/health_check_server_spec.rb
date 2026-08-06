@@ -154,6 +154,50 @@ describe ActiveJob::Temporal::HealthCheckServer do
       stalled_sockets&.each(&:close)
     end
 
+    it "closes the connection when the request line exceeds the line limit" do
+      state.mark_started!
+      @server = described_class.new(port: 0, bind_address: "127.0.0.1", state: state).start
+      socket = TCPSocket.new("127.0.0.1", @server.port)
+
+      response = Timeout.timeout(2) do
+        oversized_path = "a" * (ActiveJob::Temporal::HttpLineReader::MAX_LINE_BYTES + 1)
+        socket.write("GET /#{oversized_path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+        socket.read
+      rescue Errno::EPIPE, Errno::ECONNRESET
+        ""
+      end
+
+      assert_empty response.to_s
+    ensure
+      socket&.close
+    end
+
+    it "answers within the request deadline while a client keeps trickling headers" do
+      stub_const("#{described_class.name}::READ_TIMEOUT_SECONDS", 0.2)
+      state.mark_started!
+      @server = described_class.new(port: 0, bind_address: "127.0.0.1", state: state).start
+      socket = TCPSocket.new("127.0.0.1", @server.port)
+      socket.write("GET /health HTTP/1.1\r\n")
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      trickle = Thread.new do
+        20.times do
+          socket.write("X-Trickle: 1\r\n")
+          sleep 0.05
+        end
+      rescue Errno::EPIPE, Errno::ECONNRESET, IOError
+        nil
+      end
+
+      response = Timeout.timeout(3) { socket.read }
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
+
+      assert_includes response.to_s, "HTTP/1.1 200 OK"
+      assert_operator elapsed, :<, 0.9
+    ensure
+      trickle&.kill
+      socket&.close
+    end
+
     it "keeps running when a client disconnects before reading the response" do
       state.mark_started!
       @server = described_class.new(port: 0, bind_address: "127.0.0.1", state: state).start

@@ -278,4 +278,18 @@ describe ActiveJob::Temporal::WorkerPool do
 
     assert_match(/metrics endpoint.*public bind opt-in/, error.message)
   end
+
+  it "rejects health check and metrics port ranges that overlap" do
+    error = assert_raises(ArgumentError) do
+      build_pool(size: 4, health_check_port: 8080, metrics_port: 8082)
+    end
+
+    assert_match(/ranges overlap for 4 workers/, error.message)
+  end
+
+  it "accepts health check and metrics port ranges that do not overlap" do
+    pool = build_pool(size: 4, health_check_port: 8080, metrics_port: 8084)
+
+    assert_equal false, pool.running?
+  end
 end

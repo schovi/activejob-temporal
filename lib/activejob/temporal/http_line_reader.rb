@@ -2,11 +2,21 @@
 
 module ActiveJob
   module Temporal
+    # Bounded line reading for the embedded HTTP endpoints: one deadline for the
+    # whole request plus caps on line length and header count, so a slow or
+    # oversized client cannot hold a connection worker.
     module HttpLineReader
+      MAX_LINE_BYTES = 8_192
+      MAX_HEADER_LINES = 100
+
       private
 
-      def read_line(client)
-        deadline = monotonic_time + self.class.const_get(:READ_TIMEOUT_SECONDS)
+      # @return [Float] monotonic deadline covering an entire request
+      def request_deadline
+        monotonic_time + self.class.const_get(:READ_TIMEOUT_SECONDS)
+      end
+
+      def read_line(client, deadline)
         buffer = +""
 
         loop do
@@ -24,7 +34,15 @@ module ActiveJob
           else
             buffer << chunk
             return buffer if chunk == "\n"
+            return if buffer.bytesize >= MAX_LINE_BYTES
           end
+        end
+      end
+
+      def drain_headers(client, deadline)
+        MAX_HEADER_LINES.times do
+          line = read_line(client, deadline)
+          break if line.nil? || line == "\r\n" || line == "\n"
         end
       end
 
