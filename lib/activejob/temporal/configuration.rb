@@ -456,6 +456,26 @@ module ActiveJob
         middleware_chain.add(middleware, ...)
       end
 
+      # Attributes holding secrets, redacted by {#inspect}.
+      REDACTED_ATTRIBUTES = %i[encryption_key encryption_old_keys tls].freeze
+      REDACTED_PLACEHOLDER = "[FILTERED]"
+
+      # Returns the configuration with secret attributes redacted.
+      #
+      # The default `Object#inspect` dumps `@attributes`, which exposes the payload
+      # encryption keys and the inline TLS private key in logs and exception output.
+      #
+      # @return [String] inspect output with encryption keys and TLS settings filtered
+      def inspect
+        pairs = @attributes.map do |attribute, value|
+          value = REDACTED_PLACEHOLDER if REDACTED_ATTRIBUTES.include?(attribute) && value.present?
+
+          "#{attribute}=#{value.inspect}"
+        end
+
+        "#<#{self.class.name} #{pairs.join(', ')}>"
+      end
+
       def validate!
         return if validation_level == :none
 

@@ -272,7 +272,7 @@ describe ActiveJob::Temporal, ".client" do
     end
   end
 
-  it "rejects TLS files replaced by symlinks after configuration validation" do
+  it "rejects TLS files replaced by a non-regular file after configuration validation" do
     Dir.mktmpdir do |directory|
       cert_path = File.join(directory, "client.pem")
       key_path = File.join(directory, "client-key.pem")
@@ -284,24 +284,25 @@ describe ActiveJob::Temporal, ".client" do
         config.tls_key_path = key_path
       end
       File.delete(cert_path)
-      File.symlink(key_path, cert_path)
+      File.symlink(directory, cert_path)
       stub_connect(fake_client)
 
       error = assert_raises(ActiveJob::Temporal::Error) { described_class.client }
-      assert_match(/TLS file path must not be a symlink/, error.message)
+      assert_match(/TLS file path must point to a regular file/, error.message)
       assert_empty connect_calls
     end
   end
 
-  it "wraps connection errors in ActiveJob::Temporal::Error" do
+  it "wraps connection errors in ActiveJob::Temporal::TemporalConnectionError" do
     described_class.configure do |config|
       config.target = "1.2.3.4:7233"
       config.namespace = "production"
     end
     stub_connect(error: StandardError.new("unreachable"))
 
-    error = assert_raises(ActiveJob::Temporal::Error) { described_class.client }
+    error = assert_raises(ActiveJob::Temporal::TemporalConnectionError) { described_class.client }
     assert_match(/Unable to connect to Temporal at 1\.2\.3\.4:7233/, error.message)
+    assert_kind_of ActiveJob::Temporal::Error, error
   end
 
   describe "TLS certificate error handling" do

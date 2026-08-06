@@ -447,6 +447,33 @@ describe ActiveJob::Temporal::Configuration do
     end
   end
 
+  describe "#inspect" do
+    it "redacts encryption keys and TLS settings" do
+      configuration.encryption_key = valid_encryption_key("primary")
+      configuration.encryption_old_keys = [valid_encryption_key("previous")]
+      configuration.tls = { client_private_key: "-----BEGIN PRIVATE KEY-----" }
+
+      output = configuration.inspect
+
+      refute_includes output, valid_encryption_key("primary")
+      refute_includes output, valid_encryption_key("previous")
+      refute_includes output, "BEGIN PRIVATE KEY"
+      assert_includes output, "encryption_key=\"[FILTERED]\""
+      assert_includes output, "encryption_old_keys=\"[FILTERED]\""
+      assert_includes output, "tls=\"[FILTERED]\""
+    end
+
+    it "keeps non-secret attributes visible" do
+      configuration.target = "temporal.example.com:7233"
+
+      output = configuration.inspect
+
+      assert_includes output, "target=\"temporal.example.com:7233\""
+      assert_includes output, "encryption_key=nil"
+      assert_includes output, "tls=nil"
+    end
+  end
+
   describe "#task_queue_prefix=" do
     it "accepts nil values" do
       configuration.task_queue_prefix = nil

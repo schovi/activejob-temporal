@@ -71,7 +71,8 @@ module ActiveJob
       #
       # @return [Temporalio::Client] Connected Temporal client
       #
-      # @raise [ActiveJob::Temporal::Error] if connection fails (includes target, namespace, and error message)
+      # @raise [ActiveJob::Temporal::TemporalConnectionError] if connection fails
+      #   (includes target, namespace, and error message)
       # @raise [OpenSSL::SSL::SSLError] if TLS certificate validation fails
       # @raise [OpenSSL::PKey::RSAError] if TLS private key is invalid
       # @raise [OpenSSL::X509::CertificateError] if TLS certificate is malformed
@@ -95,7 +96,7 @@ module ActiveJob
       # @example Handling connection failures
       #   begin
       #     client = Client.build(config)
-      #   rescue ActiveJob::Temporal::Error => e
+      #   rescue ActiveJob::Temporal::TemporalConnectionError => e
       #     Rails.logger.fatal("Cannot connect to Temporal: #{e.message}")
       #     # Fall back to different adapter or alert operations team
       #   end
@@ -106,7 +107,7 @@ module ActiveJob
           **connection_kwargs(configuration)
         )
       rescue StandardError => e
-        raise ActiveJob::Temporal::Error,
+        raise ActiveJob::Temporal::TemporalConnectionError,
               format(
                 "Unable to connect to Temporal at %<target>s (namespace: %<namespace>s): %<error>s",
                 target: configuration.target,
