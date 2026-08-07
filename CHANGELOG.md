@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-07
+
 ### Added
 - Configuration now fails to validate when `api_key` or `api_key_file` is set while `tls` is left unset. The Temporal SDK enables TLS on its own whenever an API key is present, so leaving `tls` at `nil` silently coupled transport security to an unrelated setting and failed the handshake against a plaintext frontend.
 - The client logs `credential_source_shadowed` when two sources for the same credential are configured (`api_key` alongside `api_key_file`, or `tls` alongside the `tls_*_path` settings). Precedence was already defined but silent.
