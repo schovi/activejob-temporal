@@ -44,7 +44,7 @@ spec.add_dependency "globalid", ">= 0.3"
 spec.add_dependency "temporalio", ">= 1.4.0", "< 1.5"
 ```
 
-Conservative constraints prevent unpredictable breaking changes. TLS certificate file watching lazy-loads the optional `listen` gem only when `tls_cert_watch` is enabled; applications that use file watching should add `gem "listen", "~> 3.9"` to their own Gemfile.
+Conservative constraints prevent unpredictable breaking changes. The only optional dependency is `listen`, lazy-loaded when `credential_file_events` is enabled; applications that enable it should add `gem "listen", "~> 3.9"` to their own Gemfile. Credential rotation itself needs no extra gem.
 
 ## Code Security
 
@@ -99,9 +99,9 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-The client certificate and private key paths must be configured together. The worker reads the files when building a Temporal client and can reload without restart when either file changes. Replace certificate files atomically, for example write a new file and rename it into place, so the watcher never observes a partially written PEM.
+The client certificate and private key paths must be configured together. The worker reads the files when building a Temporal client and can reload without restart when either file changes. Replace certificate files atomically, for example write a new file and rename it into place, so a check never observes a partially written PEM. Certificate and key are digested as one unit, so rotating both produces a single client rebuild.
 
-File watching is controlled by `config.tls_cert_watch` or `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true` and requires the optional `listen` gem in the application bundle. Workers also trap `SIGHUP` by default for manual reload, which does not require `listen`:
+Rotation detection is controlled by `config.tls_cert_watch` or `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true`, checked every `credential_poll_interval` seconds (default 30), and needs no optional gem. Workers also trap `SIGHUP` by default for manual reload:
 
 ```bash
 kill -HUP <worker-pid>
@@ -120,7 +120,9 @@ ActiveJob::Temporal.configure do |config|
 end
 ```
 
-The file is read through the same hardened path as TLS material (symlinks resolved for Kubernetes projected volumes, regular-file check, `O_NOFOLLOW`). Replace it atomically, like certificate files. With `api_key_watch` enabled (requires the optional `listen` gem), workers apply a rotated token to the live connection without reconnecting; enqueue-side processes must call `ActiveJob::Temporal.refresh_api_key!` themselves when using short-lived tokens.
+The file is read through the same hardened path as TLS material (symlinks resolved for Kubernetes projected volumes, regular-file check, `O_NOFOLLOW`). Replace it atomically, like certificate files. With `api_key_watch` enabled, workers compare a digest of the file every `credential_poll_interval` seconds and apply a rotated token to the live connection without reconnecting. Enqueue-side processes get the same behaviour by starting a `CredentialRefresher` in an initializer - see [API Key Authentication](worker_setup.md#api-key-authentication).
+
+Rotation is detected from file content, never from filesystem event delivery, so a mount whose events do not reach the process still rotates on schedule. `credential_file_events` only shortens the delay.
 
 The `api_key` value is redacted from `Configuration#inspect`, so it does not leak through logs and exception reports that dump the configuration.
 

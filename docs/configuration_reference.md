@@ -28,7 +28,9 @@ The canonical machine-readable schema for all configuration options is available
 | `tls_reload_signal` | String | `"HUP"` | Signal name used by workers for manual TLS reload. |
 | `api_key` | String or `nil` | `nil` | API key sent as the `Authorization: Bearer` header. Redacted from `Configuration#inspect`. Mind the SDK's TLS auto-enable behavior - see [API Key Authentication](worker_setup.md#api-key-authentication). |
 | `api_key_file` | String or `nil` | `nil` | File read for the API key when the client is built, for example a projected Kubernetes ServiceAccount token. An explicit `api_key` takes precedence. Symlinked paths are resolved. |
-| `api_key_watch` | Boolean | `false` | Watch `api_key_file` and reload worker clients when it changes. |
+| `api_key_watch` | Boolean | `false` | Watch `api_key_file` and refresh the token when it changes. |
+| `credential_poll_interval` | Integer | `30` | Seconds between credential file checks when `tls_cert_watch` or `api_key_watch` is enabled. |
+| `credential_file_events` | Boolean | `false` | React to credential file changes immediately instead of waiting for the next poll. Requires the optional `listen` gem. |
 | `worker_activities` | Array | `[]` | Additional activity classes (or class names) the worker registers, for example activities invoked by workflows owned by another service. |
 | `worker_activejob_workloads` | Boolean | `true` | Register the built-in ActiveJob workflows and activities on the worker. Disable for workers that only host `worker_activities`. |
 | `graceful_shutdown_period` | Float | `0.0` | Seconds a shutting-down worker lets running activities finish before their tasks are cancelled. |
@@ -120,6 +122,8 @@ Boolean configuration environment variables accept `true`, `1`, `yes`, and `on` 
 | `ACTIVEJOB_TEMPORAL_API_KEY` | `api_key` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_API_KEY_FILE` | `api_key_file` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_API_KEY_WATCH` | `api_key_watch` | Boolean | `false` |
+| `ACTIVEJOB_TEMPORAL_CREDENTIAL_POLL_INTERVAL` | `credential_poll_interval` | Integer | `30` |
+| `ACTIVEJOB_TEMPORAL_CREDENTIAL_FILE_EVENTS` | `credential_file_events` | Boolean | `false` |
 | `ACTIVEJOB_TEMPORAL_WORKER_ACTIVEJOB_WORKLOADS` | `worker_activejob_workloads` | Boolean | `true` |
 | `ACTIVEJOB_TEMPORAL_GRACEFUL_SHUTDOWN_PERIOD` | `graceful_shutdown_period` | Float | `0.0` |
 

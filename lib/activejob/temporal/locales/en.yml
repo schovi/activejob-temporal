@@ -145,6 +145,12 @@ en:
               not_boolean: "must be true or false, got: %{value}"
               requires_path: "requires api_key_file to watch"
 
+            credential_poll_interval:
+              invalid: "must be a positive number of seconds, got: %{value}"
+
+            credential_file_events:
+              not_boolean: "must be true or false, got: %{value}"
+
             worker_activejob_workloads:
               not_boolean: "must be true or false, got: %{value}"
               requires_activities: "requires worker_activities when disabled - the worker would have nothing to register"

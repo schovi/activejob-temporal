@@ -147,9 +147,26 @@ attributes:
       default: false
       validation_rules:
         - "When true, api_key_file should be configured"
-        - "When true, the application bundle must include the optional listen gem"
-      description: "Watch api_key_file and reload worker clients when the token file changes."
+      description: "Watch api_key_file and refresh the token when the file changes."
       env_var_name: ACTIVEJOB_TEMPORAL_API_KEY_WATCH
+      example: true
+
+    - name: credential_poll_interval
+      type: Integer
+      default: 30
+      validation_rules:
+        - "Must be a positive number of seconds"
+      description: "Seconds between credential file checks when tls_cert_watch or api_key_watch is enabled."
+      env_var_name: ACTIVEJOB_TEMPORAL_CREDENTIAL_POLL_INTERVAL
+      example: 30
+
+    - name: credential_file_events
+      type: Boolean
+      default: false
+      validation_rules:
+        - "When true, the application bundle must include the optional listen gem"
+      description: "React to credential file changes immediately instead of waiting for the next poll."
+      env_var_name: ACTIVEJOB_TEMPORAL_CREDENTIAL_FILE_EVENTS
       example: true
 
     - name: identity

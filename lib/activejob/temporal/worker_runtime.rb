@@ -2,7 +2,7 @@
 
 require_relative "../temporal"
 require_relative "rails_environment_loader"
-require_relative "certificate_watcher"
+require_relative "credential_refresher"
 require_relative "reload_signal_queue"
 require_relative "worker_client_reloader"
 require_relative "worker_pool"
