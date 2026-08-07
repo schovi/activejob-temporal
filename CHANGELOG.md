@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Breaking:** `CredentialRefresher.from_config` no longer accepts `on_api_key_change`. Applying a rotated token mutates the live connection, so it is the same call in every process and had no caller that overrode it.
+
+### Documentation
+- `CredentialRefresher.from_config` and the worker setup guide now state that a process running its own `Temporalio::Worker` must pass `on_tls_change`. The default `reload_client!` closes the client it replaces, which is the one such a worker is still polling on. `bin/temporal-worker` already passes it.
+
 ## [0.4.0] - 2026-08-07
 
 ### Added

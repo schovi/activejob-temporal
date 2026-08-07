@@ -70,6 +70,16 @@ describe ActiveJob::Temporal::CredentialRefresher do
     )
   end
 
+  # from_config wires the API key source to refresh_api_key! itself, so assert that wiring rather
+  # than an injected stand-in. Minitest 6 dropped minitest/mock, hence the singleton swap.
+  def with_api_key_refresh_stub(recorder)
+    original = ActiveJob::Temporal.method(:refresh_api_key!)
+    ActiveJob::Temporal.define_singleton_method(:refresh_api_key!) { recorder << :api_key }
+    yield
+  ensure
+    ActiveJob::Temporal.define_singleton_method(:refresh_api_key!, original)
+  end
+
   # Splatted rather than Array()-wrapped: Struct#to_a would flatten a Source into its members.
   def build_refresher(*sources, **)
     ActiveJob::Temporal::CredentialRefresher.new(
@@ -315,12 +325,10 @@ describe ActiveJob::Temporal::CredentialRefresher do
     )
     reloads = []
 
-    refresher = described_class.from_config(
-      config,
-      on_tls_change: -> { reloads << :tls },
-      on_api_key_change: -> { reloads << :api_key }
-    ).start
-    refresher.refresh_changed_sources
+    with_api_key_refresh_stub(reloads) do
+      refresher = described_class.from_config(config, on_tls_change: -> { reloads << :tls }).start
+      refresher.refresh_changed_sources
+    end
 
     assert_empty reloads
   end
@@ -343,20 +351,20 @@ describe ActiveJob::Temporal::CredentialRefresher do
         credential_file_events: false
       )
       reloads = []
-      refresher = described_class.from_config(
-        config,
-        on_tls_change: -> { reloads << :tls },
-        on_api_key_change: -> { reloads << :api_key },
-        logger: CredentialRefresherSpecSupport::RecordingLogger.new
-      ).start
+      with_api_key_refresh_stub(reloads) do
+        refresher = described_class.from_config(
+          config,
+          on_tls_change: -> { reloads << :tls },
+          logger: CredentialRefresherSpecSupport::RecordingLogger.new
+        ).start
 
-      File.write(cert_path, "second")
-      File.write(token_path, "second")
-      refresher.refresh_changed_sources
+        File.write(cert_path, "second")
+        File.write(token_path, "second")
+        refresher.refresh_changed_sources
+        refresher.stop
+      end
 
       assert_equal %i[tls api_key], reloads
-    ensure
-      refresher.stop
     end
   end
 end

@@ -238,7 +238,9 @@ require "activejob/temporal/credential_refresher"
 ActiveJob::Temporal::CredentialRefresher.from_config(ActiveJob::Temporal.config).start
 ```
 
-It reads `tls_cert_watch` and `api_key_watch` from the same configuration and defaults to the process-wide reload paths (`reload_client!` for TLS material, `refresh_api_key!` for the token). It is a no-op when both flags are off, and it is not loaded by `require "activejob/temporal"` - the require above is what pulls it in.
+It reads `tls_cert_watch` and `api_key_watch` from the same configuration. A rotated token is applied with `refresh_api_key!`, which mutates the live connection and is therefore the same call in every process. A rotated certificate defaults to `reload_client!`, which rebuilds the memoized client. It is a no-op when both flags are off, and it is not loaded by `require "activejob/temporal"` - the require above is what pulls it in.
+
+**Running your own worker:** if you build a `Temporalio::Worker` yourself instead of using `bin/temporal-worker`, you must pass `on_tls_change`. The worker holds its own client reference, and the default `reload_client!` closes the client it replaces - the one your worker is still polling on. Pass a callback that assigns the fresh client to the worker, as `WorkerClientReloader` does.
 
 **Caution:** the Temporal SDK enables TLS whenever an API key is set and `tls` is `nil`. Against a plaintext in-cluster server this fails the TLS handshake with `InvalidContentType` at connect - set `tls = false` explicitly. For Temporal Cloud, leave `tls` unset (TLS on is what you want).
 
