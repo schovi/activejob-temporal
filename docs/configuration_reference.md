@@ -24,12 +24,11 @@ The canonical machine-readable schema for all configuration options is available
 | `tls_key_path` | String or `nil` | `nil` | Client private key file path for mTLS. Must be configured with `tls_cert_path`. Symlinks are rejected. |
 | `tls_server_root_ca_cert_path` | String or `nil` | `nil` | Optional root CA certificate file path for self-hosted Temporal TLS verification. Symlinks are rejected. |
 | `tls_domain` | String or `nil` | `nil` | Optional SNI domain override for TLS verification. |
-| `tls_cert_watch` | Boolean | `false` | Watch configured TLS certificate files and reload worker clients when they change. |
-| `tls_reload_signal` | String | `"HUP"` | Signal name used by workers for manual TLS reload. |
+| `reload_signal` | String | `"HUP"` | Signal name used by workers to rebuild the client manually, picking up rotated TLS material and a rotated API key. |
 | `api_key` | String or `nil` | `nil` | API key sent as the `Authorization: Bearer` header. Redacted from `Configuration#inspect`. Mind the SDK's TLS auto-enable behavior - see [API Key Authentication](worker_setup.md#api-key-authentication). |
 | `api_key_file` | String or `nil` | `nil` | File read for the API key when the client is built, for example a projected Kubernetes ServiceAccount token. An explicit `api_key` takes precedence. Symlinked paths are resolved. |
-| `api_key_watch` | Boolean | `false` | Watch `api_key_file` and refresh the token when it changes. |
-| `credential_poll_interval` | Integer | `30` | Seconds between credential file checks when `tls_cert_watch` or `api_key_watch` is enabled. |
+| `credential_watch` | Boolean | `true` | Keep every configured credential file fresh: `api_key_file` and the TLS certificate paths. A file path exists because the credential rotates, so this is on by default. |
+| `credential_poll_interval` | Integer | `30` | Seconds between credential file checks when `credential_watch` is enabled. |
 | `credential_file_events` | Boolean | `false` | React to credential file changes immediately instead of waiting for the next poll. Requires the optional `listen` gem. |
 | `worker_activities` | Array | `[]` | Additional activity classes (or class names) the worker registers, for example activities invoked by workflows owned by another service. |
 | `worker_activejob_workloads` | Boolean | `true` | Register the built-in ActiveJob workflows and activities on the worker. Disable for workers that only host `worker_activities`. |
@@ -117,11 +116,10 @@ Boolean configuration environment variables accept `true`, `1`, `yes`, and `on` 
 | `ACTIVEJOB_TEMPORAL_TLS_KEY_PATH` | `tls_key_path` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH` | `tls_server_root_ca_cert_path` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_TLS_DOMAIN` | `tls_domain` | String | `nil` |
-| `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH` | `tls_cert_watch` | Boolean | `false` |
-| `ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL` | `tls_reload_signal` | String | `"HUP"` |
+| `ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL` | `reload_signal` | String | `"HUP"` |
 | `ACTIVEJOB_TEMPORAL_API_KEY` | `api_key` | String | `nil` |
 | `ACTIVEJOB_TEMPORAL_API_KEY_FILE` | `api_key_file` | String | `nil` |
-| `ACTIVEJOB_TEMPORAL_API_KEY_WATCH` | `api_key_watch` | Boolean | `false` |
+| `ACTIVEJOB_TEMPORAL_CREDENTIAL_WATCH` | `credential_watch` | Boolean | `true` |
 | `ACTIVEJOB_TEMPORAL_CREDENTIAL_POLL_INTERVAL` | `credential_poll_interval` | Integer | `30` |
 | `ACTIVEJOB_TEMPORAL_CREDENTIAL_FILE_EVENTS` | `credential_file_events` | Boolean | `false` |
 | `ACTIVEJOB_TEMPORAL_WORKER_ACTIVEJOB_WORKLOADS` | `worker_activejob_workloads` | Boolean | `true` |
@@ -173,7 +171,6 @@ ActiveJob::Temporal.configure do |config|
   config.tls_key_path = "/etc/certs/client-key.pem"
   config.tls_server_root_ca_cert_path = "/etc/certs/root-ca.pem"
   config.tls_domain = "temporal.example.com"
-  config.tls_cert_watch = true
 end
 ```
 
@@ -256,11 +253,10 @@ ActiveJob::Temporal.configure do |config|
   config.tls_key_path = "/etc/certs/client-key.pem"
   config.tls_server_root_ca_cert_path = "/etc/certs/root-ca.pem"
   config.tls_domain = "temporal.example.com"
-  config.tls_cert_watch = true
 end
 ```
 
-The client certificate and private key paths must be configured together. Files are read when a Temporal client is built, so a worker reload uses the latest file contents. When `tls_cert_watch` is true, the worker watches the configured TLS files and swaps in a fresh Temporal client after a successful reconnect. Existing calls finish on the previous client. File watching lazy-loads the optional `listen` gem; add `gem "listen", "~> 3.9"` to the application Gemfile when enabling `tls_cert_watch`.
+The client certificate and private key paths must be configured together. Files are read when a Temporal client is built, so a worker reload uses the latest file contents. The worker compares a digest of the configured TLS files every `credential_poll_interval` seconds and swaps in a fresh Temporal client after a successful reconnect. Existing calls finish on the previous client. Set `credential_watch = false` to turn that off.
 
 Workers also trap `SIGHUP` by default for manual reload:
 
@@ -268,7 +264,7 @@ Workers also trap `SIGHUP` by default for manual reload:
 kill -HUP <worker-pid>
 ```
 
-Set `tls_reload_signal` or `ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL` to use a different signal, for example `USR1`.
+Set `reload_signal` or `ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL` to use a different signal, for example `USR1`.
 
 ## Audit Logging
 

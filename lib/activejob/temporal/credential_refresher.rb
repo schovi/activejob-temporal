@@ -40,7 +40,9 @@ module ActiveJob
       Source = Struct.new(:name, :paths, :on_change, keyword_init: true)
 
       class << self
-        # Builds a refresher from the `tls_cert_watch` / `api_key_watch` configuration flags.
+        # Builds a refresher for every credential file the configuration names. A path is only
+        # configured because the credential behind it rotates, so `credential_watch` gates the
+        # whole mechanism rather than each file individually.
         #
         # A token refresh mutates the live connection, so it is the same call in every process.
         # A certificate refresh is not: the default rebuilds the memoized client, which is right
@@ -55,23 +57,23 @@ module ActiveJob
         # @param on_tls_change [#call] invoked when any TLS file changes; see the note above
         # @param logger [#log_event, #warn, #error] structured logger
         # @param listener_factory [#to, nil] injection point for tests, defaults to `Listen`
-        # @return [CredentialRefresher] a refresher with no sources when both flags are off
+        # @return [CredentialRefresher] a refresher with no sources when no credential file is
+        #   configured, or when `credential_watch` is off
         def from_config(configuration,
                         on_tls_change: -> { ActiveJob::Temporal.reload_client! },
                         logger: ActiveJob::Temporal::Logger,
                         listener_factory: nil)
           sources = []
 
-          if configuration.tls_cert_watch
-            sources << Source.new(name: "tls", paths: tls_paths(configuration), on_change: on_tls_change)
-          end
+          if configuration.credential_watch
+            tls = tls_paths(configuration)
+            sources << Source.new(name: "tls", paths: tls, on_change: on_tls_change) if tls.any?
 
-          if configuration.api_key_watch
-            sources << Source.new(
-              name: "api_key",
-              paths: [configuration.api_key_file],
-              on_change: -> { ActiveJob::Temporal.refresh_api_key! }
-            )
+            token = configuration.api_key_file.to_s.strip
+            if token.present?
+              sources << Source.new(name: "api_key", paths: [token],
+                                    on_change: -> { ActiveJob::Temporal.refresh_api_key! })
+            end
           end
 
           new(

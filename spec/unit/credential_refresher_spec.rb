@@ -52,9 +52,8 @@ module CredentialRefresherSpecSupport
     :tls_cert_path,
     :tls_key_path,
     :tls_server_root_ca_cert_path,
-    :tls_cert_watch,
     :api_key_file,
-    :api_key_watch,
+    :credential_watch,
     :credential_poll_interval,
     :credential_file_events,
     keyword_init: true
@@ -316,10 +315,10 @@ describe ActiveJob::Temporal::CredentialRefresher do
     end
   end
 
-  it "builds no sources when both watch flags are off" do
+  it "builds no sources when credential_watch is off, even with a credential file configured" do
     config = CredentialRefresherSpecSupport::ConfigStub.new(
-      tls_cert_watch: false,
-      api_key_watch: false,
+      api_key_file: "/run/secrets/tokens/token",
+      credential_watch: false,
       credential_poll_interval: 30,
       credential_file_events: false
     )
@@ -344,9 +343,8 @@ describe ActiveJob::Temporal::CredentialRefresher do
         tls_cert_path: cert_path,
         tls_key_path: key_path,
         tls_server_root_ca_cert_path: nil,
-        tls_cert_watch: true,
         api_key_file: token_path,
-        api_key_watch: true,
+        credential_watch: true,
         credential_poll_interval: 30,
         credential_file_events: false
       )

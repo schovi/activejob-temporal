@@ -161,7 +161,10 @@ describe ActiveJob::Temporal, ".client" do
 
   describe "API key" do
     it "passes the configured api_key as a connection keyword" do
-      described_class.configure { |config| config.api_key = "secret-token" }
+      described_class.configure do |config|
+        config.api_key = "secret-token"
+        config.tls = false
+      end
       client_instance = fake_client
       stub_connect(client_instance)
 
@@ -173,7 +176,10 @@ describe ActiveJob::Temporal, ".client" do
       Dir.mktmpdir do |dir|
         path = File.join(dir, "token")
         File.write(path, "file-token\n")
-        described_class.configure { |config| config.api_key_file = path }
+        described_class.configure do |config|
+          config.api_key_file = path
+          config.tls = false
+        end
         client_instance = fake_client
         stub_connect(client_instance)
 
@@ -189,6 +195,7 @@ describe ActiveJob::Temporal, ".client" do
         described_class.configure do |config|
           config.api_key = "inline-token"
           config.api_key_file = path
+          config.tls = false
         end
         stub_connect(fake_client)
 
@@ -202,7 +209,10 @@ describe ActiveJob::Temporal, ".client" do
       Dir.mktmpdir do |dir|
         path = File.join(dir, "token")
         File.write(path, "token-one")
-        described_class.configure { |config| config.api_key_file = path }
+        described_class.configure do |config|
+          config.api_key_file = path
+          config.tls = false
+        end
         stub_connect(fake_client, fake_client)
 
         described_class.client
@@ -226,7 +236,10 @@ describe ActiveJob::Temporal, ".client" do
       Dir.mktmpdir do |dir|
         path = File.join(dir, "token")
         File.write(path, "\n")
-        described_class.configure { |config| config.api_key_file = path }
+        described_class.configure do |config|
+          config.api_key_file = path
+          config.tls = false
+        end
         stub_connect(fake_client)
 
         described_class.client
@@ -239,7 +252,10 @@ describe ActiveJob::Temporal, ".client" do
       Dir.mktmpdir do |dir|
         path = File.join(dir, "token")
         File.write(path, "token-one")
-        described_class.configure { |config| config.api_key_file = path }
+        described_class.configure do |config|
+          config.api_key_file = path
+          config.tls = false
+        end
         connection = Struct.new(:api_key).new
         client_instance = fake_client
         client_instance.define_singleton_method(:connection) { connection }

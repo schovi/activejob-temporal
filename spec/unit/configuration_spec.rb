@@ -67,7 +67,7 @@ describe ActiveJob::Temporal::Configuration do
     {
       "ACTIVEJOB_TEMPORAL_AUDIT_LOG" => :audit_log,
       "ACTIVEJOB_TEMPORAL_ENCRYPT_PAYLOAD" => :encrypt_payload,
-      "ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH" => :tls_cert_watch
+      "ACTIVEJOB_TEMPORAL_CREDENTIAL_WATCH" => :credential_watch
     }
   end
 
@@ -142,14 +142,15 @@ describe ActiveJob::Temporal::Configuration do
       assert_nil configuration.tls_key_path
       assert_nil configuration.tls_server_root_ca_cert_path
       assert_nil configuration.tls_domain
-      assert_equal false, configuration.tls_cert_watch
-      assert_equal "HUP", configuration.tls_reload_signal
+      assert_equal "HUP", configuration.reload_signal
     end
 
     it "sets API key and worker registration defaults" do
       assert_nil configuration.api_key
       assert_nil configuration.api_key_file
-      assert_equal false, configuration.api_key_watch
+      assert_equal true, configuration.credential_watch
+      assert_equal 30, configuration.credential_poll_interval
+      assert_equal false, configuration.credential_file_events
       assert_equal [], configuration.worker_activities
       assert_equal true, configuration.worker_activejob_workloads
       assert_equal 0.0, configuration.graceful_shutdown_period
@@ -421,14 +422,14 @@ describe ActiveJob::Temporal::Configuration do
       assert_equal "temporal.example.dev", config.tls_domain
     end
 
-    it "reads TLS reload controls from environment variables" do
+    it "reads credential reload controls from environment variables" do
       config = configuration_with_environment(
-        "ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH" => "true",
-        "ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL" => "USR1"
+        "ACTIVEJOB_TEMPORAL_CREDENTIAL_WATCH" => "false",
+        "ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL" => "USR1"
       )
 
-      assert_equal true, config.tls_cert_watch
-      assert_equal "USR1", config.tls_reload_signal
+      assert_equal false, config.credential_watch
+      assert_equal "USR1", config.reload_signal
     end
 
     it "uses default (5) when ACTIVEJOB_TEMPORAL_MAX_CONCURRENT_WORKFLOW_TASKS is not set" do
@@ -972,7 +973,6 @@ describe ActiveJob::Temporal::Configuration do
         configuration.tls_key_path = key_path
         configuration.tls_server_root_ca_cert_path = root_ca_path
         configuration.tls_domain = "temporal.example.dev"
-        configuration.tls_cert_watch = true
         configuration.in_configure_block = false
 
         configuration.validate!
@@ -1021,22 +1021,25 @@ describe ActiveJob::Temporal::Configuration do
       end
     end
 
-    it "rejects certificate watching when no TLS file paths are configured" do
-      configuration.tls_cert_watch = true
-
-      assert_configuration_error(/requires at least one TLS certificate path/)
-    end
-
-    it "rejects non-boolean certificate watching values" do
-      configuration.tls_cert_watch = "true"
+    it "rejects non-boolean credential watching values" do
+      configuration.credential_watch = "true"
 
       assert_configuration_error(/must be true or false/)
     end
 
-    it "rejects API key watching without an api_key_file" do
-      configuration.api_key_watch = true
+    it "requires an explicit TLS decision when an API key is configured" do
+      configuration.api_key = "secret-token"
 
-      assert_configuration_error(/requires api_key_file/)
+      assert_configuration_error(/must be set explicitly/)
+    end
+
+    it "accepts an API key once the TLS decision is explicit" do
+      configuration.api_key = "secret-token"
+      configuration.tls = false
+
+      configuration.validate!
+
+      assert_equal false, configuration.tls
     end
 
     it "rejects unreadable api_key_file paths" do
@@ -1063,15 +1066,15 @@ describe ActiveJob::Temporal::Configuration do
       assert_configuration_error(/must be present/)
     end
 
-    it "accepts trappable TLS reload signal names" do
-      configuration.tls_reload_signal = "SIGHUP"
+    it "accepts trappable reload signal names" do
+      configuration.reload_signal = "SIGHUP"
 
-      assert_equal "SIGHUP", configuration.tls_reload_signal
+      assert_equal "SIGHUP", configuration.reload_signal
     end
 
-    it "rejects invalid or reserved TLS reload signal names" do
+    it "rejects invalid or reserved reload signal names" do
       %w[HUP! HUP123 9 CHLD INT KILL PIPE QUIT STOP TERM].each do |signal_name|
-        configuration.tls_reload_signal = signal_name
+        configuration.reload_signal = signal_name
 
         assert_configuration_error(/must be a signal name/)
       end

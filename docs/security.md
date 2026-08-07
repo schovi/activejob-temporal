@@ -95,13 +95,12 @@ ActiveJob::Temporal.configure do |config|
   config.tls_key_path = "/etc/certs/client-key.pem"
   config.tls_server_root_ca_cert_path = "/etc/certs/root-ca.pem"
   config.tls_domain = "temporal.example.com"
-  config.tls_cert_watch = true
 end
 ```
 
 The client certificate and private key paths must be configured together. The worker reads the files when building a Temporal client and can reload without restart when either file changes. Replace certificate files atomically, for example write a new file and rename it into place, so a check never observes a partially written PEM. Certificate and key are digested as one unit, so rotating both produces a single client rebuild.
 
-Rotation detection is controlled by `config.tls_cert_watch` or `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true`, checked every `credential_poll_interval` seconds (default 30), and needs no optional gem. Workers also trap `SIGHUP` by default for manual reload:
+Rotation is detected automatically: any configured credential file is checked every `credential_poll_interval` seconds (default 30), with no optional gem required. Set `credential_watch = false` to turn it off. Workers also trap `SIGHUP` by default for manual reload:
 
 ```bash
 kill -HUP <worker-pid>
@@ -116,11 +115,10 @@ When authenticating with a bearer token, prefer `api_key_file` over the `ACTIVEJ
 ```ruby
 ActiveJob::Temporal.configure do |config|
   config.api_key_file = "/var/run/secrets/tokens/temporal-token"
-  config.api_key_watch = true
 end
 ```
 
-The file is read through the same hardened path as TLS material (symlinks resolved for Kubernetes projected volumes, regular-file check, `O_NOFOLLOW`). Replace it atomically, like certificate files. With `api_key_watch` enabled, workers compare a digest of the file every `credential_poll_interval` seconds and apply a rotated token to the live connection without reconnecting. Enqueue-side processes get the same behaviour by starting a `CredentialRefresher` in an initializer - see [API Key Authentication](worker_setup.md#api-key-authentication).
+The file is read through the same hardened path as TLS material (symlinks resolved for Kubernetes projected volumes, regular-file check, `O_NOFOLLOW`). Replace it atomically, like certificate files. Workers compare a digest of the file every `credential_poll_interval` seconds and apply a rotated token to the live connection without reconnecting. Enqueue-side processes get the same behaviour by starting a `CredentialRefresher` in an initializer - see [API Key Authentication](worker_setup.md#api-key-authentication).
 
 Rotation is detected from file content, never from filesystem event delivery, so a mount whose events do not reach the process still rotates on schedule. `credential_file_events` only shortens the delay.
 

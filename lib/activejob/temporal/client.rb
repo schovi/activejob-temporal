@@ -8,6 +8,7 @@ rescue LoadError
 end
 
 require_relative "tls_file"
+require_relative "logger"
 
 module ActiveJob
   module Temporal
@@ -121,6 +122,8 @@ module ActiveJob
       def connection_kwargs(configuration)
         kwargs = {}
 
+        warn_on_shadowed_credentials(configuration)
+
         tls = tls_options(configuration)
         kwargs[:tls] = tls unless tls.nil?
 
@@ -130,6 +133,37 @@ module ActiveJob
         kwargs
       end
       private_class_method :connection_kwargs
+
+      # Every credential has more than one possible source and the precedence between them is
+      # silent, so a config that sets two looks like it works while one of them is ignored.
+      # @api private
+      def warn_on_shadowed_credentials(configuration)
+        if credential_present?(configuration, :api_key) && credential_present?(configuration, :api_key_file)
+          Logger.warn("credential_source_shadowed", credential: "api_key", ignored: "api_key_file")
+        end
+
+        return unless configuration.respond_to?(:tls) && !configuration.tls.nil?
+        return if tls_path_attributes(configuration).empty?
+
+        Logger.warn(
+          "credential_source_shadowed",
+          credential: "tls",
+          ignored: tls_path_attributes(configuration).join(", ")
+        )
+      end
+      private_class_method :warn_on_shadowed_credentials
+
+      def credential_present?(configuration, attribute)
+        configuration.respond_to?(attribute) && configuration.public_send(attribute).to_s.strip != ""
+      end
+      private_class_method :credential_present?
+
+      def tls_path_attributes(configuration)
+        %i[tls_cert_path tls_key_path tls_server_root_ca_cert_path].select do |attribute|
+          credential_present?(configuration, attribute)
+        end
+      end
+      private_class_method :tls_path_attributes
 
       # Resolves the API key: an explicit api_key wins, otherwise api_key_file is read - at
       # connection build time, and again by {ActiveJob::Temporal.refresh_api_key!} when the
