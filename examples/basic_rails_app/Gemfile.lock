@@ -1,7 +1,7 @@
 PATH
   remote: ../..
   specs:
-    activejob-temporal (0.3.1)
+    activejob-temporal (0.4.0)
       activejob (>= 7.2, < 9)
       activemodel (>= 7.2, < 9)
       concurrent-ruby (~> 1.1)

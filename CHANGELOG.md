@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-07
+
 ### Added
 - `credential_poll_interval` (default 30 seconds) and `credential_file_events` (default false) configure how `tls_cert_watch` and `api_key_watch` detect rotation.
 - `ActiveJob::Temporal::CredentialRefresher` replaces `CertificateWatcher`. Enqueue-side processes can now start it from an initializer instead of scheduling `refresh_api_key!` themselves - see [worker setup](docs/worker_setup.md#api-key-authentication).
