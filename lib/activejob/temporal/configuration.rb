@@ -159,6 +159,21 @@ module ActiveJob
                      "projected tokens atomically, long before they expire)"
       },
 
+      credential_poll_interval: {
+        default: 30,
+        env_var: "ACTIVEJOB_TEMPORAL_CREDENTIAL_POLL_INTERVAL",
+        type: :integer,
+        description: "Seconds between credential file checks when tls_cert_watch or api_key_watch is enabled"
+      },
+
+      credential_file_events: {
+        default: false,
+        env_var: "ACTIVEJOB_TEMPORAL_CREDENTIAL_FILE_EVENTS",
+        type: :boolean,
+        description: "React to credential file changes immediately instead of waiting for the next " \
+                     "poll (requires the optional listen gem; the poll interval stays the safety net)"
+      },
+
       priority_task_queues: {
         default: -> { {} },
         type: :hash,
@@ -752,6 +767,7 @@ module ActiveJob
       validate :validate_payload_storage_settings
       validate :validate_tls_settings
       validate :validate_api_key_settings
+      validate :validate_credential_refresh_settings
       validate :validate_worker_registration_settings
       validate :validate_local_activity_helpers
       validate :validate_dependency_wait_settings
@@ -1090,6 +1106,16 @@ module ActiveJob
         return unless api_key_watch && api_key_file.to_s.strip.empty?
 
         errors.add(:api_key_watch, :requires_path)
+      end
+
+      def validate_credential_refresh_settings
+        unless [true, false].include?(credential_file_events)
+          errors.add(:credential_file_events, :not_boolean, value: credential_file_events.inspect)
+        end
+
+        return if credential_poll_interval.is_a?(Integer) && credential_poll_interval.positive?
+
+        errors.add(:credential_poll_interval, :invalid, value: credential_poll_interval.inspect)
       end
 
       def validate_worker_registration_settings

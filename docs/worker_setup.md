@@ -153,9 +153,9 @@ bundle exec temporal-worker
 kill -HUP <worker-pid>
 ```
 
-When certificate watching is enabled, the worker watches the configured TLS certificate files and swaps in a fresh Temporal client after a successful reconnect. `SIGHUP` triggers the same reload path manually. Existing calls continue on the previous client.
+When certificate watching is enabled, the worker compares a digest of the configured TLS files every `credential_poll_interval` seconds (default 30) and swaps in a fresh Temporal client after a successful reconnect. `SIGHUP` triggers the same reload path manually. Existing calls continue on the previous client.
 
-File watching uses the optional `listen` gem. Add `gem "listen", "~> 3.9"` to the application Gemfile only when `tls_cert_watch` is enabled. Manual signal reloads do not require `listen`.
+Rotation detection needs no optional gem. Set `credential_file_events = true` to also react to filesystem events immediately; that path uses `listen`, so add `gem "listen", "~> 3.9"` to the application Gemfile when you enable it. Without the gem the worker logs `credential_file_events_unavailable` and keeps checking on the interval.
 
 The health endpoint returns `200` after the worker marks itself running. If queried before startup completes, it returns `503`; during process shutdown the listener is closed. If health snapshot generation raises, the request returns `500` with `{"error":"internal_server_error"}`, logs `health_check_request_failed`, closes that connection, and keeps serving later health requests. The JSON payload includes the task queue, namespace, Temporal target, active activity task count, last activity task start time, execution slot settings, PID, start time, and uptime:
 
@@ -220,14 +220,25 @@ Send a bearer token with every request by setting `api_key`, or point `api_key_f
 ```ruby
 ActiveJob::Temporal.configure do |config|
   config.api_key_file = "/var/run/secrets/tokens/temporal-token"
-  config.api_key_watch = true  # reload worker clients when kubelet rotates the token
+  config.api_key_watch = true  # refresh the token when kubelet rotates it
   config.tls = false           # see caution below
 end
 ```
 
-When the file changes, the worker re-reads it and applies the fresh token to the live connection (`ActiveJob::Temporal.refresh_api_key!`) - no reconnect, the SDK sends the header per-RPC. Manual client reload via the `tls_reload_signal` signal (default `HUP`) also picks up a fresh token, because the key is resolved again whenever a client is built.
+The worker compares a digest of the token file every `credential_poll_interval` seconds (default 30) and, when the content differs, applies the fresh token to the live connection (`ActiveJob::Temporal.refresh_api_key!`) - no reconnect, the SDK sends the header per-RPC. Manual client reload via the `tls_reload_signal` signal (default `HUP`) also picks up a fresh token, because the key is resolved again whenever a client is built.
 
-**Enqueue-side processes:** `api_key_watch` only runs in the worker binary. A web or Sidekiq process reads the token once, when its memoized client is first built - with a rotating token file (projected Kubernetes tokens rotate roughly every 48 minutes) it must call `ActiveJob::Temporal.refresh_api_key!` on its own schedule, or its enqueues start failing once the boot-time token expires.
+Set `credential_file_events = true` to also react to filesystem events instead of waiting for the next check. That path needs the optional `listen` gem; without it the worker logs `credential_file_events_unavailable` and keeps polling, so the token still rotates - just up to one interval later.
+
+**Enqueue-side processes:** a web or Sidekiq process reads the token once, when its memoized client is first built. With a rotating token file (projected Kubernetes tokens rotate roughly every 48 minutes) its enqueues start failing once the boot-time token expires. Start the same refresher in an initializer:
+
+```ruby
+# config/initializers/activejob_temporal_credentials.rb
+require "activejob/temporal/credential_refresher"
+
+ActiveJob::Temporal::CredentialRefresher.from_config(ActiveJob::Temporal.config).start
+```
+
+It reads `tls_cert_watch` and `api_key_watch` from the same configuration and defaults to the process-wide reload paths (`reload_client!` for TLS material, `refresh_api_key!` for the token). It is a no-op when both flags are off, and it is not loaded by `require "activejob/temporal"` - the require above is what pulls it in.
 
 **Caution:** the Temporal SDK enables TLS whenever an API key is set and `tls` is `nil`. Against a plaintext in-cluster server this fails the TLS handshake with `InvalidContentType` at connect - set `tls = false` explicitly. For Temporal Cloud, leave `tls` unset (TLS on is what you want).
 

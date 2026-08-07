@@ -43,10 +43,10 @@ describe ActiveJob::Temporal::WorkerClientReloader do
 
     reloader = described_class.new(worker: worker, logger: logger, reload_client: reload_client)
 
-    assert_same fresh_client, reloader.reload(source: "file_watch")
+    assert_same fresh_client, reloader.reload(source: "credential_refresh")
     assert_same fresh_client, worker.client
-    assert_includes logger.events, [:info, "certificate_reload_started", { source: "file_watch" }]
-    assert_includes logger.events, [:info, "certificate_reload_succeeded", { source: "file_watch" }]
+    assert_includes logger.events, [:info, "certificate_reload_started", { source: "credential_refresh" }]
+    assert_includes logger.events, [:info, "certificate_reload_succeeded", { source: "credential_refresh" }]
   end
 
   it "logs and reraises client rebuild failures" do
@@ -74,9 +74,9 @@ describe ActiveJob::Temporal::WorkerClientReloader do
 
     reloader = described_class.new(worker: worker, logger: logger, reload_client: reload_client)
 
-    error = assert_raises(StandardError) { reloader.reload(source: "file_watch") }
+    error = assert_raises(StandardError) { reloader.reload(source: "credential_refresh") }
     assert_match(/replace failed/, error.message)
-    assert_reload_failed_event logger.events, source: "file_watch", error_class: "StandardError"
+    assert_reload_failed_event logger.events, source: "credential_refresh", error_class: "StandardError"
   end
 
   def assert_reload_failed_event(events, source:, error_class:)

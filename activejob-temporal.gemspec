@@ -39,6 +39,8 @@ Gem::Specification.new do |spec|
   spec.add_dependency "globalid", ">= 0.3"
   spec.add_dependency "temporalio", ">= 1.4.0", "< 1.7"
 
+  # listen is an optional runtime dependency, required lazily only when credential_file_events is
+  # enabled. Without it credentials still rotate, just on the poll interval instead of instantly.
   spec.add_development_dependency "benchmark-ips", "~> 2.14"
   spec.add_development_dependency "github_changelog_generator", "~> 1.18"
   spec.add_development_dependency "listen", "~> 3.9"

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `credential_poll_interval` (default 30 seconds) and `credential_file_events` (default false) configure how `tls_cert_watch` and `api_key_watch` detect rotation.
+- `ActiveJob::Temporal::CredentialRefresher` replaces `CertificateWatcher`. Enqueue-side processes can now start it from an initializer instead of scheduling `refresh_api_key!` themselves - see [worker setup](docs/worker_setup.md#api-key-authentication).
+
+### Changed
+- Credential rotation is detected by comparing a content digest on an interval rather than by filesystem events. Rotation on mounts whose events never reach the process (or where the `listen` gem is absent) now works, at up to one poll interval of latency. `credential_file_events = true` restores immediate reaction by waking the check early; it never decides whether a reload happens, so a missing `listen` gem costs latency, not correctness.
+- A cert and key pair rotating together now triggers one client rebuild instead of a debounced pair, and TLS plus API key watching share a single watcher instead of two.
+- **Breaking:** `ActiveJob::Temporal::CertificateWatcher` is removed. Applications constructing it directly should use `CredentialRefresher.from_config`.
+
+### Fixed
+- Watching a Kubernetes projected or secret volume no longer prints listen's `directory is already being watched!` error at boot. kubelet keeps the live secret in a timestamped sibling of the `..data` symlink, so listen's recursive scan reached the same real directory twice; the versioned copy is now skipped.
+
 ## [0.3.1] - 2026-08-06
 
 ### Fixed

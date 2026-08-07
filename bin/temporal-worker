@@ -260,25 +260,14 @@ reload_signal_thread = Thread.new do
 end
 Signal.trap(reload_signal) { reload_signal_queue.push(reload_signal) }
 
-certificate_watcher = nil
-if config.tls_cert_watch
-  certificate_watcher = ActiveJob::Temporal::CertificateWatcher.new(
-    paths: ActiveJob::Temporal::CertificateWatcher.paths_from_config(config),
-    # Failures are logged by the reloader and retried by the watcher, so let them propagate.
-    reload_callback: -> { client_reloader.reload(source: "file_watch") }
-  ).start
-end
-
-# Token rotation mutates the live connection (the SDK sends the header per-RPC from the
-# connection's stored options) - no client rebuild, unlike certificate rotation above.
-# Configuration validation guarantees api_key_file is set when api_key_watch is on.
-api_key_watcher = nil
-if config.api_key_watch
-  api_key_watcher = ActiveJob::Temporal::CertificateWatcher.new(
-    paths: [config.api_key_file],
-    reload_callback: -> { ActiveJob::Temporal.refresh_api_key! }
-  ).start
-end
+# Only the TLS callback is overridden: certificate rotation has to swap the rebuilt client into
+# the running worker, while token rotation mutates the live connection (the SDK sends the header
+# per-RPC from the connection's stored options) and needs no worker awareness.
+credential_refresher = ActiveJob::Temporal::CredentialRefresher.from_config(
+  config,
+  # Failures are logged by the reloader and retried on the next check, so let them propagate.
+  on_tls_change: -> { client_reloader.reload(source: "credential_refresh") }
+).start
 
 begin
   worker_health.mark_started!
@@ -290,8 +279,7 @@ rescue Interrupt
   # Temporal worker raises Interrupt on shutdown signals; swallow to allow clean exit.
 ensure
   worker_health.mark_stopped!
-  certificate_watcher&.stop
-  api_key_watcher&.stop
+  credential_refresher.stop
   reload_signal_queue.close
   reload_signal_thread.join(1)
   health_check_server&.stop

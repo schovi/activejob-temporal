@@ -20,7 +20,7 @@ describe "require paths" do
     stdout, stderr, status = run_ruby(<<~RUBY)
       require "activejob/temporal"
 
-      blocked = %r{/activejob/temporal/(certificate_watcher|worker_pool|worker_health|health_check_server|metrics_server|workflows/aj_workflow|workflows/dead_letter_workflow|activities/)}
+      blocked = %r{/activejob/temporal/(credential_refresher|worker_pool|worker_health|health_check_server|metrics_server|workflows/aj_workflow|workflows/dead_letter_workflow|activities/)}
       loaded = $LOADED_FEATURES.select { |feature| feature.match?(blocked) || feature.include?("/listen/") }
 
       abort loaded.join("\\n") unless loaded.empty?
@@ -34,7 +34,7 @@ describe "require paths" do
     stdout, stderr, status = run_ruby(<<~RUBY)
       require "activejob-temporal"
 
-      blocked = %r{/activejob/temporal/(certificate_watcher|worker_pool|worker_health|health_check_server|metrics_server|workflows/aj_workflow|workflows/dead_letter_workflow|activities/)}
+      blocked = %r{/activejob/temporal/(credential_refresher|worker_pool|worker_health|health_check_server|metrics_server|workflows/aj_workflow|workflows/dead_letter_workflow|activities/)}
       loaded = $LOADED_FEATURES.select { |feature| feature.match?(blocked) || feature.include?("/listen/") }
 
       abort loaded.join("\\n") unless loaded.empty?
@@ -71,25 +71,42 @@ describe "require paths" do
     assert_equal "", stdout
   end
 
-  it "loads listen when certificate watching starts with the default listener" do
+  it "loads listen only when credential file events are enabled" do
     stdout, stderr, status = run_ruby(<<~RUBY)
       require "tmpdir"
       require "activejob/temporal/worker_runtime"
 
-      Dir.mktmpdir do |dir|
-        certificate_path = File.join(dir, "client.pem")
-        File.write(certificate_path, "cert")
+      def listen_loaded?
+        $LOADED_FEATURES.any? { |feature| feature.include?("/listen/") }
+      end
 
-        watcher = ActiveJob::Temporal::CertificateWatcher.new(
-          paths: [certificate_path],
-          reload_callback: -> {}
+      def refresher(dir, file_events:)
+        path = File.join(dir, "client.pem")
+        File.write(path, "cert")
+
+        ActiveJob::Temporal::CredentialRefresher.new(
+          sources: [
+            ActiveJob::Temporal::CredentialRefresher::Source.new(
+              name: "tls", paths: [path], on_change: -> {}
+            )
+          ],
+          file_events: file_events
         ).start
+      end
 
+      Dir.mktmpdir do |dir|
+        polling = refresher(dir, file_events: false)
         begin
-          listen_loaded = $LOADED_FEATURES.any? { |feature| feature.include?("/listen/") }
-          abort "listen not loaded" unless listen_loaded
+          abort "listen loaded for a polling refresher" if listen_loaded?
         ensure
-          watcher.stop
+          polling.stop
+        end
+
+        watching = refresher(dir, file_events: true)
+        begin
+          abort "listen not loaded for file events" unless listen_loaded?
+        ensure
+          watching.stop
         end
       end
     RUBY
@@ -98,9 +115,9 @@ describe "require paths" do
     assert_equal "", stdout
   end
 
-  it "does not load listen when only the certificate watcher file is required" do
+  it "does not load listen when only the credential refresher file is required" do
     stdout, stderr, status = run_ruby(<<~RUBY)
-      require "activejob/temporal/certificate_watcher"
+      require "activejob/temporal/credential_refresher"
 
       listen_loaded = $LOADED_FEATURES.any? { |feature| feature.include?("/listen/") }
       abort "listen loaded" if listen_loaded
