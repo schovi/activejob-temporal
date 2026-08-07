@@ -28,8 +28,8 @@ Set the following variables before starting the worker:
 | `ACTIVEJOB_TEMPORAL_TLS_KEY_PATH` | Required with client cert path | Client private key file path. | `/etc/certs/client-key.pem` |
 | `ACTIVEJOB_TEMPORAL_TLS_SERVER_ROOT_CA_CERT_PATH` | No | Root CA certificate file path for self-hosted TLS. | `/etc/certs/root-ca.pem` |
 | `ACTIVEJOB_TEMPORAL_TLS_DOMAIN` | No | TLS SNI domain override. | `temporal.example.com` |
-| `ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH` | No | Watch TLS files and reload worker clients on change. | `true` |
-| `ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL` | No | Manual reload signal name. Defaults to `HUP`. | `USR1` |
+| `ACTIVEJOB_TEMPORAL_CREDENTIAL_WATCH` | No | Keep configured credential files fresh. Defaults to `true`. | `false` |
+| `ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL` | No | Manual reload signal name. Defaults to `HUP`. | `USR1` |
 
 Boolean environment values are case-insensitive. Configuration booleans accept `true`, `1`, `yes`, and `on` as true values, and `false`, `0`, `no`, and `off` as false values. The public-bind opt-in variables also accept `true`, `1`, `yes`, and `on`.
 
@@ -147,7 +147,6 @@ pool.start.wait
 ```bash
 ACTIVEJOB_TEMPORAL_TLS_CERT_PATH=/etc/certs/client.pem \
 ACTIVEJOB_TEMPORAL_TLS_KEY_PATH=/etc/certs/client-key.pem \
-ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH=true \
 bundle exec temporal-worker
 
 kill -HUP <worker-pid>
@@ -220,12 +219,11 @@ Send a bearer token with every request by setting `api_key`, or point `api_key_f
 ```ruby
 ActiveJob::Temporal.configure do |config|
   config.api_key_file = "/var/run/secrets/tokens/temporal-token"
-  config.api_key_watch = true  # refresh the token when kubelet rotates it
   config.tls = false           # see caution below
 end
 ```
 
-The worker compares a digest of the token file every `credential_poll_interval` seconds (default 30) and, when the content differs, applies the fresh token to the live connection (`ActiveJob::Temporal.refresh_api_key!`) - no reconnect, the SDK sends the header per-RPC. Manual client reload via the `tls_reload_signal` signal (default `HUP`) also picks up a fresh token, because the key is resolved again whenever a client is built.
+The worker compares a digest of the token file every `credential_poll_interval` seconds (default 30) and, when the content differs, applies the fresh token to the live connection (`ActiveJob::Temporal.refresh_api_key!`) - no reconnect, the SDK sends the header per-RPC. Manual client reload via the `reload_signal` signal (default `HUP`) also picks up a fresh token, because the key is resolved again whenever a client is built.
 
 Set `credential_file_events = true` to also react to filesystem events instead of waiting for the next check. That path needs the optional `listen` gem; without it the worker logs `credential_file_events_unavailable` and keeps polling, so the token still rotates - just up to one interval later.
 
@@ -238,7 +236,9 @@ require "activejob/temporal/credential_refresher"
 ActiveJob::Temporal::CredentialRefresher.from_config(ActiveJob::Temporal.config).start
 ```
 
-It reads `tls_cert_watch` and `api_key_watch` from the same configuration and defaults to the process-wide reload paths (`reload_client!` for TLS material, `refresh_api_key!` for the token). It is a no-op when both flags are off, and it is not loaded by `require "activejob/temporal"` - the require above is what pulls it in.
+It watches every credential file the configuration names, gated by `credential_watch`. A rotated token is applied with `refresh_api_key!`, which mutates the live connection and is therefore the same call in every process. A rotated certificate defaults to `reload_client!`, which rebuilds the memoized client. It is a no-op when no credential file is configured, and it is not loaded by `require "activejob/temporal"` - the require above is what pulls it in.
+
+**Running your own worker:** if you build a `Temporalio::Worker` yourself instead of using `bin/temporal-worker`, you must pass `on_tls_change`. The worker holds its own client reference, and the default `reload_client!` closes the client it replaces - the one your worker is still polling on. Pass a callback that assigns the fresh client to the worker, as `WorkerClientReloader` does.
 
 **Caution:** the Temporal SDK enables TLS whenever an API key is set and `tls` is `nil`. Against a plaintext in-cluster server this fails the TLS handshake with `InvalidContentType` at connect - set `tls = false` explicitly. For Temporal Cloud, leave `tls` unset (TLS on is what you want).
 

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Configuration now fails to validate when `api_key` or `api_key_file` is set while `tls` is left unset. The Temporal SDK enables TLS on its own whenever an API key is present, so leaving `tls` at `nil` silently coupled transport security to an unrelated setting and failed the handshake against a plaintext frontend.
+- The client logs `credential_source_shadowed` when two sources for the same credential are configured (`api_key` alongside `api_key_file`, or `tls` alongside the `tls_*_path` settings). Precedence was already defined but silent.
+
+### Changed
+- **Breaking:** `tls_cert_watch` and `api_key_watch` are replaced by a single `credential_watch`, default `true`. A file path is only configured because the credential behind it rotates, so watching every configured credential file is now the default instead of two opt-in flags that could each be forgotten.
+- **Breaking:** `tls_reload_signal` is renamed `reload_signal` (`ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL` becomes `ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL`). It rebuilds the whole client and re-resolves the API key, not just TLS material.
+- **Breaking:** `CredentialRefresher.from_config` no longer accepts `on_api_key_change`. Applying a rotated token mutates the live connection, so it is the same call in every process and had no caller that overrode it.
+
+### Documentation
+- `CredentialRefresher.from_config` and the worker setup guide now state that a process running its own `Temporalio::Worker` must pass `on_tls_change`. The default `reload_client!` closes the client it replaces, which is the one such a worker is still polling on. `bin/temporal-worker` already passes it.
+
+### Migration from 0.4.x
+- Rename `tls_cert_watch` / `api_key_watch` to `credential_watch`, or drop them: watching is on by default and applies to whatever credential files are configured.
+- Rename `tls_reload_signal` to `reload_signal`, and `ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL` to `ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL`.
+- Set `tls` explicitly wherever `api_key` or `api_key_file` is configured: `config.tls = false` for a plaintext in-cluster frontend, `config.tls = true` for Temporal Cloud. Boot now fails until you do.
+- Drop `on_api_key_change:` from any `CredentialRefresher.from_config` call.
+
 ## [0.4.0] - 2026-08-07
 
 ### Added

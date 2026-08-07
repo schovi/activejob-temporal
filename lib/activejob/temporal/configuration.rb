@@ -122,18 +122,12 @@ module ActiveJob
         description: "Optional TLS SNI domain override"
       },
 
-      tls_cert_watch: {
-        default: false,
-        env_var: "ACTIVEJOB_TEMPORAL_TLS_CERT_WATCH",
-        type: :boolean,
-        description: "Watch TLS certificate files and reload worker clients when they change"
-      },
-
-      tls_reload_signal: {
+      reload_signal: {
         default: "HUP",
-        env_var: "ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL",
+        env_var: "ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL",
         type: :string,
-        description: "Signal used by workers to reload TLS certificates manually"
+        description: "Signal used by workers to rebuild the Temporal client manually, picking up " \
+                     "rotated TLS material and a rotated API key"
       },
 
       api_key: {
@@ -151,19 +145,20 @@ module ActiveJob
                      "projected Kubernetes ServiceAccount token. An explicit api_key takes precedence"
       },
 
-      api_key_watch: {
-        default: false,
-        env_var: "ACTIVEJOB_TEMPORAL_API_KEY_WATCH",
+      credential_watch: {
+        default: true,
+        env_var: "ACTIVEJOB_TEMPORAL_CREDENTIAL_WATCH",
         type: :boolean,
-        description: "Watch api_key_file and refresh the token when it changes (kubelet rotates " \
-                     "projected tokens atomically, long before they expire)"
+        description: "Keep every configured credential file fresh: api_key_file and the TLS " \
+                     "certificate paths. A file path exists because the credential rotates, so " \
+                     "this is on by default and watches whatever paths are configured"
       },
 
       credential_poll_interval: {
         default: 30,
         env_var: "ACTIVEJOB_TEMPORAL_CREDENTIAL_POLL_INTERVAL",
         type: :integer,
-        description: "Seconds between credential file checks when tls_cert_watch or api_key_watch is enabled"
+        description: "Seconds between credential file checks when credential_watch is enabled"
       },
 
       credential_file_events: {
@@ -1054,8 +1049,18 @@ module ActiveJob
         validate_tls_file_path(:tls_key_path)
         validate_tls_file_path(:tls_server_root_ca_cert_path)
         validate_tls_domain
-        validate_tls_cert_watch
-        validate_tls_reload_signal
+        validate_tls_decision
+        validate_reload_signal
+      end
+
+      # The Temporal SDK turns TLS on by itself whenever an api_key is present, so leaving `tls`
+      # unset silently couples transport security to an unrelated setting - and fails at connect
+      # against a plaintext in-cluster frontend. Make the caller state the intent instead.
+      def validate_tls_decision
+        return unless tls.nil?
+        return if api_key.to_s.strip.empty? && api_key_file.to_s.strip.empty?
+
+        errors.add(:tls, :requires_explicit_choice)
       end
 
       def validate_tls_cert_key_pair
@@ -1084,31 +1089,15 @@ module ActiveJob
         errors.add(:tls_domain, :blank)
       end
 
-      def validate_tls_cert_watch
-        unless [true, false].include?(tls_cert_watch)
-          errors.add(:tls_cert_watch, :not_boolean, value: tls_cert_watch.inspect)
-          return
-        end
-
-        return unless tls_cert_watch && tls_watch_paths.empty?
-
-        errors.add(:tls_cert_watch, :requires_paths)
-      end
-
       def validate_api_key_settings
         validate_tls_file_path(:api_key_file)
-
-        unless [true, false].include?(api_key_watch)
-          errors.add(:api_key_watch, :not_boolean, value: api_key_watch.inspect)
-          return
-        end
-
-        return unless api_key_watch && api_key_file.to_s.strip.empty?
-
-        errors.add(:api_key_watch, :requires_path)
       end
 
       def validate_credential_refresh_settings
+        unless [true, false].include?(credential_watch)
+          errors.add(:credential_watch, :not_boolean, value: credential_watch.inspect)
+        end
+
         unless [true, false].include?(credential_file_events)
           errors.add(:credential_file_events, :not_boolean, value: credential_file_events.inspect)
         end
@@ -1129,20 +1118,16 @@ module ActiveJob
         errors.add(:worker_activejob_workloads, :requires_activities)
       end
 
-      def validate_tls_reload_signal
-        unless tls_reload_signal.is_a?(String) && tls_reload_signal.strip.present?
-          errors.add(:tls_reload_signal, :blank)
+      def validate_reload_signal
+        unless reload_signal.is_a?(String) && reload_signal.strip.present?
+          errors.add(:reload_signal, :blank)
           return
         end
 
-        normalized_signal = tls_reload_signal.sub(/\ASIG/i, "").upcase
+        normalized_signal = reload_signal.sub(/\ASIG/i, "").upcase
         return if Signal.list.key?(normalized_signal) && !UNTRAPPABLE_SIGNALS.include?(normalized_signal)
 
-        errors.add(:tls_reload_signal, :invalid, value: tls_reload_signal.inspect)
-      end
-
-      def tls_watch_paths
-        [tls_cert_path, tls_key_path, tls_server_root_ca_cert_path].compact.reject { |path| path.to_s.strip.empty? }
+        errors.add(:reload_signal, :invalid, value: reload_signal.inspect)
       end
 
       def callable_accepts_positional_job?(callable)

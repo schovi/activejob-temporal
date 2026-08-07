@@ -16,11 +16,11 @@ describe "temporal-worker CLI" do
 
   it "rejects reserved TLS reload signals before connecting to Temporal" do
     _stdout, stderr, status = capture_worker(
-      "ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL" => "TERM"
+      "ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL" => "TERM"
     )
 
     assert_equal 1, status.exitstatus
-    assert_includes stderr, "ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL must be a signal name safe to trap"
+    assert_includes stderr, "ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL must be a signal name safe to trap"
   end
 
   it "rejects public health binds without explicit opt-in before connecting to Temporal" do

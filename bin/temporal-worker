@@ -107,11 +107,11 @@ if pool_size < 1
   exit(1)
 end
 
-reload_signal = config.tls_reload_signal.to_s.sub(/\ASIG/i, "").upcase
+reload_signal = config.reload_signal.to_s.sub(/\ASIG/i, "").upcase
 unless Signal.list.key?(reload_signal) && !ActiveJob::Temporal::UNTRAPPABLE_SIGNALS.include?(reload_signal)
   warn(
-    "Error: ACTIVEJOB_TEMPORAL_TLS_RELOAD_SIGNAL must be a signal name safe to trap, " \
-    "got: #{config.tls_reload_signal.inspect}"
+    "Error: ACTIVEJOB_TEMPORAL_RELOAD_SIGNAL must be a signal name safe to trap, " \
+    "got: #{config.reload_signal.inspect}"
   )
   exit(1)
 end

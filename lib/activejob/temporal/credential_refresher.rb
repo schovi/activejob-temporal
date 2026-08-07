@@ -40,29 +40,40 @@ module ActiveJob
       Source = Struct.new(:name, :paths, :on_change, keyword_init: true)
 
       class << self
-        # Builds a refresher from the `tls_cert_watch` / `api_key_watch` configuration flags.
-        # The callbacks default to the process-wide reload paths, which is what an enqueue-side
-        # process wants; workers override the TLS one so the running worker gets the new client.
+        # Builds a refresher for every credential file the configuration names. A path is only
+        # configured because the credential behind it rotates, so `credential_watch` gates the
+        # whole mechanism rather than each file individually.
+        #
+        # A token refresh mutates the live connection, so it is the same call in every process.
+        # A certificate refresh is not: the default rebuilds the memoized client, which is right
+        # for an enqueue-side process but wrong inside a worker.
+        #
+        # @note A process running a `Temporalio::Worker` MUST pass `on_tls_change`. The worker holds
+        #   its own client reference, and the default `reload_client!` closes the client it replaces
+        #   - which is the one the worker is still polling on. Pass a callback that assigns the fresh
+        #   client to the worker, as {WorkerClientReloader} does.
         #
         # @param configuration [Configuration] the gem configuration
-        # @param on_tls_change [#call] invoked when any TLS file changes
-        # @param on_api_key_change [#call] invoked when the API key file changes
+        # @param on_tls_change [#call] invoked when any TLS file changes; see the note above
         # @param logger [#log_event, #warn, #error] structured logger
         # @param listener_factory [#to, nil] injection point for tests, defaults to `Listen`
-        # @return [CredentialRefresher] a refresher with no sources when both flags are off
+        # @return [CredentialRefresher] a refresher with no sources when no credential file is
+        #   configured, or when `credential_watch` is off
         def from_config(configuration,
                         on_tls_change: -> { ActiveJob::Temporal.reload_client! },
-                        on_api_key_change: -> { ActiveJob::Temporal.refresh_api_key! },
                         logger: ActiveJob::Temporal::Logger,
                         listener_factory: nil)
           sources = []
 
-          if configuration.tls_cert_watch
-            sources << Source.new(name: "tls", paths: tls_paths(configuration), on_change: on_tls_change)
-          end
+          if configuration.credential_watch
+            tls = tls_paths(configuration)
+            sources << Source.new(name: "tls", paths: tls, on_change: on_tls_change) if tls.any?
 
-          if configuration.api_key_watch
-            sources << Source.new(name: "api_key", paths: [configuration.api_key_file], on_change: on_api_key_change)
+            token = configuration.api_key_file.to_s.strip
+            if token.present?
+              sources << Source.new(name: "api_key", paths: [token],
+                                    on_change: -> { ActiveJob::Temporal.refresh_api_key! })
+            end
           end
 
           new(

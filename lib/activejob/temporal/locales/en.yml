@@ -129,11 +129,10 @@ en:
             tls_domain:
               blank: "must be present when configured"
 
-            tls_cert_watch:
-              not_boolean: "must be true or false, got: %{value}"
-              requires_paths: "requires at least one TLS certificate path to watch"
+            tls:
+              requires_explicit_choice: "must be set explicitly to true, false, or TLS options when api_key or api_key_file is configured - the Temporal SDK enables TLS on its own whenever an API key is present, which fails the handshake against a plaintext frontend"
 
-            tls_reload_signal:
+            reload_signal:
               blank: "must be present when configured"
               invalid: "must be a signal name like HUP or USR1, got: %{value}"
 
@@ -141,9 +140,8 @@ en:
               invalid_path: "must be a non-empty file path, got: %{value}"
               unreadable_path: "must resolve to a readable regular file, got: %{value}"
 
-            api_key_watch:
+            credential_watch:
               not_boolean: "must be true or false, got: %{value}"
-              requires_path: "requires api_key_file to watch"
 
             credential_poll_interval:
               invalid: "must be a positive number of seconds, got: %{value}"
