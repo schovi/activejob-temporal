@@ -45,7 +45,7 @@ describe "Per-job timeout configuration", :integration do
     assert_equal true, TestState.instance.custom_timeout_executed
 
     # Verify workflow completed
-    description = client.workflow_handle(workflow_id).describe
+    description = wait_for_workflow_completion(workflow_id)
     assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
   ensure
     stop_worker(@worker_thread)
@@ -109,7 +109,7 @@ describe "Per-job timeout configuration", :integration do
       assert_equal 123, TestJob.last_argument
 
       # Verify workflow completed
-      description = client.workflow_handle(workflow_id).describe
+      description = wait_for_workflow_completion(workflow_id)
       assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
     ensure
       stop_worker(@worker_thread)
@@ -117,6 +117,22 @@ describe "Per-job timeout configuration", :integration do
   end
 
   private
+
+  # The job body sets its TestState flag from inside the activity, which is one
+  # workflow task short of the execution actually closing. Polling the server is
+  # what makes COMPLETED a valid expectation.
+  def wait_for_workflow_completion(workflow_id)
+    handle = client.workflow_handle(workflow_id)
+
+    Timeout.timeout(10) do
+      loop do
+        description = handle.describe
+        return description if description.status == Temporalio::Client::WorkflowExecutionStatus::COMPLETED
+
+        sleep 0.1
+      end
+    end
+  end
 
   def start_worker(task_queue)
     start_temporal_worker(task_queue)
