@@ -215,6 +215,15 @@ jobs:
         env:
           TEST_SUITE: integration
 
+      - name: Capture Temporal diagnostics on failure
+        if: failure()
+        run: |
+          docker compose ps -a
+          docker compose logs --tail 500 temporal
+          docker compose logs --tail 100 postgresql
+          docker inspect --format '{{.Name}} exitcode={{.State.ExitCode}} oomkilled={{.State.OOMKilled}} status={{.State.Status}}' \
+            $(docker compose ps -aq) || true
+
       - name: Upload integration coverage to Codecov
         if: matrix.ruby == '4.0.3'
         uses: codecov/codecov-action@v5
