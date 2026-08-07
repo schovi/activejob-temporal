@@ -26,8 +26,12 @@ module ActiveJob
     class CredentialRefresher
       # kubelet keeps the live secret in a timestamped sibling of `..data`, so listen's recursive
       # scan reaches the same real directory twice and prints a SymlinkLoop error to stderr.
-      # Rotations still surface through `..data`, and the interval backs it up either way.
+      # Getting this wrong costs that stderr noise and nothing else: listen only ever nudges the
+      # loop, so the digest still decides, and the interval still backs it up.
+      #
+      # @api private
       KUBERNETES_VERSIONED_DIR = /\A\.\.\d/
+      private_constant :KUBERNETES_VERSIONED_DIR
 
       DEFAULT_POLL_INTERVAL = 30
 
@@ -193,11 +197,7 @@ module ActiveJob
       end
 
       def watched_directories
-        @sources
-          .flat_map(&:paths)
-          .compact
-          .map { |path| File.dirname(File.expand_path(path)) }
-          .uniq
+        @sources.flat_map(&:paths).compact.map { |path| File.dirname(File.expand_path(path)) }.uniq
       end
 
       def listener_factory

@@ -249,11 +249,17 @@ describe ActiveJob::Temporal::CredentialRefresher do
       ).start
 
       assert_equal [directory], factory.listener.directories
-      assert_equal(
-        ActiveJob::Temporal::CredentialRefresher::KUBERNETES_VERSIONED_DIR,
-        factory.listener.options[:ignore]
-      )
       assert factory.listener.started
+
+      # listen matches its ignore pattern against relative paths, so exercise it the same way:
+      # kubelet's versioned copy and everything under it is skipped, `..data` is not.
+      ignore = factory.listener.options[:ignore]
+
+      assert_match ignore, "..2026_08_07_09_09_14.1636744838"
+      assert_match ignore, "..2026_08_07_09_09_14.1636744838/token"
+      refute_match ignore, "..data"
+      refute_match ignore, "..data/token"
+      refute_match ignore, "client.pem"
     ensure
       refresher.stop
     end
