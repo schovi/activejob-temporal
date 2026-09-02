@@ -47,7 +47,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "minitest", ">= 5.11", "< 7"
   spec.add_development_dependency "msgpack", "~> 1.8"
   spec.add_development_dependency "mutant-minitest", "~> 0.16"
-  spec.add_development_dependency "prometheus-client", "~> 4.2"
+  spec.add_development_dependency "prometheus-client", "~> 5.0"
   spec.add_development_dependency "rake", "~> 13.2"
   spec.add_development_dependency "rubocop", "~> 1.50"
   spec.add_development_dependency "simplecov", "~> 0.22"
