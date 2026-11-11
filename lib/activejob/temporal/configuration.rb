@@ -11,7 +11,7 @@ require_relative "payload_serializers"
 require_relative "rate_limit_options"
 require_relative "tls_file"
 
-# rubocop:disable Metrics/ModuleLength
+# rubocop:disable-next Metrics/ModuleLength
 module ActiveJob
   module Temporal
     LOCALE_PATH = File.expand_path("locales/en.yml", __dir__)
@@ -656,7 +656,7 @@ module ActiveJob
     #
     # @see ActiveJob::Temporal::Configuration.validate!
     # @api private
-    # rubocop:disable Metrics/ClassLength
+    # rubocop:disable-next Metrics/ClassLength
     class ConfigValidator
       include ActiveModel::Validations
 
@@ -1197,7 +1197,5 @@ module ActiveJob
         nil
       end
     end
-    # rubocop:enable Metrics/ClassLength
   end
 end
-# rubocop:enable Metrics/ModuleLength

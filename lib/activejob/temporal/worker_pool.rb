@@ -6,7 +6,7 @@ require_relative "bind_policy"
 
 module ActiveJob
   module Temporal
-    # rubocop:disable Metrics/ClassLength
+    # rubocop:disable-next Metrics/ClassLength
     class WorkerPool
       Child = Data.define(:pid, :index, :restarts)
 
@@ -416,6 +416,5 @@ module ActiveJob
         end
       end
     end
-    # rubocop:enable Metrics/ClassLength
   end
 end

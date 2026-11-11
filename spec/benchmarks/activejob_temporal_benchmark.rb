@@ -19,11 +19,10 @@ end
 
 class BenchmarkClient
   # Temporal client compatibility requires this method name.
-  # rubocop:disable Naming/PredicateMethod
+  # rubocop:disable-next Naming/PredicateMethod
   def start_workflow(_workflow_class, _payload, **_options)
     true
   end
-  # rubocop:enable Naming/PredicateMethod
 end
 
 ActiveJob::Base.queue_adapter = :test

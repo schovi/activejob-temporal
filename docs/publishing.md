@@ -51,7 +51,7 @@ Future release automation should follow this policy:
 1. Use a manual `workflow_dispatch` release workflow, or a protected `release` environment with required approval.
 2. Prefer RubyGems trusted publishing over a long-lived `GEM_HOST_API_KEY`.
 3. If `GEM_HOST_API_KEY` is used, store it only as a GitHub Actions environment secret scoped to the protected release environment.
-4. Run the Ruby 4.0.3 validation gates before publishing: lint, tests, gem build, and package metadata checks.
+4. Run the Ruby 4.0.9 validation gates before publishing: lint, tests, gem build, and package metadata checks.
 5. Generate or verify the changelog and version bump before the irreversible publish step.
 6. Create the GitHub release only after the RubyGems push succeeds.
 
@@ -112,24 +112,24 @@ git push origin v0.1.0
 # Enable Multi-Factor Authentication (REQUIRED by gemspec)
 
 # Sign in locally
-rvm 4.0.3 do gem signin
+rvm 4.0.9 do gem signin
 
 # Enter your RubyGems credentials when prompted
-# This creates the credentials file reported by `rvm 4.0.3 do gem env`
+# This creates the credentials file reported by `rvm 4.0.9 do gem env`
 ```
 
 **Verification:**
 - [ ] RubyGems.org account created
 - [ ] MFA/2FA enabled on account
-- [ ] Successfully signed in via `rvm 4.0.3 do gem signin`
-- [ ] Credentials file exists at the path shown by `rvm 4.0.3 do gem env`
+- [ ] Successfully signed in via `rvm 4.0.9 do gem signin`
+- [ ] Credentials file exists at the path shown by `rvm 4.0.9 do gem env`
 
 ### 3. Verify Gemspec Metadata
 
 ```bash
 # Extract and verify gemspec metadata
-rvm 4.0.3 do gem specification pkg/activejob-temporal-0.1.0.gem | grep -A 2 "homepage"
-rvm 4.0.3 do gem specification pkg/activejob-temporal-0.1.0.gem | grep -A 2 "source_code_uri"
+rvm 4.0.9 do gem specification pkg/activejob-temporal-0.1.0.gem | grep -A 2 "homepage"
+rvm 4.0.9 do gem specification pkg/activejob-temporal-0.1.0.gem | grep -A 2 "source_code_uri"
 
 # Expected output:
 #   homepage: https://github.com/schovi/activejob-temporal
@@ -159,8 +159,8 @@ cd /Users/schovi/work/activejob-temporal
 ls -lh pkg/activejob-temporal-0.1.0.gem
 
 # Run final quality checks
-rvm 4.0.3 do bundle exec rake spec
-rvm 4.0.3 do bundle exec rubocop
+rvm 4.0.9 do bundle exec rake spec
+rvm 4.0.9 do bundle exec rubocop
 
 # Verify git tag is pushed
 git ls-remote --tags origin | grep v0.1.0
@@ -171,18 +171,18 @@ git ls-remote --tags origin | grep v0.1.0
 ```bash
 # RubyGems 4.0.6 does not support `gem push --dry-run`.
 # Validate the built package locally before the irreversible push.
-rvm 4.0.3 do gem specification pkg/activejob-temporal-0.1.0.gem \
+rvm 4.0.9 do gem specification pkg/activejob-temporal-0.1.0.gem \
   | grep -E "^(name|version|homepage|metadata):|homepage_uri|source_code_uri|changelog_uri"
 
 # Then confirm publishing credentials are available.
-rvm 4.0.3 do gem env | grep "CREDENTIALS FILE"
+rvm 4.0.9 do gem env | grep "CREDENTIALS FILE"
 ```
 
 ### Step 3: Publish to RubyGems.org
 
 ```bash
 # Push the gem (THIS IS IRREVERSIBLE)
-rvm 4.0.3 do gem push pkg/activejob-temporal-0.1.0.gem
+rvm 4.0.9 do gem push pkg/activejob-temporal-0.1.0.gem
 
 # Expected output:
 # Pushing gem to https://rubygems.org...
@@ -195,7 +195,7 @@ rvm 4.0.3 do gem push pkg/activejob-temporal-0.1.0.gem
 
 ```bash
 # Search for the gem
-rvm 4.0.3 do gem search activejob-temporal
+rvm 4.0.9 do gem search activejob-temporal
 
 # Expected output:
 # activejob-temporal (0.1.0)
@@ -204,18 +204,18 @@ rvm 4.0.3 do gem search activejob-temporal
 open "https://rubygems.org/gems/activejob-temporal"
 
 # Check gem installation works
-rvm 4.0.3 do gem install activejob-temporal
-rvm 4.0.3 do gem list activejob-temporal
+rvm 4.0.9 do gem install activejob-temporal
+rvm 4.0.9 do gem list activejob-temporal
 
 # Test requiring the gem
-rvm 4.0.3 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
-rvm 4.0.3 do ruby -e "require 'activejob/temporal/worker_runtime'; puts ActiveJob::Temporal::VERSION"
+rvm 4.0.9 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
+rvm 4.0.9 do ruby -e "require 'activejob/temporal/worker_runtime'; puts ActiveJob::Temporal::VERSION"
 ```
 
 **Verification Checklist:**
-- [ ] Gem is searchable: `rvm 4.0.3 do gem search activejob-temporal` returns results
+- [ ] Gem is searchable: `rvm 4.0.9 do gem search activejob-temporal` returns results
 - [ ] Gem page loads: `https://rubygems.org/gems/activejob-temporal`
-- [ ] Gem can be installed: `rvm 4.0.3 do gem install activejob-temporal` succeeds
+- [ ] Gem can be installed: `rvm 4.0.9 do gem install activejob-temporal` succeeds
 - [ ] Homepage link works (click "Homepage" on gem page)
 - [ ] Source code link works (click "Source" on gem page)
 - [ ] Changelog link works (click "Changelog" on gem page)
@@ -265,10 +265,10 @@ gem install activejob-temporal
 
 ```bash
 # Yank a specific version (makes it unavailable for new installs)
-rvm 4.0.3 do gem yank activejob-temporal -v 0.1.0
+rvm 4.0.9 do gem yank activejob-temporal -v 0.1.0
 
 # To undo a yank:
-rvm 4.0.3 do gem unyank activejob-temporal -v 0.1.0
+rvm 4.0.9 do gem unyank activejob-temporal -v 0.1.0
 ```
 
 **⚠️ Important:**
@@ -303,28 +303,28 @@ Use this checklist when you're ready to publish:
 ### RubyGems Account
 - [ ] RubyGems.org account created
 - [ ] Multi-Factor Authentication enabled
-- [ ] Signed in locally: `rvm 4.0.3 do gem signin` completed
-- [ ] Credentials file exists at the path shown by `rvm 4.0.3 do gem env`
+- [ ] Signed in locally: `rvm 4.0.9 do gem signin` completed
+- [ ] Credentials file exists at the path shown by `rvm 4.0.9 do gem env`
 
 ### Quality Gates
-- [ ] All tests passing: `rvm 4.0.3 do bundle exec rake spec` shows 0 failures
+- [ ] All tests passing: `rvm 4.0.9 do bundle exec rake spec` shows 0 failures
 - [ ] Code coverage adequate: >95% line coverage
-- [ ] No linting offenses: `rvm 4.0.3 do bundle exec rubocop` shows 0 offenses
+- [ ] No linting offenses: `rvm 4.0.9 do bundle exec rubocop` shows 0 offenses
 - [ ] Documentation complete: README, API docs, and repository guides
 - [ ] Changelog finalized: `CHANGELOG.md` has v0.1.0 entry
 
 ### Gem Readiness
 - [ ] Gemspec complete: All metadata fields filled
 - [ ] Version set: `0.1.0` in `lib/activejob/temporal/version.rb`
-- [ ] Gem builds successfully: `rvm 4.0.3 do bundle exec rake build`
+- [ ] Gem builds successfully: `rvm 4.0.9 do bundle exec rake build`
 - [ ] Gem file exists: `pkg/activejob-temporal-0.1.0.gem`
 
 ### Publication
 - [ ] Package metadata verified locally with `gem specification`
-- [ ] Gem published: `rvm 4.0.3 do gem push pkg/activejob-temporal-0.1.0.gem`
-- [ ] Gem searchable: `rvm 4.0.3 do gem search activejob-temporal` returns results
+- [ ] Gem published: `rvm 4.0.9 do gem push pkg/activejob-temporal-0.1.0.gem`
+- [ ] Gem searchable: `rvm 4.0.9 do gem search activejob-temporal` returns results
 - [ ] Gem page loads: Visit `https://rubygems.org/gems/activejob-temporal`
-- [ ] Installation works: `rvm 4.0.3 do gem install activejob-temporal` succeeds
+- [ ] Installation works: `rvm 4.0.9 do gem install activejob-temporal` succeeds
 - [ ] All links work: Homepage, Source Code, Changelog, Documentation
 
 ### Post-Publication
@@ -342,23 +342,23 @@ Use this checklist when you're ready to publish:
 git remote -v                              # Should show origin
 git ls-remote --tags origin                # Should show v0.1.0
 ls -lh pkg/activejob-temporal-0.1.0.gem   # Should show gem file
-rvm 4.0.3 do gem specification pkg/activejob-temporal-0.1.0.gem | grep homepage
+rvm 4.0.9 do gem specification pkg/activejob-temporal-0.1.0.gem | grep homepage
 
 # Publishing commands
-rvm 4.0.3 do gem signin                   # Sign in to RubyGems
-rvm 4.0.3 do gem specification pkg/activejob-temporal-0.1.0.gem \
+rvm 4.0.9 do gem signin                   # Sign in to RubyGems
+rvm 4.0.9 do gem specification pkg/activejob-temporal-0.1.0.gem \
   | grep -E "^(name|version|homepage|metadata):|homepage_uri|source_code_uri|changelog_uri"
-rvm 4.0.3 do gem push pkg/activejob-temporal-0.1.0.gem # Publish (IRREVERSIBLE)
+rvm 4.0.9 do gem push pkg/activejob-temporal-0.1.0.gem # Publish (IRREVERSIBLE)
 
 # Verification commands
-rvm 4.0.3 do gem search activejob-temporal # Search RubyGems
-rvm 4.0.3 do gem install activejob-temporal # Install from RubyGems
-rvm 4.0.3 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
-rvm 4.0.3 do ruby -e "require 'activejob/temporal/worker_runtime'; puts ActiveJob::Temporal::VERSION"
+rvm 4.0.9 do gem search activejob-temporal # Search RubyGems
+rvm 4.0.9 do gem install activejob-temporal # Install from RubyGems
+rvm 4.0.9 do ruby -e "require 'activejob/temporal'; puts ActiveJob::Temporal::VERSION"
+rvm 4.0.9 do ruby -e "require 'activejob/temporal/worker_runtime'; puts ActiveJob::Temporal::VERSION"
 
 # Emergency commands (use with caution)
-rvm 4.0.3 do gem yank activejob-temporal -v 0.1.0 # Remove from new installs
-rvm 4.0.3 do gem unyank activejob-temporal -v 0.1.0 # Restore yanked gem
+rvm 4.0.9 do gem yank activejob-temporal -v 0.1.0 # Remove from new installs
+rvm 4.0.9 do gem unyank activejob-temporal -v 0.1.0 # Restore yanked gem
 ```
 
 ---

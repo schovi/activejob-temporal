@@ -5,7 +5,7 @@ require_relative "../observability"
 module ActiveJob
   module Temporal
     module Observability
-      # rubocop:disable Metrics/ClassLength
+      # rubocop:disable-next Metrics/ClassLength
       class Datadog < Adapter
         attr_accessor :service, :statsd_host, :statsd_port
         attr_writer :statsd
@@ -156,7 +156,6 @@ module ActiveJob
           Process.clock_gettime(Process::CLOCK_MONOTONIC)
         end
       end
-      # rubocop:enable Metrics/ClassLength
     end
   end
 end

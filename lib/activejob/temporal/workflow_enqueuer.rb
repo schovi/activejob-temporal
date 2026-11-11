@@ -25,7 +25,7 @@ module ActiveJob
     #   config = ActiveJob::Temporal.config
     #   enqueuer = WorkflowEnqueuer.new(client, config)
     #   enqueuer.enqueue(job)
-    # rubocop:disable Metrics/ClassLength
+    # rubocop:disable-next Metrics/ClassLength
     class WorkflowEnqueuer
       include WorkflowEnqueuerBatch
 
@@ -267,6 +267,5 @@ module ActiveJob
         raise ArgumentError, "scheduled_at must be an ISO8601 string or respond to to_time"
       end
     end
-    # rubocop:enable Metrics/ClassLength
   end
 end

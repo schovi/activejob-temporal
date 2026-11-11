@@ -30,7 +30,7 @@ module ActiveJob
     # @example Extracting discard handlers
     #   discard_handlers = extractor.discard_handlers(MyJob)
     #   # => [{ exception: ActiveRecord::RecordNotFound, handler: ... }]
-    # rubocop:disable Metrics/ClassLength
+    # rubocop:disable-next Metrics/ClassLength
     class RetryHandlerExtractor
       def initialize
         @cache_mutex = Mutex.new
@@ -371,6 +371,5 @@ module ActiveJob
         candidate_class <= handler_class
       end
     end
-    # rubocop:enable Metrics/ClassLength
   end
 end

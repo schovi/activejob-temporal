@@ -37,7 +37,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "activemodel", ">= 7.2", "< 9"
   spec.add_dependency "concurrent-ruby", "~> 1.1"
   spec.add_dependency "globalid", ">= 0.3"
-  spec.add_dependency "temporalio", ">= 1.4.0", "< 1.7"
+  spec.add_dependency "temporalio", ">= 1.4.0", "< 1.12"
 
   # listen is an optional runtime dependency, required lazily only when credential_file_events is
   # enabled. Without it credentials still rotate, just on the poll interval instead of instantly.
@@ -49,7 +49,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "mutant-minitest", "~> 0.16"
   spec.add_development_dependency "prometheus-client", "~> 4.2"
   spec.add_development_dependency "rake", "~> 13.2"
-  spec.add_development_dependency "rubocop", "~> 1.50"
+  spec.add_development_dependency "rubocop", "~> 1.92"
   spec.add_development_dependency "simplecov", "~> 0.22"
   spec.add_development_dependency "simplecov-lcov", "~> 0.9"
   spec.add_development_dependency "yard", "~> 0.9"

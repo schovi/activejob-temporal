@@ -10,7 +10,7 @@ Target length: about 5 minutes.
 ## Recording Setup
 
 - Use the [Basic Rails App](../examples/basic_rails_app/) as the demo app.
-- Use Ruby 4.0.3 for any local commands. Do not install Ruby 3 or use Ruby 3 as
+- Use Ruby 4.0.9 for any local commands. Do not install Ruby 3 or use Ruby 3 as
   a fallback while preparing the recording.
 - Start the stack from the example app:
 

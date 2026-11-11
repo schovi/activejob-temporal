@@ -10,7 +10,7 @@ We use `bundle-audit` to automatically check for known vulnerabilities in gem de
 
 ```bash
 # Local scan
-rvm 4.0.3 do bundle-audit check --update
+rvm 4.0.9 do bundle-audit check --update
 
 # CI automatically scans on each push/PR
 ```
@@ -23,10 +23,10 @@ To update gems safely:
 
 ```bash
 # Update all gems
-rvm 4.0.3 do bundle update
+rvm 4.0.9 do bundle update
 
 # Update specific gem
-rvm 4.0.3 do bundle update rails
+rvm 4.0.9 do bundle update rails
 
 # Run security check after updating
 ./tools/security-check.sh
@@ -41,7 +41,7 @@ spec.add_dependency "activejob", ">= 7.2", "< 9"
 spec.add_dependency "activemodel", ">= 7.2", "< 9"
 spec.add_dependency "concurrent-ruby", "~> 1.1"
 spec.add_dependency "globalid", ">= 0.3"
-spec.add_dependency "temporalio", ">= 1.4.0", "< 1.5"
+spec.add_dependency "temporalio", ">= 1.4.0", "< 1.12"
 ```
 
 Conservative constraints prevent unpredictable breaking changes. The only optional dependency is `listen`, lazy-loaded when `credential_file_events` is enabled; applications that enable it should add `gem "listen", "~> 3.9"` to their own Gemfile. Credential rotation itself needs no extra gem.
@@ -256,8 +256,8 @@ This script:
 ### Update Process
 
 1. Update Gemfile
-2. Run `rvm 4.0.3 do bundle update`
-3. Run local tests: `rvm 4.0.3 do bundle exec rake spec:unit`
+2. Run `rvm 4.0.9 do bundle update`
+3. Run local tests: `rvm 4.0.9 do bundle exec rake spec:unit`
 4. Run security check: `./tools/security-check.sh`
 5. Commit and create PR
 6. Wait for CI to pass
