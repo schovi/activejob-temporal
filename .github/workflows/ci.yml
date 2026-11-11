@@ -10,7 +10,7 @@ jobs:
   # Linting job - runs once for efficiency
   lint:
     name: Lint (Rubocop)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -19,7 +19,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: '4.0.9'
           bundler-cache: true
 
       - name: Run Rubocop
@@ -28,7 +28,7 @@ jobs:
   # Security scanning - checks for known vulnerabilities in dependencies
   security:
     name: Security Audit
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: '4.0.9'
           bundler-cache: true
 
       - name: Install bundle-audit
@@ -51,7 +51,7 @@ jobs:
 
   mutation:
     name: Mutation Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -60,7 +60,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: '4.0.9'
           bundler-cache: true
 
       - name: Run mutation tests
@@ -69,14 +69,14 @@ jobs:
   # Unit tests - runs on Ruby matrix
   test-unit:
     name: Unit Tests (Ruby ${{ matrix.ruby }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     strategy:
       fail-fast: false
       matrix:
-        ruby: ['4.0.3']
+        ruby: ['4.0.9']
 
     steps:
       - name: Checkout code
@@ -94,7 +94,7 @@ jobs:
           TEST_SUITE: unit
 
       - name: Upload unit coverage to Codecov
-        if: matrix.ruby == '4.0.3'
+        if: matrix.ruby == '4.0.9'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
@@ -105,7 +105,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload unit test coverage
-        if: matrix.ruby == '4.0.3'
+        if: matrix.ruby == '4.0.9'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-unit-ruby-${{ matrix.ruby }}
@@ -113,7 +113,7 @@ jobs:
 
   activejob-contract:
     name: ActiveJob ${{ matrix.activejob-version }} ConfiguredJob Contract
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -132,7 +132,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: '4.0.9'
           bundler-cache: false
 
       - name: Install dependencies
@@ -144,14 +144,14 @@ jobs:
   # Integration tests - runs on Ruby matrix
   test-integration:
     name: Integration Tests (Ruby ${{ matrix.ruby }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     strategy:
       fail-fast: false
       matrix:
-        ruby: ['4.0.3']
+        ruby: ['4.0.9']
 
     steps:
       - name: Checkout code
@@ -225,7 +225,7 @@ jobs:
             $(docker compose ps -aq) || true
 
       - name: Upload integration coverage to Codecov
-        if: matrix.ruby == '4.0.3'
+        if: matrix.ruby == '4.0.9'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
@@ -236,7 +236,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload integration test coverage
-        if: matrix.ruby == '4.0.3'
+        if: matrix.ruby == '4.0.9'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-integration-ruby-${{ matrix.ruby }}
@@ -248,14 +248,14 @@ jobs:
 
   test-chaos:
     name: Chaos Tests (Ruby ${{ matrix.ruby }})
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     strategy:
       fail-fast: false
       matrix:
-        ruby: ['4.0.3']
+        ruby: ['4.0.9']
 
     steps:
       - name: Checkout code
@@ -320,7 +320,7 @@ jobs:
           TEST_SUITE: chaos
 
       - name: Upload chaos coverage to Codecov
-        if: matrix.ruby == '4.0.3'
+        if: matrix.ruby == '4.0.9'
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
@@ -331,7 +331,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload chaos test coverage
-        if: matrix.ruby == '4.0.3'
+        if: matrix.ruby == '4.0.9'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-chaos-ruby-${{ matrix.ruby }}
@@ -343,7 +343,7 @@ jobs:
 
   example-basic-rails-app:
     name: Example Rails App
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     defaults:
       run:
@@ -356,7 +356,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: '4.0.9'
           # bundler-cache installs in deployment mode, which fails whenever the
           # path gem's gemspec moves ahead of the committed Gemfile.lock.
           bundler-cache: false
@@ -377,7 +377,7 @@ jobs:
   # Build gem - runs once to verify gem can be built
   build:
     name: Build Gem
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     needs: [lint, security, mutation, test-unit, activejob-contract, test-integration, test-chaos, example-basic-rails-app]
 
     steps:
@@ -387,7 +387,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: '4.0.9'
           bundler-cache: true
 
       - name: Build gem

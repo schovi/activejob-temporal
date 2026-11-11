@@ -10,7 +10,7 @@ on:
 jobs:
   contract:
     name: Temporal SDK ${{ matrix.temporalio-version }} Contract Tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
 
     strategy:
       fail-fast: false
@@ -29,7 +29,7 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '4.0.3'
+          ruby-version: '4.0.9'
           bundler-cache: false
 
       - name: Install dependencies

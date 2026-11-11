@@ -8,7 +8,7 @@ This repository targets Ruby 4.0+ and uses Ruby 4.0.3 for local validation. Do n
 - `examples/basic_rails_app/.ruby-version` pins the example Rails app to `ruby-4.0.3`.
 - `activejob-temporal.gemspec` requires Ruby `>= 4.0`.
 - Root and example `Gemfile` files require Ruby `>= 4.0`.
-- GitHub Actions workflows use `ruby/setup-ruby` with Ruby `4.0.3`.
+- GitHub Actions workflows use `ruby/setup-ruby` with Ruby `4.0.9`, which has Ubuntu 26.04 builds.
 - Example Dockerfiles build from Ruby `4.0.3` images.
 
 ## Local Validation
