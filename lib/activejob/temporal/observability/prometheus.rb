@@ -50,7 +50,7 @@ module ActiveJob
         end
       end
 
-      # rubocop:disable Metrics/ClassLength
+      # rubocop:disable-next Metrics/ClassLength
       class Prometheus < Adapter
         DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120].freeze
         PAYLOAD_SIZE_BUCKETS = [512, 1024, 2_048, 4_096, 8_192, 16_384, 32_768, 65_536, 131_072, 262_144,
@@ -260,7 +260,6 @@ module ActiveJob
           (value || "unknown").to_s
         end
       end
-      # rubocop:enable Metrics/ClassLength
     end
   end
 end

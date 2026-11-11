@@ -53,7 +53,7 @@ module ActiveJob
         heartbeat_timeout
       ].freeze
 
-      # rubocop:disable Metrics/BlockLength
+      # rubocop:disable-next Metrics/BlockLength
       class_methods do
         # Define Temporal activity timeout options for this job class.
         #
@@ -130,7 +130,6 @@ module ActiveJob
           end
         end
       end
-      # rubocop:enable Metrics/BlockLength
     end
   end
 end

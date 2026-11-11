@@ -5,3 +5,5 @@ source "https://rubygems.org"
 gemspec path: ".."
 
 gem "temporalio", ENV.fetch("TEMPORALIO_VERSION")
+# temporalio before 1.10 breaks on json 3 but does not declare it; 1.10+ requires json < 3 itself.
+gem "json", "< 3"

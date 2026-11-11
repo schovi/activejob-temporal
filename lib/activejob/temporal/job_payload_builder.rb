@@ -11,7 +11,7 @@ require_relative "retry_mapper"
 
 module ActiveJob
   module Temporal
-    # rubocop:disable Metrics/ClassLength
+    # rubocop:disable-next Metrics/ClassLength
     class JobPayloadBuilder
       include JobPayloadChildWorkflows
       include JobPayloadChainBuilder
@@ -204,6 +204,5 @@ module ActiveJob
         value
       end
     end
-    # rubocop:enable Metrics/ClassLength
   end
 end

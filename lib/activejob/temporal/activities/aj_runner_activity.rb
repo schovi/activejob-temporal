@@ -57,7 +57,7 @@ module ActiveJob
       #
       # @see https://docs.temporal.io/activities Temporal Activities Guide
       # @see https://docs.temporal.io/retry-policies Temporal Retry Policies
-      # rubocop:disable Metrics/ClassLength
+      # rubocop:disable-next Metrics/ClassLength
       class AjRunnerActivity < Temporalio::Activity::Definition
         IDEMPOTENCY_KEY = :aj_temporal_idempotency_key
         DESERIALIZATION_ERROR_CLASSES = [
@@ -504,7 +504,6 @@ module ActiveJob
           Time.zone&.name if Time.respond_to?(:zone)
         end
       end
-      # rubocop:enable Metrics/ClassLength
     end
   end
 end

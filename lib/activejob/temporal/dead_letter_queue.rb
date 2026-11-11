@@ -44,12 +44,11 @@ module ActiveJob
         workflow_id
       end
 
-      # rubocop:disable Naming/PredicateMethod
+      # rubocop:disable-next Naming/PredicateMethod
       def discard(job_class, job_id, reason: nil, client: ActiveJob::Temporal.client)
         handle_for(job_class, job_id, client: client).signal(:discard, reason)
         true
       end
-      # rubocop:enable Naming/PredicateMethod
 
       def workflow_id(job_class, job_id)
         class_name = job_class.is_a?(Class) ? job_class.name : job_class.to_s
