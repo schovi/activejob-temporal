@@ -5,11 +5,11 @@
 set -e
 
 if ! command -v rvm >/dev/null 2>&1; then
-  echo "RVM with Ruby 4.0.3 is required for local repository tooling." >&2
+  echo "RVM with Ruby 4.0.9 is required for local repository tooling." >&2
   exit 1
 fi
 
-RUBY_COMMAND=(rvm 4.0.3 do)
+RUBY_COMMAND=(rvm 4.0.9 do)
 
 echo "🔒 Running security checks..."
 

@@ -172,16 +172,16 @@ See [examples/basic_rails_app](examples/basic_rails_app/) for a Docker Compose R
 Install dependencies and run the focused local checks:
 
 ```bash
-rvm 4.0.3 do bundle install
-rvm 4.0.3 do bundle exec rake spec:unit
-rvm 4.0.3 do bundle exec rubocop
-rvm 4.0.3 do bundle exec rake build
+rvm 4.0.9 do bundle install
+rvm 4.0.9 do bundle exec rake spec:unit
+rvm 4.0.9 do bundle exec rubocop
+rvm 4.0.9 do bundle exec rake build
 ```
 
 For changes near configured mutation subjects, also run:
 
 ```bash
-rvm 4.0.3 do bundle exec rake mutation
+rvm 4.0.9 do bundle exec rake mutation
 ```
 
 Keep docs updated when behavior changes. The scoped mutation task runs on Ruby 4. Mutant 0.16 may warn about an older parser dependency; keep using the Ruby 4 toolchain and treat parser failures on new Ruby syntax as a mutation tooling limitation.

@@ -4,11 +4,11 @@ Use this checklist before publishing a gem release or opening a release PR. It r
 
 ## Validation Commands
 
-- [ ] `rvm 4.0.3 do bundle install`
-- [ ] `rvm 4.0.3 do bundle exec rake spec`
-- [ ] `rvm 4.0.3 do bundle exec rubocop`
-- [ ] `rvm 4.0.3 do bundle exec rake build`
-- [ ] `rvm 4.0.3 do bundle exec rake yard`
+- [ ] `rvm 4.0.9 do bundle install`
+- [ ] `rvm 4.0.9 do bundle exec rake spec`
+- [ ] `rvm 4.0.9 do bundle exec rubocop`
+- [ ] `rvm 4.0.9 do bundle exec rake build`
+- [ ] `rvm 4.0.9 do bundle exec rake yard`
 
 ## Documentation Review
 

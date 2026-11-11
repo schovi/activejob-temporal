@@ -8,11 +8,11 @@ ENV_EXPORT_FILE="${SCRIPT_DIR}/.bundle-env"
 cd "$REPO_ROOT"
 
 if ! command -v rvm >/dev/null 2>&1; then
-  echo "RVM with Ruby 4.0.3 is required for local repository tooling." >&2
+  echo "RVM with Ruby 4.0.9 is required for local repository tooling." >&2
   exit 1
 fi
 
-RUBY_COMMAND=(rvm 4.0.3 do)
+RUBY_COMMAND=(rvm 4.0.9 do)
 
 if [[ -f "package.json" && -f "Gemfile" ]]; then
   echo "Multiple manifest files detected. This installer currently supports Ruby (Gemfile) projects only." >&2
@@ -29,8 +29,8 @@ fi
 if [[ "$PROJECT_TYPE" == "ruby" ]]; then
   if ! "${RUBY_COMMAND[@]}" bundle --version >/dev/null 2>&1; then
     cat >&2 <<'MSG'
-Bundler is required but was not found for Ruby 4.0.3.
-Install it with: rvm 4.0.3 do gem install bundler
+Bundler is required but was not found for Ruby 4.0.9.
+Install it with: rvm 4.0.9 do gem install bundler
 MSG
     exit 1
   fi

@@ -63,7 +63,7 @@ Before taking a blocked issue:
 2. Remove the `status: blocked` label only after the prerequisite exists.
 3. Move the project Status from `Blocked` to `Ready`.
 4. Implement against the issue acceptance criteria.
-5. Validate locally under Ruby 4.0.3 only, for example `rvm 4.0.3 do bundle exec rubocop` and the relevant test target.
+5. Validate locally under Ruby 4.0.9 only, for example `rvm 4.0.9 do bundle exec rubocop` and the relevant test target.
 6. Get a separate-agent review before committing.
 7. Commit and push.
 8. Wait for GitHub Actions.

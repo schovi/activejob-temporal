@@ -16,7 +16,7 @@ fi
 source "$ENV_EXPORT_FILE"
 
 cd "$REPO_ROOT"
-RUBY_COMMAND=(rvm 4.0.3 do)
+RUBY_COMMAND=(rvm 4.0.9 do)
 
 if command -v mktemp >/dev/null 2>&1; then
   report_file="$(mktemp -t rubocop-json.XXXXXX)"

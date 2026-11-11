@@ -2,17 +2,17 @@
 
 ## Ruby Baseline
 
-Use Ruby 4.0.3 for local development and validation. The repository targets Ruby 4+ and does not require installing Ruby 3.
+Use Ruby 4.0.9 for local development and validation. The repository targets Ruby 4+ and does not require installing Ruby 3.
 
 See [Ruby Baseline](docs/ruby_baseline.md) for the source-of-truth files, CI coverage, and external tooling notes.
 
 Run validation commands through the Ruby 4 toolchain:
 
 ```sh
-rvm 4.0.3 do bundle install
-rvm 4.0.3 do bundle exec rake spec:unit
-rvm 4.0.3 do bundle exec rubocop
-rvm 4.0.3 do bundle exec rake build
+rvm 4.0.9 do bundle install
+rvm 4.0.9 do bundle exec rake spec:unit
+rvm 4.0.9 do bundle exec rubocop
+rvm 4.0.9 do bundle exec rake build
 ```
 
 ## Mutation Testing
@@ -20,7 +20,7 @@ rvm 4.0.3 do bundle exec rake build
 Mutation testing runs a scoped Mutant baseline against deterministic unit-level code:
 
 ```sh
-rvm 4.0.3 do bundle exec rake mutation
+rvm 4.0.9 do bundle exec rake mutation
 ```
 
 The default subject list is intentionally small so the task stays fast and does not require a local Temporal server. Expand `.mutant.yml` as specs are hardened around additional code paths.
@@ -46,7 +46,7 @@ Do not add a README maintainability badge until the repository has been added to
 Generate release changelog updates from merged GitHub pull requests and closed issues:
 
 ```sh
-CHANGELOG_GITHUB_TOKEN=... rvm 4.0.3 do bundle exec rake changelog:generate
+CHANGELOG_GITHUB_TOKEN=... rvm 4.0.9 do bundle exec rake changelog:generate
 ```
 
 The task also accepts `GITHUB_TOKEN` when `CHANGELOG_GITHUB_TOKEN` is not set. Review the generated `CHANGELOG.md` before committing release notes.

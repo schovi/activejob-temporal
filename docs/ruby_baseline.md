@@ -1,32 +1,32 @@
 # Ruby Baseline
 
-This repository targets Ruby 4.0+ and uses Ruby 4.0.3 for local validation. Do not install Ruby 3 or use Ruby 3 as a fallback for repository tooling, dependency resolution, CI fixes, screenshots, or release checks.
+This repository targets Ruby 4.0+ and uses Ruby 4.0.9 for local validation. Do not install Ruby 3 or use Ruby 3 as a fallback for repository tooling, dependency resolution, CI fixes, screenshots, or release checks.
 
 ## Sources Of Truth
 
-- `.ruby-version` pins local repository tooling to `ruby-4.0.3`.
-- `examples/basic_rails_app/.ruby-version` pins the example Rails app to `ruby-4.0.3`.
+- `.ruby-version` pins local repository tooling to `ruby-4.0.9`.
+- `examples/basic_rails_app/.ruby-version` pins the example Rails app to `ruby-4.0.9`.
 - `activejob-temporal.gemspec` requires Ruby `>= 4.0`.
 - Root and example `Gemfile` files require Ruby `>= 4.0`.
-- GitHub Actions workflows use `ruby/setup-ruby` with Ruby `4.0.9`, which has Ubuntu 26.04 builds.
-- Example Dockerfiles build from Ruby `4.0.3` images.
+- GitHub Actions workflows use `ruby/setup-ruby` with Ruby `4.0.9`.
+- Example Dockerfiles build from Ruby `4.0.9` images.
 
 ## Local Validation
 
 Run local commands through the Ruby 4 toolchain:
 
 ```sh
-rvm 4.0.3 do bundle install
-rvm 4.0.3 do bundle exec rubocop
-rvm 4.0.3 do bundle exec rake spec:unit
-rvm 4.0.3 do bundle exec rake build
+rvm 4.0.9 do bundle install
+rvm 4.0.9 do bundle exec rubocop
+rvm 4.0.9 do bundle exec rake spec:unit
+rvm 4.0.9 do bundle exec rake build
 ```
 
 For the Rails example app:
 
 ```sh
 cd examples/basic_rails_app
-rvm 4.0.3 do bundle exec bin/rails test
+rvm 4.0.9 do bundle exec bin/rails test
 ```
 
 If Bundler, RuboCop, tests, or dependency tools fail under Ruby 4, fix the Ruby 4 path or document the external blocker. Do not lower the Ruby requirement and do not install Ruby 3 to make a tool pass.
@@ -44,7 +44,7 @@ The main CI workflow validates Ruby 4 with:
 - Example Rails app tests
 - Gem build
 
-The Temporal SDK compatibility workflow contract-tests Temporal Ruby SDK 1.4.0 and 1.4.1 under Ruby 4.0.3.
+The Temporal SDK compatibility workflow contract-tests Temporal Ruby SDK 1.4.0 and 1.4.1 under Ruby 4.0.9.
 
 ## External Tooling Notes
 
@@ -55,7 +55,7 @@ The Temporal SDK compatibility workflow contract-tests Temporal Ruby SDK 1.4.0 a
 
 When changing tooling or dependencies, check:
 
-- Ruby version files still point to Ruby 4.0.3 or newer.
+- Ruby version files still point to Ruby 4.0.9 or newer.
 - CI matrices do not add Ruby 3 jobs.
 - Docker images do not downgrade below Ruby 4.
 - Documentation does not ask users to install Ruby 3.
