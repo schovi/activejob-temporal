@@ -10,7 +10,7 @@ jobs:
   # Linting job - runs once for efficiency
   lint:
     name: Lint (Rubocop)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -28,7 +28,7 @@ jobs:
   # Security scanning - checks for known vulnerabilities in dependencies
   security:
     name: Security Audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -51,7 +51,7 @@ jobs:
 
   mutation:
     name: Mutation Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -69,7 +69,7 @@ jobs:
   # Unit tests - runs on Ruby matrix
   test-unit:
     name: Unit Tests (Ruby ${{ matrix.ruby }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
@@ -113,7 +113,7 @@ jobs:
 
   activejob-contract:
     name: ActiveJob ${{ matrix.activejob-version }} ConfiguredJob Contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -144,7 +144,7 @@ jobs:
   # Integration tests - runs on Ruby matrix
   test-integration:
     name: Integration Tests (Ruby ${{ matrix.ruby }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
@@ -248,7 +248,7 @@ jobs:
 
   test-chaos:
     name: Chaos Tests (Ruby ${{ matrix.ruby }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write
@@ -343,7 +343,7 @@ jobs:
 
   example-basic-rails-app:
     name: Example Rails App
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     defaults:
       run:
@@ -377,7 +377,7 @@ jobs:
   # Build gem - runs once to verify gem can be built
   build:
     name: Build Gem
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [lint, security, mutation, test-unit, activejob-contract, test-integration, test-chaos, example-basic-rails-app]
 
     steps:
