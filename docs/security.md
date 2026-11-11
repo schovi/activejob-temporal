@@ -41,7 +41,7 @@ spec.add_dependency "activejob", ">= 7.2", "< 9"
 spec.add_dependency "activemodel", ">= 7.2", "< 9"
 spec.add_dependency "concurrent-ruby", "~> 1.1"
 spec.add_dependency "globalid", ">= 0.3"
-spec.add_dependency "temporalio", ">= 1.4.0", "< 1.5"
+spec.add_dependency "temporalio", ">= 1.4.0", "< 1.12"
 ```
 
 Conservative constraints prevent unpredictable breaking changes. The only optional dependency is `listen`, lazy-loaded when `credential_file_events` is enabled; applications that enable it should add `gem "listen", "~> 3.9"` to their own Gemfile. Credential rotation itself needs no extra gem.

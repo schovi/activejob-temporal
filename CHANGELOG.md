@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Allow temporalio 1.7 through 1.11 (dependency constraint is now `>= 1.4.0, < 1.12`); 1.10.1 and 1.11.0 added to the SDK contract-test matrix. Note for consumers upgrading within the range: since temporalio 1.7, workers check payload sizes before sending and fail an oversized task completion retryably instead of letting the server fail it.
+
 ## [0.5.0] - 2026-08-07
 
 ### Added
