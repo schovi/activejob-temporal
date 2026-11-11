@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-11
+
 ### Changed
 - Allow temporalio 1.7 through 1.11 (dependency constraint is now `>= 1.4.0, < 1.12`); 1.10.1 and 1.11.0 added to the SDK contract-test matrix. Note for consumers upgrading within the range: since temporalio 1.7, workers check payload sizes before sending and fail an oversized task completion retryably instead of letting the server fail it.
 - Ruby baseline moves from 4.0.3 to 4.0.9 (`.ruby-version`, CI, tools, docs and the example app). `ubuntu-latest` is now Ubuntu 26.04, where `setup-ruby` has no Ruby 4.0.3 build.
