@@ -15,6 +15,33 @@ The adapter starts a Temporal workflow immediately. The workflow sleeps durably 
 
 If `wait_until` or a batch `scheduled_at` value is already due by the time it is enqueued, the adapter treats it as immediate and omits the workflow sleep.
 
+## Standalone Activities
+
+Opt in per class to run the job directly as a Temporal activity. Subclasses inherit the flag and can opt out with `temporal_standalone_activity false`.
+
+```ruby
+class WebhookJob < ApplicationJob
+  temporal_standalone_activity
+  temporal_options start_to_close_timeout: 30.seconds
+  retry_on Net::ReadTimeout, attempts: 5
+end
+
+WebhookJob.set(wait: 5.minutes).perform_later(webhook_id)
+```
+
+| Standalone support | Features |
+| --- | --- |
+| Works | `perform_later`, batch enqueue, `set(wait:)`, `retry_on`, `discard_on`, timeouts, priority, idempotency keys, search attributes, `cancel`, `Inspect.status` |
+| Skipped | Dead letter queue and its attempt limit. The adapter logs one warning per job class per process. |
+| Rejected | Rate limits, chains, dependencies, child workflows, custom workflow identity, signals, queries, updates, and pause |
+| Workflow only | Recurring schedules, `cancel_all`, and `cancel_where` |
+
+Temporal schedules start workflows even for opted-in job classes. Individual cancellation and status checks look up both execution types after a class changes mode.
+
+The runner derives the idempotency key from the activity ID. Delayed jobs spend their normal timeout budget from dispatch.
+
+See [worker requirements](worker_setup.md#standalone-activity-requirements).
+
 ## Conditional Enqueueing
 
 Use `perform_later_if` when a job should be enqueued only if a runtime condition passes. The condition receives the job arguments as an array. If it returns a falsey value, no workflow is started and the method returns `nil`.

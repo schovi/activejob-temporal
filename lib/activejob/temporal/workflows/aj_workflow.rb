@@ -3,10 +3,10 @@
 require "time"
 require "active_support/core_ext/hash/keys"
 require "temporalio/error"
-require "temporalio/retry_policy"
 require "temporalio/workflow"
 
 require_relative "../activities/rate_limit_activity"
+require_relative "../retry_mapper"
 require_relative "dead_letter_support"
 require_relative "dead_letter_workflow"
 require_relative "workflow_continue_as_new"
@@ -22,8 +22,6 @@ require_relative "workflow_versioning"
 module ActiveJob
   module Temporal
     module Workflows
-      RETRY_POLICY_MAX_ATTEMPT_KEYS = [:maximum_attempts, "maximum_attempts", :max_attempts, "max_attempts"].freeze
-
       # Deterministic orchestration workflow for ActiveJob execution.
       #
       # This workflow serves as the durable scheduling and orchestration layer for ActiveJob.
@@ -258,7 +256,7 @@ module ActiveJob
           options.merge!(temporal_opts.symbolize_keys) if temporal_opts
 
           retry_policy_hash = payload[:retry_policy] || payload["retry_policy"]
-          options[:retry_policy] = build_retry_policy(retry_policy_hash) if retry_policy_hash
+          options[:retry_policy] = RetryMapper.temporal_policy(retry_policy_hash) if retry_policy_hash
           task_queue = payload[:activity_task_queue] || payload["activity_task_queue"]
           options[:task_queue] = task_queue if task_queue
 
@@ -272,22 +270,6 @@ module ActiveJob
           return options.symbolize_keys if options
 
           { start_to_close_timeout: DEFAULT_START_TO_CLOSE_TIMEOUT }
-        end
-
-        # Builds Temporalio::RetryPolicy from hash.
-        # @api private
-        def build_retry_policy(hash)
-          # RetryMapper returns maximum_attempts, but Temporalio::RetryPolicy expects max_attempts
-          max_attempts_value = RETRY_POLICY_MAX_ATTEMPT_KEYS.filter_map { |key| hash[key] }.first
-          retry_policy_options = {
-            initial_interval: hash[:initial_interval] || hash["initial_interval"],
-            backoff_coefficient: hash[:backoff_coefficient] || hash["backoff_coefficient"],
-            max_interval: hash[:max_interval] || hash["max_interval"],
-            max_attempts: max_attempts_value,
-            non_retryable_error_types: hash[:non_retryable_error_types] || hash["non_retryable_error_types"]
-          }.compact
-
-          Temporalio::RetryPolicy.new(**retry_policy_options)
         end
       end
     end

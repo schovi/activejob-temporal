@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "active_support/core_ext/string/inflections"
+require "temporalio/retry_policy"
 require_relative "retry_handler_extractor"
 
 module ActiveJob
@@ -54,6 +55,8 @@ module ActiveJob
     # @see https://edgeguides.rubyonrails.org/active_job_basics.html#retrying-or-discarding-failed-jobs
     #   ActiveJob Retry Guide
     module RetryMapper
+      RETRY_POLICY_MAX_ATTEMPT_KEYS = [:maximum_attempts, "maximum_attempts", :max_attempts, "max_attempts"].freeze
+
       module_function
 
       # Builds a Temporal retry policy hash from a job class's retry configuration.
@@ -64,6 +67,7 @@ module ActiveJob
       #
       # @param job_class [Class] ActiveJob class with retry_on/discard_on declarations
       # @param exception [Exception, nil] Optional exception to match against handlers
+      # @param config [Configuration] Configuration for retry defaults
       #
       # @return [Hash] Retry policy with keys:
       #   - :initial_interval [Float] Initial retry delay in seconds
@@ -116,8 +120,7 @@ module ActiveJob
       #   are evaluated in reverse order (last declared = first matched). If you provide an
       #   exception argument, the first matching handler is used. Without an exception, the
       #   first handler in the list is used.
-      def for(job_class, exception = nil)
-        config = ActiveJob::Temporal.config
+      def for(job_class, exception = nil, config: ActiveJob::Temporal.config)
         retry_entries = extractor.retry_handlers(job_class)
         retry_entry = select_retry_entry(job_class, exception, retry_entries)
 
@@ -156,6 +159,22 @@ module ActiveJob
       #   # => true
       def discard_exception?(job_class, exception)
         extractor.discard_exception?(job_class, exception)
+      end
+
+      # Builds Temporalio::RetryPolicy from hash.
+      # @api private
+      def temporal_policy(hash)
+        # RetryMapper returns maximum_attempts, but Temporalio::RetryPolicy expects max_attempts
+        max_attempts_value = RETRY_POLICY_MAX_ATTEMPT_KEYS.filter_map { |key| hash[key] }.first
+        retry_policy_options = {
+          initial_interval: hash[:initial_interval] || hash["initial_interval"],
+          backoff_coefficient: hash[:backoff_coefficient] || hash["backoff_coefficient"],
+          max_interval: hash[:max_interval] || hash["max_interval"],
+          max_attempts: max_attempts_value,
+          non_retryable_error_types: hash[:non_retryable_error_types] || hash["non_retryable_error_types"]
+        }.compact
+
+        Temporalio::RetryPolicy.new(**retry_policy_options)
       end
 
       # -- helpers ----------------------------------------------------------------

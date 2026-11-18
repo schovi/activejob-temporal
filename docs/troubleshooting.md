@@ -21,6 +21,17 @@ temporal operator search-attribute list --namespace default
 
 Replace `default` with your configured namespace.
 
+## Standalone Activity Enqueue Errors
+
+| Error | Resolution |
+| --- | --- |
+| `standalone activities require temporalio >= 1.5` | Upgrade the SDK on the enqueuer and workers. |
+| `standalone activities do not support: ...` | Remove the listed workflow settings or opt out with `temporal_standalone_activity false`. |
+| `standalone activities do not support signals, queries, or updates` | Use a workflow job for calls that need workflow interactions, including pause. |
+| Temporal rejects the standalone start | Check the server version and enable the standalone and delayed start settings. |
+
+See [worker requirements](worker_setup.md#standalone-activity-requirements).
+
 ## Jobs Not Appearing In Temporal
 
 **Symptoms**

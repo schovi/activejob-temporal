@@ -84,6 +84,24 @@ describe "Temporal Ruby SDK contract", :contract do
     assert_operator TestState.instance.long_running_iterations, :<, 10
   end
 
+  it "detects standalone activity support on the installed SDK" do
+    job_class = stub_const("StandaloneContractJob", Class.new(TestJob) { temporal_standalone_activity })
+    job = job_class.new(42)
+    enqueuer = ActiveJob::Temporal::WorkflowEnqueuer.new(client, ActiveJob::Temporal.config)
+
+    if client.respond_to?(:start_activity)
+      handle = enqueuer.enqueue(job, scheduled_at: 30.seconds.from_now)
+      assert_equal :running, ActiveJob::Temporal::Inspect.status(job_class, job.job_id)[:state]
+      assert_nil ActiveJob::Temporal.cancel(job_class, job.job_id)
+      handle = nil
+    else
+      error = assert_raises(ActiveJob::Temporal::ConfigurationError) { enqueuer.enqueue(job) }
+      assert_equal "standalone activities require temporalio >= 1.5", error.message
+    end
+  ensure
+    handle&.cancel
+  end
+
   private
 
   def start_worker(task_queue)

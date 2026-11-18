@@ -46,6 +46,10 @@ module ActiveJob
     module TemporalOptions
       extend ActiveSupport::Concern
 
+      included do
+        class_attribute :temporal_standalone_activity_enabled, instance_accessor: false, default: false
+      end
+
       VALID_TIMEOUT_KEYS = %i[
         start_to_close_timeout
         schedule_to_close_timeout
@@ -55,6 +59,18 @@ module ActiveJob
 
       # rubocop:disable-next Metrics/BlockLength
       class_methods do
+        # Run direct enqueues as standalone Temporal activities.
+        # @param enabled [Boolean] Whether this class opts in
+        # rubocop:disable-next Style/OptionalBooleanParameter
+        def temporal_standalone_activity(enabled = true)
+          self.temporal_standalone_activity_enabled = enabled
+        end
+
+        # @return [Boolean] Whether direct enqueues start standalone activities
+        def temporal_standalone_activity?
+          temporal_standalone_activity_enabled
+        end
+
         # Define Temporal activity timeout options for this job class.
         #
         # @param options [Hash] Timeout configuration options

@@ -133,6 +133,29 @@ Open Temporal UI and look for workflows named `ajwf:SendInvoiceJob:<job_id>`.
 
 Baseline behavior also includes transaction-aware enqueueing through ActiveJob, GlobalID-compatible argument serialization, structured JSON logs, searchable `set(tags:)` metadata, and JSON payloads with opt-in MessagePack or Marshal envelopes.
 
+## Standalone Activities
+
+Opt in per class to run the job directly as a Temporal activity. Subclasses inherit the flag and can opt out with `temporal_standalone_activity false`.
+
+```ruby
+class WebhookJob < ApplicationJob
+  temporal_standalone_activity
+  temporal_options start_to_close_timeout: 30.seconds
+  retry_on Net::ReadTimeout, attempts: 5
+end
+
+WebhookJob.set(wait: 5.minutes).perform_later(webhook_id)
+```
+
+| Standalone support | Features |
+| --- | --- |
+| Works | `perform_later`, batch enqueue, `set(wait:)`, `retry_on`, `discard_on`, timeouts, priority, idempotency keys, search attributes, `cancel`, `Inspect.status` |
+| Skipped | Dead letter queue and its attempt limit. The adapter logs one warning per job class per process. |
+| Rejected | Rate limits, chains, dependencies, child workflows, custom workflow identity, signals, queries, updates, and pause |
+| Workflow only | Recurring schedules, `cancel_all`, and `cancel_where` |
+
+See [worker requirements](docs/worker_setup.md#standalone-activity-requirements).
+
 ## Configuration
 
 The full configuration surface lives in [Configuration Reference](docs/configuration_reference.md). The machine-readable schema is [docs/config_schema.yaml](docs/config_schema.yaml).

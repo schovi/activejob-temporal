@@ -22,13 +22,12 @@ module ActiveJob
       #   Activities may be re-executed on transient failures due to Temporal's retry logic.
       #   Job implementations MUST be idempotent. This activity sets an execution-local
       #   idempotency key (`Fiber[:aj_temporal_idempotency_key]`) derived from the
-      #   workflow ID to assist with idempotent external operations (e.g., API requests).
+      #   workflow or standalone activity ID to assist with idempotent external operations.
       #
       # @note Execution-Local Idempotency Key
       #   Jobs can access `Fiber[:aj_temporal_idempotency_key]` to generate unique
       #   idempotency tokens for external API calls. `Thread.current[...]` remains
-      #   populated for existing synchronous jobs. The key format is "workflow_id/runner"
-      #   and persists across retries for the same workflow execution.
+      #   populated for existing synchronous jobs. The key ends in "/runner" and persists across retries.
       #
       # @note Exception Handling
       #   If the job raises an exception that matches a `discard_on` declaration,
@@ -195,8 +194,10 @@ module ActiveJob
         def apply_schedule_execution_identity(payload)
           return unless payload_value(payload, :schedule_id)
 
-          execution_job_id = payload_value(payload, :schedule_execution_job_id) || activity_workflow_execution_identity
-          return unless execution_job_id
+          execution_identity = activity_workflow_execution_identity
+          return unless execution_identity
+
+          execution_job_id = payload_value(payload, :schedule_execution_job_id) || execution_identity
 
           payload[:job_id] = execution_job_id
           active_job_payload = payload[:active_job] || payload["active_job"]
@@ -341,8 +342,10 @@ module ActiveJob
 
         # @api private
         def set_idempotency_key(payload = nil)
-          identity = payload && payload_value(payload, :schedule_execution_job_id)
-          identity ||= activity_workflow_id || "unknown-workflow"
+          identity = activity_workflow_id || "unknown-workflow"
+          if payload && payload_value(payload, :schedule_id) && activity_workflow_execution_identity
+            identity = payload_value(payload, :schedule_execution_job_id) || identity
+          end
           idempotency_key = "#{identity}/runner"
           Thread.current[IDEMPOTENCY_KEY] = idempotency_key
           Fiber[IDEMPOTENCY_KEY] = idempotency_key
@@ -359,18 +362,20 @@ module ActiveJob
           return unless defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
 
           info = Temporalio::Activity::Context.current.info
-          namespace = if info.respond_to?(:workflow_namespace)
-                        info.workflow_namespace
-                      else
-                        ActiveJob::Temporal.config.namespace
-                      end
-          { namespace: namespace, workflow_id: encryption_context_workflow_id(payload) }
+          { namespace: activity_namespace(info), workflow_id: encryption_context_workflow_id(info, payload) }
+        end
+
+        def activity_namespace(info)
+          workflow_namespace = info.workflow_namespace if info.respond_to?(:workflow_namespace)
+          workflow_namespace || (info.namespace if info.respond_to?(:namespace)) || ActiveJob::Temporal.config.namespace
         end
 
         # Scheduled payloads are encrypted once against the schedule's workflow-ID prefix, while
         # each occurrence runs under a longer workflow ID derived from that prefix.
-        def encryption_context_workflow_id(payload)
-          workflow_id = activity_workflow_id
+        def encryption_context_workflow_id(info, payload)
+          workflow_id = info.workflow_id.presence
+          return info.activity_id unless workflow_id
+
           prefix = payload && payload_value(payload, :schedule_workflow_id_prefix)
           return workflow_id unless prefix && workflow_id.to_s.start_with?(prefix.to_s)
 
@@ -380,13 +385,16 @@ module ActiveJob
         def activity_workflow_id
           return unless defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
 
-          Temporalio::Activity::Context.current.info.workflow_id
+          info = Temporalio::Activity::Context.current.info
+          info.workflow_id.presence || info.activity_id
         end
 
         def activity_workflow_execution_identity
           return unless defined?(Temporalio::Activity::Context) && Temporalio::Activity::Context.exist?
 
           info = Temporalio::Activity::Context.current.info
+          return unless info.workflow_id.present?
+
           [info.workflow_id, activity_workflow_run_id(info)].compact.join(":")
         end
 

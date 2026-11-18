@@ -107,3 +107,4 @@ When an architectural decision is replaced by a new approach:
 - [ADR 002: ISO8601 Timestamps](002-iso8601-timestamps.md)
 - [ADR 003: Adapter Helper Module](003-adapter-helper-module.md)
 - [ADR 004: Idempotency Keys](004-idempotency-keys.md)
+- [ADR 005: Standalone Activities as a Per-Class Opt-In](005-standalone-activities.md)

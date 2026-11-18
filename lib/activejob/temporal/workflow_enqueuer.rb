@@ -6,6 +6,7 @@ require_relative "dead_letter_payload_validation"
 require_relative "job_payload_builder"
 require_relative "observability"
 require_relative "workflow_enqueuer_batch"
+require_relative "standalone_activity"
 require_relative "workflow_id_builder"
 require_relative "workflow_types"
 
@@ -67,12 +68,38 @@ module ActiveJob
       def enqueue(job, scheduled_at: nil)
         validate_job_for_enqueueing(job)
         scheduled_at = validate_scheduled_at!(scheduled_at)
+        return enqueue_standalone(job, scheduled_at) if StandaloneActivity.enabled?(job.class)
+
         workflow_id = @workflow_id_builder.build(job)
         payload = build_payload(job, workflow_id: workflow_id, scheduled_at: scheduled_at)
         enqueue_with_payload(job, payload, workflow_id)
       end
 
       private
+
+      def enqueue_standalone(job, scheduled_at)
+        temporal_client = client
+        unless temporal_client.respond_to?(:start_activity)
+          raise ConfigurationError, "standalone activities require temporalio >= 1.5"
+        end
+
+        require_relative "activities/aj_runner_activity"
+
+        activity_id = WorkflowIdBuilder.default_for(job)
+        WorkflowIdBuilder.validate!(activity_id)
+        payload = @payload_builder.build(
+          job, scheduled_at: scheduled_at, encryption_context: encryption_context_for(activity_id), standalone: true
+        )
+        options = start_options(job, activity_id).merge(@payload_builder.standalone_activity_options(job))
+        options[:start_delay] = [scheduled_at - Time.now, 0].max if scheduled_at
+        if defined?(Temporalio::ActivityIDConflictPolicy::FAIL)
+          options[:id_conflict_policy] = Temporalio::ActivityIDConflictPolicy::FAIL
+        end
+
+        start_execution(job, payload, options, standalone: true) do
+          temporal_client.start_activity(Activities::AjRunnerActivity, payload, **options)
+        end
+      end
 
       def configured_workflow_id_generator
         return unless @config.respond_to?(:workflow_id_generator)
@@ -85,14 +112,17 @@ module ActiveJob
       def enqueue_with_payload(job, payload, workflow_id)
         DeadLetterPayloadValidation.validate!(payload)
 
-        task_queue = Adapter.resolve_task_queue(job, config: @config)
-        add_dead_letter_task_queue(payload, task_queue)
+        options = start_options(job, workflow_id)
+        options[:id_conflict_policy] = Temporalio::WorkflowIDConflictPolicy::FAIL
+        add_dead_letter_task_queue(payload, options.fetch(:task_queue))
 
-        options = {
-          id: workflow_id,
-          task_queue: task_queue,
-          id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL
-        }
+        start_execution(job, payload, options) do
+          client.start_workflow(WorkflowTypes::ACTIVE_JOB, payload, **options)
+        end
+      end
+
+      def start_options(job, id)
+        options = { id: id, task_queue: Adapter.resolve_task_queue(job, config: @config) }
         priority = Adapter.resolve_priority(job, config: @config)
         options[:priority] = priority if priority
 
@@ -102,7 +132,7 @@ module ActiveJob
           options[:search_attributes] = search_attributes
         end
 
-        start_workflow(job, payload, options)
+        options
       end
 
       def add_dead_letter_task_queue(payload, task_queue)
@@ -128,30 +158,25 @@ module ActiveJob
         { namespace: @config.namespace, workflow_id: workflow_id }
       end
 
-      # Starts the Temporal workflow with the given options.
-      # @api private
-      def start_workflow(job, payload, options)
-        workflow_class = WorkflowTypes::ACTIVE_JOB
-        handle = start_temporal_workflow(workflow_class, job, payload, options)
-
-        log_enqueued(job, options, payload, duplicate: false)
-        handle
-      end
-
-      def start_temporal_workflow(workflow_class, job, payload, options)
-        client.start_workflow(workflow_class, payload, **options)
+      def start_execution(job, payload, options, standalone: nil)
+        handle = yield
       rescue StandardError => e
-        if workflow_already_started?(e)
-          log_enqueued(job, options, payload, duplicate: true)
-          raise DuplicateEnqueueError, build_duplicate_enqueue_error_message(job, options)
+        if execution_already_started?(e)
+          log_enqueued(job, options, payload, duplicate: true, standalone: standalone)
+          raise DuplicateEnqueueError, build_duplicate_enqueue_error_message(job, options, standalone: standalone)
         end
 
         raise ActiveJob::EnqueueError.new(build_enqueue_error_message(job, e)), cause: e
+      else
+        log_enqueued(job, options, payload, duplicate: false, standalone: standalone)
+        handle
       end
 
       # Checks if error indicates workflow was already started (duplicate job_id).
       # @api private
-      def workflow_already_started?(error)
+      def execution_already_started?(error)
+        return true if defined?(Temporalio::Error::ActivityAlreadyStartedError) &&
+                       error.is_a?(Temporalio::Error::ActivityAlreadyStartedError)
         return true if defined?(Temporalio::Error::WorkflowAlreadyStartedError) &&
                        error.is_a?(Temporalio::Error::WorkflowAlreadyStartedError)
         return true if defined?(Temporalio::Client::WorkflowAlreadyStartedError) &&
@@ -164,8 +189,10 @@ module ActiveJob
 
       # Logs enqueue event with structured metadata.
       # @api private
-      def log_enqueued(job, options, payload, duplicate:)
+      def log_enqueued(job, options, payload, duplicate:, standalone:)
         attributes = enqueue_attributes(job, options, payload, duplicate: duplicate)
+
+        attributes[:standalone] = true if standalone
 
         emit_enqueue_side_effect("log", attributes) do
           Logger.log_event("workflow_enqueued", **attributes)
@@ -180,7 +207,8 @@ module ActiveJob
               job,
               workflow_id: options[:id],
               task_queue: options[:task_queue],
-              duplicate: duplicate
+              duplicate: duplicate,
+              standalone: standalone
             )
           )
         end
@@ -227,12 +255,13 @@ module ActiveJob
         )
       end
 
-      def build_duplicate_enqueue_error_message(job, options)
+      def build_duplicate_enqueue_error_message(job, options, standalone:)
         format(
-          "Job %<job_class>s (%<job_id>s) was already enqueued as workflow %<workflow_id>s",
+          "Job %<job_class>s (%<job_id>s) was already enqueued as %<kind>s %<workflow_id>s",
           job_class: job.class.name,
           job_id: job.job_id,
-          workflow_id: options[:id]
+          workflow_id: options[:id],
+          kind: standalone ? "standalone activity" : "workflow"
         )
       end
 

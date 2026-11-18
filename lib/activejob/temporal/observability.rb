@@ -141,9 +141,9 @@ module ActiveJob
 
           info = Temporalio::Activity::Context.current.info
           normalize_payload(
-            workflow_id: context_value(info, :workflow_id),
-            run_id: context_value(info, :workflow_run_id, :run_id),
-            namespace: context_value(info, :workflow_namespace),
+            workflow_id: context_value(info, :workflow_id, :activity_id),
+            run_id: context_value(info, :workflow_run_id, :activity_run_id, :run_id),
+            namespace: context_value(info, :workflow_namespace, :namespace),
             attempt: context_value(info, :attempt)
           )
         rescue StandardError
@@ -152,7 +152,8 @@ module ActiveJob
 
         def context_value(object, *methods)
           methods.each do |method_name|
-            return object.public_send(method_name) if object.respond_to?(method_name)
+            value = object.public_send(method_name) if object.respond_to?(method_name)
+            return value if value.present?
           end
 
           nil

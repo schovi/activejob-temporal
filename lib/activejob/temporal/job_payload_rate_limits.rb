@@ -7,17 +7,17 @@ module ActiveJob
     module JobPayloadRateLimits
       private
 
-      def apply_rate_limits(payload, job)
-        rate_limits = rate_limits_for(job.class)
+      def apply_rate_limits(payload, job, standalone: false)
+        rate_limits = rate_limits_for(job.class, validate_limiter: !standalone)
         payload[:rate_limits] = rate_limits if rate_limits.any?
       end
 
-      def rate_limits_for(job_class)
+      def rate_limits_for(job_class, validate_limiter: true)
         rate_limits = [
           configured_global_rate_limit,
           configured_job_rate_limit(job_class)
         ].compact
-        validate_rate_limiter!(rate_limits)
+        validate_rate_limiter!(rate_limits) if validate_limiter
         rate_limits
       end
 

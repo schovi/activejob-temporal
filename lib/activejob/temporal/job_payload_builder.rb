@@ -1,5 +1,8 @@
 # frozen_string_literal: true
 
+require "concurrent/map"
+
+require_relative "logger"
 require_relative "payload"
 require_relative "job_payload_child_workflows"
 require_relative "job_payload_chain_builder"
@@ -26,32 +29,73 @@ module ActiveJob
         default_heartbeat_timeout: :heartbeat_timeout
       }.freeze
 
+      STANDALONE_INCOMPATIBLE_KEYS = %i[
+        rate_limits chain child_workflows dependencies workflow_interactions workflow_identity
+      ].freeze
+      DLQ_WARNED_JOB_CLASSES = Concurrent::Map.new
+
       def initialize(config)
         @config = config
       end
 
-      def build(job, scheduled_at: nil, encryption_context: nil)
+      def build(job, scheduled_at: nil, encryption_context: nil, standalone: false)
         payload = base_payload_for(job, scheduled_at)
         payload[:default_activity_options] = default_activity_options
         Observability.inject_trace_context(payload, observability_attributes_for(job, encryption_context))
 
-        apply_retry_policy(payload, job)
+        apply_retry_policy(payload, job, standalone: standalone)
         apply_temporal_options(payload, job.class)
         apply_workflow_identity(payload, job.class)
-        apply_rate_limits(payload, job)
+        apply_rate_limits(payload, job, standalone: standalone)
         apply_workflow_interactions(payload, job.class)
         apply_child_workflows(payload, job)
         apply_chain(payload, job)
         apply_dependencies(payload, job)
-        apply_continue_as_new(payload)
-        apply_local_activity_helpers(payload)
+        apply_execution_options(payload, job.class, standalone: standalone)
 
         payload = transport_payload(payload, job, scheduled_at, encryption_context)
         Payload.enforce_size!(payload, metrics_payload: metrics_payload_for(job), config: @config)
         payload
       end
 
+      # @return [Hash] Options for Client#start_activity
+      def standalone_activity_options(job)
+        options = default_activity_options
+        options[:start_to_close_timeout] = 900.0 if options.empty?
+        options.merge!(extract_temporal_options(job.class))
+        options[:retry_policy] = RetryMapper.temporal_policy(RetryMapper.for(job.class, config: @config))
+        options
+      end
+
       private
+
+      def apply_execution_options(payload, job_class, standalone:)
+        return validate_standalone!(payload, job_class) if standalone
+
+        apply_continue_as_new(payload)
+        apply_local_activity_helpers(payload)
+      end
+
+      def validate_standalone!(payload, job_class)
+        incompatible_keys = STANDALONE_INCOMPATIBLE_KEYS & payload.keys
+        incompatible_keys |= [:workflow_identity] if custom_workflow_identity?(job_class)
+        return if incompatible_keys.empty?
+
+        raise ConfigurationError,
+              "#{job_class.name} standalone activities do not support: #{incompatible_keys.join(', ')}"
+      end
+
+      def custom_workflow_identity?(job_class)
+        extract_temporal_workflow_id_prefix(job_class) ||
+          (job_class.respond_to?(:temporal_workflow_id) && job_class.temporal_workflow_id) ||
+          (@config.respond_to?(:workflow_id_generator) && @config.workflow_id_generator)
+      end
+
+      def warn_standalone_dlq(job_class)
+        return if DLQ_WARNED_JOB_CLASSES.put_if_absent(job_class.name, true)
+
+        Logger.log_to(@config.logger, :warn, "standalone_activity_dlq_skipped", job_class: job_class.name)
+      end
 
       def base_payload_for(job, scheduled_at)
         Payload.from_job(
@@ -64,7 +108,12 @@ module ActiveJob
         )
       end
 
-      def apply_retry_policy(payload, job)
+      def apply_retry_policy(payload, job, standalone:)
+        if standalone
+          warn_standalone_dlq(job.class) if dead_letter_enabled?
+          return
+        end
+
         retry_policy = retry_policy_for(job.class)
         payload[:retry_policy] = retry_policy
         return unless dead_letter_enabled?

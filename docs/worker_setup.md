@@ -7,6 +7,12 @@ This guide covers setting up and running ActiveJob Temporal workers.
 - Ruby 4.0+ environment with the `activejob-temporal` gem and the Temporal Ruby SDK (`temporalio-worker`) installed.
 - Rails application with `activejob-temporal` gem in the Gemfile.
 
+## Standalone Activity Requirements
+
+Standalone activities require Temporal Server 1.32 or later and Temporal Ruby SDK 1.5 or later on enqueuers and workers. The SDK API is experimental.
+
+Enable `activity.enableStandalone` on the server. Enable `activity.startDelayEnabled` to use `set(wait:)` or `set(wait_until:)`. The standard worker already registers `AjRunnerActivity`.
+
 ## Required Environment Variables
 Set the following variables before starting the worker:
 

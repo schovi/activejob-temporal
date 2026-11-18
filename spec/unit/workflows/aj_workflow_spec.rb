@@ -583,6 +583,29 @@ describe ActiveJob::Temporal::Workflows::AjWorkflow do
         assert_equal ["reservation"], recorded_activity_calls.last[1][1]
       end
 
+      it "converts an external chain step retry policy hash into a Temporal retry policy" do
+        payload = base_payload.merge(
+          "chain" => [
+            {
+              "temporal_operation" => "activity",
+              "temporal_type" => "payments.AuthorizePayment",
+              "options" => {
+                "start_to_close_timeout" => 30.0,
+                "retry_policy" => { "initial_interval" => 2.0, "maximum_attempts" => 4 }
+              }
+            }
+          ]
+        )
+        @execute_activity_handler = proc { |*_args, **_options| "ok" }
+
+        workflow.execute(payload)
+
+        retry_policy = activity_calls.last.keywords.fetch(:retry_policy)
+        assert_instance_of Temporalio::RetryPolicy, retry_policy
+        assert_equal 2.0, retry_policy.initial_interval
+        assert_equal 4, retry_policy.max_attempts
+      end
+
       it "stops before later chain steps when a chained activity fails" do
         error = Temporalio::Error::ActivityError.new(
           "activity failed",

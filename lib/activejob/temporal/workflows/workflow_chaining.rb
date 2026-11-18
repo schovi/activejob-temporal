@@ -182,7 +182,7 @@ module ActiveJob
           options.each_with_object({}) do |(key, value), normalized|
             normalized_key = key.to_sym
             normalized[normalized_key] = if normalized_key == :retry_policy && value.is_a?(Hash)
-                                           build_retry_policy(value)
+                                           RetryMapper.temporal_policy(value)
                                          else
                                            value
                                          end

@@ -2,6 +2,7 @@
 
 require "temporalio/error"
 require_relative "job_id_validation"
+require_relative "standalone_activity"
 require_relative "visibility_query"
 require_relative "workflow_id_builder"
 
@@ -111,37 +112,75 @@ module ActiveJob
         def cancel(job_class, job_id)
           validate_job_id!(job_id)
           client = ActiveJob::Temporal.client
-          return nil if cancel_schedule_execution(client, job_class, job_id)
+          if StandaloneActivity.enabled?(job_class)
+            result = cancel_activity(client, job_class, job_id)
+            return false if result == :closed
+            return nil if result == :requested
 
-          workflow_state = find_workflow(client, job_class, job_id)
-          workflow_id = workflow_state[:workflow_id]
-
-          case workflow_state[:status]
-          when :closed
-            log_workflow_already_completed(job_class, job_id, workflow_id)
-            false
-          when :not_found
-            raise ActiveJob::Temporal::WorkflowNotFoundError,
-                  "No workflow found for job_id #{job_id}. The job may have never existed."
-          when :running
-            request_cancellation(client, job_id, workflow_id)
-            log_cancellation_requested(job_class, job_id, workflow_id)
-            log_audit_cancellation_requested(job_class, job_id, workflow_id)
-            nil
+            cancel_workflow(client, job_class, job_id)
+          else
+            cancel_workflow_or_activity(client, job_class, job_id)
           end
         end
 
+        # Cancels workflows that match a job class.
+        # @note Standalone activities require an individual cancel request.
         def cancel_all(job_class)
           validate_job_class!(job_class)
 
           cancel_where(ajClass: job_class.name)
         end
 
+        # @note Filters apply to workflows only.
         def cancel_where(filters)
           BatchCanceller.new(ActiveJob::Temporal.client).cancel_where(filters)
         end
+      end
 
+      class << self
         private
+
+        def cancel_workflow_or_activity(client, job_class, job_id)
+          cancel_workflow(client, job_class, job_id)
+        rescue WorkflowNotFoundError
+          case cancel_activity(client, job_class, job_id)
+          when :closed then false
+          when :requested then nil
+          else raise
+          end
+        end
+
+        def cancel_workflow(client, job_class, job_id)
+          return nil if cancel_schedule_execution(client, job_class, job_id)
+
+          workflow_state = find_workflow(client, job_class, job_id)
+          workflow_id = workflow_state[:workflow_id]
+          case workflow_state[:status]
+          when :closed
+            log_workflow_already_completed(job_class, job_id, workflow_id)
+            false
+          when :running
+            request_cancellation(client, job_id, workflow_id)
+            cancellation_requested(job_class, job_id, workflow_id)
+            nil
+          when :not_found
+            raise WorkflowNotFoundError, "No workflow found for job_id #{job_id}. The job may have never existed."
+          end
+        end
+
+        def cancel_activity(client, job_class, job_id)
+          StandaloneActivity.with_handle(client, job_class, job_id) do |handle|
+            next :closed unless StandaloneActivity.state(handle.describe.status) == :running
+
+            handle.cancel
+            cancellation_requested(job_class, job_id, handle.id)
+            :requested
+          end
+        rescue StandardError => e
+          raise ActiveJob::Temporal::TemporalConnectionError.new(
+            "Failed to cancel Temporal standalone activity for job_id #{job_id}: #{e.message}"
+          ), cause: e
+        end
 
         def validate_job_class!(job_class)
           return if job_class.respond_to?(:name) && !job_class.name.to_s.empty?
@@ -162,8 +201,7 @@ module ActiveJob
 
           workflow_id = schedule_reference.fetch(:workflow_id)
           request_cancellation(client, job_id, workflow_id, run_id: schedule_reference.fetch(:run_id))
-          log_cancellation_requested(job_class, job_id, workflow_id)
-          log_audit_cancellation_requested(job_class, job_id, workflow_id)
+          cancellation_requested(job_class, job_id, workflow_id)
           true
         rescue ActiveJob::Temporal::WorkflowNotFoundError
           false
@@ -235,12 +273,19 @@ module ActiveJob
 
         # Logs cancellation request event.
         # @api private
-        def log_cancellation_requested(job_class, job_id, workflow_id)
+        def cancellation_requested(job_class, job_id, workflow_id)
           ActiveJob::Temporal::Logger.info(
             "cancellation_requested",
             workflow_id: workflow_id,
             job_class: job_class.name,
             job_id: job_id
+          )
+          ActiveJob::Temporal::AuditLog.record(
+            "job.cancelled",
+            workflow_id: workflow_id,
+            job_class: job_class.name,
+            job_id: job_id,
+            status: "requested"
           )
         end
 
@@ -253,16 +298,6 @@ module ActiveJob
             job_class: job_class.name,
             job_id: job_id,
             status: "completed"
-          )
-        end
-
-        def log_audit_cancellation_requested(job_class, job_id, workflow_id)
-          ActiveJob::Temporal::AuditLog.record(
-            "job.cancelled",
-            workflow_id: workflow_id,
-            job_class: job_class.name,
-            job_id: job_id,
-            status: "requested"
           )
         end
       end

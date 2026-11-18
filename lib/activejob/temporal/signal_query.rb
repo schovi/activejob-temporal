@@ -3,6 +3,7 @@
 require "temporalio/error"
 require_relative "job_id_validation"
 require_relative "visibility_query"
+require_relative "standalone_activity"
 require_relative "workflow_id_builder"
 
 module ActiveJob
@@ -64,6 +65,11 @@ module ActiveJob
         private
 
         def with_running_workflow_handle(job_class, job_id, &)
+          if StandaloneActivity.enabled?(job_class)
+            raise ConfigurationError,
+                  "#{job_class.name} standalone activities do not support signals, queries, or updates"
+          end
+
           client = ActiveJob::Temporal.client
           result = yield_schedule_execution_handle(client, job_id, &)
           return result unless result.equal?(WORKFLOW_NOT_FOUND)

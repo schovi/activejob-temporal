@@ -88,8 +88,8 @@ module ActiveJob
 
         activity_info = Temporalio::Activity::Context.current.info
         {
-          workflow_id: context_value(activity_info, :workflow_id),
-          run_id: context_value(activity_info, :workflow_run_id, :run_id),
+          workflow_id: context_value(activity_info, :workflow_id, :activity_id),
+          run_id: context_value(activity_info, :workflow_run_id, :activity_run_id, :run_id),
           attempt: context_value(activity_info, :attempt)
         }.compact
       rescue StandardError
@@ -98,7 +98,8 @@ module ActiveJob
 
       def context_value(object, *methods)
         methods.each do |method_name|
-          return object.public_send(method_name) if object.respond_to?(method_name)
+          value = object.public_send(method_name) if object.respond_to?(method_name)
+          return value if value.present?
         end
 
         nil

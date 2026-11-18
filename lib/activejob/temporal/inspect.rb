@@ -3,6 +3,7 @@
 require "temporalio/client/workflow_execution_status"
 require "temporalio/error"
 require_relative "job_id_validation"
+require_relative "standalone_activity"
 require_relative "visibility_query"
 require_relative "workflow_id_builder"
 
@@ -26,9 +27,11 @@ module ActiveJob
           validate_job_id!(job_id)
 
           client = ActiveJob::Temporal.client
-          describe_schedule_execution_workflow(client, job_id) ||
-            describe_default_workflow(client, job_class, job_id) ||
-            describe_search_attribute_workflow(client, job_class, job_id)
+          if StandaloneActivity.enabled?(job_class)
+            StandaloneActivity.status(client, job_class, job_id) || workflow_status(client, job_class, job_id)
+          else
+            workflow_status(client, job_class, job_id) || StandaloneActivity.status(client, job_class, job_id)
+          end
         rescue ArgumentError
           raise
         rescue StandardError => e
@@ -62,6 +65,12 @@ module ActiveJob
 
         def validate_job_id!(job_id)
           JobIdValidation.validate!(job_id)
+        end
+
+        def workflow_status(client, job_class, job_id)
+          describe_schedule_execution_workflow(client, job_id) ||
+            describe_default_workflow(client, job_class, job_id) ||
+            describe_search_attribute_workflow(client, job_class, job_id)
         end
 
         def describe_default_workflow(client, job_class, job_id)
