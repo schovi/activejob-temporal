@@ -2,6 +2,7 @@
 
 require "active_job"
 require "active_job/queue_adapters/abstract_adapter"
+require "temporalio/priority"
 require_relative "workflow_id_builder"
 
 module ActiveJob
@@ -70,6 +71,22 @@ module ActiveJob
         return queue_name if prefix.nil? || prefix.to_s.strip.empty?
 
         "#{prefix}#{queue_name}"
+      end
+
+      # Resolves native Temporal priority for a workflow start or schedule action.
+      #
+      # @param job [ActiveJob::Base] Job to enqueue or schedule
+      # @param config [ActiveJob::Temporal::Configuration] Adapter configuration
+      # @return [Temporalio::Priority, nil] Resolved priority or nil for server defaults
+      # @raise [ConfigurationError] If the resolver returns an unsupported value
+      def resolve_priority(job, config: ActiveJob::Temporal.config)
+        resolver = config.priority_resolver if config.respond_to?(:priority_resolver)
+        return if resolver.nil?
+
+        priority = resolver.call(job)
+        return priority if priority.nil? || priority.is_a?(Temporalio::Priority)
+
+        raise ConfigurationError, "priority_resolver must return Temporalio::Priority or nil, got #{priority.class}"
       end
 
       def priority_task_queue(job, config)

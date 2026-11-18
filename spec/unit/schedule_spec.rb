@@ -84,6 +84,7 @@ describe ActiveJob::Temporal::Schedule do
     assert_equal "America/New_York", temporal_schedule.spec.time_zone_name
     assert_equal "AjWorkflow", temporal_schedule.action.workflow
     assert_equal "reports", temporal_schedule.action.task_queue
+    assert_equal Temporalio::Priority.default, temporal_schedule.action.priority
     assert_equal "ScheduledReportJob", temporal_schedule.action.args.first[:job_class]
     refute temporal_schedule.action.args.first.key?(:arguments)
     assert_equal ["daily"], temporal_schedule.action.args.first[:active_job]["arguments"]
@@ -98,6 +99,12 @@ describe ActiveJob::Temporal::Schedule do
   end
 
   it "creates the schedule through the Temporal client" do
+    priority = Temporalio::Priority.new(priority_key: 1, fairness_key: "space-42")
+    resolved_jobs = []
+    config.priority_resolver = lambda do |job|
+      resolved_jobs << job
+      priority
+    end
     schedule = described_class.new(
       job_class,
       cron: "0 */6 * * *",
@@ -114,6 +121,8 @@ describe ActiveJob::Temporal::Schedule do
     create_call = client.create_schedule_calls.first
     assert_equal "ajsch:ScheduledReportJob", create_call[:id]
     assert_instance_of Temporalio::Client::Schedule, create_call[:schedule]
+    assert_same priority, create_call[:schedule].action.priority
+    assert_equal [job_class], resolved_jobs.map(&:class)
     assert_equal false, create_call[:trigger_immediately]
     assert_nil create_call[:memo]
     assert_nil create_call[:search_attributes]

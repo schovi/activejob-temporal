@@ -42,6 +42,26 @@ describe "ActiveJob Temporal enqueue", :integration do
     stop_worker(@worker_thread)
   end
 
+  it "starts a workflow with the resolved priority and fairness key" do
+    config = ActiveJob::Temporal.config
+    original_priority_resolver = config.priority_resolver
+    config.priority_resolver = ->(_job) { Temporalio::Priority.new(priority_key: 1, fairness_key: "space-42") }
+    task_queue = "test-#{SecureRandom.hex(4)}"
+    @worker_thread = start_worker(task_queue)
+
+    job = TestJob.set(queue: task_queue).perform_later(42)
+    workflow_id = ActiveJob::Temporal::Adapter.build_workflow_id(job)
+    description = wait_for_workflow_terminal_status(workflow_id)
+    priority = description.raw_description.workflow_execution_info.priority
+
+    assert_equal 1, priority.priority_key
+    assert_equal "space-42", priority.fairness_key
+    assert_equal 42, TestJob.last_argument
+    assert_equal Temporalio::Client::WorkflowExecutionStatus::COMPLETED, description.status
+  ensure
+    config.priority_resolver = original_priority_resolver
+  end
+
   it "attaches search attributes to workflows for filtering and debugging" do
     task_queue = "test-#{SecureRandom.hex(4)}"
     @worker_thread = start_worker(task_queue)

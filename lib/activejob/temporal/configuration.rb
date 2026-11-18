@@ -181,6 +181,12 @@ module ActiveJob
         description: "Optional callable for custom Temporal workflow IDs"
       },
 
+      priority_resolver: {
+        default: nil,
+        type: :callable,
+        description: "Optional callable(job) returning Temporalio::Priority for task queue priority and fairness"
+      },
+
       rate_limiter: {
         default: nil,
         type: :object,
@@ -642,6 +648,7 @@ module ActiveJob
     # - `max_concurrent_activities`: Numericality > 0
     # - `max_concurrent_workflow_tasks`: Numericality > 0
     # - `workflow_id_generator`: Optional callable
+    # - `priority_resolver`: Optional callable
     # - `middleware_chain`: Callable chain with registration support
     #
     # @example Using ConfigValidator directly
@@ -752,6 +759,7 @@ module ActiveJob
       validate :validate_namespace_format
       validate :validate_duration_values
       validate :validate_workflow_id_generator
+      validate :validate_priority_resolver
       validate :validate_middleware_chain
       validate :validate_priority_task_queues
       validate :validate_rate_limit_settings
@@ -850,6 +858,21 @@ module ActiveJob
         return if callable_accepts_positional_job?(workflow_id_generator)
 
         errors.add(:workflow_id_generator, :wrong_arity, value: workflow_id_generator.inspect)
+      end
+
+      def validate_priority_resolver
+        return if priority_resolver.nil?
+
+        unless priority_resolver.respond_to?(:call)
+          errors.add(:priority_resolver, :not_callable, value: priority_resolver.inspect)
+          return
+        end
+
+        accepts_job = callable_accepts_positional_job?(priority_resolver)
+        requires_keywords = callable_parameters(priority_resolver)&.any? { |type, _name| type == :keyreq }
+        return if accepts_job && !requires_keywords
+
+        errors.add(:priority_resolver, :wrong_arity, value: priority_resolver.inspect)
       end
 
       def validate_middleware_chain

@@ -81,6 +81,24 @@ Bulk enqueue starts one workflow per job. It is not a single Temporal multi-star
 
 One `enqueue_batch` call accepts at most 10,000 jobs. Larger backfills should split work into smaller calls so result storage and concurrent worker queues stay bounded. Inputs with a `size` greater than the limit are rejected before iteration; unsized enumerables stop after the first item beyond the limit.
 
+### Fair backfill per tenant
+
+Give each tenant its own fairness key so tenants share dispatch capacity on the same backfill queue.
+
+```ruby
+ActiveJob::Temporal.configure do |config|
+  config.priority_resolver = lambda do |job|
+    next unless job.is_a?(BackfillTenantJob)
+
+    Temporalio::Priority.new(priority_key: 5, fairness_key: "tenant-#{job.arguments.first}")
+  end
+end
+
+BackfillTenantJob.set(queue: :backfills).perform_later(tenant.id)
+```
+
+Enable [fairness on the Temporal server](configuration_reference.md#task-queue-priority-and-fairness) for the backfill queue.
+
 ## Duplicate Enqueueing
 
 Workflow IDs are deterministic by default: `ajwf:<JobClass>:<job_id>`. Temporal rejects a duplicate workflow ID while the previous execution remains retained, which prevents the same ActiveJob job ID from starting another workflow.

@@ -93,6 +93,8 @@ module ActiveJob
           task_queue: task_queue,
           id_conflict_policy: Temporalio::WorkflowIDConflictPolicy::FAIL
         }
+        priority = Adapter.resolve_priority(job, config: @config)
+        options[:priority] = priority if priority
 
         # Add search attributes if configured
         if @config.respond_to?(:enable_search_attributes) && @config.enable_search_attributes
@@ -185,6 +187,7 @@ module ActiveJob
       end
 
       def enqueue_attributes(job, options, payload, duplicate:)
+        priority = options[:priority]
         attributes = {
           workflow_id: options[:id],
           job_class: job.class.name,
@@ -195,7 +198,7 @@ module ActiveJob
         }
         attributes[:scheduled_at] = payload[:scheduled_at] if payload[:scheduled_at]
 
-        attributes
+        attributes.merge({ priority_key: priority&.priority_key, fairness_key: priority&.fairness_key }.compact)
       end
 
       def emit_enqueue_side_effect(side_effect, attributes)

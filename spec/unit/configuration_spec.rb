@@ -848,6 +848,38 @@ describe ActiveJob::Temporal::Configuration do
     end
   end
 
+  describe "#priority_resolver=" do
+    it "defaults to nil" do
+      assert_nil configuration.priority_resolver
+    end
+
+    it "accepts a lambda with one job argument" do
+      resolver = ->(_job) { Temporalio::Priority.new(priority_key: 1) }
+      configuration.priority_resolver = resolver
+
+      assert_nil configuration.validate!
+      assert_same resolver, configuration.priority_resolver
+    end
+
+    it "rejects non-callable values" do
+      configuration.priority_resolver = 1
+
+      assert_configuration_error(/Priority resolver must respond to #call/)
+    end
+
+    it "rejects callables with the wrong arity" do
+      configuration.priority_resolver = ->(_job, _extra) {}
+
+      assert_configuration_error(/Priority resolver must accept one positional ActiveJob argument/)
+    end
+
+    it "rejects callables that require keywords" do
+      configuration.priority_resolver = ->(_job, tenant:) { tenant }
+
+      assert_configuration_error(/without required keywords/)
+    end
+  end
+
   describe "#rate_limiter=" do
     it "accepts nil and limiter backends" do
       limiter = Class.new do

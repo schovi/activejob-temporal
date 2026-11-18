@@ -100,7 +100,8 @@ module ActiveJob
           payload,
           id: workflow_id,
           task_queue: Adapter.resolve_task_queue(job, config: @config),
-          search_attributes: search_attributes_for(job)
+          search_attributes: search_attributes_for(job),
+          priority: Adapter.resolve_priority(job, config: @config) || Temporalio::Priority.default
         )
       end
 

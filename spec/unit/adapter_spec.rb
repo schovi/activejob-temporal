@@ -105,6 +105,40 @@ describe ActiveJob::Temporal::Adapter do
     end
   end
 
+  describe ".resolve_priority" do
+    let(:configuration) { ActiveJob::Temporal::Configuration.new }
+    let(:job) { SimpleJob.new }
+
+    it "returns nil without a resolver" do
+      assert_nil described_class.resolve_priority(job, config: configuration)
+    end
+
+    it "returns the resolver's Priority for the job" do
+      priority = Temporalio::Priority.new(priority_key: 1)
+      configuration.priority_resolver = lambda do |resolved_job|
+        assert_same job, resolved_job
+        priority
+      end
+
+      assert_same priority, described_class.resolve_priority(job, config: configuration)
+    end
+
+    it "returns nil when the resolver returns nil" do
+      configuration.priority_resolver = ->(_job) {}
+
+      assert_nil described_class.resolve_priority(job, config: configuration)
+    end
+
+    it "rejects other return types" do
+      configuration.priority_resolver = ->(_job) { 1 }
+
+      error = assert_raises(ActiveJob::Temporal::ConfigurationError) do
+        described_class.resolve_priority(job, config: configuration)
+      end
+      assert_match(/priority_resolver must return Temporalio::Priority or nil, got Integer/, error.message)
+    end
+  end
+
   describe ".resolve_task_queue" do
     let(:configuration) { ActiveJob::Temporal::Configuration.new }
     let(:job) { SimpleJob.new }

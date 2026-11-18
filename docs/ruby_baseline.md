@@ -44,7 +44,7 @@ The main CI workflow validates Ruby 4 with:
 - Example Rails app tests
 - Gem build
 
-The Temporal SDK compatibility workflow contract-tests Temporal Ruby SDK 1.4.0 and 1.4.1 under Ruby 4.0.9.
+The Temporal SDK compatibility workflow contract-tests the minimum supported Temporal Ruby SDK, 1.4.1, under Ruby 4.0.9.
 
 ## External Tooling Notes
 

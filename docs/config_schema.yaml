@@ -522,6 +522,17 @@ attributes:
       env_var_name: null
       example: "->(job) { \"tenant-#{job.arguments.first.tenant_id}:ajwf:#{job.class.name}:#{job.job_id}\" }"
 
+    - name: priority_resolver
+      type: Callable
+      default: null
+      validation_rules:
+        - "Optional field, can be nil"
+        - "When provided, must respond to #call and accept one positional ActiveJob instance without required keywords"
+        - "Must return a Temporalio::Priority or nil"
+      description: "Optional callable that sets native Temporal task queue priority and fairness at workflow start or schedule creation."
+      env_var_name: null
+      example: "->(job) { Temporalio::Priority.new(priority_key: { 10 => 1, 90 => 5 }[job.priority]) }"
+
     - name: max_concurrent_activities
       type: Integer
       default: 100

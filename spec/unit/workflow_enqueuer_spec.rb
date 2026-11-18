@@ -112,6 +112,33 @@ describe ActiveJob::Temporal::WorkflowEnqueuer do
 
       assert_equal 1, client.start_workflow_calls.size
       assert_equal ActiveJob::Temporal::WorkflowTypes::ACTIVE_JOB, client.start_workflow_calls.first[:arguments].first
+      refute client.start_workflow_calls.first[:keywords].key?(:priority)
+    end
+
+    it "resolves priority once and includes its keys in enqueue logs and audit records" do
+      priority = Temporalio::Priority.new(priority_key: 1, fairness_key: "space-42")
+      resolved_jobs = []
+      config.priority_resolver = lambda do |resolved_job|
+        resolved_jobs << resolved_job
+        priority
+      end
+
+      enqueuer.enqueue(job)
+
+      assert_equal [job], resolved_jobs
+      assert_same priority, client.start_workflow_calls.first[:keywords][:priority]
+      log_event = first_recorded_call(@logger_events, :log_event, "workflow_enqueued")
+      assert_hash_includes({ priority_key: 1, fairness_key: "space-42" }, log_event.keywords)
+      assert_audit_record_includes(priority_key: 1, fairness_key: "space-42")
+    end
+
+    it "propagates resolver errors before starting the workflow" do
+      config.priority_resolver = ->(_job) { raise "tenant lookup failed" }
+
+      error = assert_raises(RuntimeError) { enqueuer.enqueue(job) }
+
+      assert_equal "tenant lookup failed", error.message
+      assert_empty client.start_workflow_calls
     end
 
     it "emits enqueue observability after a workflow starts" do
@@ -322,6 +349,7 @@ describe ActiveJob::Temporal::WorkflowEnqueuer do
 
       client.on_start_workflow do |_workflow_class, _payload, **options|
         assert_equal "high_priority", options[:task_queue]
+        refute options.key?(:priority)
         "handle"
       end
 

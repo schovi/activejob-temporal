@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Configure native Temporal task queue priority and fairness for enqueued jobs and recurring schedules with `priority_resolver`.
+
+### Changed
+- Require Temporal Ruby SDK 1.4.1 or later for priority support on schedule actions.
+
 ## [0.5.1] - 2026-11-11
 
 ### Changed
