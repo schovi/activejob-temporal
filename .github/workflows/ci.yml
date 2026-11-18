@@ -176,39 +176,7 @@ jobs:
           exit 1
 
       - name: Configure Temporal test namespace
-        run: |
-          docker compose exec -T temporal temporal operator namespace describe -n test >/dev/null 2>&1 ||
-            docker compose exec -T temporal temporal operator namespace create -n test
-          for i in {1..60}; do
-            if docker compose exec -T temporal temporal operator namespace describe -n test >/dev/null 2>&1; then
-              break
-            fi
-            sleep 1
-          done
-
-          required_search_attributes_present() {
-            attributes=$(docker compose exec -T temporal temporal operator search-attribute list -n test 2>/dev/null || true)
-            for attribute in ajClass ajQueue ajJobId ajEnqueuedAt ajTenantId ajTags; do
-              if ! grep -q "$attribute" <<<"$attributes"; then
-                return 1
-              fi
-            done
-          }
-
-          for i in {1..60}; do
-            if required_search_attributes_present; then
-              exit 0
-            fi
-            docker compose exec -T temporal temporal operator search-attribute create -n test \
-              --name ajClass --type Keyword \
-              --name ajQueue --type Keyword \
-              --name ajJobId --type Keyword \
-              --name ajEnqueuedAt --type Datetime \
-              --name ajTenantId --type Int \
-              --name ajTags --type KeywordList || true
-            sleep 1
-          done
-          required_search_attributes_present
+        run: tools/provision_temporal_test_namespace.sh
 
       - name: Run integration tests
         run: bundle exec rake spec:integration
@@ -279,39 +247,7 @@ jobs:
           exit 1
 
       - name: Configure Temporal chaos namespace
-        run: |
-          docker compose exec -T temporal temporal operator namespace describe -n test >/dev/null 2>&1 ||
-            docker compose exec -T temporal temporal operator namespace create -n test
-          for i in {1..60}; do
-            if docker compose exec -T temporal temporal operator namespace describe -n test >/dev/null 2>&1; then
-              break
-            fi
-            sleep 1
-          done
-
-          required_search_attributes_present() {
-            attributes=$(docker compose exec -T temporal temporal operator search-attribute list -n test 2>/dev/null || true)
-            for attribute in ajClass ajQueue ajJobId ajEnqueuedAt ajTenantId ajTags; do
-              if ! grep -q "$attribute" <<<"$attributes"; then
-                return 1
-              fi
-            done
-          }
-
-          for i in {1..60}; do
-            if required_search_attributes_present; then
-              exit 0
-            fi
-            docker compose exec -T temporal temporal operator search-attribute create -n test \
-              --name ajClass --type Keyword \
-              --name ajQueue --type Keyword \
-              --name ajJobId --type Keyword \
-              --name ajEnqueuedAt --type Datetime \
-              --name ajTenantId --type Int \
-              --name ajTags --type KeywordList || true
-            sleep 1
-          done
-          required_search_attributes_present
+        run: tools/provision_temporal_test_namespace.sh
 
       - name: Run chaos tests
         run: bundle exec rake spec:chaos

@@ -5,7 +5,7 @@
 #   temporal server start-dev --namespace test
 # Or use Docker:
 #   docker compose up -d temporal
-#   docker compose exec -T temporal temporal operator namespace create -n test
+#   tools/provision_temporal_test_namespace.sh
 
 module TemporalTestHelper
   TEST_NAMESPACE = "test"
@@ -112,7 +112,7 @@ module TemporalTestHelper
           temporal server start-dev --namespace #{TEST_NAMESPACE}
         Or with Docker:
           docker compose up -d temporal
-          docker compose exec -T temporal temporal operator namespace create -n #{TEST_NAMESPACE}
+          tools/provision_temporal_test_namespace.sh
         Original error: #{error.class}: #{error.message}
       MSG
       raise ServerNotAvailableError, message

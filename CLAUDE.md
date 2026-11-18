@@ -90,7 +90,7 @@ docker compose up -d
 ```
 
 The root stack stores Temporal state in a SQLite volume. It starts with a fresh database when upgrading from the Postgres stack.
-For integration tests, create the `test` namespace and register its search attributes using the steps in [CI](.github/workflows/ci.yml).
+Before running integration tests, run `tools/provision_temporal_test_namespace.sh`. It creates the `test` namespace, registers its search attributes, and waits until workflows can use it.
 
 ### Running a Worker
 
