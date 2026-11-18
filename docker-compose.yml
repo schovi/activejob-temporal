@@ -1,45 +1,29 @@
 services:
-  postgresql:
-    container_name: temporal-postgresql
-    environment:
-      POSTGRES_PASSWORD: temporal
-      POSTGRES_USER: temporal
-      PGDATA: /var/lib/postgresql/data/pgdata
-    image: postgres:15
-    networks:
-      - temporal-network
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U temporal"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   temporal:
     container_name: temporal
-    depends_on:
-      postgresql:
-        condition: service_healthy
-    environment:
-      - DB=postgres12
-      - DB_PORT=5432
-      - POSTGRES_USER=temporal
-      - POSTGRES_PWD=temporal
-      - POSTGRES_SEEDS=postgresql
-      - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_CLI_ADDRESS=temporal:7233
-    image: temporalio/auto-setup:latest
+    image: temporalio/temporal:1.10.0 # Embeds Temporal Server 1.32.2.
+    command:
+      - server
+      - start-dev
+      - --ip=0.0.0.0
+      - --headless
+      - --db-filename=/home/temporal/temporal.db
+      - --dynamic-config-value=system.numConsecutiveWorkflowTaskProblemsToTriggerSearchAttribute=1
+      - --dynamic-config-value=activity.enableStandalone=true
+      - --dynamic-config-value=activity.startDelayEnabled=true
+      - --dynamic-config-value=matching.enableFairness=true
     networks:
       - temporal-network
     ports:
       - 7233:7233
+    volumes:
+      - temporal_data:/home/temporal
 
   toxiproxy:
     container_name: toxiproxy
     depends_on:
       - temporal
-    image: ghcr.io/shopify/toxiproxy:latest
+    image: ghcr.io/shopify/toxiproxy:2.13.0
     command: ["-host=0.0.0.0"]
     networks:
       - temporal-network
@@ -54,7 +38,7 @@ services:
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
       - TEMPORAL_CORS_ORIGINS=http://localhost:3000
-    image: temporalio/ui:latest
+    image: temporalio/ui:2.56.1
     networks:
       - temporal-network
     ports:
@@ -66,4 +50,4 @@ networks:
     name: temporal-network
 
 volumes:
-  postgres_data:
+  temporal_data:

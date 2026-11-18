@@ -4,7 +4,8 @@
 # Start one locally before running specs, for example:
 #   temporal server start-dev --namespace test
 # Or use Docker:
-#   docker run --rm -p 7233:7233 -p 8233:8233 temporalio/auto-setup:latest
+#   docker compose up -d temporal
+#   docker compose exec -T temporal temporal operator namespace create -n test
 
 module TemporalTestHelper
   TEST_NAMESPACE = "test"
@@ -110,7 +111,8 @@ module TemporalTestHelper
         Start a test server before running Temporal specs, for example:
           temporal server start-dev --namespace #{TEST_NAMESPACE}
         Or with Docker:
-          docker run --rm -p 7233:7233 -p 8233:8233 temporalio/auto-setup:latest
+          docker compose up -d temporal
+          docker compose exec -T temporal temporal operator namespace create -n #{TEST_NAMESPACE}
         Original error: #{error.class}: #{error.message}
       MSG
       raise ServerNotAvailableError, message

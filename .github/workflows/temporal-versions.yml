@@ -37,7 +37,7 @@ jobs:
 
       - name: Start Temporal test server
         run: |
-          docker compose up -d postgresql temporal
+          docker compose up -d temporal
           for i in {1..120}; do
             if docker compose exec -T temporal temporal operator namespace list >/dev/null 2>&1; then
               exit 0
@@ -49,10 +49,10 @@ jobs:
 
       - name: Configure Temporal test namespace
         run: |
-          docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1 ||
-            docker compose exec -T temporal temporal operator namespace create test
+          docker compose exec -T temporal temporal operator namespace describe -n test >/dev/null 2>&1 ||
+            docker compose exec -T temporal temporal operator namespace create -n test
           for i in {1..60}; do
-            if docker compose exec -T temporal temporal operator namespace describe test >/dev/null 2>&1; then
+            if docker compose exec -T temporal temporal operator namespace describe -n test >/dev/null 2>&1; then
               break
             fi
             sleep 1

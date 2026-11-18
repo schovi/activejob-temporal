@@ -82,12 +82,15 @@ Use YARD annotations extensively:
 ### Temporal Setup (Local Development)
 
 ```bash
-# Start Temporal server, UI, and PostgreSQL
-docker-compose up
+# Start Temporal Server 1.32.2, Temporal UI, and Toxiproxy
+docker compose up -d
 
 # Temporal UI: http://localhost:8080
 # Server: localhost:7233
 ```
+
+The root stack stores Temporal state in a SQLite volume. It starts with a fresh database when upgrading from the Postgres stack.
+For integration tests, create the `test` namespace and register its search attributes using the steps in [CI](.github/workflows/ci.yml).
 
 ### Running a Worker
 
