@@ -7,13 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-18
+
 ### Added
-- Run eligible jobs directly as Temporal standalone activities with the inherited `temporal_standalone_activity` opt-in.
-- Detect running job workflows with repeated workflow task failures or timeouts using `stuck_jobs` and `count_stuck_jobs`.
-- Configure native Temporal task queue priority and fairness for enqueued jobs and recurring schedules with `priority_resolver`.
+- `priority_resolver` sets native Temporal task queue priority and fairness (`Temporalio::Priority`) for enqueued jobs and recurring schedules. Activities, chain steps and child jobs inherit the root workflow's priority. Fairness needs `matching.enableFairness` on a self-hosted server.
+- `ActiveJob::Temporal.stuck_jobs` and `count_stuck_jobs` find running job workflows with repeated workflow task failures or timeouts, filtered by job class and queue. Requires Temporal Server 1.30+ with `system.numConsecutiveWorkflowTaskProblemsToTriggerSearchAttribute` set to a positive value. See [troubleshooting](docs/troubleshooting.md#jobs-stuck-after-a-deploy-workflow-task-failures).
+- `temporal_standalone_activity` runs a job class directly as a Temporal standalone activity, with no wrapping workflow. Requires Temporal Server 1.32+ with `activity.enableStandalone`, and temporalio 1.5+ on enqueuers and workers. The SDK API is experimental. Standalone jobs skip the dead letter queue and reject rate limits, chains, dependencies, child workflows, custom workflow IDs, signals, queries, updates and pause. See [usage patterns](docs/usage_patterns.md#standalone-activities).
 
 ### Changed
-- Require Temporal Ruby SDK 1.4.1 or later for priority support on schedule actions.
+- The temporalio constraint is now `>= 1.4.1, < 1.12`. Schedule actions need 1.4.1 to carry priority.
+- Local development and CI run Temporal Server 1.32.2 (`temporalio/temporal` CLI dev server on SQLite) instead of 1.29 on Postgres. `tools/provision_temporal_test_namespace.sh` creates the `test` namespace for integration tests.
+
+### Documentation
+- [Nexus guide](docs/nexus.md): the Ruby SDK cannot serve Nexus operations yet. Serve them from another SDK with a workflow-run operation that starts the Ruby workflow on its task queue.
 
 ## [0.5.1] - 2026-11-11
 
