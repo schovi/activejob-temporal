@@ -14,6 +14,7 @@ This gem is under active development. Expect breaking changes until v1.0.0.
 `activejob-temporal` runs Rails ActiveJob work through [Temporal](https://temporal.io) workflows and activities. It is intended for jobs where durable execution, crash recovery, long-running retries, cancellation visibility, and Temporal UI history matter more than queue simplicity.
 
 - Set [native task queue priority and fairness](docs/configuration_reference.md#task-queue-priority-and-fairness) for jobs and recurring schedules.
+- [Detect stuck jobs](docs/usage_patterns.md#alert-on-stuck-jobs) after repeated workflow task failures or timeouts.
 
 Use a traditional ActiveJob backend when the work is short, simple, and does not justify operating Temporal.
 

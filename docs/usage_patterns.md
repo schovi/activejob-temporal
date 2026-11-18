@@ -494,6 +494,17 @@ ActiveJob::Temporal.failed?(SendInvoiceJob, "550e8400-e29b-41d4-a716-44665544000
 
 `status` returns `nil` when no workflow exists for the given job ID. Predicates return `false` for missing jobs. `attempt` and `last_failure` are best-effort details from pending activities, so closed workflows may return `nil` for both.
 
+## Alert on stuck jobs
+
+Run this check on a schedule to alert on repeated workflow task failures or timeouts.
+
+```ruby
+count = ActiveJob::Temporal.count_stuck_jobs
+Rails.logger.error("Temporal reports #{count} stuck job workflows") if count.positive?
+```
+
+See [Jobs stuck after a deploy](troubleshooting.md#jobs-stuck-after-a-deploy-workflow-task-failures) for server requirements and recovery steps.
+
 ## Signals, Queries, And Updates
 
 Signals mutate workflow-owned state. Queries read it:

@@ -76,6 +76,51 @@ ACTIVEJOB_TEMPORAL_TASK_QUEUE=billing bundle exec temporal-worker
 
 If you configured `task_queue_prefix`, include the prefix when starting workers. For example, a prefix of `rails-` and queue `billing` requires a worker on `rails-billing`.
 
+## Jobs stuck after a deploy (workflow task failures)
+
+A job stays **Running** and makes no progress. Check the **Task Failures** view in Temporal Web UI.
+A deploy can change how `AjWorkflow` replays its history or cause workflow code to crash.
+Failures in the job activity follow the configured retry policy. They do not trigger this detection.
+[Temporal workflow task failures](https://docs.temporal.io/encyclopedia/detecting-workflow-failures#detecting-workflow-task-failures)
+
+List affected runs with `ActiveJob::Temporal.stuck_jobs` or count them with `ActiveJob::Temporal.count_stuck_jobs`.
+Use `job_class:` and `queue:` to filter by ActiveJob metadata when job search attributes are enabled.
+Temporal clears the reported problems after the next successful workflow task.
+
+To inspect the same runs from the CLI, use your configured namespace.
+
+```bash
+namespace=production
+query="ExecutionStatus='Running' AND WorkflowType IN ('AjWorkflow', 'ActiveJobTemporalDeadLetterWorkflow') AND TemporalReportedProblems IN ('category=WorkflowTaskFailed', 'category=WorkflowTaskTimedOut')"
+temporal workflow list --namespace "$namespace" --query "$query"
+```
+
+Deploy a fix first so workers can process workflow tasks again. Check which runs still report problems.
+`ActiveJob::Temporal.cancel` requires a workflow task to process the cancellation request, so it cannot fix stuck runs.
+
+Review and narrow the query before running either batch command.
+
+- Reset runs that need to resume from their last workflow task.
+
+  ```bash
+  temporal workflow reset --namespace "$namespace" --query "$query" --type LastWorkflowTask --reason "Worker fix deployed"
+  ```
+
+- Terminate runs that should stop. Temporal closes them without running workflow cleanup.
+
+  ```bash
+  temporal workflow terminate --namespace "$namespace" --query "$query" --reason "Abandon stuck runs"
+  ```
+
+See the [Temporal CLI workflow reference](https://docs.temporal.io/cli/command-reference/workflow).
+
+Detection requires Temporal Server 1.30 or later.
+Set `system.numConsecutiveWorkflowTaskProblemsToTriggerSearchAttribute` to a positive value.
+The default is 5 consecutive workflow task failures or timeouts. Set it to 0 to disable detection.
+For self-hosted Temporal with SQL visibility, apply the visibility schema upgrade for your server version.
+Temporal manages `TemporalReportedProblems` as a system search attribute.
+[Temporal Server 1.30 release notes](https://github.com/temporalio/temporal/releases/tag/v1.30.1)
+
 ## Task Queue Mismatch
 
 **Symptoms**

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Detect running job workflows with repeated workflow task failures or timeouts using `stuck_jobs` and `count_stuck_jobs`.
 - Configure native Temporal task queue priority and fairness for enqueued jobs and recurring schedules with `priority_resolver`.
 
 ### Changed

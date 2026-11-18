@@ -23,6 +23,12 @@ module ActiveJob
         raise ArgumentError,
               "visibility query values may only contain letters, numbers, underscore, hyphen, period, and colon"
       end
+
+      def validate_limit!(limit)
+        return if limit.is_a?(Integer) && limit.positive?
+
+        raise ArgumentError, "limit must be a positive integer"
+      end
     end
   end
 end

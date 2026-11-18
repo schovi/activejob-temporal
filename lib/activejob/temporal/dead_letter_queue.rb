@@ -20,7 +20,7 @@ module ActiveJob
       end
 
       def entries(queue: nil, limit: DEFAULT_ENTRIES_LIMIT, client: ActiveJob::Temporal.client)
-        validate_limit!(limit)
+        VisibilityQuery.validate_limit!(limit)
 
         workflows = client.list_workflows(entries_query(queue)).first(limit)
         query_workflow_entries(client, workflows)
@@ -185,13 +185,6 @@ module ActiveJob
         workflow.respond_to?(:run_id) ? workflow.run_id : nil
       end
       private_class_method :workflow_run_id
-
-      def validate_limit!(limit)
-        return if limit.is_a?(Integer) && limit.positive?
-
-        raise ArgumentError, "limit must be a positive integer"
-      end
-      private_class_method :validate_limit!
 
       def workflow_already_started?(error)
         (defined?(Temporalio::Error::WorkflowAlreadyStartedError) &&

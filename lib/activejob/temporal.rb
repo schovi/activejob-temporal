@@ -48,6 +48,7 @@ require_relative "temporal/cancel"
 require_relative "temporal/inspect"
 require_relative "temporal/signal_query"
 require_relative "temporal/dead_letter_queue"
+require_relative "temporal/stuck_jobs"
 
 module ActiveJob
   # ActiveJob adapter for Temporal workflow orchestration.
@@ -285,6 +286,37 @@ module ActiveJob
 
       def discard_dead_letter(job_class, job_id, reason: nil)
         DeadLetterQueue.discard(job_class, job_id, reason: reason)
+      end
+
+      # Lists running jobs with repeated workflow task failures or timeouts.
+      #
+      # @param job_class [Class, String, nil] Filter by ActiveJob class.
+      # @param queue [String, nil] Filter by ActiveJob queue.
+      # @param limit [Integer] Maximum number of results.
+      # @return [Array<Hash>] Workflow details, job metadata, and reported problems.
+      # @raise [ArgumentError] If the limit is invalid or a filter is unsafe.
+      # @raise [ActiveJob::Temporal::Error] If reported problems are unavailable.
+      # @note Requires Temporal Server >= 1.30 and a positive value for
+      #   system.numConsecutiveWorkflowTaskProblemsToTriggerSearchAttribute.
+      #   Temporal clears the problems on the next successful workflow task.
+      #   The {cancel} method cannot fix a stuck workflow.
+      def stuck_jobs(job_class: nil, queue: nil, limit: StuckJobs::DEFAULT_LIMIT)
+        StuckJobs.list(job_class: job_class, queue: queue, limit: limit)
+      end
+
+      # Counts running jobs with repeated workflow task failures or timeouts.
+      #
+      # @param job_class [Class, String, nil] Filter by ActiveJob class.
+      # @param queue [String, nil] Filter by ActiveJob queue.
+      # @return [Integer] Count from Temporal visibility.
+      # @raise [ArgumentError] If a filter is unsafe.
+      # @raise [ActiveJob::Temporal::Error] If reported problems are unavailable.
+      # @note Requires Temporal Server >= 1.30 and a positive value for
+      #   system.numConsecutiveWorkflowTaskProblemsToTriggerSearchAttribute.
+      #   Temporal clears the problems on the next successful workflow task.
+      #   The {cancel} method cannot fix a stuck workflow.
+      def count_stuck_jobs(job_class: nil, queue: nil)
+        StuckJobs.count(job_class: job_class, queue: queue)
       end
 
       private
