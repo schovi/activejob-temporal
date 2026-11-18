@@ -8,7 +8,9 @@ Ordinary jobs still run through `ActiveJob::Temporal::Workflows::AjWorkflow` and
 
 Nexus client creation belongs in the workflow layer through `ActiveJob::Temporal::Workflows::WorkflowNexus#nexus_client_for`. Workflow code that explicitly needs a durable external operation can use that helper, while normal jobs continue to call activities.
 
-The current Temporal Ruby SDK exposes `Temporalio::Workflow.create_nexus_client`, but the worker bridge in SDK 1.4.1 still creates workers with Nexus disabled. That means this gem defines the adoption boundary and workflow-side seam, but it does not register or run Nexus handlers yet.
+The current Temporal Ruby SDK exposes `Temporalio::Workflow.create_nexus_client`, but its worker still creates workers with Nexus disabled (through SDK 1.11, tracked in [sdk-ruby#232](https://github.com/temporalio/sdk-ruby/issues/232)). That means this gem defines the adoption boundary and workflow-side seam, but it does not register or run Nexus handlers yet.
+
+To serve a Nexus operation backed by Ruby code today, run the Nexus handler in an SDK that supports it (Go, Java, Python, TypeScript or .NET). Its workflow-run operation starts the Ruby workflow by type name on the Ruby worker's task queue.
 
 ## When To Use Nexus
 
