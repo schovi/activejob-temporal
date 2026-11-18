@@ -75,7 +75,11 @@ describe "Recurring schedules", :integration do
       config: ActiveJob::Temporal.config
     ).create
 
-    wait_for { RecurringIdentityJob.executions.size == 1 }
+    # The schedule skips new triggers while it still tracks a running action.
+    wait_for do
+      info = @schedule_handle.describe.info
+      RecurringIdentityJob.executions.size == 1 && info.num_actions == 1 && info.running_actions.empty?
+    end
 
     @schedule_handle.trigger
     wait_for { RecurringIdentityJob.executions.size == 2 }
